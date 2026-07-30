@@ -337,19 +337,21 @@ class PrototypeMigrationTests(unittest.TestCase):
             self.assertFalse(os.path.lexists(archive))
             self.assertFalse((root / ".archive").exists())
 
-    def test_reservation_refuses_a_competing_archive_without_overwriting_it(self) -> None:
+    def test_publish_conflict_preserves_foreign_archive_and_original_error(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             self._write_fixture(root)
             archive = root / ".archive" / "prototype-v1"
 
-            def create_competing_archive(parent_fd: int, name: str) -> None:
+            def publish_into_competing_archive(
+                source: Path, parent_fd: int, name: str, initial: object
+            ) -> None:
                 os.mkdir(name, dir_fd=parent_fd)
                 (archive / "sentinel.txt").write_text("keep", encoding="utf-8")
-                os.mkdir(name, dir_fd=parent_fd)
+                raise FileExistsError("archive already exists: prototype-v1")
 
-            with patch("tools.migrate_prototype._reserve_archive_at", side_effect=create_competing_archive):
-                with self.assertRaises(FileExistsError):
+            with patch("tools.migrate_prototype._publish_verified_archive", side_effect=publish_into_competing_archive):
+                with self.assertRaisesRegex(FileExistsError, "archive already exists"):
                     preserve_prototype(root, archive)
 
             self.assertTrue((root / "index.html").exists())
@@ -411,10 +413,15 @@ class PrototypeMigrationTests(unittest.TestCase):
             self.assertEqual(manifest["fileCount"], 2)
             self.assertTrue((archive / "manifest.json").exists())
             self.assertEqual(Path.cwd(), original_cwd)
-            self.assertEqual(len(received), 1)
-            expected = [descriptor for descriptor in received[0] if descriptor is not None]
+            self.assertEqual(len(received), 2)
+            expected = [
+                descriptor
+                for descriptors in received
+                for descriptor in descriptors
+                if descriptor is not None
+            ]
             self.assertEqual(attempted, expected)
-            self.assertGreaterEqual(len(attempted), 2)
+            self.assertEqual(len(received[-1]), 1)
 
     def test_rejects_a_symlinked_source(self) -> None:
         with TemporaryDirectory() as directory:
@@ -538,90 +545,6 @@ class PrototypeMigrationTests(unittest.TestCase):
 
             self.assertEqual(foreign_sentinel.read_text(encoding="utf-8"), "foreign")
             self.assertTrue((root / "index.html").exists())
-
-    def test_archive_replacement_before_open_preserves_foreign_sentinel(self) -> None:
-        with TemporaryDirectory() as directory:
-            root = Path(directory).resolve()
-            self._write_fixture(root)
-            archive_parent = root / ".archive"
-            archive = archive_parent / "prototype-v1"
-            moved_archive = archive_parent / "reserved-original"
-            sentinel = archive / "sentinel.txt"
-            from tools.migrate_prototype import _reserve_archive_at
-
-            def reserve_then_replace(parent_fd: int, name: str) -> tuple[int, tuple[int, int]]:
-                reservation = _reserve_archive_at(parent_fd, name)
-                archive.rename(moved_archive)
-                archive.mkdir()
-                sentinel.write_text("foreign", encoding="utf-8")
-                return reservation
-
-            with patch("tools.migrate_prototype._reserve_archive_at", side_effect=reserve_then_replace):
-                with self.assertRaisesRegex(RuntimeError, "reserved archive changed before opening"):
-                    preserve_prototype(root, archive)
-
-            self.assertEqual(sentinel.read_text(encoding="utf-8"), "foreign")
-            self.assertTrue(archive.exists())
-            self.assertTrue((root / "index.html").exists())
-            self.assertFalse((archive / "manifest.json").exists())
-
-    def test_reservation_open_window_replacement_preserves_foreign_sentinel(self) -> None:
-        with TemporaryDirectory() as directory:
-            root = Path(directory).resolve()
-            self._write_fixture(root)
-            archive = root / ".archive" / "prototype-v1"
-            moved = root / ".archive" / "owned"
-            sentinel = archive / "sentinel.txt"
-            real_open = os.open
-            replaced = False
-
-            def replace_before_open(path: str, flags: int, *args: object, **kwargs: object) -> int:
-                nonlocal replaced
-                if path == "prototype-v1" and not replaced and "dir_fd" in kwargs:
-                    replaced = True
-                    archive.rename(moved)
-                    archive.mkdir()
-                    sentinel.write_text("foreign", encoding="utf-8")
-                return real_open(path, flags, *args, **kwargs)
-
-            with patch("tools.migrate_prototype.os.open", side_effect=replace_before_open):
-                with self.assertRaisesRegex(RuntimeError, "reserved archive changed"):
-                    preserve_prototype(root, archive)
-
-            self.assertEqual(sentinel.read_text(encoding="utf-8"), "foreign")
-            self.assertTrue(moved.exists())
-            self.assertTrue((root / "index.html").exists())
-            self.assertFalse((archive / "manifest.json").exists())
-
-    def test_reservation_fstat_failure_closes_archive_descriptor_and_rolls_back(self) -> None:
-        with TemporaryDirectory() as directory:
-            root = Path(directory).resolve()
-            self._write_fixture(root)
-            archive = root / ".archive" / "prototype-v1"
-            opened: list[int] = []
-            real_open = os.open
-            real_fstat = os.fstat
-
-            def record_open(*args: object, **kwargs: object) -> int:
-                descriptor = real_open(*args, **kwargs)
-                opened.append(descriptor)
-                return descriptor
-
-            def fail_reservation_fstat(descriptor: int) -> os.stat_result:
-                if descriptor == opened[-1] and len(opened) >= 2:
-                    raise OSError("reservation fstat failed")
-                return real_fstat(descriptor)
-
-            with patch("tools.migrate_prototype.os.open", side_effect=record_open):
-                with patch("tools.migrate_prototype.os.fstat", side_effect=fail_reservation_fstat):
-                    with self.assertRaisesRegex(OSError, "reservation fstat failed"):
-                        preserve_prototype(root, archive)
-
-            self.assertTrue((root / "index.html").exists())
-            self.assertFalse(archive.exists())
-            self.assertFalse((root / ".archive").exists())
-            with self.assertRaises(OSError):
-                os.fstat(opened[-1])
 
     def test_rejects_casefolded_allowlist_archive_boundary_before_parent_creation(self) -> None:
         with TemporaryDirectory() as directory:

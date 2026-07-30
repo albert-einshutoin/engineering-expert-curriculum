@@ -155,6 +155,10 @@ def _cleanup_created_parents(
                 continue
             directory.rmdir()
         except OSError as error:
+            # A concurrent publisher may have placed a foreign entry below an owned parent.
+            # Keep that entry intact while preserving the operation that exposed the race.
+            if error.errno in {errno.ENOTEMPTY, errno.EEXIST}:
+                continue
             failures.append(error)
     if failures and report_failures:
         details = "; ".join(str(error) for error in failures)
@@ -566,7 +570,6 @@ def preserve_prototype(source: Path, archive: Path) -> PrototypeManifest:
 
     raw_archive = _archive_path(source_path, archive)
     canonical_parent, created_parents = _create_archive_parent(raw_archive.parent)
-    archive_path = canonical_parent / raw_archive.name
     try:
         parent_fd = _open_directory_fd(canonical_parent)
     except BaseException as open_error:
@@ -578,72 +581,19 @@ def preserve_prototype(source: Path, archive: Path) -> PrototypeManifest:
             ) from open_error
         raise
     try:
-        archive_fd, reservation_identity = _reserve_archive_at(parent_fd, raw_archive.name)
-    except BaseException:
-        # A racing process may have populated an otherwise newly created parent.
-        # It is not ours to remove, so preserve the reservation failure instead.
-        _cleanup_created_parents(created_parents, report_failures=False)
-        os.close(parent_fd)
-        raise
-    archive_owned_entry = True
-    staging_fd: int | None = None
-    committed = False
-    try:
-        current_entry = os.stat(raw_archive.name, dir_fd=parent_fd, follow_symlinks=False)
-        if (current_entry.st_dev, current_entry.st_ino) != reservation_identity:
-            archive_owned_entry = False
-            close_failures = _close_all((archive_fd,))
-            if not close_failures:
-                archive_fd = None
-            if close_failures:
-                raise RuntimeError(
-                    f"reserved archive changed before opening; descriptor close failed: {close_failures[0]}"
-                ) from RuntimeError("reserved archive changed before opening")
-            raise RuntimeError("reserved archive changed before opening")
-        staging_name = f".staging-{uuid.uuid4().hex}"
-        os.mkdir(staging_name, mode=0o700, dir_fd=archive_fd)
-        staging_fd = os.open(staging_name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=archive_fd)
-        _copy_allowlisted_tree(source_path, staging_fd)
-        _fsync_fd(staging_fd, "staging root")
-        staged = _snapshot_fd(staging_fd)
-        current = _snapshot(source_path)
-        if initial != staged or initial != current:
-            raise RuntimeError("prototype checksum verification failed")
-        for relative_path in LEGACY_PATHS:
-            try:
-                os.stat(relative_path, dir_fd=staging_fd, follow_symlinks=False)
-            except FileNotFoundError:
-                continue
-            os.replace(relative_path, relative_path, src_dir_fd=staging_fd, dst_dir_fd=archive_fd)
-        os.close(staging_fd)
-        staging_fd = None
-        os.rmdir(staging_name, dir_fd=archive_fd)
-        if initial != _snapshot_fd(archive_fd):
-            raise RuntimeError("prototype checksum verification failed")
-        manifest = _write_manifest(archive_fd, initial)
-        committed = True
+        manifest = _publish_verified_archive(source_path, parent_fd, raw_archive.name, initial)
     except BaseException as operation_error:
-        if archive_fd is None or not archive_owned_entry:
-            _cleanup_created_parents(created_parents, report_failures=False)
-            raise
-        try:
-            _remove_owned_archive(parent_fd, raw_archive.name, archive_fd)
-        except (OSError, RuntimeError) as cleanup_error:
-            raise RuntimeError(
-                f"incomplete archive without manifest: cleanup failed for {archive_path}: "
-                f"{cleanup_error}"
-            ) from operation_error
         try:
             _cleanup_created_parents(created_parents)
         except RuntimeError as cleanup_error:
             raise RuntimeError(
-                f"incomplete archive without manifest: parent cleanup failed for "
-                f"{archive_path}: {cleanup_error}"
+                f"incomplete archive without manifest: parent cleanup failed for {raw_archive}: "
+                f"{cleanup_error}"
             ) from operation_error
         raise
     finally:
-        # Manifest rename is the durable commit point; later close errors cannot reverse success.
-        _close_all((staging_fd, archive_fd, parent_fd))
+        # Native publish is the commit point; later parent-descriptor close errors cannot reverse it.
+        _close_all((parent_fd,))
 
     # The original is deliberately retained: a later, separately reviewed retirement task can clean it safely.
     return manifest
