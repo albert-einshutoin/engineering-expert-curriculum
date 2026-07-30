@@ -175,9 +175,11 @@ source, take its initial snapshot (and reject empty input), then perform archive
 lexical/canonical boundary validation. The operator must pre-create the archive
 parent (for example, `install -d -m 700 .archive`; document this command but do
 not run it as part of tests). The tool requires an existing canonical directory
-owned by the current effective user and not group/world writable, then pins it
-with `O_DIRECTORY|O_NOFOLLOW`. It never creates or deletes this parent, avoiding
-`mkdir`/`stat` ownership races at the trusted boundary.
+owned by the current effective user and not group/world writable. The validation
+helper opens it with `O_DIRECTORY|O_NOFOLLOW`, verifies the same inode with
+`fstat`, and transfers that pinned FD to publication; the caller never reopens
+the pathname. It never creates or deletes this parent, avoiding `mkdir`/`stat`
+ownership races at the trusted boundary.
 
 Verify the pinned parent inode with `fstat`. Create a random `0o700` private
 staging directory below it using `dir_fd` operations; verify staging identity and

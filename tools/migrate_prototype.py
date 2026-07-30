@@ -120,8 +120,8 @@ def _validate_existing_components(
             raise ValueError(f"{label} parent is not a directory: {current}")
 
 
-def _existing_archive_parent(raw_parent: Path) -> Path:
-    """Return a canonical operator-prepared archive parent without mutating the filesystem."""
+def _existing_archive_parent(raw_parent: Path) -> tuple[Path, int]:
+    """Return a canonical operator-prepared archive parent and its pinned descriptor."""
     _validate_existing_components(raw_parent, "archive")
     if not _lexists(raw_parent):
         raise FileNotFoundError(f"archive parent must already exist: {raw_parent}")
@@ -131,13 +131,27 @@ def _existing_archive_parent(raw_parent: Path) -> Path:
     canonical = raw_parent.resolve(strict=True)
     effective = os.stat(canonical, follow_symlinks=False)
     if (recorded.st_dev, recorded.st_ino) != (effective.st_dev, effective.st_ino):
-        raise RuntimeError(f"archive parent changed while validating: {raw_parent}")
-    # The tool must not infer ownership by creating parents; it pins an operator-prepared trusted boundary.
-    if hasattr(os, "geteuid") and effective.st_uid != os.geteuid():
-        raise PermissionError(f"archive parent must be owned by the current user: {canonical}")
-    if effective.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
-        raise PermissionError(f"archive parent must not be group/world writable: {canonical}")
-    return canonical
+        raise RuntimeError(f"archive parent changed while opening: {raw_parent}")
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise RuntimeError("safe directory file descriptors are not supported")
+    descriptor = os.open(canonical, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        opened = os.fstat(descriptor)
+        if (recorded.st_dev, recorded.st_ino) != (opened.st_dev, opened.st_ino):
+            raise RuntimeError(f"archive parent changed while opening: {raw_parent}")
+        # The tool must not infer ownership by creating parents; it pins an operator-prepared trusted boundary.
+        if hasattr(os, "geteuid") and opened.st_uid != os.geteuid():
+            raise PermissionError(f"archive parent must be owned by the current user: {canonical}")
+        if opened.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+            raise PermissionError(f"archive parent must not be group/world writable: {canonical}")
+        return canonical, descriptor
+    except BaseException as operation_error:
+        close_failures = _close_all((descriptor,))
+        if close_failures:
+            raise RuntimeError(
+                f"archive parent descriptor close failed: {close_failures[0]}"
+            ) from operation_error
+        raise
 
 
 def _source_directory(source: Path) -> Path:
@@ -211,33 +225,6 @@ def _create_private_staging(parent_fd: int) -> tuple[str, int, tuple[int, int]]:
         if rollback_failure:
             raise RuntimeError(f"private staging rollback failed: {rollback_failure}") from operation_error
         raise
-
-
-def _open_directory_fd(path: Path) -> int:
-    """Pin a directory identity so later pathname replacement cannot redirect writes."""
-    flags = os.O_RDONLY | os.O_DIRECTORY
-    if not hasattr(os, "O_NOFOLLOW"):
-        raise RuntimeError("safe directory file descriptors are not supported")
-    expected = os.stat(path, follow_symlinks=False)
-    descriptor = os.open(path, flags | os.O_NOFOLLOW)
-    try:
-        actual = os.fstat(descriptor)
-    except BaseException as operation_error:
-        close_failures = _close_all((descriptor,))
-        if close_failures:
-            raise RuntimeError(
-                f"directory descriptor cleanup failed after fstat error: {close_failures[0]}"
-            ) from operation_error
-        raise
-    if (expected.st_dev, expected.st_ino) != (actual.st_dev, actual.st_ino):
-        mismatch_error = RuntimeError(f"archive parent changed while opening: {path}")
-        close_failures = _close_all((descriptor,))
-        if close_failures:
-            raise RuntimeError(
-                f"directory descriptor cleanup failed after identity mismatch: {close_failures[0]}"
-            ) from mismatch_error
-        raise mismatch_error
-    return descriptor
 
 
 def _clear_directory_fd(descriptor: int) -> None:
@@ -559,8 +546,7 @@ def preserve_prototype(source: Path, archive: Path) -> PrototypeManifest:
         raise FileNotFoundError("no allowlisted prototype files found")
 
     raw_archive = _archive_path(source_path, archive)
-    canonical_parent = _existing_archive_parent(raw_archive.parent)
-    parent_fd = _open_directory_fd(canonical_parent)
+    _, parent_fd = _existing_archive_parent(raw_archive.parent)
     completed = False
     try:
         manifest = _publish_verified_archive(source_path, parent_fd, raw_archive.name, initial)

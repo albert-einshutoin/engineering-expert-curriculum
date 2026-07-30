@@ -425,8 +425,9 @@ install -d -m 700 .archive
 
 The tool requires that parent to already exist as a canonical directory owned by
 the current effective user and not group/world writable. It never creates or
-deletes the parent: this removes `mkdir`/`stat` ownership races and lets the tool
-pin the operator-prepared trusted boundary by file descriptor.
+deletes the parent: this removes `mkdir`/`stat` ownership races and lets its
+validation helper return the same pinned file descriptor it verified, rather
+than reopening the pathname.
 
 It builds the copy, checksum verification, and manifest in a randomly named
 private staging directory below the archive parent. Regular data files, nested

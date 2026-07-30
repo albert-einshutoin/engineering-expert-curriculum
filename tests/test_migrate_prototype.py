@@ -18,7 +18,6 @@ from tools.migrate_prototype import (
     _copy_allowlisted_tree,
     _create_private_staging,
     _existing_archive_parent,
-    _open_directory_fd,
     _publish_verified_archive,
     _rename_directory_noreplace,
     _snapshot,
@@ -58,11 +57,76 @@ class PrototypeMigrationTests(unittest.TestCase):
             parent.mkdir(mode=0o700)
             parent.chmod(0o700)
 
-            self.assertEqual(_existing_archive_parent(parent), parent.resolve(strict=True))
+            canonical, descriptor = _existing_archive_parent(parent)
+            try:
+                self.assertEqual(canonical, parent.resolve(strict=True))
+                self.assertEqual(os.fstat(descriptor).st_ino, os.stat(parent).st_ino)
+            finally:
+                os.close(descriptor)
 
             parent.chmod(0o777)
             with self.assertRaisesRegex(PermissionError, "group/world writable"):
                 _existing_archive_parent(parent)
+
+    def test_preserve_rejects_foreign_parent_replaced_before_open_without_writing_it(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            self._write_fixture(root)
+            parent = root / ".archive"
+            archive = parent / "prototype-v1"
+            owned = root / ".archive-owned"
+            real_open = os.open
+            replaced = False
+
+            def replace_before_parent_open(path: str | Path, flags: int, *args: object, **kwargs: object) -> int:
+                nonlocal replaced
+                if Path(path) == parent and not replaced and "dir_fd" not in kwargs:
+                    replaced = True
+                    parent.rename(owned)
+                    parent.mkdir(mode=0o777)
+                    parent.chmod(0o777)
+                return real_open(path, flags, *args, **kwargs)
+
+            with patch("tools.migrate_prototype.os.open", side_effect=replace_before_parent_open):
+                with self.assertRaisesRegex(RuntimeError, "archive parent changed while opening"):
+                    preserve_prototype(root, archive)
+
+            self.assertTrue(replaced)
+            self.assertTrue((root / "index.html").exists())
+            self.assertTrue(parent.exists())
+            self.assertFalse(archive.exists())
+            self.assertEqual(list(parent.iterdir()), [])
+
+    def test_existing_archive_parent_rejects_same_owner_identity_replacement_before_open(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            parent = root / "archive"
+            parent.mkdir(mode=0o700)
+            parent.chmod(0o700)
+            moved = root / "archive-owned"
+            real_open = os.open
+            opened: list[int] = []
+            replaced = False
+
+            def replace_before_open(path: str | Path, flags: int, *args: object, **kwargs: object) -> int:
+                nonlocal replaced
+                if Path(path) == parent and not replaced:
+                    replaced = True
+                    parent.rename(moved)
+                    parent.mkdir(mode=0o700)
+                    parent.chmod(0o700)
+                descriptor = real_open(path, flags, *args, **kwargs)
+                opened.append(descriptor)
+                return descriptor
+
+            with patch("tools.migrate_prototype.os.open", side_effect=replace_before_open):
+                with self.assertRaisesRegex(RuntimeError, "archive parent changed while opening"):
+                    _existing_archive_parent(parent)
+
+            self.assertTrue(replaced)
+            self.assertEqual(len(opened), 1)
+            with self.assertRaises(OSError):
+                os.fstat(opened[0])
 
     def test_publish_verified_archive_natively_publishes_private_staging(self) -> None:
         with TemporaryDirectory() as directory:
@@ -948,10 +1012,10 @@ class PrototypeMigrationTests(unittest.TestCase):
             native_published = False
             real_publish = _rename_directory_noreplace
 
-            def record_parent_descriptor(path: Path) -> int:
+            def record_parent_descriptor(path: Path) -> tuple[Path, int]:
                 nonlocal parent_descriptor
-                parent_descriptor = _open_directory_fd(path)
-                return parent_descriptor
+                canonical, parent_descriptor = _existing_archive_parent(path)
+                return canonical, parent_descriptor
 
             def record_publish(parent_fd: int, source_name: str, target_name: str) -> None:
                 nonlocal native_published
@@ -969,7 +1033,7 @@ class PrototypeMigrationTests(unittest.TestCase):
                     return [OSError("post-publish close failed")]
                 return []
 
-            with patch("tools.migrate_prototype._open_directory_fd", side_effect=record_parent_descriptor):
+            with patch("tools.migrate_prototype._existing_archive_parent", side_effect=record_parent_descriptor):
                 with patch("tools.migrate_prototype._rename_directory_noreplace", side_effect=record_publish):
                     with patch("tools.migrate_prototype._close_all", side_effect=close_with_reported_failure):
                         manifest = preserve_prototype(root, archive)
@@ -1106,13 +1170,13 @@ class PrototypeMigrationTests(unittest.TestCase):
             archive_parent = root / ".archive"
             archive = archive_parent / "prototype-v1"
 
-            with patch("tools.migrate_prototype._open_directory_fd", side_effect=OSError("open failed")):
+            with patch("tools.migrate_prototype._existing_archive_parent", side_effect=OSError("open failed")):
                 with self.assertRaisesRegex(OSError, "open failed"):
                     preserve_prototype(root, archive)
 
             self._assert_prepared_archive_parent_empty(root)
 
-    def test_directory_fd_fstat_failure_closes_the_opened_descriptor(self) -> None:
+    def test_existing_archive_parent_fstat_failure_closes_the_opened_descriptor(self) -> None:
         with TemporaryDirectory() as directory:
             path = Path(directory).resolve()
             opened: list[int] = []
@@ -1126,13 +1190,13 @@ class PrototypeMigrationTests(unittest.TestCase):
             with patch("tools.migrate_prototype.os.open", side_effect=record_open):
                 with patch("tools.migrate_prototype.os.fstat", side_effect=OSError("fstat failed")):
                     with self.assertRaisesRegex(OSError, "fstat failed"):
-                        __import__("tools.migrate_prototype", fromlist=["_open_directory_fd"])._open_directory_fd(path)
+                        _existing_archive_parent(path)
 
             self.assertEqual(len(opened), 1)
             with self.assertRaises(OSError):
                 os.fstat(opened[0])
 
-    def test_directory_fd_identity_mismatch_reports_close_failure_with_mismatch_cause(self) -> None:
+    def test_existing_archive_parent_identity_mismatch_reports_close_failure_with_mismatch_cause(self) -> None:
         with TemporaryDirectory() as directory:
             path = Path(directory).resolve()
             real_fstat = os.fstat
@@ -1151,7 +1215,7 @@ class PrototypeMigrationTests(unittest.TestCase):
             with patch("tools.migrate_prototype.os.fstat", side_effect=mismatched_fstat):
                 with patch("tools.migrate_prototype._close_all", side_effect=report_close_failure):
                     with self.assertRaisesRegex(RuntimeError, "close failed") as error:
-                        _open_directory_fd(path)
+                        _existing_archive_parent(path)
 
             self.assertIsInstance(error.exception.__cause__, RuntimeError)
             self.assertIn("archive parent changed while opening", str(error.exception.__cause__))
