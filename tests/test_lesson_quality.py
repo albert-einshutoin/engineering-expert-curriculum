@@ -10,7 +10,11 @@ import unittest
 from unittest.mock import patch
 
 from curriculum_builder.errors import CurriculumValidationError
-from curriculum_builder.lessons import MAX_LESSON_BYTES, load_lesson
+from curriculum_builder.lessons import (
+    MAX_LESSON_BYTES,
+    load_lesson,
+    load_lesson_bytes,
+)
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -95,6 +99,21 @@ class LessonQualityTests(unittest.TestCase):
         for objective in lesson.objectives:
             self.assertTrue(objective.evidence_ids)
             self.assertLessEqual(set(objective.evidence_ids), evidence_ids)
+
+    def test_load_lesson_bytes_parses_the_callers_pinned_snapshot(self) -> None:
+        raw = COMPLETE.read_bytes()
+
+        lesson = load_lesson_bytes(raw, "lesson.json")
+
+        self.assertEqual(lesson.id, "core-01-systems-tradeoffs")
+        for invalid in (
+            bytearray(raw),
+            memoryview(raw),
+            b" " * (MAX_LESSON_BYTES + 1),
+        ):
+            with self.subTest(invalid_type=type(invalid).__name__):
+                with self.assertRaises(CurriculumValidationError):
+                    load_lesson_bytes(invalid, "lesson.json")  # type: ignore[arg-type]
 
     def test_complete_status_reports_all_missing_quality_dimensions(self) -> None:
         with self.assertRaisesRegex(
