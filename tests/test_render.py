@@ -128,16 +128,17 @@ class RendererTests(unittest.TestCase):
             "base.html": (TEMPLATE_ROOT / "base.html").read_bytes(),
             "index.html": b"<p>Pinned template</p>",
         }
-        renderer = Renderer.from_template_bytes(
-            sources,
-            expected_names=frozenset({"base.html", "index.html"}),
-        )
-        sources["index.html"] = b"<p>Changed later</p>"
-
         with patch(
             "curriculum_builder.render.os.open",
             side_effect=AssertionError("snapshot renderer reopened a path"),
         ):
+            renderer = Renderer.from_template_bytes(
+                sources,
+                expected_names=frozenset(
+                    {"base.html", "index.html"}
+                ),
+            )
+            sources["index.html"] = b"<p>Changed later</p>"
             fragment = renderer.fragment(
                 "index.html",
                 text_values={},
@@ -145,6 +146,30 @@ class RendererTests(unittest.TestCase):
             )
 
         self.assertEqual(fragment.value, "<p>Pinned template</p>")
+
+    def test_from_template_bytes_consumes_custom_mapping_once(self) -> None:
+        sources = EntriesMapping(
+            (
+                (
+                    "base.html",
+                    (TEMPLATE_ROOT / "base.html").read_bytes(),
+                ),
+                ("index.html", b"<p>Snapshot</p>"),
+            )
+        )
+
+        renderer = Renderer.from_template_bytes(
+            sources,  # type: ignore[arg-type]
+            expected_names=frozenset({"base.html", "index.html"}),
+        )
+        fragment = renderer.fragment(
+            "index.html",
+            text_values={},
+            html_values={},
+        )
+
+        self.assertEqual(sources.items_calls, 1)
+        self.assertEqual(fragment.value, "<p>Snapshot</p>")
 
     def test_from_template_bytes_rejects_unsafe_incomplete_or_invalid_sources(
         self,
