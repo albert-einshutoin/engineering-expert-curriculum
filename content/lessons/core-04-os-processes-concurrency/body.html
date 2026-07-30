@@ -30,7 +30,24 @@
     <p><strong>安全上の注意:</strong> これは競合再現専用の意図的にunsafeな教材コード。本番へ流用しない。隔離した学習環境だけで実行し、racy版を修正例や性能baselineとして出荷しない。</p>
   </aside>
   <p>次を<code>RaceLab.java</code>として保存する。racyとsynchronizedは同じJava 21、初期値、worker数、反復数、出力契約を使う。</p>
-  <pre><code>import java.util.concurrent.CyclicBarrier;
+  <pre><code>import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 public final class RaceLab {
@@ -38,18 +55,45 @@ public final class RaceLab {
     private static final int PER_WORKER = 500;
     private static final int TRIALS = 200;
     private static final long TIMEOUT_MILLIS = 2000;
+    private static final long FAILURE_TIMEOUT_MILLIS = 100;
     private static final Object LOCK = new Object();
     private static volatile int stock;
 
-    private record Trial(int finalStock, long elapsedNs, boolean stalled) {}
+    private record Trial(
+            int finalStock,
+            int minimumStock,
+            long elapsedNs,
+            boolean stalled) {}
+
+    private record OwnerResult(
+            int finalStock,
+            int minimumStock,
+            int dedupePrevented,
+            int childExit,
+            long startupNs,
+            long ipcNs,
+            long bytesSent,
+            long bytesReceived) {}
+
+    private record FailureProbe(
+            boolean timedOut,
+            boolean forcedCleanup,
+            int childExit) {}
 
     private static Trial runTrial(String mode) throws InterruptedException {
         stock = INITIAL;
+        AtomicInteger minimumStock = new AtomicInteger(INITIAL);
         long start = System.nanoTime();
         if (mode.equals("serial")) {
             stock -= PER_WORKER;
+            minimumStock.accumulateAndGet(stock, Math::min);
             stock -= PER_WORKER;
-            return new Trial(stock, System.nanoTime() - start, false);
+            minimumStock.accumulateAndGet(stock, Math::min);
+            return new Trial(
+                    stock,
+                    minimumStock.get(),
+                    System.nanoTime() - start,
+                    false);
         }
 
         CyclicBarrier readsCompleted = new CyclicBarrier(2);
@@ -60,6 +104,7 @@ public final class RaceLab {
                         int observed = stock;
                         readsCompleted.await();
                         stock = observed - PER_WORKER;
+                        minimumStock.accumulateAndGet(stock, Math::min);
                     } catch (Throwable error) {
                         failure.compareAndSet(null, error);
                     }
@@ -68,6 +113,7 @@ public final class RaceLab {
                     synchronized (LOCK) {
                         int observed = stock;
                         stock = observed - PER_WORKER;
+                        minimumStock.accumulateAndGet(stock, Math::min);
                     }
                 };
         Thread first = new Thread(operation, "worker-A");
@@ -86,45 +132,421 @@ public final class RaceLab {
         if (failure.get() != null) {
             throw new IllegalStateException("worker failed", failure.get());
         }
-        return new Trial(stock, System.nanoTime() - start, stalled);
+        return new Trial(
+                stock,
+                minimumStock.get(),
+                System.nanoTime() - start,
+                stalled);
     }
 
-    public static void main(String[] args) throws InterruptedException {
-        if (args.length != 1
-                || !(args[0].equals("racy")
-                || args[0].equals("synchronized")
-                || args[0].equals("serial"))) {
-            throw new IllegalArgumentException(
-                    "usage: java RaceLab racy|synchronized|serial");
-        }
+    private static long median(long[] sorted) {
+        int middle = sorted.length / 2;
+        return sorted.length % 2 == 1
+                ? sorted[middle]
+                : sorted[middle - 1] / 2 + sorted[middle] / 2
+                + (sorted[middle - 1] % 2 + sorted[middle] % 2) / 2;
+    }
+
+    private static void runThreadTrials(String mode)
+            throws InterruptedException {
         int violations = 0;
-        int minimum = Integer.MAX_VALUE;
+        int minimumStock = Integer.MAX_VALUE;
         int finalStock = Integer.MIN_VALUE;
         int stalled = 0;
-        long elapsedNs = 0;
+        long[] elapsedNsSamples = new long[TRIALS];
         for (int trial = 0; trial &lt; TRIALS; trial++) {
-            Trial result = runTrial(args[0]);
+            Trial result = runTrial(mode);
             finalStock = result.finalStock();
             if (finalStock != 0) {
                 violations++;
             }
-            minimum = Math.min(minimum, finalStock);
-            elapsedNs += result.elapsedNs();
+            minimumStock = Math.min(
+                    minimumStock,
+                    result.minimumStock());
+            if (result.minimumStock() &lt; 0) {
+                throw new AssertionError(
+                        "negative intermediate stock in " + mode);
+            }
+            elapsedNsSamples[trial] = result.elapsedNs();
             if (result.stalled()) {
                 stalled++;
             }
         }
+        long[] sortedElapsed = elapsedNsSamples.clone();
+        Arrays.sort(sortedElapsed);
+        long totalElapsedNs = Arrays.stream(elapsedNsSamples).sum();
+        long elapsedNsMedian = median(sortedElapsed);
+        long elapsedNsMin = sortedElapsed[0];
+        long elapsedNsMax = sortedElapsed[sortedElapsed.length - 1];
+
+        int expectedViolations = mode.equals("racy") ? TRIALS : 0;
+        if (violations != expectedViolations || stalled != 0) {
+            throw new AssertionError("unexpected trial result");
+        }
         System.out.printf(
                 "mode=%s trials=%d expected=%d final=%d min=%d violations=%d stalled=%d elapsed_ns=%d%n",
-                args[0], TRIALS, 0, finalStock, minimum,
-                violations, stalled, elapsedNs);
-        if (args[0].equals("racy")) {
+                mode, TRIALS, 0, finalStock, minimumStock,
+                violations, stalled, totalElapsedNs);
+        if (mode.equals("racy")) {
             System.out.println(
                     "event=A:read(1000),B:read(1000),A:write(500),B:write(500)");
         }
-        int expectedViolations = args[0].equals("racy") ? TRIALS : 0;
-        if (violations != expectedViolations || stalled != 0) {
-            throw new AssertionError("unexpected trial result");
+        System.out.printf(
+                Locale.ROOT,
+                "{\"schema\":\"race-lab-v3\",\"mode\":\"%s\","
+                + "\"trials\":%d,\"expected_final\":0,"
+                + "\"final_stock\":%d,\"minimum_stock\":%d,"
+                + "\"violations\":%d,\"stalled\":%d,"
+                + "\"elapsed_ns_median\":%d,"
+                + "\"elapsed_ns\":{\"samples\":%s,\"min\":%d,"
+                + "\"median\":%d,\"max\":%d,\"total\":%d}}%n",
+                mode,
+                TRIALS,
+                finalStock,
+                minimumStock,
+                violations,
+                stalled,
+                elapsedNsMedian,
+                Arrays.toString(elapsedNsSamples),
+                elapsedNsMin,
+                elapsedNsMedian,
+                elapsedNsMax,
+                totalElapsedNs);
+    }
+
+    private static void runOwner() throws Exception {
+        int ownerStock = INITIAL;
+        Map&lt;String, int[]&gt; applied = new HashMap&lt;&gt;();
+        BufferedReader input = new BufferedReader(
+                new InputStreamReader(
+                        System.in,
+                        StandardCharsets.US_ASCII));
+        PrintWriter output = new PrintWriter(
+                new OutputStreamWriter(
+                        System.out,
+                        StandardCharsets.US_ASCII),
+                true);
+        output.println("READY");
+        String line;
+        while ((line = input.readLine()) != null) {
+            if (line.equals("GET")) {
+                output.printf("STATE,%d%n", ownerStock);
+                continue;
+            }
+            if (line.equals("STOP")) {
+                output.printf("STOPPED,%d%n", ownerStock);
+                return;
+            }
+            String[] fields = line.split(",", -1);
+            if (fields.length != 2
+                    || !fields[0].matches(
+                            "[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+                    || !fields[1].matches("[0-9]+")) {
+                throw new IllegalArgumentException("invalid owner request");
+            }
+            int decrement = Integer.parseInt(fields[1]);
+            if (decrement &lt; 0 || decrement &gt; INITIAL) {
+                throw new IllegalArgumentException("invalid decrement");
+            }
+            int[] previous = applied.get(fields[0]);
+            if (previous != null) {
+                if (previous[0] != decrement) {
+                    throw new IllegalArgumentException(
+                            "request ID reused with another decrement");
+                }
+                output.printf(
+                        "RESULT,%s,%d,true%n",
+                        fields[0],
+                        previous[1]);
+                continue;
+            }
+            if (ownerStock - decrement &lt; 0) {
+                throw new IllegalStateException("negative stock");
+            }
+            ownerStock -= decrement;
+            applied.put(
+                    fields[0],
+                    new int[] {decrement, ownerStock});
+            output.printf(
+                    "RESULT,%s,%d,false%n",
+                    fields[0],
+                    ownerStock);
+        }
+        throw new IllegalStateException("owner input ended before STOP");
+    }
+
+    private static void runStalledOwner() throws InterruptedException {
+        System.out.println("READY");
+        System.out.flush();
+        while (true) {
+            Thread.sleep(TIMEOUT_MILLIS);
+        }
+    }
+
+    private static ProcessBuilder ownerProcess(String mode) {
+        String javaBinary = Path.of(
+                System.getProperty("java.home"),
+                "bin",
+                "java").toString();
+        return new ProcessBuilder(
+                javaBinary,
+                "-cp",
+                System.getProperty("java.class.path"),
+                RaceLab.class.getName(),
+                mode);
+    }
+
+    private static String readLineWithTimeout(
+            BufferedReader reader,
+            ExecutorService readerExecutor) throws Exception {
+        Future&lt;String&gt; future = readerExecutor.submit(reader::readLine);
+        try {
+            String line = future.get(
+                    TIMEOUT_MILLIS,
+                    TimeUnit.MILLISECONDS);
+            if (line == null) {
+                throw new IllegalStateException("owner output ended");
+            }
+            return line;
+        } catch (TimeoutException error) {
+            future.cancel(true);
+            throw new IllegalStateException("owner response timeout", error);
+        }
+    }
+
+    private static String exchange(
+            BufferedWriter input,
+            BufferedReader output,
+            ExecutorService readerExecutor,
+            String request) throws Exception {
+        input.write(request);
+        input.newLine();
+        input.flush();
+        return readLineWithTimeout(output, readerExecutor);
+    }
+
+    private static OwnerResult exerciseOwner() throws Exception {
+        Process child = null;
+        ExecutorService readerExecutor =
+                Executors.newSingleThreadExecutor();
+        long startupStart = System.nanoTime();
+        try {
+            child = ownerProcess("owner").start();
+            BufferedWriter input = new BufferedWriter(
+                    new OutputStreamWriter(
+                            child.getOutputStream(),
+                            StandardCharsets.US_ASCII));
+            BufferedReader output = new BufferedReader(
+                    new InputStreamReader(
+                            child.getInputStream(),
+                            StandardCharsets.US_ASCII));
+            String ready = readLineWithTimeout(output, readerExecutor);
+            long startupNs = System.nanoTime() - startupStart;
+            if (!ready.equals("READY")) {
+                throw new IllegalStateException("owner did not become ready");
+            }
+
+            String[] requests = {"A,500", "A,500", "B,500", "GET", "STOP"};
+            String[] expected = {
+                "RESULT,A,500,false",
+                "RESULT,A,500,true",
+                "RESULT,B,0,false",
+                "STATE,0",
+                "STOPPED,0",
+            };
+            long bytesSent = 0;
+            long bytesReceived = ready.getBytes(
+                    StandardCharsets.US_ASCII).length + 1;
+            int minimumStock = INITIAL;
+            int dedupePrevented = 0;
+            long ipcStart = System.nanoTime();
+            for (int index = 0; index &lt; requests.length; index++) {
+                String response = exchange(
+                        input,
+                        output,
+                        readerExecutor,
+                        requests[index]);
+                if (!response.equals(expected[index])) {
+                    throw new IllegalStateException(
+                            "unexpected owner response: " + response);
+                }
+                bytesSent += requests[index].getBytes(
+                        StandardCharsets.US_ASCII).length + 1;
+                bytesReceived += response.getBytes(
+                        StandardCharsets.US_ASCII).length + 1;
+                if (response.endsWith(",true")) {
+                    dedupePrevented++;
+                }
+                String[] fields = response.split(",");
+                if (fields.length &gt;= 2
+                        &amp;&amp; fields[fields.length - 1].matches("[0-9]+")) {
+                    minimumStock = Math.min(
+                            minimumStock,
+                            Integer.parseInt(fields[fields.length - 1]));
+                } else if (fields.length &gt;= 3
+                        &amp;&amp; fields[fields.length - 2].matches("[0-9]+")) {
+                    minimumStock = Math.min(
+                            minimumStock,
+                            Integer.parseInt(fields[fields.length - 2]));
+                }
+            }
+            long ipcNs = System.nanoTime() - ipcStart;
+            if (!child.waitFor(TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
+                throw new IllegalStateException("owner exit timeout");
+            }
+            int childExit = child.exitValue();
+            if (childExit != 0) {
+                throw new IllegalStateException(
+                        "owner exited " + childExit);
+            }
+            return new OwnerResult(
+                    0,
+                    minimumStock,
+                    dedupePrevented,
+                    childExit,
+                    startupNs,
+                    ipcNs,
+                    bytesSent,
+                    bytesReceived);
+        } finally {
+            if (child != null &amp;&amp; child.isAlive()) {
+                child.destroyForcibly();
+                if (!child.waitFor(
+                        TIMEOUT_MILLIS,
+                        TimeUnit.MILLISECONDS)) {
+                    throw new IllegalStateException(
+                            "owner force cleanup failed");
+                }
+            }
+            readerExecutor.shutdownNow();
+            if (!readerExecutor.awaitTermination(
+                    TIMEOUT_MILLIS,
+                    TimeUnit.MILLISECONDS)) {
+                throw new IllegalStateException(
+                        "owner reader cleanup failed");
+            }
+        }
+    }
+
+    private static FailureProbe exerciseFailureRadius()
+            throws Exception {
+        Process child = null;
+        BufferedReader output = null;
+        ExecutorService readerExecutor =
+                Executors.newSingleThreadExecutor();
+        try {
+            child = ownerProcess("owner-stall").start();
+            output = new BufferedReader(
+                    new InputStreamReader(
+                            child.getInputStream(),
+                            StandardCharsets.US_ASCII));
+            if (!readLineWithTimeout(output, readerExecutor).equals("READY")) {
+                throw new IllegalStateException(
+                        "stalled owner did not become ready");
+            }
+            boolean timedOut = !child.waitFor(
+                    FAILURE_TIMEOUT_MILLIS,
+                    TimeUnit.MILLISECONDS);
+            boolean forcedCleanup = false;
+            if (timedOut) {
+                forcedCleanup = true;
+                child.destroyForcibly();
+            }
+            if (!child.waitFor(TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
+                throw new IllegalStateException(
+                        "stalled owner force cleanup failed");
+            }
+            return new FailureProbe(
+                    timedOut,
+                    forcedCleanup,
+                    child.exitValue());
+        } finally {
+            if (output != null) {
+                output.close();
+            }
+            if (child != null &amp;&amp; child.isAlive()) {
+                child.destroyForcibly();
+                child.waitFor(TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
+            }
+            readerExecutor.shutdownNow();
+            if (!readerExecutor.awaitTermination(
+                    TIMEOUT_MILLIS,
+                    TimeUnit.MILLISECONDS)) {
+                throw new IllegalStateException(
+                        "stalled owner reader cleanup failed");
+            }
+        }
+    }
+
+    private static void runProcessMessage() throws Exception {
+        OwnerResult owner = exerciseOwner();
+        FailureProbe failure = exerciseFailureRadius();
+        if (owner.minimumStock() &lt; 0
+                || owner.finalStock() != 0
+                || owner.dedupePrevented() != 1
+                || !failure.timedOut()
+                || !failure.forcedCleanup()) {
+            throw new AssertionError("unexpected process-message result");
+        }
+        long elapsedNs = owner.startupNs() + owner.ipcNs();
+        System.out.printf(
+                "mode=process-message trials=1 expected=%d final=%d min=%d violations=%d stalled=%d elapsed_ns=%d%n",
+                0,
+                owner.finalStock(),
+                owner.minimumStock(),
+                0,
+                0,
+                elapsedNs);
+        System.out.printf(
+                Locale.ROOT,
+                "{\"schema\":\"race-lab-v3\","
+                + "\"mode\":\"process-message\","
+                + "\"trial_scope\":"
+                + "\"single-owner-session-not-200-thread-trials\","
+                + "\"protocol\":[\"A,500\",\"A,500\","
+                + "\"B,500\",\"GET\",\"STOP\"],"
+                + "\"final_stock\":%d,\"minimum_stock\":%d,"
+                + "\"dedupe_prevented\":%d,\"child_exit\":%d,"
+                + "\"startup_ns\":%d,\"ipc_ns\":%d,"
+                + "\"bytes_sent\":%d,\"bytes_received\":%d,"
+                + "\"failure_probe_timed_out\":%b,"
+                + "\"forced_cleanup\":%b,"
+                + "\"failure_probe_exit\":%d,"
+                + "\"parent_continued\":true,"
+                + "\"failure_radius\":\"owner-child-process\"}%n",
+                owner.finalStock(),
+                owner.minimumStock(),
+                owner.dedupePrevented(),
+                owner.childExit(),
+                owner.startupNs(),
+                owner.ipcNs(),
+                owner.bytesSent(),
+                owner.bytesReceived(),
+                failure.timedOut(),
+                failure.forcedCleanup(),
+                failure.childExit());
+    }
+
+    public static void main(String[] args) throws Exception {
+        if (args.length != 1) {
+            throw new IllegalArgumentException(
+                    "usage: java RaceLab "
+                    + "racy|synchronized|serial|process-message");
+        }
+        if (args[0].equals("owner")) {
+            runOwner();
+        } else if (args[0].equals("owner-stall")) {
+            runStalledOwner();
+        } else if (args[0].equals("process-message")) {
+            runProcessMessage();
+        } else if (args[0].equals("racy")
+                || args[0].equals("synchronized")
+                || args[0].equals("serial")) {
+            runThreadTrials(args[0]);
+        } else {
+            throw new IllegalArgumentException(
+                    "usage: java RaceLab "
+                    + "racy|synchronized|serial|process-message");
         }
     }
 }</code></pre>
@@ -133,9 +555,11 @@ javac RaceLab.java
 java RaceLab racy | tee race-before.txt
 java RaceLab synchronized | tee race-after.txt
 java RaceLab serial | tee serial.txt
+java RaceLab process-message | tee process-message.txt
 /usr/bin/time -p java RaceLab synchronized
-/usr/bin/time -p java RaceLab serial</code></pre>
-  <p>出力契約は<code>mode=... trials=200 expected=0 final=... min=... violations=... stalled=... elapsed_ns=...</code>である。racy版はCyclicBarrierで両workerのreadを先に完了させるため、schedulerやyieldの偶然ではなく全200試行で最小lost updateを構成する。synchronized版とserial版は同じ1000件相当の固定fixtureで200試行0違反を要求し、join timeoutとisAliveで停止性を検査する。なお、一般の確率的raceでは一回の非再現を修正証拠にしない。</p>
+/usr/bin/time -p java RaceLab serial
+/usr/bin/time -p java RaceLab process-message</code></pre>
+  <p>thread三方式の出力契約は<code>mode=... trials=200 expected=0 final=... min=... violations=... stalled=... elapsed_ns=...</code>と、その直後のJSONである。JSONは全200件の<code>elapsed_ns.samples</code>、min、median、max、totalを保持する。各TrialのminimumStockは書込み直後に更新するため最終値の別名ではなく、racy、synchronized、serialの全方式で試行中の負数がないことをassertする。racy版はCyclicBarrierで両workerのreadを先に完了させるため、schedulerやyieldの偶然ではなく全200試行で最小lost updateを構成する。synchronized版とserial版は同じ1000件相当の固定fixtureで200試行0違反を要求し、join timeoutとisAliveで停止性を検査する。なお、一般の確率的raceでは一回の非再現を修正証拠にしない。</p>
   <dl>
     <dt>前提</dt>
     <dd>Java 21、在庫1000、worker AとBが各500件分を減らす。不変条件はexpected final 0、負数なし、stalled 0。</dd>
@@ -144,11 +568,11 @@ java RaceLab serial | tee serial.txt
     <dt>操作</dt>
     <dd>racy版では両read後にbarrierを解放して二つのwriteを行い、同期版ではread-subtract-write全体を同じmonitorで囲む。</dd>
     <dt>観測</dt>
-    <dd>最小event列はA:read(1000)、B:read(1000)、A:write(500)、B:write(500)で、expected 0に対しfinal 500となる。出力のfinal、min、violations、stalled、elapsed_nsを全modeで比較する。</dd>
+    <dd>最小event列はA:read(1000)、B:read(1000)、A:write(500)、B:write(500)で、expected 0に対しfinal 500となる。thread三方式ではfinal、試行中minimum、violations、stalled、200個のelapsed分布を比較する。</dd>
     <dt>結論</dt>
     <dd>synchronizedでread-modify-write全体を囲む。修正後200試行0違反と、monitor unlockから後続lockへのhappens-beforeを組にして修正根拠にする。</dd>
   </dl>
-  <p>性能値はSystem.nanoTimeと<code>/usr/bin/time -p</code>の実測だけを報告し、例示値を捏造しない。process/message passingは共有memory版と同じ測定とはみなさず、別実験にする。owner processを一つ立て、標準入力protocolを<code>requestId,decrement</code>、標準出力を<code>requestId,remaining</code>と固定し、A,500、B,500、GETの三messageを送る。process PID、起動時間、送受信byte数、終了code、childを強制終了したときの親の継続、再送時のrequest ID重複排除を記録してから、IPC費用と障害半径を比較する。</p>
+  <p>性能値はSystem.nanoTimeと<code>/usr/bin/time -p</code>の実測だけを報告し、例示値を捏造しない。<code>process-message</code>は共有memory版の200試行へ混ぜず、<code>single-owner-session-not-200-thread-trials</code>という別の測定単位にする。RaceLab自身がowner子プロセスを起動し、標準入力protocolを<code>requestId,decrement</code>、GET、STOPに固定する。A,500、同じA,500、B,500、GET、STOPを送り、重複Aを二重減算しないこと、final/minimum 0、送受信byte、正常child exit、process起動時間とIPC時間を機械可読JSONへ分離して記録する。さらに別の停止用childを100msでtimeoutさせ、destroyForcibly、exit確認後も親が結果を出せた事実を、共有heapを巻き込まない障害半径の実測証拠にする。</p>
   <p><strong>ラボ成果物:</strong> 「競合を再現し不変条件で修正した実験記録」には、失敗頻度、最小interleaving、同期前後のコード差、停止性、性能分布を含める。</p>
 </section>
 <section id="tradeoffs">
