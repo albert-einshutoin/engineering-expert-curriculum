@@ -83,9 +83,40 @@ class BuildStagingCleanupError(RuntimeError):
     """Publication did not commit and private staging could not be removed."""
 
 
+class _PublishInputError(ValueError):
+    """Publication was rejected before invoking the native rename."""
+
+
+class _PublishConflictError(FileExistsError):
+    """The native rename reported a conflict without committing."""
+
+
+class _PublishRuntimeError(RuntimeError):
+    """Publication capability or syscall state failed without committing."""
+
+
+class _PublishOSError(OSError):
+    """The native rename returned an operating-system failure."""
+
+
+_DEFINITELY_NOT_PUBLISHED = (
+    _PublishInputError,
+    _PublishConflictError,
+    _PublishRuntimeError,
+    _PublishOSError,
+)
+
+
 class _BuildPhase(Enum):
     PREPARING = auto()
     PUBLISHED = auto()
+    PUBLICATION_UNKNOWN = auto()
+
+
+class _PublicationEvidence(Enum):
+    NOT_PUBLISHED = auto()
+    PUBLISHED = auto()
+    UNKNOWN = auto()
 
 
 @dataclass(slots=True)
@@ -95,11 +126,17 @@ class _BuildTransaction:
     phase: _BuildPhase = _BuildPhase.PREPARING
 
     @property
-    def committed(self) -> bool:
-        return self.phase is _BuildPhase.PUBLISHED
+    def publication_may_have_committed(self) -> bool:
+        return self.phase is not _BuildPhase.PREPARING
 
     def mark_published(self) -> None:
         self.phase = _BuildPhase.PUBLISHED
+
+    def mark_publication_unknown(self) -> None:
+        self.phase = _BuildPhase.PUBLICATION_UNKNOWN
+
+    def mark_not_published(self) -> None:
+        self.phase = _BuildPhase.PREPARING
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +160,19 @@ class _StagingReservation:
     descriptor: int | None = None
     identity: tuple[int, int] | None = None
     descriptor_verified: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class _EntryObservation:
+    inspected: bool
+    identity: tuple[int, int] | None
+    note: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _PublicationReconciliation:
+    evidence: _PublicationEvidence
+    notes: tuple[str, ...] = ()
 
 
 def _validation(message: str) -> CurriculumValidationError:
@@ -241,7 +291,7 @@ def _open_trusted_directory(
             )
         if (
             transaction is not None
-            and transaction.committed
+            and transaction.publication_may_have_committed
             and not isinstance(operation_error, BuildPostCommitError)
         ):
             normalized = BuildPublicationStateError(
@@ -255,7 +305,10 @@ def _open_trusted_directory(
         try:
             os.close(descriptor)
         except OSError as close_error:
-            if transaction is not None and transaction.committed:
+            if (
+                transaction is not None
+                and transaction.publication_may_have_committed
+            ):
                 raise BuildPublicationStateError(
                     "site is visible but "
                     f"{label} descriptor close failed"
@@ -1136,8 +1189,15 @@ def _publish_directory(
             or "/" in name
             or "\0" in name
         ):
-            raise ValueError("publish entry name must be a basename")
-    function, no_replace, exchange = _native_rename_function()
+            raise _PublishInputError(
+                "publish entry name must be a basename"
+            )
+    try:
+        function, no_replace, exchange = _native_rename_function()
+    except RuntimeError as error:
+        # This happens before the syscall, so callers can safely retain
+        # pre-publication cleanup even if later identity inspection is blocked.
+        raise _PublishRuntimeError(str(error)) from error
     flag = exchange if replace_existing else no_replace
     # A portable os.replace fallback can clobber a racing target. Native flags
     # are therefore a required safety capability, not an optimization.
@@ -1153,14 +1213,98 @@ def _publish_directory(
         return
     code = ctypes.get_errno()
     if code == 0:
-        raise RuntimeError("native atomic directory rename failed without errno")
+        raise _PublishRuntimeError(
+            "native atomic directory rename failed without errno"
+        )
     if code in {errno.EEXIST, errno.ENOTEMPTY}:
-        raise FileExistsError(f"publish target already exists: {target_name}")
+        raise _PublishConflictError(
+            f"publish target already exists: {target_name}"
+        )
     if code in {errno.ENOSYS, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EINVAL}:
-        raise RuntimeError(
+        raise _PublishRuntimeError(
             "native atomic directory rename is not supported"
         ) from OSError(code, os.strerror(code), target_name)
-    raise OSError(code, os.strerror(code), target_name)
+    raise _PublishOSError(code, os.strerror(code), target_name)
+
+
+def _observe_publish_entry(
+    parent_fd: int,
+    name: str,
+    label: str,
+) -> _EntryObservation:
+    try:
+        current = os.stat(
+            name,
+            dir_fd=parent_fd,
+            follow_symlinks=False,
+        )
+    except FileNotFoundError:
+        return _EntryObservation(inspected=True, identity=None)
+    except BaseException as error:
+        return _EntryObservation(
+            inspected=False,
+            identity=None,
+            note=f"{label} reconciliation failed: {error}",
+        )
+    return _EntryObservation(
+        inspected=True,
+        identity=_identity(current),
+    )
+
+
+def _reconcile_failed_publication(
+    parent_fd: int,
+    output_name: str,
+    staging_name: str,
+    staging_identity: tuple[int, int],
+    previous_identity: tuple[int, int] | None,
+) -> _PublicationReconciliation:
+    output = _observe_publish_entry(
+        parent_fd,
+        output_name,
+        "output",
+    )
+    staging = _observe_publish_entry(
+        parent_fd,
+        staging_name,
+        "staging",
+    )
+    notes = tuple(
+        note
+        for note in (output.note, staging.note)
+        if note is not None
+    )
+
+    if output.inspected and output.identity == staging_identity:
+        if previous_identity is None:
+            return _PublicationReconciliation(
+                _PublicationEvidence.PUBLISHED,
+                notes,
+            )
+        if (
+            staging.inspected
+            and staging.identity == previous_identity
+        ):
+            return _PublicationReconciliation(
+                _PublicationEvidence.PUBLISHED,
+                notes,
+            )
+
+    if output.inspected and staging.inspected:
+        expected_output = previous_identity
+        if (
+            output.identity == expected_output
+            and staging.identity == staging_identity
+        ):
+            return _PublicationReconciliation(
+                _PublicationEvidence.NOT_PUBLISHED,
+                notes,
+            )
+
+    return _PublicationReconciliation(
+        _PublicationEvidence.UNKNOWN,
+        notes,
+    )
 
 
 def _clear_directory_fd(directory_fd: int) -> None:
@@ -1217,6 +1361,9 @@ def _publish_staged_site(
     transaction: _BuildTransaction,
 ) -> None:
     replace_existing = previous is not None
+    previous_identity = (
+        None if previous is None else _identity(previous)
+    )
     previous_fd: int | None = None
     try:
         if replace_existing:
@@ -1230,19 +1377,68 @@ def _publish_staged_site(
                 dir_fd=parent.descriptor,
                 follow_symlinks=False,
             )
-            if _identity(pinned) != _identity(previous) or _identity(
+            assert previous_identity is not None
+            if _identity(pinned) != previous_identity or _identity(
                 current
-            ) != _identity(previous):
+            ) != previous_identity:
                 raise _validation(
                     "output_root changed before publication"
                 )
-        _publish_directory(
-            parent.descriptor,
-            staging_name,
-            output_name,
-            replace_existing=replace_existing,
-        )
-        transaction.mark_published()
+        try:
+            _publish_directory(
+                parent.descriptor,
+                staging_name,
+                output_name,
+                replace_existing=replace_existing,
+            )
+            transaction.mark_published()
+        except _DEFINITELY_NOT_PUBLISHED:
+            raise
+        except BaseException as publisher_error:
+            # Once the publisher has been invoked, an arbitrary exception can
+            # arrive after the native rename. Mark UNKNOWN before inspection so
+            # a second failure can never authorize pre-publication deletion.
+            transaction.mark_publication_unknown()
+            try:
+                reconciliation = _reconcile_failed_publication(
+                    parent.descriptor,
+                    output_name,
+                    staging_name,
+                    staging_identity,
+                    previous_identity,
+                )
+            except BaseException as reconciliation_error:
+                reconciliation = _PublicationReconciliation(
+                    _PublicationEvidence.UNKNOWN,
+                    (
+                        "publication reconciliation also failed: "
+                        f"{reconciliation_error}",
+                    ),
+                )
+            if (
+                reconciliation.evidence
+                is _PublicationEvidence.NOT_PUBLISHED
+            ):
+                transaction.mark_not_published()
+                raise
+            if (
+                reconciliation.evidence
+                is _PublicationEvidence.PUBLISHED
+            ):
+                transaction.mark_published()
+                message = (
+                    "site is visible but publisher failed after "
+                    "native publication"
+                )
+            else:
+                message = (
+                    "native publication outcome is unknown after "
+                    "publisher failure"
+                )
+            state_error = BuildPublicationStateError(message)
+            for note in reconciliation.notes:
+                state_error.add_note(note)
+            raise state_error from publisher_error
     except BaseException as operation_error:
         if previous_fd is not None:
             descriptor = previous_fd
@@ -1272,15 +1468,14 @@ def _publish_staged_site(
             raise BuildPublicationStateError(
                 "site is visible but publication identity is unknown"
             )
-        previous_identity: tuple[int, int] | None = None
         if previous_fd is not None:
-            previous_identity = _identity(os.fstat(previous_fd))
+            pinned_previous_identity = _identity(os.fstat(previous_fd))
             recovery = os.stat(
                 staging_name,
                 dir_fd=parent.descriptor,
                 follow_symlinks=False,
             )
-            if _identity(recovery) != previous_identity:
+            if _identity(recovery) != pinned_previous_identity:
                 # Native exchange is atomic but not an inode-conditional CAS.
                 # If a same-owner competitor replaces the target after pinning,
                 # its directory is preserved at the recovery name for audit.
@@ -1403,6 +1598,13 @@ def _stage_and_publish(
         operation_error = error
         raise
     except BaseException as error:
+        if transaction.publication_may_have_committed:
+            state_error = BuildPublicationStateError(
+                "native publication may have committed; "
+                "pre-publication cleanup was skipped"
+            )
+            operation_error = state_error
+            raise state_error from error
         operation_error = error
         if reservation is not None:
             cleanup_error = _cleanup_staging_before_publish(
@@ -1429,7 +1631,7 @@ def _stage_and_publish(
                     "private staging descriptor also failed to close: "
                     f"{close_error}"
                 )
-            elif transaction.committed:
+            elif transaction.publication_may_have_committed:
                 raise BuildPublicationStateError(
                     "site is visible but private staging descriptor "
                     "close failed"
