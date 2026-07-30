@@ -175,7 +175,15 @@ def _open_directory_fd(path: Path) -> int:
         raise RuntimeError("safe directory file descriptors are not supported")
     expected = os.stat(path, follow_symlinks=False)
     descriptor = os.open(path, flags | os.O_NOFOLLOW)
-    actual = os.fstat(descriptor)
+    try:
+        actual = os.fstat(descriptor)
+    except BaseException as operation_error:
+        close_failures = _close_all((descriptor,))
+        if close_failures:
+            raise RuntimeError(
+                f"directory descriptor cleanup failed after fstat error: {close_failures[0]}"
+            ) from operation_error
+        raise
     if (expected.st_dev, expected.st_ino) != (actual.st_dev, actual.st_ino):
         os.close(descriptor)
         raise RuntimeError(f"archive parent changed while opening: {path}")
@@ -400,8 +408,13 @@ def preserve_prototype(source: Path, archive: Path) -> PrototypeManifest:
     archive_path = canonical_parent / raw_archive.name
     try:
         parent_fd = _open_directory_fd(canonical_parent)
-    except BaseException:
-        _cleanup_created_parents(created_parents)
+    except BaseException as open_error:
+        try:
+            _cleanup_created_parents(created_parents)
+        except RuntimeError as cleanup_error:
+            raise RuntimeError(
+                f"archive parent cleanup failed after open error: {cleanup_error}"
+            ) from open_error
         raise
     try:
         _reserve_archive_at(parent_fd, raw_archive.name)

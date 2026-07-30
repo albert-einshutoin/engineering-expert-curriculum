@@ -343,6 +343,47 @@ class PrototypeMigrationTests(unittest.TestCase):
 
             self.assertFalse(archive_parent.exists())
 
+    def test_directory_fd_fstat_failure_closes_the_opened_descriptor(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory).resolve()
+            opened: list[int] = []
+            real_open = os.open
+
+            def record_open(*args: object, **kwargs: object) -> int:
+                descriptor = real_open(*args, **kwargs)
+                opened.append(descriptor)
+                return descriptor
+
+            with patch("tools.migrate_prototype.os.open", side_effect=record_open):
+                with patch("tools.migrate_prototype.os.fstat", side_effect=OSError("fstat failed")):
+                    with self.assertRaisesRegex(OSError, "fstat failed"):
+                        __import__("tools.migrate_prototype", fromlist=["_open_directory_fd"])._open_directory_fd(path)
+
+            self.assertEqual(len(opened), 1)
+            with self.assertRaises(OSError):
+                os.fstat(opened[0])
+
+    def test_parent_fd_open_failure_preserves_open_error_when_cleanup_fails(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            self._write_fixture(root)
+            archive_parent = root / ".archive"
+            archive = archive_parent / "prototype-v1"
+            real_rmdir = Path.rmdir
+
+            def fail_parent_cleanup(path: Path) -> None:
+                if path == archive_parent:
+                    raise OSError("parent cleanup failed")
+                real_rmdir(path)
+
+            with patch("tools.migrate_prototype._open_directory_fd", side_effect=OSError("open failed")):
+                with patch.object(Path, "rmdir", autospec=True, side_effect=fail_parent_cleanup):
+                    with self.assertRaisesRegex(RuntimeError, "parent cleanup failed") as error:
+                        preserve_prototype(root, archive)
+
+            self.assertIsInstance(error.exception.__cause__, OSError)
+            self.assertEqual(str(error.exception.__cause__), "open failed")
+
     def test_parent_creation_reports_cleanup_failure_with_original_cause(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory).resolve()
