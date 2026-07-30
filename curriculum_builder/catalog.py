@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import hashlib
 import hmac
+import math
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,7 @@ _LEGACY_ROOT_FIELDS = {"version", "title", "generated", "domainCount", "moduleCo
 _DOMAIN_FIELDS = {"id", "slug", "title", "description", "prerequisites", "modules"}
 _MODULE_FIELDS = {"index", "title", "concepts", "outcome"}
 _LEGACY_LESSON_FIELDS = set(("id", "title", "domainId", "domainTitle", "domainSlug", "moduleIndex", "moduleTitle", "level", "levelLabel", "concepts", "outcome", "path"))
+_MAX_JSON_FLOAT_TOKEN_CHARACTERS = 1_024
 
 
 def _pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -33,6 +35,22 @@ def _reject_non_finite_number(_value: str) -> object:
     raise CurriculumValidationError("non-finite JSON number")
 
 
+def _parse_finite_float(token: str) -> float:
+    # Valid curriculum numbers never need unbounded decimal precision; bounding
+    # the token also prevents parser work and diagnostics from scaling with it.
+    if len(token) > _MAX_JSON_FLOAT_TOKEN_CHARACTERS:
+        raise CurriculumValidationError("invalid JSON floating-point value")
+    try:
+        value = float(token)
+    except (OverflowError, ValueError) as error:
+        raise CurriculumValidationError(
+            "invalid JSON floating-point value"
+        ) from error
+    if not math.isfinite(value):
+        raise CurriculumValidationError("invalid JSON floating-point value")
+    return value
+
+
 def strict_json_loads(raw: bytes, path: str | Path) -> object:
     """Decode UTF-8 JSON while rejecting duplicate keys at every object depth."""
     try:
@@ -40,6 +58,7 @@ def strict_json_loads(raw: bytes, path: str | Path) -> object:
             raw.decode("utf-8"),
             object_pairs_hook=_pairs,
             parse_constant=_reject_non_finite_number,
+            parse_float=_parse_finite_float,
         )
     except (UnicodeDecodeError, json.JSONDecodeError, CurriculumValidationError) as error:
         raise CurriculumValidationError(f"{path}: {error}") from error

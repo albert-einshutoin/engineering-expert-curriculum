@@ -36,6 +36,50 @@ def item(**overrides: object) -> dict[str, object]:
 
 
 class CatalogLoaderTests(unittest.TestCase):
+    def test_strict_json_rejects_float_overflow_without_leaking_tokens(
+        self,
+    ) -> None:
+        for token in (b"1e999", b"-1e999"):
+            with self.subTest(token=token):
+                with self.assertRaises(CurriculumValidationError) as caught:
+                    strict_json_loads(
+                        b'{"value":' + token + b"}",
+                        Path("fixture.json"),
+                    )
+                self.assertEqual(
+                    str(caught.exception),
+                    "fixture.json: invalid JSON floating-point value",
+                )
+                self.assertNotIn(token.decode("ascii"), str(caught.exception))
+
+    def test_strict_json_rejects_overlong_decimal_without_leaking_it(
+        self,
+    ) -> None:
+        token = b"0." + (b"1" * 5_000)
+        with self.assertRaises(CurriculumValidationError) as caught:
+            strict_json_loads(
+                b'{"value":' + token + b"}",
+                Path("fixture.json"),
+            )
+
+        self.assertEqual(
+            str(caught.exception),
+            "fixture.json: invalid JSON floating-point value",
+        )
+        self.assertNotIn("1111111111", str(caught.exception))
+
+    def test_strict_json_keeps_ordinary_floats_as_finite_float_values(
+        self,
+    ) -> None:
+        parsed = strict_json_loads(
+            b'{"positive":1.25,"negative":-2.5e2}',
+            Path("fixture.json"),
+        )
+
+        self.assertEqual(parsed, {"positive": 1.25, "negative": -250.0})
+        self.assertIs(type(parsed["positive"]), float)  # type: ignore[index]
+        self.assertIs(type(parsed["negative"]), float)  # type: ignore[index]
+
     def test_strict_json_rejects_non_finite_numbers(self) -> None:
         for constant in (b"NaN", b"Infinity", b"-Infinity"):
             with self.subTest(constant=constant):
