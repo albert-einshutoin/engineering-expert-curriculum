@@ -528,6 +528,35 @@ def _build_verified_archive(
     return manifest
 
 
+def _publish_verified_archive(
+    source_path: Path,
+    parent_fd: int,
+    target_name: str,
+    initial: dict[str, FileSnapshot],
+) -> PrototypeManifest:
+    """Build a private verified archive and atomically publish it without clobbering target."""
+    staging_name, staging_fd, identity = _create_private_staging(parent_fd)
+    published = False
+    try:
+        manifest = _build_verified_archive(source_path, staging_fd, initial)
+        _rename_directory_noreplace(parent_fd, staging_name, target_name)
+        published = True
+        return manifest
+    except BaseException as operation_error:
+        if not published:
+            try:
+                current = os.stat(staging_name, dir_fd=parent_fd, follow_symlinks=False)
+                opened = os.fstat(staging_fd)
+                if (current.st_dev, current.st_ino) == identity == (opened.st_dev, opened.st_ino):
+                    _remove_owned_archive(parent_fd, staging_name, staging_fd)
+            except (OSError, RuntimeError) as cleanup_error:
+                raise RuntimeError(f"private staging cleanup failed: {cleanup_error}") from operation_error
+        raise
+    finally:
+        # Once rename succeeds the final archive is committed; close failures cannot reverse it.
+        _close_all((staging_fd,))
+
+
 def preserve_prototype(source: Path, archive: Path) -> PrototypeManifest:
     """Copy, verify, and atomically publish the approved legacy prototype files."""
     source_path = _source_directory(source)

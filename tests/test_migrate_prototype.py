@@ -10,10 +10,26 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from tools.migrate_prototype import LEGACY_PATHS, _build_verified_archive, _create_private_staging, _rename_directory_noreplace, _snapshot, main, preserve_prototype
+from tools.migrate_prototype import LEGACY_PATHS, _build_verified_archive, _create_private_staging, _publish_verified_archive, _rename_directory_noreplace, _snapshot, main, preserve_prototype
 
 
 class PrototypeMigrationTests(unittest.TestCase):
+    def test_publish_verified_archive_natively_publishes_private_staging(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            source = root / "source"
+            (source / "assets").mkdir(parents=True)
+            (source / "assets" / "style.css").write_text("body{}", encoding="utf-8")
+            (source / "index.html").write_text("legacy", encoding="utf-8")
+            parent_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                manifest = _publish_verified_archive(source, parent_fd, "published", _snapshot(source))
+            finally:
+                os.close(parent_fd)
+            final = root / "published"
+            self.assertEqual(json.loads((final / "manifest.json").read_text(encoding="utf-8")), manifest)
+            self.assertTrue((source / "index.html").exists())
+            self.assertEqual(list(root.glob(".prototype-staging-*")), [])
     def test_build_verified_archive_copies_and_manifests_without_changing_source(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory).resolve()
