@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -29,6 +30,18 @@ class CatalogLoaderTests(unittest.TestCase):
             items = load_repository_catalog(Path("content/catalog.json"))
         self.assertEqual(read.call_count, 1)
         self.assertEqual(len(items), 1140)
+
+    def test_repository_loader_rejects_tampered_first_read(self) -> None:
+        raw = Path("content/catalog.json").read_bytes().replace(b'"title": "', b'"title": "Changed ', 1)
+        with patch("curriculum_builder.catalog.Path.read_bytes", return_value=raw):
+            with self.assertRaisesRegex(CurriculumValidationError, "catalog SHA-256 mismatch"):
+                load_repository_catalog(Path("content/catalog.json"))
+
+    def test_repository_loader_rejects_source_provenance_even_with_matching_artifact_hash(self) -> None:
+        raw = serialize_catalog_document([item()], "source", "0" * 64)
+        with patch("curriculum_builder.catalog.Path.read_bytes", return_value=raw), patch("curriculum_builder.catalog.CANONICAL_CATALOG_SHA256", hashlib.sha256(raw).hexdigest()):
+            with self.assertRaisesRegex(CurriculumValidationError, "source SHA-256 mismatch"):
+                load_repository_catalog(Path("content/catalog.json"))
     def test_load_catalog_rejects_invalid_json_empty_unknown_duplicate_and_unsorted(self) -> None:
         cases = {
             "invalid.json": "{",

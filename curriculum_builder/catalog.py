@@ -143,10 +143,10 @@ def load_catalog(path: str | Path) -> tuple[CatalogItem, ...]:
     catalog_path = Path(path)
     try: raw = catalog_path.read_bytes()
     except OSError as error: raise CurriculumValidationError(f"{catalog_path}: cannot read catalog: {error}") from error
-    return _load_catalog_bytes(raw, catalog_path)
+    return _load_catalog_bytes(raw, catalog_path)[0]
 
 
-def _load_catalog_bytes(raw: bytes, catalog_path: Path) -> tuple[CatalogItem, ...]:
+def _load_catalog_bytes(raw: bytes, catalog_path: Path) -> tuple[tuple[CatalogItem, ...], str]:
     document = strict_json_loads(raw, catalog_path)
     if not isinstance(document, Mapping): raise CurriculumValidationError(f"{catalog_path}: catalog root must be an object")
     if set(document) != {"version", "generatedFrom", "sourceSha256", "items"}: raise CurriculumValidationError(f"{catalog_path}: catalog root fields must be exactly version, generatedFrom, sourceSha256, items")
@@ -162,7 +162,7 @@ def _load_catalog_bytes(raw: bytes, catalog_path: Path) -> tuple[CatalogItem, ..
         raise CurriculumValidationError(f"{catalog_path}: {error}") from error
     if tuple(item.id for item in items) != tuple(sorted(item.id for item in items)): raise CurriculumValidationError(f"{catalog_path}: items must be sorted by id")
     if raw != serialize_catalog_document(items, generated_from, source_sha256): raise CurriculumValidationError(f"{catalog_path}: catalog bytes are not canonical")
-    return items
+    return items, source_sha256
 
 
 def load_repository_catalog(path: str | Path = Path("content/catalog.json")) -> tuple[CatalogItem, ...]:
@@ -172,4 +172,7 @@ def load_repository_catalog(path: str | Path = Path("content/catalog.json")) -> 
     except OSError as error: raise CurriculumValidationError(f"{catalog_path}: cannot read catalog: {error}") from error
     if not hmac.compare_digest(actual, CANONICAL_CATALOG_SHA256):
         raise CurriculumValidationError(f"{catalog_path}: catalog SHA-256 mismatch: expected {CANONICAL_CATALOG_SHA256}, actual {actual}")
-    return _load_catalog_bytes(raw, catalog_path)
+    items, source_sha256 = _load_catalog_bytes(raw, catalog_path)
+    if not hmac.compare_digest(source_sha256, LEGACY_SOURCE_SHA256):
+        raise CurriculumValidationError(f"{catalog_path}: source SHA-256 mismatch: expected {LEGACY_SOURCE_SHA256}, actual {source_sha256}")
+    return items
