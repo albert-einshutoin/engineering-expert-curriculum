@@ -50,7 +50,15 @@ class LoadedLesson:
     body_bytes: bytes
 
 
-def load_lessons_from_root(content_descriptor: int) -> tuple[LoadedLesson, ...]:
+@dataclass(frozen=True, slots=True)
+class LessonCollection:
+    """Distinguish an absent lesson root from an intentionally empty one."""
+
+    lessons: tuple[LoadedLesson, ...]
+    directory_present: bool
+
+
+def load_lessons_from_root(content_descriptor: int) -> LessonCollection:
     """Load a complete collection through the caller's pinned content dirfd.
 
     A build requires exclusive control of the workspace namespace. Descriptor
@@ -75,7 +83,7 @@ def load_lessons_from_root(content_descriptor: int) -> tuple[LoadedLesson, ...]:
                 follow_symlinks=False,
             )
         except FileNotFoundError:
-            return ()
+            return LessonCollection(lessons=(), directory_present=False)
         _require_safe_node(before, "lessons", directory=True)
         lessons_fd = os.open(
             "lessons",
@@ -137,10 +145,13 @@ def load_lessons_from_root(content_descriptor: int) -> tuple[LoadedLesson, ...]:
     }
     stages = topological_stages(ids, prerequisites)
     by_id = {item.lesson.id: item for item in loaded}
-    return tuple(
-        by_id[lesson_id]
-        for stage in stages
-        for lesson_id in stage
+    return LessonCollection(
+        lessons=tuple(
+            by_id[lesson_id]
+            for stage in stages
+            for lesson_id in stage
+        ),
+        directory_present=True,
     )
 
 

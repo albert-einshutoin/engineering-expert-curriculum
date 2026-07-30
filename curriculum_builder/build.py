@@ -1969,7 +1969,8 @@ def build_site(
         )
         items = _load_catalog_from_root(content)
         roadmap = _load_roadmap(content)
-        lessons = load_lessons_from_root(content.descriptor)
+        lesson_snapshot = load_lessons_from_root(content.descriptor)
+        lessons = lesson_snapshot.lessons
         stylesheet = _read_stable_regular_file(
             static_files,
             "styles.css",
@@ -2007,7 +2008,7 @@ def build_site(
             MAX_STYLESHEET_BYTES,
         ):
             raise _validation("styles.css changed during build")
-        if lessons != load_lessons_from_root(content.descriptor):
+        if lesson_snapshot != load_lessons_from_root(content.descriptor):
             raise _validation("lessons changed during build")
         for handle in (content, templates, static_files, output_parent):
             _verify_directory_identity(handle)

@@ -372,6 +372,31 @@ class LessonRenderingTests(unittest.TestCase):
             self.assertEqual((output / "sentinel.txt").read_text(), "old")
             self.assertEqual(list(root.glob(".site.staging-*")), [])
 
+    def test_missing_lesson_root_appearance_is_a_snapshot_change(self) -> None:
+        with _site_fixture() as (root, content, templates, static_root):
+            output = root / "site"
+            output.mkdir()
+            (output / "sentinel.txt").write_text("old", encoding="utf-8")
+            original_render = build_module._render_artifacts
+
+            def racing_render(*args: object) -> dict[PurePosixPath, bytes]:
+                artifacts = original_render(*args)  # type: ignore[arg-type]
+                (content / "lessons").mkdir()
+                return artifacts
+
+            with patch(
+                "curriculum_builder.build._render_artifacts",
+                side_effect=racing_render,
+            ):
+                with self.assertRaisesRegex(
+                    CurriculumValidationError,
+                    "lessons changed",
+                ):
+                    build_site(content, templates, static_root, output)
+
+            self.assertEqual((output / "sentinel.txt").read_text(), "old")
+            self.assertEqual(list(root.glob(".site.staging-*")), [])
+
     def test_nested_lesson_artifacts_have_deterministic_safe_metadata(self) -> None:
         with _site_fixture() as (root, content, templates, static_root):
             _add_lesson(content, _complete_document())
