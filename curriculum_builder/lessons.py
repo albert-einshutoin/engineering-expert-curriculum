@@ -4,20 +4,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-import os
 from pathlib import Path
 import re
-import stat
-import sys
 import unicodedata
 from urllib.parse import urlsplit
 
 from .catalog import strict_json_loads
 from .errors import CurriculumValidationError
+from .lesson_io import read_stable_lesson_file
 
 
 MAX_LESSON_BYTES = 512 * 1024
-_READ_CHUNK_BYTES = 64 * 1024
 _NATIVE_PATH_TYPE = type(Path())
 
 LESSON_TRACKS = frozenset(
@@ -187,7 +184,7 @@ def load_lesson(path: Path) -> Lesson:
     if type(path) is not _NATIVE_PATH_TYPE:
         raise CurriculumValidationError("lesson path must be an exact Path")
 
-    raw = _read_stable_regular_file(path)
+    raw = read_stable_lesson_file(path, MAX_LESSON_BYTES)
     try:
         raw.decode("utf-8")
     except UnicodeDecodeError:
@@ -346,114 +343,6 @@ def _parse_lesson(raw: dict[str, object]) -> Lesson:
         updated_at=_require_date(raw["updatedAt"]),
         status=status,
     )
-
-
-def _read_stable_regular_file(path: Path) -> bytes:
-    label = path.name or "lesson"
-    descriptor: int | None = None
-    try:
-        _require_symlink_free_path(path, label)
-        before = os.stat(path, follow_symlinks=False)
-        if not stat.S_ISREG(before.st_mode):
-            raise CurriculumValidationError(
-                f"{label}: lesson must be a regular file"
-            )
-        if before.st_size > MAX_LESSON_BYTES:
-            raise CurriculumValidationError(
-                f"{label}: lesson exceeds maximum byte count"
-            )
-
-        flags = (
-            os.O_RDONLY
-            | getattr(os, "O_CLOEXEC", 0)
-            | getattr(os, "O_NOFOLLOW", 0)
-            | getattr(os, "O_NONBLOCK", 0)
-        )
-        descriptor = os.open(path, flags)
-        opened = os.fstat(descriptor)
-        if (
-            not stat.S_ISREG(opened.st_mode)
-            or _stat_signature(opened) != _stat_signature(before)
-        ):
-            raise CurriculumValidationError(
-                f"{label}: lesson changed during read"
-            )
-
-        remaining = opened.st_size
-        chunks: list[bytes] = []
-        while remaining:
-            chunk = os.read(descriptor, min(_READ_CHUNK_BYTES, remaining))
-            if not chunk or len(chunk) > remaining:
-                raise CurriculumValidationError(
-                    f"{label}: lesson changed during read"
-                )
-            chunks.append(chunk)
-            remaining -= len(chunk)
-        if os.read(descriptor, 1):
-            raise CurriculumValidationError(
-                f"{label}: lesson changed during read"
-            )
-
-        after = os.fstat(descriptor)
-        _require_symlink_free_path(path, label)
-        current = os.stat(path, follow_symlinks=False)
-        if (
-            _stat_signature(after) != _stat_signature(opened)
-            or _stat_signature(current) != _stat_signature(opened)
-        ):
-            raise CurriculumValidationError(
-                f"{label}: lesson changed during read"
-            )
-        return b"".join(chunks)
-    except CurriculumValidationError:
-        raise
-    except OSError:
-        raise CurriculumValidationError(
-            f"{label}: lesson cannot be read safely"
-        ) from None
-    finally:
-        if descriptor is not None:
-            try:
-                os.close(descriptor)
-            except OSError:
-                active = sys.exception()
-                if active is None:
-                    raise CurriculumValidationError(
-                        f"{label}: lesson cannot be read safely"
-                    ) from None
-                active.add_note("lesson descriptor could not be closed")
-
-
-def _stat_signature(
-    value: os.stat_result,
-) -> tuple[int, int, int, int, int, int]:
-    # Identity plus content-relevant metadata detects replacement and writes
-    # around the bounded descriptor read without retaining mutable file state.
-    return (
-        value.st_dev,
-        value.st_ino,
-        stat.S_IFMT(value.st_mode),
-        value.st_size,
-        value.st_mtime_ns,
-        value.st_ctime_ns,
-    )
-
-
-def _require_symlink_free_path(path: Path, label: str) -> None:
-    parent = os.lstat(path.parent)
-    if stat.S_ISLNK(parent.st_mode):
-        raise CurriculumValidationError(
-            f"{label}: lesson path contains a symbolic link"
-        )
-    if not stat.S_ISDIR(parent.st_mode):
-        raise CurriculumValidationError(
-            f"{label}: lesson parent must be a directory"
-        )
-    node = os.lstat(path)
-    if stat.S_ISLNK(node.st_mode):
-        raise CurriculumValidationError(
-            f"{label}: lesson symbolic link is not a regular file"
-        )
 
 
 def _require_exact_object(

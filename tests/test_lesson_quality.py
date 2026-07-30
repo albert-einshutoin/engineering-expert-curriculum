@@ -54,7 +54,7 @@ class LessonQualityTests(unittest.TestCase):
     def write_document(
         self, directory: str, document: object, name: str = "lesson.json"
     ) -> Path:
-        path = Path(directory) / name
+        path = Path(directory).resolve() / name
         path.write_text(
             json.dumps(document, ensure_ascii=False),
             encoding="utf-8",
@@ -277,7 +277,7 @@ class LessonQualityTests(unittest.TestCase):
         }
         for label, duplicate in cases.items():
             with self.subTest(label=label), TemporaryDirectory() as directory:
-                path = Path(directory) / "duplicate.json"
+                path = Path(directory).resolve() / "duplicate.json"
                 path.write_text(duplicate, encoding="utf-8")
                 with self.assertRaisesRegex(
                     CurriculumValidationError, r"duplicate JSON key"
@@ -299,7 +299,7 @@ class LessonQualityTests(unittest.TestCase):
             1,
         )
         with TemporaryDirectory() as directory:
-            path = Path(directory) / "duplicate.json"
+            path = Path(directory).resolve() / "duplicate.json"
             path.write_text(duplicate, encoding="utf-8")
             with self.assertRaises(CurriculumValidationError) as caught:
                 load_lesson(path)
@@ -361,7 +361,7 @@ class LessonQualityTests(unittest.TestCase):
 
     def test_symlink_and_non_regular_files_are_rejected(self) -> None:
         with TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             symlink = root / "lesson-link.json"
             symlink.symlink_to(COMPLETE)
             fifo = root / "lesson.fifo"
@@ -378,7 +378,7 @@ class LessonQualityTests(unittest.TestCase):
 
     def test_symlinked_parent_directory_is_rejected(self) -> None:
         with TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             real_parent = root / "real"
             real_parent.mkdir()
             (real_parent / "lesson.json").write_bytes(COMPLETE.read_bytes())
@@ -394,7 +394,7 @@ class LessonQualityTests(unittest.TestCase):
         self,
     ) -> None:
         with TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             real_ancestor = root / "real"
             nested = real_ancestor / "level-two"
             nested.mkdir(parents=True)
@@ -411,7 +411,7 @@ class LessonQualityTests(unittest.TestCase):
 
     def test_lexical_parent_traversal_is_rejected(self) -> None:
         with TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             safe = root / "safe"
             safe.mkdir()
             (safe / "lesson.json").write_bytes(COMPLETE.read_bytes())
@@ -424,7 +424,7 @@ class LessonQualityTests(unittest.TestCase):
 
     def test_lesson_file_size_and_utf8_are_bounded(self) -> None:
         with TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             oversized = root / "oversized.json"
             oversized.write_bytes(b" " * (MAX_LESSON_BYTES + 1))
             invalid_utf8 = root / "invalid-utf8.json"
@@ -441,31 +441,36 @@ class LessonQualityTests(unittest.TestCase):
 
     def test_pathname_rebinding_during_read_is_rejected(self) -> None:
         with TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             path = root / "lesson.json"
             path.write_bytes(COMPLETE.read_bytes())
             replacement = root / "replacement.json"
             replacement.write_bytes(COMPLETE.read_bytes())
             real_open = os.open
+            replaced = False
 
             def replace_after_open(target: object, flags: int, *args: object, **kwargs: object) -> int:
+                nonlocal replaced
                 descriptor = real_open(target, flags, *args, **kwargs)
-                path.unlink()
-                replacement.rename(path)
+                if not replaced and Path(target).name == "lesson.json":
+                    replaced = True
+                    path.unlink()
+                    replacement.rename(path)
                 return descriptor
 
             with patch(
-                "curriculum_builder.lessons.os.open",
+                "curriculum_builder.lesson_io.os.open",
                 side_effect=replace_after_open,
             ):
                 with self.assertRaisesRegex(
                     CurriculumValidationError, r"changed during read"
                 ):
                     load_lesson(path)
+            self.assertTrue(replaced)
 
     def test_ancestor_rebinding_to_a_hard_link_is_rejected(self) -> None:
         with TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             ancestor = root / "ancestor"
             nested = ancestor / "nested"
             nested.mkdir(parents=True)
@@ -494,7 +499,7 @@ class LessonQualityTests(unittest.TestCase):
                 return descriptor
 
             with patch(
-                "curriculum_builder.lessons.os.open",
+                "curriculum_builder.lesson_io.os.open",
                 side_effect=swap_ancestor_after_file_open,
             ):
                 with self.assertRaisesRegex(
@@ -505,13 +510,15 @@ class LessonQualityTests(unittest.TestCase):
 
     def test_post_read_metadata_change_is_rejected(self) -> None:
         real_fstat = os.fstat
-        call_count = 0
+        regular_call_count = 0
 
         def changing_fstat(descriptor: int) -> object:
-            nonlocal call_count
-            call_count += 1
+            nonlocal regular_call_count
             result = real_fstat(descriptor)
-            if call_count != 2:
+            if not stat.S_ISREG(result.st_mode):
+                return result
+            regular_call_count += 1
+            if regular_call_count != 2:
                 return result
 
             class ChangedMetadata:
@@ -524,7 +531,7 @@ class LessonQualityTests(unittest.TestCase):
             return ChangedMetadata()
 
         with patch(
-            "curriculum_builder.lessons.os.fstat",
+            "curriculum_builder.lesson_io.os.fstat",
             side_effect=changing_fstat,
         ):
             with self.assertRaisesRegex(
@@ -534,7 +541,7 @@ class LessonQualityTests(unittest.TestCase):
 
     def test_os_errors_do_not_leak_private_paths_or_contents(self) -> None:
         with patch(
-            "curriculum_builder.lessons.os.open",
+            "curriculum_builder.lesson_io.os.open",
             side_effect=OSError("/private/customer/secret.json"),
         ):
             with self.assertRaises(CurriculumValidationError) as caught:
@@ -567,11 +574,11 @@ class LessonQualityTests(unittest.TestCase):
 
         with (
             patch(
-                "curriculum_builder.lessons.os.open",
+                "curriculum_builder.lesson_io.os.open",
                 side_effect=track_open,
             ),
             patch(
-                "curriculum_builder.lessons.os.close",
+                "curriculum_builder.lesson_io.os.close",
                 side_effect=track_close,
             ),
         ):
@@ -594,7 +601,7 @@ class LessonQualityTests(unittest.TestCase):
                 raise OSError("private-close-detail")
 
         with patch(
-            "curriculum_builder.lessons.os.close",
+            "curriculum_builder.lesson_io.os.close",
             side_effect=close_with_one_failure,
         ):
             with self.assertRaisesRegex(
@@ -621,11 +628,11 @@ class LessonQualityTests(unittest.TestCase):
 
         with (
             patch(
-                "curriculum_builder.lessons.os.read",
+                "curriculum_builder.lesson_io.os.read",
                 side_effect=OSError("private-read-detail"),
             ),
             patch(
-                "curriculum_builder.lessons.os.close",
+                "curriculum_builder.lesson_io.os.close",
                 side_effect=close_with_one_failure,
             ),
         ):
