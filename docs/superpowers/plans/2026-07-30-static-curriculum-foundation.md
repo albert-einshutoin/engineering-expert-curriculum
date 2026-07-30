@@ -491,46 +491,27 @@ git commit -m "feat: preserve 1140 items in canonical catalog"
 
 - [ ] **Step 1: Write graph behavior tests**
 
-```python
-# tests/test_graph.py
-from __future__ import annotations
+Write the 20 Task 5 tests in `tests/test_graph.py`. They form the public graph
+contract and cover:
 
-import unittest
+- Sorted parallel stages returned as an immutable tuple of tuples.
+- Sorted, deterministic diagnostics for cycles and missing prerequisites.
+- Nodes omitted from the mapping defaulting to no prerequisites.
+- Rejection of a string passed as `node_ids`, non-string IDs, empty IDs,
+  leading or trailing whitespace, and duplicate IDs.
+- Rejection of a non-mapping `prerequisites` argument, non-string or unknown
+  mapping keys, string or non-iterable dependency collections, non-string,
+  empty, or whitespace-padded dependency IDs, duplicate dependencies, and
+  explicit self-dependencies.
+- Single consumption of generator-based node and dependency inputs.
+- Results independent of node, dependency, and mapping insertion order.
+- No input mutation, immutable output, and the empty-graph result.
+- The checked-in roadmap's strict version 1 root and node schemas, four unique
+  IDs, exact initial titles and prerequisites, and expected topological stages.
 
-from curriculum_builder.errors import CurriculumValidationError
-from curriculum_builder.graph import topological_stages
-
-
-class GraphTests(unittest.TestCase):
-    def test_builds_sorted_parallel_stages(self) -> None:
-        stages = topological_stages(
-            node_ids=("build", "foundation", "operate", "lead"),
-            prerequisites={
-                "foundation": (),
-                "build": ("foundation",),
-                "operate": ("foundation",),
-                "lead": ("build", "operate"),
-            },
-        )
-        self.assertEqual(
-            stages,
-            (("foundation",), ("build", "operate"), ("lead",)),
-        )
-
-    def test_reports_a_cycle_with_remaining_nodes(self) -> None:
-        with self.assertRaisesRegex(CurriculumValidationError, "cycle: a, b"):
-            topological_stages(
-                node_ids=("a", "b"),
-                prerequisites={"a": ("b",), "b": ("a",)},
-            )
-
-    def test_rejects_missing_prerequisite(self) -> None:
-        with self.assertRaisesRegex(CurriculumValidationError, "missing node: unknown"):
-            topological_stages(
-                node_ids=("a",),
-                prerequisites={"a": ("unknown",)},
-            )
-```
+Use `strict_json_loads` for the checked-in roadmap test so duplicate JSON keys
+cannot bypass the schema assertions. Keep the graph API independent from the
+catalog module; JSON decoding is an artifact-test concern at this stage.
 
 - [ ] **Step 2: Run graph tests and verify RED**
 
@@ -544,42 +525,23 @@ Expected: import fails because `curriculum_builder.graph` does not exist.
 
 - [ ] **Step 3: Implement Kahn staging with stable ordering**
 
-```python
-# curriculum_builder/graph.py
-from __future__ import annotations
+Implement the validated contract in `curriculum_builder/graph.py`; the source
+file is canonical, so do not duplicate its complete implementation in this
+plan. The implementation must:
 
-from collections.abc import Iterable, Mapping
+1. Materialize `node_ids` exactly once, validate the original sequence, and
+   reject duplicate IDs before creating any set-like lookup structure.
+2. Validate the prerequisite mapping's type and all keys before reading
+   dependency collections.
+3. Materialize each dependency iterable exactly once in sorted node order,
+   validate its original sequence, and reject duplicates before converting it
+   to a `frozenset`.
+4. Reject self-references and missing nodes with sorted messages.
+5. Run Kahn staging and sort each ready stage and unresolved cycle report.
+6. Return a tuple of tuples without mutating caller-owned inputs.
 
-from curriculum_builder.errors import CurriculumValidationError
-
-
-def topological_stages(
-    node_ids: Iterable[str],
-    prerequisites: Mapping[str, Iterable[str]],
-) -> tuple[tuple[str, ...], ...]:
-    nodes = set(node_ids)
-    normalized = {
-        node: set(prerequisites.get(node, ()))
-        for node in nodes
-    }
-    for dependency in sorted(set().union(*normalized.values()) if normalized else set()):
-        if dependency not in nodes:
-            raise CurriculumValidationError(f"missing node: {dependency}")
-
-    stages: list[tuple[str, ...]] = []
-    remaining = set(nodes)
-    while remaining:
-        # Sorting makes builds reproducible and keeps CSS graph positions stable
-        # across machines even though sets are intentionally unordered.
-        ready = tuple(sorted(node for node in remaining if not normalized[node] & remaining))
-        if not ready:
-            raise CurriculumValidationError(
-                f"cycle: {', '.join(sorted(remaining))}"
-            )
-        stages.append(ready)
-        remaining.difference_update(ready)
-    return tuple(stages)
-```
+Sorting is a reproducibility requirement: generated HTML and CSS graph
+placement must not inherit set, generator, or mapping insertion order.
 
 ```json
 {
@@ -601,7 +563,9 @@ Run:
 python3.13 -m unittest tests.test_graph -v
 ```
 
-Expected: three tests pass.
+Expected at Task 5 completion: all 20 graph and checked-in roadmap contract
+tests pass. The count documents this task's reviewed baseline; later roadmap
+expansion may add or deliberately replace acceptance tests.
 
 - [ ] **Step 5: Commit deterministic roadmap primitives**
 
