@@ -71,6 +71,37 @@ class LessonQualityTests(unittest.TestCase):
         self.assertIn("core-01-systems-tradeoffs", str(caught.exception))
         self.assertIn(INCOMPLETE.name, str(caught.exception))
 
+    def test_complete_status_rejects_explicit_null_quality_dimensions(self) -> None:
+        for field in ("lab", "assessment", "rubric", "sources", "review"):
+            with self.subTest(field=field):
+                raw = self.complete_document()
+                raw[field] = None
+                self.assert_invalid(raw, rf"{field}.*required|{field}.*complete")
+
+    def test_draft_allows_quality_work_to_remain_incomplete(self) -> None:
+        raw = self.complete_document()
+        raw["status"] = "draft"
+        raw["objectives"] = []
+        raw["evidence"] = []
+        for field in (
+            "lab",
+            "teachBack",
+            "assessment",
+            "transferTask",
+            "rubric",
+            "sources",
+            "review",
+        ):
+            del raw[field]
+
+        with TemporaryDirectory() as directory:
+            lesson = load_lesson(self.write_document(directory, raw))
+
+        self.assertEqual(lesson.status, "draft")
+        self.assertEqual(lesson.objectives, ())
+        self.assertIsNone(lesson.lab)
+        self.assertEqual(lesson.review_intervals, ())
+
     def test_rubric_requires_four_observable_levels(self) -> None:
         raw = self.complete_document()
         del raw["rubric"][0]["levels"]["exemplary"]  # type: ignore[index]
@@ -95,6 +126,28 @@ class LessonQualityTests(unittest.TestCase):
                     CurriculumValidationError, r"duplicate JSON key"
                 ):
                     load_lesson(path)
+
+    def test_untrusted_json_key_names_are_not_echoed_in_errors(self) -> None:
+        raw = self.complete_document()
+        raw["customer-secret-token"] = True
+        with self.assertRaises(CurriculumValidationError) as caught:
+            with TemporaryDirectory() as directory:
+                load_lesson(self.write_document(directory, raw))
+        self.assertIn("unknown fields", str(caught.exception))
+        self.assertNotIn("customer-secret-token", str(caught.exception))
+
+        duplicate = COMPLETE.read_text(encoding="utf-8").replace(
+            '"version": 1,',
+            '"customer-secret-token": 1, "customer-secret-token": 2,',
+            1,
+        )
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "duplicate.json"
+            path.write_text(duplicate, encoding="utf-8")
+            with self.assertRaises(CurriculumValidationError) as caught:
+                load_lesson(path)
+        self.assertIn("duplicate JSON key", str(caught.exception))
+        self.assertNotIn("customer-secret-token", str(caught.exception))
 
     def test_unknown_fields_are_rejected_at_root_and_every_nested_schema(self) -> None:
         mutations = (
@@ -162,6 +215,20 @@ class LessonQualityTests(unittest.TestCase):
                     ):
                         load_lesson(path)
 
+    def test_symlinked_parent_directory_is_rejected(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            real_parent = root / "real"
+            real_parent.mkdir()
+            (real_parent / "lesson.json").write_bytes(COMPLETE.read_bytes())
+            linked_parent = root / "linked"
+            linked_parent.symlink_to(real_parent, target_is_directory=True)
+
+            with self.assertRaisesRegex(
+                CurriculumValidationError, r"symbolic link"
+            ):
+                load_lesson(linked_parent / "lesson.json")
+
     def test_lesson_file_size_and_utf8_are_bounded(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
@@ -202,6 +269,35 @@ class LessonQualityTests(unittest.TestCase):
                     CurriculumValidationError, r"changed during read"
                 ):
                     load_lesson(path)
+
+    def test_post_read_metadata_change_is_rejected(self) -> None:
+        real_fstat = os.fstat
+        call_count = 0
+
+        def changing_fstat(descriptor: int) -> object:
+            nonlocal call_count
+            call_count += 1
+            result = real_fstat(descriptor)
+            if call_count != 2:
+                return result
+
+            class ChangedMetadata:
+                def __getattr__(self, name: str) -> object:
+                    original = getattr(result, name)
+                    if name == "st_mtime_ns":
+                        return original + 1
+                    return original
+
+            return ChangedMetadata()
+
+        with patch(
+            "curriculum_builder.lessons.os.fstat",
+            side_effect=changing_fstat,
+        ):
+            with self.assertRaisesRegex(
+                CurriculumValidationError, r"changed during read"
+            ):
+                load_lesson(COMPLETE)
 
     def test_os_errors_do_not_leak_private_paths_or_contents(self) -> None:
         with patch(
@@ -295,6 +391,10 @@ class LessonQualityTests(unittest.TestCase):
         raw["objectives"][2]["evidenceIds"] = ["teach-back"]
         self.assert_invalid(raw, r"evidence kinds.*transfer")
 
+        raw = self.complete_document()
+        raw["objectives"] = raw["objectives"] * 3
+        self.assert_invalid(raw, r"3 to 6 objectives")
+
     def test_complete_lab_teach_back_transfer_and_assessment_are_substantive(
         self,
     ) -> None:
@@ -366,6 +466,24 @@ class LessonQualityTests(unittest.TestCase):
                 "duplicate source URL",
                 lambda raw: raw["sources"][1].__setitem__(
                     "url", raw["sources"][0]["url"]
+                ),
+            ),
+            (
+                "source URL credentials",
+                lambda raw: raw["sources"][0].__setitem__(
+                    "url", "https://user:password@example.com/reference"
+                ),
+            ),
+            (
+                "source URL backslashes",
+                lambda raw: raw["sources"][0].__setitem__(
+                    "url", "https://example.com/reference\\hidden"
+                ),
+            ),
+            (
+                "source URL encoded controls",
+                lambda raw: raw["sources"][0].__setitem__(
+                    "url", "https://example.com/reference%0a-hidden"
                 ),
             ),
         )

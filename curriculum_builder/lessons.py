@@ -56,6 +56,9 @@ _OBJECTIVE_ID_PATTERN = re.compile(
 _EVIDENCE_ID_PATTERN = re.compile(
     r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
 )
+_ENCODED_CONTROL_PATTERN = re.compile(
+    r"%(?:0[0-9a-f]|1[0-9a-f]|7f)", re.IGNORECASE
+)
 
 _ROOT_REQUIRED_FIELDS = frozenset(
     {
@@ -180,7 +183,14 @@ def load_lesson(path: Path) -> Lesson:
         raise CurriculumValidationError(
             f"{path.name}: lesson is not valid UTF-8"
         ) from None
-    document = strict_json_loads(raw, path.name)
+    try:
+        document = strict_json_loads(raw, path.name)
+    except CurriculumValidationError as error:
+        if "duplicate JSON key:" in str(error):
+            raise CurriculumValidationError(
+                f"{path.name}: duplicate JSON key"
+            ) from None
+        raise
     if type(document) is not dict:
         raise CurriculumValidationError(
             f"{path.name}: lesson root must be an object"
@@ -261,10 +271,30 @@ def _parse_lesson(raw: dict[str, object]) -> Lesson:
     )
 
     if status == "complete":
+        if lab is None:
+            raise CurriculumValidationError(
+                "lab is required for complete lessons"
+            )
         if teach_back is None:
             raise CurriculumValidationError("teachBack must be non-empty")
+        if not assessment:
+            raise CurriculumValidationError(
+                "assessment is required for complete lessons"
+            )
         if transfer_task is None:
             raise CurriculumValidationError("transferTask must be non-empty")
+        if not rubric:
+            raise CurriculumValidationError(
+                "rubric is required for complete lessons"
+            )
+        if not sources:
+            raise CurriculumValidationError(
+                "sources are required for complete lessons"
+            )
+        if review is None:
+            raise CurriculumValidationError(
+                "review is required for complete lessons"
+            )
 
     return Lesson(
         version=version,
@@ -301,6 +331,7 @@ def _read_stable_regular_file(path: Path) -> bytes:
     label = path.name or "lesson"
     descriptor: int | None = None
     try:
+        _require_symlink_free_path(path, label)
         before = os.stat(path, follow_symlinks=False)
         if not stat.S_ISREG(before.st_mode):
             raise CurriculumValidationError(
@@ -343,6 +374,7 @@ def _read_stable_regular_file(path: Path) -> bytes:
             )
 
         after = os.fstat(descriptor)
+        _require_symlink_free_path(path, label)
         current = os.stat(path, follow_symlinks=False)
         if (
             _stat_signature(after) != _stat_signature(opened)
@@ -386,6 +418,23 @@ def _stat_signature(
     )
 
 
+def _require_symlink_free_path(path: Path, label: str) -> None:
+    parent = os.lstat(path.parent)
+    if stat.S_ISLNK(parent.st_mode):
+        raise CurriculumValidationError(
+            f"{label}: lesson path contains a symbolic link"
+        )
+    if not stat.S_ISDIR(parent.st_mode):
+        raise CurriculumValidationError(
+            f"{label}: lesson parent must be a directory"
+        )
+    node = os.lstat(path)
+    if stat.S_ISLNK(node.st_mode):
+        raise CurriculumValidationError(
+            f"{label}: lesson symbolic link is not a regular file"
+        )
+
+
 def _require_exact_object(
     value: object,
     required: frozenset[str],
@@ -396,9 +445,7 @@ def _require_exact_object(
         raise CurriculumValidationError(f"{label} must be an object")
     unknown = sorted(set(value) - allowed)
     if unknown:
-        raise CurriculumValidationError(
-            f"{label} unknown fields: {', '.join(unknown)}"
-        )
+        raise CurriculumValidationError(f"{label} has unknown fields")
     missing = sorted(required - set(value))
     if missing:
         raise CurriculumValidationError(
@@ -552,6 +599,10 @@ def _parse_objectives(
     *,
     complete: bool,
 ) -> tuple[Objective, ...]:
+    if type(value) is list and complete and not 3 <= len(value) <= 6:
+        raise CurriculumValidationError(
+            "complete lessons need 3 to 6 objectives"
+        )
     items = _require_list(value, "objectives", maximum=6)
     if complete and len(items) < 3:
         raise CurriculumValidationError(
@@ -836,6 +887,14 @@ def _require_https_url(value: object) -> str:
     url = _require_text(value, "source URL", maximum=2_048)
     if any(character.isspace() for character in url):
         raise CurriculumValidationError("source URL must not contain whitespace")
+    if "\\" in url:
+        raise CurriculumValidationError(
+            "source URL backslashes are not allowed"
+        )
+    if _ENCODED_CONTROL_PATTERN.search(url):
+        raise CurriculumValidationError(
+            "source URL encoded controls are not allowed"
+        )
     try:
         parsed = urlsplit(url)
         hostname = parsed.hostname
