@@ -309,6 +309,11 @@ def _close_all(descriptors: tuple[int | None, ...]) -> list[OSError]:
     return failures
 
 
+def _fsync_fd(descriptor: int, purpose: str) -> None:
+    """Durably finish an individual destination file before its descriptor closes."""
+    os.fsync(descriptor)
+
+
 def _unsupported(path: Path, mode: int) -> ValueError:
     if stat.S_ISLNK(mode):
         return ValueError(f"symbolic links are not supported: {path}")
@@ -365,6 +370,8 @@ def _copy_allowlisted_tree(source: Path, staging_fd: int) -> None:
                 with origin.open("rb") as input_file, os.fdopen(output, "wb") as output_file:
                     while chunk := input_file.read(_CHUNK_SIZE):
                         output_file.write(chunk)
+                    output_file.flush()
+                    _fsync_fd(output_file.fileno(), "destination regular file")
             except BaseException:
                 try:
                     os.close(output)
@@ -377,8 +384,9 @@ def _copy_allowlisted_tree(source: Path, staging_fd: int) -> None:
         os.mkdir(name, mode=0o700, dir_fd=destination_fd)
         child_fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=destination_fd)
         try:
-            for entry in os.scandir(origin):
-                copy_node(Path(entry.path), child_fd, entry.name)
+            with os.scandir(origin) as entries:
+                for entry in entries:
+                    copy_node(Path(entry.path), child_fd, entry.name)
         finally:
             os.close(child_fd)
 

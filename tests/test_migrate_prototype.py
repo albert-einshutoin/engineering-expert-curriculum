@@ -113,6 +113,34 @@ class PrototypeMigrationTests(unittest.TestCase):
             self.assertEqual((root / "index.html").read_text(encoding="utf-8"), "<main>legacy</main>")
             self.assertFalse(os.path.lexists(archive))
 
+    def test_regular_file_fsync_happens_before_manifest_rename(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            (root / "assets" / "css").mkdir(parents=True)
+            (root / "assets" / "css" / "app.css").write_text("body{}", encoding="utf-8")
+            archive = root / ".archive" / "prototype-v1"
+            events: list[str] = []
+            real_replace = os.replace
+
+            with patch("tools.migrate_prototype._fsync_fd", side_effect=lambda fd, purpose: events.append(purpose)):
+                with patch("tools.migrate_prototype.os.replace", side_effect=lambda *args, **kwargs: (events.append("replace"), real_replace(*args, **kwargs))[1]):
+                    preserve_prototype(root, archive)
+
+            self.assertIn("destination regular file", events)
+            self.assertLess(events.index("destination regular file"), events.index("replace"))
+
+    def test_regular_file_fsync_failure_rolls_back_archive(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            self._write_fixture(root)
+            archive = root / ".archive" / "prototype-v1"
+            with patch("tools.migrate_prototype._fsync_fd", side_effect=OSError("file fsync failed")):
+                with self.assertRaisesRegex(OSError, "file fsync failed"):
+                    preserve_prototype(root, archive)
+            self.assertTrue((root / "index.html").exists())
+            self.assertFalse(archive.exists())
+            self.assertFalse((root / ".archive").exists())
+
     def test_checksum_failure_leaves_source_and_archive_untouched(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory).resolve()
