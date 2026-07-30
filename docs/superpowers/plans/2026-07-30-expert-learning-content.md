@@ -302,7 +302,7 @@ git add curriculum_builder/lessons.py tests/test_lesson_quality.py tests/fixture
 git commit -m "feat: enforce evidence-based lesson mastery"
 ```
 
-Expected: three tests pass and the commit succeeds.
+Expected: the complete lesson-quality contract passes and the commit succeeds.
 
 ### Task 2: Render textbook lessons and printable review schedules
 
