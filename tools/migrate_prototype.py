@@ -211,6 +211,19 @@ def _remove_owned_archive(parent_fd: int, name: str, archive_fd: int) -> None:
     os.rmdir(name, dir_fd=parent_fd)
 
 
+def _close_all(descriptors: tuple[int | None, ...]) -> list[OSError]:
+    """Attempt every close so one failed descriptor cannot leak the remaining handles."""
+    failures: list[OSError] = []
+    for descriptor in descriptors:
+        if descriptor is None:
+            continue
+        try:
+            os.close(descriptor)
+        except OSError as error:
+            failures.append(error)
+    return failures
+
+
 def _unsupported(path: Path, mode: int) -> ValueError:
     if stat.S_ISLNK(mode):
         return ValueError(f"symbolic links are not supported: {path}")
@@ -444,12 +457,7 @@ def preserve_prototype(source: Path, archive: Path) -> PrototypeManifest:
         raise
     finally:
         # Manifest rename is the durable commit point; later close errors cannot reverse success.
-        for descriptor in (staging_fd, archive_fd, parent_fd):
-            if descriptor is not None:
-                try:
-                    os.close(descriptor)
-                except OSError:
-                    pass
+        _close_all((staging_fd, archive_fd, parent_fd))
 
     # The original is deliberately retained: a later, separately reviewed retirement task can clean it safely.
     return manifest

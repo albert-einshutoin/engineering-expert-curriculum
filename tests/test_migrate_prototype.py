@@ -154,6 +154,29 @@ class PrototypeMigrationTests(unittest.TestCase):
                 any(Path(call.args[1]).name == "manifest.json" for call in replace.call_args_list)
             )
 
+    def test_post_commit_close_failure_keeps_manifest_and_closes_all_descriptors(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            self._write_fixture(root)
+            archive = root / ".archive" / "prototype-v1"
+            original_cwd = Path.cwd()
+            attempted: list[int] = []
+
+            def close_with_reported_failure(descriptors: tuple[int | None, ...]) -> list[OSError]:
+                for descriptor in descriptors:
+                    if descriptor is not None:
+                        attempted.append(descriptor)
+                        os.close(descriptor)
+                return [OSError("first close failed")]
+
+            with patch("tools.migrate_prototype._close_all", side_effect=close_with_reported_failure):
+                manifest = preserve_prototype(root, archive)
+
+            self.assertEqual(manifest["fileCount"], 2)
+            self.assertTrue((archive / "manifest.json").exists())
+            self.assertEqual(Path.cwd(), original_cwd)
+            self.assertEqual(len(attempted), 2)
+
     def test_rejects_a_symlinked_source(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory).resolve()
