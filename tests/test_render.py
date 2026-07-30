@@ -992,6 +992,13 @@ class RendererTests(unittest.TestCase):
             "</footer>\n"
         )
         body_sequence = skip + header + main + footer
+        head = base[
+            base.index("<head>\n") : base.index("<body>\n")
+        ]
+        body = base[
+            base.index("<body>\n") : base.index("</html>")
+        ]
+        html_children = head + body
 
         security_cases = (
             (
@@ -1192,6 +1199,86 @@ class RendererTests(unittest.TestCase):
                     1,
                 ),
                 "base template markup is invalid",
+            ),
+            (
+                base.replace(
+                    html_children,
+                    body + head,
+                    1,
+                ),
+                "base template markup is invalid",
+            ),
+            (
+                base.replace(head, "", 1),
+                "base template placeholders do not match required counts",
+            ),
+            (
+                base.replace(body, "", 1),
+                "base template placeholders do not match required counts",
+            ),
+            (
+                base.replace(
+                    "</head>\n<body>",
+                    "</head>\nDIRECT-TEXT<body>",
+                    1,
+                ),
+                "base template markup is invalid",
+            ),
+            *(
+                (
+                    base.replace(
+                        original,
+                        changed,
+                        1,
+                    ),
+                    "base template markup is invalid",
+                )
+                for original, changed in (
+                    (
+                        title,
+                        title.replace("Curriculum", "curriculum", 1),
+                    ),
+                    (
+                        skip,
+                        skip.replace("本文へ移動", "本文へ移動!", 1),
+                    ),
+                    (
+                        brand,
+                        brand.replace(
+                            "Engineering Atlas",
+                            "Engineering atlas",
+                            1,
+                        ),
+                    ),
+                    (
+                        roadmap_link,
+                        roadmap_link.replace(
+                            "ロードマップ",
+                            "ロードマップ!",
+                            1,
+                        ),
+                    ),
+                    (
+                        lessons_link,
+                        lessons_link.replace(
+                            "コアレッスン",
+                            "コアレッスン!",
+                            1,
+                        ),
+                    ),
+                    (
+                        catalog_link,
+                        catalog_link.replace(
+                            "全カタログ",
+                            "全カタログ!",
+                            1,
+                        ),
+                    ),
+                    (
+                        footer,
+                        footer.replace("Prove", "prove", 1),
+                    ),
+                )
             ),
             *(
                 (
