@@ -9,6 +9,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 import unittest
 
+import curriculum_builder.render as render_module
 from curriculum_builder.errors import CurriculumValidationError
 from curriculum_builder.html_safety import SafeHtml, validate_fragment
 from curriculum_builder.render import (
@@ -352,6 +353,48 @@ class RendererTests(unittest.TestCase):
                     html_values={},
                 )
 
+    def test_rejects_incomplete_or_mismatched_template_markup_early(
+        self,
+    ) -> None:
+        cases = (
+            ("unclosed-tag.html", "<section><p>x</p>"),
+            ("unclosed-comment.html", "<p>x</p><!--"),
+            ("unclosed-double-quote.html", '<p class="reading'),
+            ("unclosed-single-quote.html", "<p class='reading"),
+            ("unclosed-script.html", "<script>x"),
+            ("unclosed-style.html", "<style>x"),
+            ("stray.html", "</p><p>x</p>"),
+            ("mismatch.html", "<section><p>x</section></p>"),
+        )
+        for name, source in cases:
+            with self.subTest(name=name):
+                renderer = self.renderer_with_fragment(name, source)
+                self.assert_validation_error(
+                    "template markup is invalid",
+                    renderer.fragment,
+                    name,
+                    text_values={},
+                    html_values={},
+                )
+
+    def test_stops_lexing_at_first_deep_mismatched_closing_tag(self) -> None:
+        depth = 2_048
+        source = "<div>" * depth + "</span>" * depth
+
+        with patch.object(
+            render_module,
+            "_tag_details",
+            wraps=render_module._tag_details,
+        ) as tag_details:
+            self.assert_validation_error(
+                "template markup is invalid",
+                render_module._placeholder_contexts,
+                source,
+                (),
+            )
+
+        self.assertEqual(tag_details.call_count, depth + 1)
+
     def test_rejects_missing_extra_overlapping_and_invalid_placeholders(self) -> None:
         missing = self.renderer_with_fragment("missing.html", "<p>$value</p>")
         extra = self.renderer_with_fragment("extra.html", "<p>fixed</p>")
@@ -522,6 +565,8 @@ class RendererTests(unittest.TestCase):
     def test_rejects_unsafe_output_paths_and_does_not_mutate_valid_path(
         self,
     ) -> None:
+        self.assertEqual(render_module.MAX_OUTPUT_DEPTH, 32)
+        self.assertEqual(render_module.MAX_OUTPUT_PATH_CHARS, 1_024)
         cases = (
             Path("/tmp/index.html"),
             Path("."),
@@ -531,6 +576,20 @@ class RendererTests(unittest.TestCase):
             Path("bad\x00.html"),
             Path("index.htm"),
             Path("space here/index.html"),
+            Path(
+                "/".join(
+                    ["level"] * (render_module.MAX_OUTPUT_DEPTH + 1)
+                    + ["index.html"]
+                )
+            ),
+            Path(
+                "/".join(
+                    ["a" * 100]
+                    * ((render_module.MAX_OUTPUT_PATH_CHARS // 100) + 1)
+                    + ["index.html"]
+                )
+            ),
+            Path("/".join(["a"] * 10_000 + ["index.html"])),
         )
         for output_path in cases:
             with self.subTest(output_path=output_path):
@@ -601,6 +660,81 @@ class RendererTests(unittest.TestCase):
                         text_values={},
                         html_values={},
                     )
+
+    def test_rejects_early_template_eof_without_accepting_valid_prefix(
+        self,
+    ) -> None:
+        source = b"<p>trusted</p> "
+        renderer = self.renderer_with_fragment(
+            "short-read.html",
+            source.decode("utf-8"),
+        )
+
+        with patch(
+            "curriculum_builder.render.os.read",
+            side_effect=(source[:-1], b""),
+        ):
+            self.assert_validation_error(
+                "template changed during read",
+                renderer.fragment,
+                "short-read.html",
+                text_values={},
+                html_values={},
+            )
+
+    def test_rejects_template_growth_and_post_read_metadata_change(
+        self,
+    ) -> None:
+        source = b"<p>trusted</p>"
+        renderer = self.renderer_with_fragment(
+            "changing.html",
+            source.decode("utf-8"),
+        )
+        template_path = renderer._template_root / "changing.html"
+
+        with patch(
+            "curriculum_builder.render.os.read",
+            side_effect=(source, b"x", b""),
+        ):
+            self.assert_validation_error(
+                "template changed during read",
+                renderer.fragment,
+                "changing.html",
+                text_values={},
+                html_values={},
+            )
+        self.assertEqual(template_path.read_bytes(), source)
+
+        real_fstat = os.fstat
+        call_count = 0
+
+        def changing_fstat(descriptor: int) -> object:
+            nonlocal call_count
+            call_count += 1
+            result = real_fstat(descriptor)
+            if call_count != 3:
+                return result
+
+            class ChangedMetadata:
+                def __getattr__(self, name: str) -> object:
+                    if name == "st_mtime_ns":
+                        return result.st_mtime_ns + 1
+                    return getattr(result, name)
+
+            return ChangedMetadata()
+
+        with patch(
+            "curriculum_builder.render.os.fstat",
+            side_effect=changing_fstat,
+        ):
+            self.assert_validation_error(
+                "template changed during read",
+                renderer.fragment,
+                "changing.html",
+                text_values={},
+                html_values={},
+            )
+        self.assertEqual(template_path.read_bytes(), source)
 
     def test_wraps_template_os_errors_without_leaking_paths(self) -> None:
         with patch(
@@ -754,6 +888,24 @@ class RendererTests(unittest.TestCase):
                     '  <meta http-equiv="refresh" '
                     'content="0;url=https://evil.example">\n'
                     "  <title>",
+                ),
+                "base template markup is invalid",
+            ),
+            (
+                base.replace(
+                    '  <meta http-equiv="Content-Security-Policy"',
+                    "  <p>browser-moves-this-to-body</p>\n"
+                    '  <meta http-equiv="Content-Security-Policy"',
+                ),
+                "base template markup is invalid",
+            ),
+            (
+                base.replace(
+                    '  <header class="site-header">',
+                    '  <p><header class="site-header">',
+                ).replace(
+                    "  </header>\n  <main",
+                    "  </header></p>\n  <main",
                 ),
                 "base template markup is invalid",
             ),
