@@ -470,6 +470,37 @@ class HtmlSafetyTests(unittest.TestCase):
             with self.subTest(fragment=fragment):
                 self.assert_rejected(fragment, message)
 
+    def test_table_caption_must_be_the_first_direct_child_and_unique(
+        self,
+    ) -> None:
+        valid = (
+            "<table><caption>評価</caption>"
+            "<thead><tr><th>観点</th></tr></thead>"
+            "<tbody><tr><td>証拠</td></tr></tbody></table>"
+        )
+        self.assertEqual(validate_fragment(valid).value, valid)
+
+        cases = (
+            (
+                "<table><thead><tr><th>観点</th></tr></thead>"
+                "<caption>評価</caption></table>",
+                "invalid HTML content model: "
+                "caption must be the first table child",
+            ),
+            (
+                "<table><caption>評価</caption><caption>重複</caption>"
+                "<tbody><tr><td>証拠</td></tr></tbody></table>",
+                "invalid HTML content model: table allows one caption",
+            ),
+            (
+                "<section><caption>評価</caption></section>",
+                "invalid HTML content model: caption requires parent table",
+            ),
+        )
+        for fragment, message in cases:
+            with self.subTest(fragment=fragment):
+                self.assert_rejected(fragment, message)
+
     def test_rejects_self_closing_and_malformed_markup(self) -> None:
         cases = (
             ("<p/>", "self-closing HTML elements are not allowed"),

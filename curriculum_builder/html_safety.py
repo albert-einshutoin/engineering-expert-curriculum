@@ -166,6 +166,7 @@ class _ElementFrame:
     has_direct_content: bool = False
     summary_seen: bool = False
     figcaption_seen: bool = False
+    caption_seen: bool = False
 
 
 @dataclass(frozen=True, slots=True, init=False)
@@ -406,6 +407,17 @@ class _FragmentParser(HTMLParser):
                     "figure child"
                 )
             parent.figcaption_seen = True
+
+        if tag == "caption":
+            if parent.caption_seen:
+                raise CurriculumValidationError(
+                    "invalid HTML content model: table allows one caption"
+                )
+            if parent.has_direct_content:
+                raise CurriculumValidationError(
+                    "invalid HTML content model: caption must be the first table child"
+                )
+            parent.caption_seen = True
 
         # The browser must build the same tree that was validated. Tracking direct
         # content prevents HTML's auto-closing/foster-parenting rules from moving it.
