@@ -365,6 +365,17 @@ def _validate_fragment_name(name: object) -> str:
     return name
 
 
+def _file_stat_signature(file_stat: os.stat_result) -> tuple[int, ...]:
+    return (
+        file_stat.st_dev,
+        file_stat.st_ino,
+        file_stat.st_mode,
+        file_stat.st_size,
+        file_stat.st_mtime_ns,
+        file_stat.st_ctime_ns,
+    )
+
+
 def _validate_placeholder_contract(
     placeholders: tuple[_Placeholder, ...],
     *,
@@ -876,7 +887,6 @@ class Renderer:
         file_descriptor: int | None = None
         read_failed = False
         chunks: list[bytes] = []
-        total = 0
         try:
             root_descriptor = os.open(self._template_root, root_flags)
             opened_root = os.fstat(root_descriptor)
@@ -914,25 +924,41 @@ class Renderer:
             opened = os.fstat(file_descriptor)
             if (
                 not stat.S_ISREG(opened.st_mode)
-                or (opened.st_dev, opened.st_ino)
-                != (before.st_dev, before.st_ino)
+                or _file_stat_signature(opened)
+                != _file_stat_signature(before)
             ):
                 raise CurriculumValidationError(
-                    "template must be a stable regular file"
+                    "template changed during read"
                 )
-            while True:
+            remaining = opened.st_size
+            while remaining:
                 chunk = os.read(
                     file_descriptor,
-                    min(65_536, MAX_TEMPLATE_BYTES + 1 - total),
+                    min(65_536, remaining),
                 )
                 if not chunk:
-                    break
-                chunks.append(chunk)
-                total += len(chunk)
-                if total > MAX_TEMPLATE_BYTES:
                     raise CurriculumValidationError(
-                        "template exceeds maximum byte count"
+                        "template changed during read"
                     )
+                if len(chunk) > remaining:
+                    raise CurriculumValidationError(
+                        "template changed during read"
+                    )
+                chunks.append(chunk)
+                remaining -= len(chunk)
+            if os.read(file_descriptor, 1):
+                raise CurriculumValidationError(
+                    "template changed during read"
+                )
+            after = os.fstat(file_descriptor)
+            if (
+                not stat.S_ISREG(after.st_mode)
+                or _file_stat_signature(after)
+                != _file_stat_signature(opened)
+            ):
+                raise CurriculumValidationError(
+                    "template changed during read"
+                )
         except CurriculumValidationError:
             raise
         except OSError:
