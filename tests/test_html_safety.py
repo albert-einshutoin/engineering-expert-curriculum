@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import FrozenInstanceError
 from html.parser import HTMLParser
 from unittest.mock import patch
+from urllib.parse import urljoin
 import unittest
 
 from curriculum_builder.errors import CurriculumValidationError
@@ -60,6 +61,21 @@ class HtmlSafetyTests(unittest.TestCase):
         fragment = (
             '<article><header class="reading"><h1>全カタログ</h1>'
             "</header><section><h2>領域</h2><p>本文</p></section></article>"
+        )
+
+        self.assertEqual(validate_fragment(fragment).value, fragment)
+
+    def test_accepts_representative_stable_semantic_content_models(self) -> None:
+        fragment = (
+            "<article><h1>設計</h1>"
+            "<ul><li><p>親</p><ol><li>子</li></ol></li></ul>"
+            "<dl><dt><dfn>証拠</dfn></dt><dd><p>観測可能な結果</p></dd></dl>"
+            "<figure><figcaption>比較</figcaption>"
+            "<blockquote><p>引用</p></blockquote></figure>"
+            "<details><summary>補足</summary><div><p>本文</p></div></details>"
+            "<table><thead><tr><th scope=\"col\">項目</th></tr></thead>"
+            "<tbody><tr><td><p>値</p></td></tr></tbody></table>"
+            "</article>"
         )
 
         self.assertEqual(validate_fragment(fragment).value, fragment)
@@ -210,9 +226,10 @@ class HtmlSafetyTests(unittest.TestCase):
         values = (
             "",
             "#evidence",
+            "?mode=review",
             "next.html",
+            "./next.html",
             "../lesson/index.html?mode=review#rubric",
-            "/curriculum/index.html",
             "https://example.com",
             "HTTPS://docs.example.com:443/a?q=1#part",
             "https://[2001:db8::1]/reference",
@@ -222,6 +239,22 @@ class HtmlSafetyTests(unittest.TestCase):
             with self.subTest(value=value):
                 fragment = f'<a href="{value}">source</a>'
                 self.assertEqual(validate_fragment(fragment).value, fragment)
+
+    def test_rejects_root_relative_urls_that_escape_file_site_layout(self) -> None:
+        base = "file:///tmp/site/lessons/example/index.html"
+        cases = (
+            ("/curriculum/index.html", "file:///curriculum/index.html"),
+            ("/x", "file:///x"),
+            ("//example.com/x", "file://example.com/x"),
+            ("///x", "file:///x"),
+        )
+        for value, resolved in cases:
+            with self.subTest(value=value):
+                self.assertEqual(urljoin(base, value), resolved)
+                self.assert_rejected(
+                    f'<a href="{value}">x</a>',
+                    "root-relative URLs are not file-compatible",
+                )
 
     def test_rejects_unsafe_url_schemes_after_character_reference_decoding(
         self,
@@ -245,8 +278,6 @@ class HtmlSafetyTests(unittest.TestCase):
 
     def test_rejects_ambiguous_or_privileged_urls(self) -> None:
         cases = (
-            ("//example.com/x", "scheme-relative URLs are not allowed"),
-            ("///example.com/x", "scheme-relative URLs are not allowed"),
             (r"\example.com\x", "backslashes are not allowed in URLs"),
             (
                 "https://example.com\\@evil.example/x",
@@ -299,6 +330,119 @@ class HtmlSafetyTests(unittest.TestCase):
             ("<p>x", "unclosed HTML element: p"),
             ("</p>", "stray closing tag: p"),
             ("<p>x</p></p>", "stray closing tag: p"),
+        )
+        for fragment, message in cases:
+            with self.subTest(fragment=fragment):
+                self.assert_rejected(fragment, message)
+
+    def test_rejects_browser_tree_mutating_content_models(self) -> None:
+        cases = (
+            (
+                "<p><div>x</div></p>",
+                "invalid HTML content model: div cannot be a child of p",
+            ),
+            (
+                '<a href="./one"><a href="./two">x</a></a>',
+                "invalid HTML content model: nested a",
+            ),
+            (
+                "<table><td>x</td></table>",
+                "invalid HTML content model: td requires parent tr",
+            ),
+            (
+                "<ul><p>x</p></ul>",
+                "invalid HTML content model: ul only allows li children",
+            ),
+            (
+                "<h1><h2>x</h2></h1>",
+                "invalid HTML content model: h2 cannot be a child of h1",
+            ),
+        )
+        for fragment, message in cases:
+            with self.subTest(fragment=fragment):
+                self.assert_rejected(fragment, message)
+
+    def test_rejects_misplaced_structural_elements_and_fostered_text(self) -> None:
+        cases = (
+            (
+                "<li>x</li>",
+                "invalid HTML content model: li requires parent ul or ol",
+            ),
+            (
+                "<dl><p>x</p></dl>",
+                "invalid HTML content model: dl only allows dt or dd children",
+            ),
+            (
+                "<table>x<tbody></tbody></table>",
+                "invalid HTML content model: table cannot contain text",
+            ),
+            (
+                "<thead><tr></tr></thead>",
+                "invalid HTML content model: thead requires parent table",
+            ),
+            (
+                "<table><thead>x</thead></table>",
+                "invalid HTML content model: thead cannot contain text",
+            ),
+            (
+                "<table><thead><td>x</td></thead></table>",
+                "invalid HTML content model: td requires parent tr",
+            ),
+            (
+                "<table><thead><tr>x</tr></thead></table>",
+                "invalid HTML content model: tr cannot contain text",
+            ),
+        )
+        for fragment, message in cases:
+            with self.subTest(fragment=fragment):
+                self.assert_rejected(fragment, message)
+
+    def test_details_requires_exactly_one_leading_summary(self) -> None:
+        cases = (
+            (
+                "<details></details>",
+                "invalid HTML content model: details requires a leading summary",
+            ),
+            (
+                "<details><p>x</p></details>",
+                "invalid HTML content model: details requires summary as first child",
+            ),
+            (
+                "<details>x<summary>s</summary></details>",
+                "invalid HTML content model: details requires summary as first child",
+            ),
+            (
+                "<details><summary>one</summary><summary>two</summary></details>",
+                "invalid HTML content model: details allows one summary",
+            ),
+            (
+                "<summary>x</summary>",
+                "invalid HTML content model: summary requires parent details",
+            ),
+        )
+        for fragment, message in cases:
+            with self.subTest(fragment=fragment):
+                self.assert_rejected(fragment, message)
+
+    def test_figcaption_must_be_the_first_direct_child_and_unique(self) -> None:
+        cases = (
+            (
+                "<figcaption>x</figcaption>",
+                "invalid HTML content model: figcaption requires parent figure",
+            ),
+            (
+                "<figure><p>x</p><figcaption>late</figcaption></figure>",
+                "invalid HTML content model: figcaption must be the first figure child",
+            ),
+            (
+                "<figure>text<figcaption>late</figcaption></figure>",
+                "invalid HTML content model: figcaption must be the first figure child",
+            ),
+            (
+                "<figure><figcaption>one</figcaption>"
+                "<figcaption>two</figcaption></figure>",
+                "invalid HTML content model: figure allows one figcaption",
+            ),
         )
         for fragment, message in cases:
             with self.subTest(fragment=fragment):

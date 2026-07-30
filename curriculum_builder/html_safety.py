@@ -102,6 +102,65 @@ _SCOPE_VALUES = frozenset({"col", "colgroup", "row", "rowgroup"})
 _ENCODED_URL_CONTROL_PATTERN = re.compile(
     r"%(?:0[0-9A-Fa-f]|1[0-9A-Fa-f]|5[Cc]|7[Ff])"
 )
+_PHRASING_ELEMENTS = frozenset(
+    {"a", "code", "dfn", "em", "kbd", "mark", "small", "strong"}
+)
+_PHRASING_ONLY_CONTAINERS = _PHRASING_ELEMENTS | frozenset(
+    {"h1", "h2", "h3", "h4", "p", "pre", "summary"}
+)
+_STRUCTURAL_CHILDREN = MappingProxyType(
+    {
+        "dl": frozenset({"dd", "dt"}),
+        "ol": frozenset({"li"}),
+        "table": frozenset({"tbody", "thead"}),
+        "tbody": frozenset({"tr"}),
+        "thead": frozenset({"tr"}),
+        "tr": frozenset({"td", "th"}),
+        "ul": frozenset({"li"}),
+    }
+)
+_STRUCTURAL_CHILD_LABELS = MappingProxyType(
+    {
+        "dl": "dt or dd",
+        "ol": "li",
+        "table": "thead or tbody",
+        "tbody": "tr",
+        "thead": "tr",
+        "tr": "th or td",
+        "ul": "li",
+    }
+)
+_REQUIRED_PARENTS = MappingProxyType(
+    {
+        "dd": (frozenset({"dl"}), "dd requires parent dl"),
+        "dt": (frozenset({"dl"}), "dt requires parent dl"),
+        "figcaption": (
+            frozenset({"figure"}),
+            "figcaption requires parent figure",
+        ),
+        "li": (frozenset({"ol", "ul"}), "li requires parent ul or ol"),
+        "summary": (
+            frozenset({"details"}),
+            "summary requires parent details",
+        ),
+        "tbody": (frozenset({"table"}), "tbody requires parent table"),
+        "td": (frozenset({"tr"}), "td requires parent tr"),
+        "th": (frozenset({"tr"}), "th requires parent tr"),
+        "thead": (frozenset({"table"}), "thead requires parent table"),
+        "tr": (
+            frozenset({"tbody", "thead"}),
+            "tr requires parent thead or tbody",
+        ),
+    }
+)
+
+
+@dataclass(slots=True)
+class _ElementFrame:
+    tag: str
+    has_direct_content: bool = False
+    summary_seen: bool = False
+    figcaption_seen: bool = False
 
 
 @dataclass(frozen=True, slots=True, init=False)
@@ -173,7 +232,7 @@ def _scan_markup_syntax(fragment: str) -> None:
 class _FragmentParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
-        self._open_tags: list[str] = []
+        self._open_tags: list[_ElementFrame] = []
         self._ids: set[str] = set()
 
     def handle_starttag(
@@ -214,7 +273,8 @@ class _FragmentParser(HTMLParser):
             raise CurriculumValidationError(
                 "fragment exceeds maximum nesting depth"
             )
-        self._open_tags.append(tag)
+        self._validate_content_model(tag)
+        self._open_tags.append(_ElementFrame(tag=tag))
 
     def handle_startendtag(
         self,
@@ -231,9 +291,31 @@ class _FragmentParser(HTMLParser):
             raise CurriculumValidationError(f"disallowed HTML element: {tag}")
         if not self._open_tags:
             raise CurriculumValidationError(f"stray closing tag: {tag}")
-        if self._open_tags[-1] != tag:
+        frame = self._open_tags[-1]
+        if frame.tag != tag:
             raise CurriculumValidationError(f"mismatched closing tag: {tag}")
+        if tag == "details" and not frame.summary_seen:
+            raise CurriculumValidationError(
+                "invalid HTML content model: details requires a leading summary"
+            )
         self._open_tags.pop()
+
+    def handle_data(self, data: str) -> None:
+        if not self._open_tags or not data:
+            return
+        frame = self._open_tags[-1]
+        if not data.strip(" \t\n\r"):
+            return
+        if frame.tag in _STRUCTURAL_CHILDREN:
+            raise CurriculumValidationError(
+                f"invalid HTML content model: {frame.tag} cannot contain text"
+            )
+        if frame.tag == "details" and not frame.summary_seen:
+            raise CurriculumValidationError(
+                "invalid HTML content model: details requires summary as first child"
+            )
+        if frame.tag == "figure":
+            frame.has_direct_content = True
 
     def handle_comment(self, data: str) -> None:
         del data
@@ -256,8 +338,73 @@ class _FragmentParser(HTMLParser):
     def finish(self) -> None:
         if self._open_tags:
             raise CurriculumValidationError(
-                f"unclosed HTML element: {self._open_tags[-1]}"
+                f"unclosed HTML element: {self._open_tags[-1].tag}"
             )
+
+    def _validate_content_model(self, tag: str) -> None:
+        parent = self._open_tags[-1] if self._open_tags else None
+        parent_tag = parent.tag if parent is not None else None
+
+        required = _REQUIRED_PARENTS.get(tag)
+        if required is not None:
+            allowed_parents, message = required
+            if parent_tag not in allowed_parents:
+                raise CurriculumValidationError(
+                    f"invalid HTML content model: {message}"
+                )
+
+        if tag == "a" and any(frame.tag == "a" for frame in self._open_tags):
+            raise CurriculumValidationError(
+                "invalid HTML content model: nested a"
+            )
+
+        if parent is None:
+            return
+        if parent.tag in _PHRASING_ONLY_CONTAINERS and tag not in _PHRASING_ELEMENTS:
+            raise CurriculumValidationError(
+                f"invalid HTML content model: {tag} cannot be a child of {parent.tag}"
+            )
+        expected_children = _STRUCTURAL_CHILDREN.get(parent.tag)
+        if expected_children is not None and tag not in expected_children:
+            label = _STRUCTURAL_CHILD_LABELS[parent.tag]
+            raise CurriculumValidationError(
+                f"invalid HTML content model: {parent.tag} only allows "
+                f"{label} children"
+            )
+
+        if parent.tag == "details":
+            if tag == "summary":
+                if parent.summary_seen:
+                    raise CurriculumValidationError(
+                        "invalid HTML content model: details allows one summary"
+                    )
+                if parent.has_direct_content:
+                    raise CurriculumValidationError(
+                        "invalid HTML content model: summary must be the first "
+                        "details child"
+                    )
+                parent.summary_seen = True
+            elif not parent.summary_seen:
+                raise CurriculumValidationError(
+                    "invalid HTML content model: details requires summary "
+                    "as first child"
+                )
+
+        if tag == "figcaption":
+            if parent.figcaption_seen:
+                raise CurriculumValidationError(
+                    "invalid HTML content model: figure allows one figcaption"
+                )
+            if parent.has_direct_content:
+                raise CurriculumValidationError(
+                    "invalid HTML content model: figcaption must be the first "
+                    "figure child"
+                )
+            parent.figcaption_seen = True
+
+        # The browser must build the same tree that was validated. Tracking direct
+        # content prevents HTML's auto-closing/foster-parenting rules from moving it.
+        parent.has_direct_content = True
 
     def _validate_attribute(self, tag: str, name: str, value: str) -> None:
         del tag
@@ -314,8 +461,10 @@ def _validate_url(value: str) -> None:
         raise CurriculumValidationError("backslashes are not allowed in URLs")
     if _ENCODED_URL_CONTROL_PATTERN.search(value):
         raise CurriculumValidationError("encoded controls are not allowed in URLs")
-    if value.startswith("//"):
-        raise CurriculumValidationError("scheme-relative URLs are not allowed")
+    if value.startswith("/"):
+        raise CurriculumValidationError(
+            "root-relative URLs are not file-compatible"
+        )
 
     try:
         parsed = urlsplit(value)
