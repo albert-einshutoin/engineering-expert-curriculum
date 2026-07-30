@@ -453,7 +453,7 @@ Expected: focused tests pass.
 - Create: `content/lessons/core-05-networks-latency-failure/{lesson.json,body.html}`
 - Modify: `tests/test_core_tracks.py`
 
-- [ ] **Step 1: Write the exact Foundations contract**
+- [x] **Step 1: Write the exact Foundations contract**
 
 ```python
 FOUNDATIONS = {
@@ -525,7 +525,7 @@ class CoreTrackTests(unittest.TestCase):
 Import `Path`, `unittest`, and `load_lesson` at the top of
 `tests/test_core_tracks.py`.
 
-- [ ] **Step 2: Run the track test and verify RED**
+- [x] **Step 2: Run the track test and verify RED**
 
 Run:
 
@@ -535,7 +535,7 @@ python3 -m unittest tests.test_core_tracks.CoreTrackTests.test_foundations -v
 
 Expected: failure listing all five missing lesson directories.
 
-- [ ] **Step 3: Author each lesson using the complete mastery loop**
+- [x] **Step 3: Author each lesson using the complete mastery loop**
 
 For every listed lesson, create `lesson.json` using the Task 1 schema and a
 `body.html` containing these exact semantic sections:
@@ -554,7 +554,7 @@ one numeric or executable worked example, two plausible-but-wrong diagnoses,
 one decision table, one lab artifact, one five-minute teach-back, one novel
 transfer scenario, and a four-level rubric.
 
-- [ ] **Step 4: Run the focused quality and rendering gates**
+- [x] **Step 4: Run the focused quality and rendering gates**
 
 Run:
 
@@ -567,7 +567,14 @@ python3 -m unittest \
 
 Expected: all tests pass and five lesson pages render.
 
-- [ ] **Step 5: Commit the Foundations track**
+Implementation note (2026-07-31): the contract test first failed with five
+missing lesson files, then the focused 68-test gate and the full 330-test suite
+passed. Two repository-external builds emitted the five lesson pages and index
+with the same aggregate SHA-256
+`d28deaa62b8b32884161edf50484312928c6c2f83f1cfb94e486e5e4f543d859`.
+The content and contract were committed as `b385baf`.
+
+- [x] **Step 5: Commit the Foundations track**
 
 ```bash
 git add content/lessons/core-0{1,2,3,4,5}-* tests/test_core_tracks.py
