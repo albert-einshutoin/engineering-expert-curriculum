@@ -123,7 +123,7 @@ def _write_atomic(path: Path, document: dict[str, object], *, forbidden_identity
     operation_error: BaseException | None = None
     try:
         _target_is_regular_or_missing(parent_fd, final_name, forbidden_identity)
-        payload = serialize_catalog_document(document["items"], str(document["generatedFrom"]))
+        payload = serialize_catalog_document(document["items"], str(document["generatedFrom"]), str(document["sourceSha256"]))
         temporary_name = f".catalog-{uuid.uuid4().hex}.tmp"
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
         temporary_fd = os.open(temporary_name, flags, 0o600, dir_fd=parent_fd)
@@ -169,7 +169,7 @@ def main(argv: list[str] | None = None) -> int:
         source, source_hash, source_identity = _read_source(arguments.input)
         if source_hash != arguments.expected_source_sha256: raise CurriculumValidationError("source SHA-256 does not match expected value")
         if not isinstance(source, dict): raise CurriculumValidationError("source root must be an object")
-        _write_atomic(arguments.output, canonicalize(source, arguments.generated_from, expected_lesson_count=1140, expected_domain_count=38, expected_module_count=380), forbidden_identity=source_identity)
+        _write_atomic(arguments.output, canonicalize(source, arguments.generated_from, source_sha256=source_hash, expected_lesson_count=1140, expected_domain_count=38, expected_module_count=380), forbidden_identity=source_identity)
     except (CurriculumValidationError, OSError, RuntimeError, ValueError) as error:
         print(f"import failed: {error}", file=sys.stderr); return 1
     return 0

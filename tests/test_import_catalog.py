@@ -35,7 +35,7 @@ def legacy_source(lessons: list[dict[str, object]]) -> dict[str, object]:
 
 class CatalogImportTests(unittest.TestCase):
     def test_writer_rejects_missing_parent_symlink_and_non_regular_target(self) -> None:
-        document = {"version": 1, "generatedFrom": "source", "items": [{**lesson(), "coreLessonId": None}]}
+        document = {"version": 1, "generatedFrom": "source", "sourceSha256": "a55a0d0b1cfa3773031e787c2ce7ca0df34534e16a70b65ed1baa91975c82da8", "items": [{**lesson(), "coreLessonId": None}]}
         # The writer receives canonical rows, so remove only the legacy path here.
         document["items"][0].pop("path")
         with TemporaryDirectory(dir=Path.cwd()) as directory:
@@ -48,7 +48,7 @@ class CatalogImportTests(unittest.TestCase):
             with self.assertRaises(ValueError): _write_atomic(target, document)
 
     def test_writer_publishes_mode_and_keeps_old_output_when_replace_fails(self) -> None:
-        document = {"version": 1, "generatedFrom": "source", "items": [{**lesson(), "coreLessonId": None}]}
+        document = {"version": 1, "generatedFrom": "source", "sourceSha256": "a55a0d0b1cfa3773031e787c2ce7ca0df34534e16a70b65ed1baa91975c82da8", "items": [{**lesson(), "coreLessonId": None}]}
         document["items"][0].pop("path")
         with TemporaryDirectory(dir=Path.cwd()) as directory:
             output = Path(directory) / "catalog.json"
@@ -61,7 +61,7 @@ class CatalogImportTests(unittest.TestCase):
             self.assertEqual(list(output.parent.glob(".catalog-*.tmp")), [])
 
     def test_writer_reports_post_replace_same_uid_substitution_without_rollback(self) -> None:
-        document = {"version": 1, "generatedFrom": "source", "items": [{**lesson(), "coreLessonId": None}]}
+        document = {"version": 1, "generatedFrom": "source", "sourceSha256": "a55a0d0b1cfa3773031e787c2ce7ca0df34534e16a70b65ed1baa91975c82da8", "items": [{**lesson(), "coreLessonId": None}]}
         document["items"][0].pop("path")
         with TemporaryDirectory(dir=Path.cwd()) as directory:
             output = Path(directory) / "catalog.json"; output.write_bytes(b"old")
