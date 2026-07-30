@@ -1540,6 +1540,15 @@ Canonical root order is `version`, `generatedFrom`, `sourceSha256`, `items`.
 The repository verifier accepts only source `a55a0d0b1cfa3773031e787c2ce7ca0df34534e16a70b65ed1baa91975c82da8`
 and artifact `4f38b5f63931a7f06e13f90f5d9ef90a0a435f30dae5d4fe70720d730a057473`.
 
+Task 4 imports with `canonicalize(source, generated_from, source_sha256=actual_sha256)`
+and returns exactly `version`, `generatedFrom`, `sourceSha256`, `items`. Generic
+`load_catalog` reads bytes once, rejects duplicate/noncanonical JSON, and validates
+models. Repository checks use `load_repository_catalog(Path('content/catalog.json'))`:
+the same bytes are SHA-256 checked against the artifact hash and their parsed
+`sourceSha256` is checked against the source hash above. The writer pins a trusted
+directory FD, uses an exclusive private temporary file, fsyncs file then directory,
+and never uses parent creation or pathname-based temporary-file helpers.
+
 The importer must use a pinned trusted output directory and verify the published
 inode after rename. A same-euid writer at the exact POSIX rename boundary is out
 of scope: run imports exclusively; report integrity failure and never rollback a

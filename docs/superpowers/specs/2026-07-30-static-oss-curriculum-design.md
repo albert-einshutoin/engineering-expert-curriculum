@@ -469,6 +469,9 @@ foreign entry. This is detection, not a privilege boundary or rollback guarantee
 The catalog contract is schema version 1 with 1,140 items. It records the source
 SHA-256 `a55a0d0b1cfa3773031e787c2ce7ca0df34534e16a70b65ed1baa91975c82da8` and
 checked-in artifact SHA-256 `4f38b5f63931a7f06e13f90f5d9ef90a0a435f30dae5d4fe70720d730a057473`.
+Its ordered root fields are `version`, `generatedFrom`, `sourceSha256`, and `items`.
+Repository verification reads the artifact once, validates both hashes from those
+same bytes, then performs strict duplicate-key and canonical serialization checks.
 
 Every generated page must meet [WCAG 2.2][wcag22] Level AA and include:
 
