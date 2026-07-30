@@ -417,9 +417,42 @@ class PrototypeMigrationTests(unittest.TestCase):
             self.assertTrue((parent / "staging").exists())
             self.assertEqual((parent / "published" / "sentinel.txt").read_text(encoding="utf-8"), "keep")
 
-    def test_native_noreplace_rename_rejects_non_basenames(self) -> None:
-        with self.assertRaises(ValueError):
-            _rename_directory_noreplace(0, "../staging", "published")
+    def test_native_noreplace_rename_rejects_invalid_basenames_without_resolving_native_call(self) -> None:
+        invalid_names = ("", ".", "..", "nested/name", "bad\0name")
+        for invalid_name in invalid_names:
+            for source_name, target_name in ((invalid_name, "published"), ("staging", invalid_name)):
+                with self.subTest(source_name=source_name, target_name=target_name):
+                    with TemporaryDirectory() as directory:
+                        parent = Path(directory).resolve()
+                        staging = parent / "staging"
+                        staging.mkdir()
+                        payload = staging / "payload.txt"
+                        payload.write_text("keep", encoding="utf-8")
+                        descriptor = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
+                        try:
+                            with patch("tools.migrate_prototype._native_rename_noreplace") as native:
+                                with self.assertRaises(ValueError):
+                                    _rename_directory_noreplace(descriptor, source_name, target_name)
+                                native.assert_not_called()
+                        finally:
+                            os.close(descriptor)
+                        self.assertEqual(payload.read_text(encoding="utf-8"), "keep")
+                        self.assertFalse((parent / "published").exists())
+
+    def test_native_noreplace_rename_fails_closed_when_native_failure_has_no_errno(self) -> None:
+        with TemporaryDirectory() as directory:
+            parent = Path(directory).resolve()
+            (parent / "staging").mkdir()
+            descriptor = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                with patch("tools.migrate_prototype._native_rename_noreplace", return_value=(lambda *args: -1, 1)):
+                    with patch("tools.migrate_prototype.ctypes.get_errno", return_value=0):
+                        with self.assertRaisesRegex(RuntimeError, "without errno"):
+                            _rename_directory_noreplace(descriptor, "staging", "published")
+            finally:
+                os.close(descriptor)
+            self.assertTrue((parent / "staging").exists())
+            self.assertFalse((parent / "published").exists())
     def _write_fixture(self, root: Path) -> None:
         self._prepare_archive_parent(root)
         (root / "assets").mkdir()
@@ -498,6 +531,21 @@ class PrototypeMigrationTests(unittest.TestCase):
 
             self.assertFalse(archive_parent.exists())
             self.assertTrue((root / "index.html").exists())
+
+    def test_preserve_fails_closed_when_native_publish_is_unsupported(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            self._write_fixture(root)
+            archive = root / ".archive" / "prototype-v1"
+
+            with patch("tools.migrate_prototype.sys.platform", "unsupported-test"):
+                with self.assertRaisesRegex(RuntimeError, "native no-replace rename is not supported"):
+                    preserve_prototype(root, archive)
+
+            self.assertTrue((root / "index.html").exists())
+            self.assertFalse(archive.exists())
+            self.assertEqual(list((root / ".archive").glob(".prototype-staging-*")), [])
+            self._assert_prepared_archive_parent_empty(root)
 
     def test_copy_failure_leaves_source_and_archive_untouched(self) -> None:
         with TemporaryDirectory() as directory:

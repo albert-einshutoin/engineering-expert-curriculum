@@ -59,13 +59,16 @@ def _native_rename_noreplace() -> tuple[object, int]:
 def _rename_directory_noreplace(parent_fd: int, source_name: str, target_name: str) -> None:
     """Atomically publish a directory without overwriting an existing target."""
     for name in (source_name, target_name):
-        if not name or name in {".", ".."} or "/" in name:
+        if not name or name in {".", ".."} or "/" in name or "\0" in name:
             raise ValueError(f"directory entry name must be a basename: {name!r}")
     function, flag = _native_rename_noreplace()
     # os.rename can overwrite the target; native no-replace is required for the publish commit point.
+    ctypes.set_errno(0)
     if function(parent_fd, os.fsencode(source_name), parent_fd, os.fsencode(target_name), flag) == 0:
         return
     code = ctypes.get_errno()
+    if code == 0:
+        raise RuntimeError("native no-replace rename failed without errno")
     if code in {errno.EEXIST, errno.ENOTEMPTY}:
         raise FileExistsError(f"archive already exists: {target_name}")
     raise OSError(code, os.strerror(code), target_name)
