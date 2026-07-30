@@ -83,6 +83,10 @@ class LessonQualityTests(unittest.TestCase):
         lesson = load_lesson(Path("tests/fixtures/complete-lesson.json"))
         self.assertEqual(lesson.status, "complete")
         self.assertEqual(lesson.review_intervals, (1, 7, 30, 90))
+        self.assertEqual(
+            tuple(item.level for item in lesson.capability_progression),
+            ("recognize", "explain", "apply", "diagnose", "lead"),
+        )
         evidence_ids = {evidence.id for evidence in lesson.evidence}
         for objective in lesson.objectives:
             self.assertTrue(set(objective.evidence_ids) <= evidence_ids)
@@ -90,7 +94,7 @@ class LessonQualityTests(unittest.TestCase):
     def test_complete_status_rejects_missing_quality_dimensions(self) -> None:
         with self.assertRaisesRegex(
             CurriculumValidationError,
-            "complete lesson missing: transferTask, teachBack",
+            "complete lesson missing: teachBack, transferTask",
         ):
             load_lesson(Path("tests/fixtures/incomplete-lesson.json"))
 
@@ -151,6 +155,33 @@ Expected: import fails because `curriculum_builder.lessons` does not exist.
     {"id": "teach-back", "kind": "explanation", "description": "5分の図解説明"},
     {"id": "assessment", "kind": "reasoning", "description": "障害シナリオへの判断根拠"},
     {"id": "transfer", "kind": "transfer", "description": "未知の制約下での再評価"}
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "制約と利害関係者を特定し、判断対象の境界を示せる",
+      "evidenceIds": ["lab-map"]
+    },
+    {
+      "level": "explain",
+      "criterion": "選択肢の機構と主要なトレードオフを自分の言葉で説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "制約に基づく比較を行い、レビュー可能な判断記録を作成できる",
+      "evidenceIds": ["lab-map"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "観測した証拠から障害の因果経路を切り分け、反証を示せる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "異なる領域へ判断方法を移し、再評価条件を関係者へ説明できる",
+      "evidenceIds": ["transfer"]
+    }
   ],
   "lab": {
     "title": "同期処理とキューを比較する",
@@ -237,123 +268,29 @@ Create `incomplete-lesson.json` from the same object but remove `teachBack` and
 
 - [ ] **Step 4: Implement immutable lesson parsing and complete-status gates**
 
-```python
-# curriculum_builder/lessons.py
-from __future__ import annotations
+Implement `load_lesson(path: Path)` as a strict trust boundary:
 
-from dataclasses import dataclass
-import json
-from pathlib import Path
-import re
-from typing import Any
-from urllib.parse import urlparse
-
-from curriculum_builder.errors import CurriculumValidationError
-
-LESSON_ID = re.compile(r"^core-[0-9]{2}-[a-z0-9-]+$")
-RUBRIC_LEVELS = {"incomplete", "developing", "proficient", "exemplary"}
-RUBRIC_DIMENSIONS = {
-    "technical-correctness", "judgment", "evidence", "communication"
-}
-SOURCE_KINDS = {"primary", "standard", "official", "peer-reviewed"}
-COMPLETE_FIELDS = {
-    "lab", "teachBack", "assessment", "transferTask", "rubric", "sources", "review"
-}
-
-
-@dataclass(frozen=True, slots=True)
-class Objective:
-    id: str
-    statement: str
-    evidence_ids: tuple[str, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class Evidence:
-    id: str
-    kind: str
-    description: str
-
-
-@dataclass(frozen=True, slots=True)
-class Lesson:
-    id: str
-    title: str
-    track: str
-    stage: int
-    status: str
-    prerequisite_ids: tuple[str, ...]
-    objectives: tuple[Objective, ...]
-    evidence: tuple[Evidence, ...]
-    review_intervals: tuple[int, ...]
-    raw: dict[str, Any]
-
-
-def load_lesson(path: Path) -> Lesson:
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    lesson_id = str(raw.get("id", ""))
-    if not LESSON_ID.fullmatch(lesson_id):
-        raise CurriculumValidationError(f"invalid lesson id: {lesson_id}")
-    if raw.get("status") == "complete":
-        missing = sorted(field for field in COMPLETE_FIELDS if not raw.get(field))
-        if missing:
-            raise CurriculumValidationError(
-                f"complete lesson missing: {', '.join(missing)}"
-            )
-    evidence = tuple(Evidence(**value) for value in raw.get("evidence", ()))
-    evidence_ids = {value.id for value in evidence}
-    objectives = tuple(
-        Objective(
-            id=value["id"],
-            statement=value["statement"],
-            evidence_ids=tuple(value["evidenceIds"]),
-        )
-        for value in raw.get("objectives", ())
-    )
-    if raw.get("status") == "complete" and not 3 <= len(objectives) <= 6:
-        raise CurriculumValidationError(
-            f"{lesson_id}: complete lessons need 3 to 6 objectives"
-        )
-    for objective in objectives:
-        unknown = sorted(set(objective.evidence_ids) - evidence_ids)
-        if unknown:
-            raise CurriculumValidationError(
-                f"{lesson_id}: unknown evidence {', '.join(unknown)}"
-            )
-    rubric = raw.get("rubric", ())
-    if raw.get("status") == "complete":
-        dimensions = {value.get("dimension") for value in rubric}
-        if dimensions != RUBRIC_DIMENSIONS:
-            raise CurriculumValidationError(
-                f"{lesson_id}: rubric dimensions must be {sorted(RUBRIC_DIMENSIONS)}"
-            )
-    for dimension in rubric:
-        if set(dimension.get("levels", {})) != RUBRIC_LEVELS:
-            raise CurriculumValidationError(f"{lesson_id}: invalid rubric levels")
-    sources = raw.get("sources", ())
-    if raw.get("status") == "complete" and len(sources) < 2:
-        raise CurriculumValidationError(f"{lesson_id}: at least two sources required")
-    for source in sources:
-        if source.get("kind") not in SOURCE_KINDS:
-            raise CurriculumValidationError(f"{lesson_id}: invalid source kind")
-        if urlparse(str(source.get("url", ""))).scheme != "https":
-            raise CurriculumValidationError(f"{lesson_id}: source URL must use https")
-    intervals = tuple(raw.get("review", {}).get("intervalDays", ()))
-    if raw.get("status") == "complete" and intervals != (1, 7, 30, 90):
-        raise CurriculumValidationError(f"{lesson_id}: review intervals must be 1,7,30,90")
-    return Lesson(
-        id=lesson_id,
-        title=str(raw["title"]),
-        track=str(raw["track"]),
-        stage=int(raw["stage"]),
-        status=str(raw["status"]),
-        prerequisite_ids=tuple(raw.get("prerequisiteIds", ())),
-        objectives=objectives,
-        evidence=evidence,
-        review_intervals=intervals,
-        raw=raw,
-    )
-```
+- Accept only the exact native `Path` type, pin a bounded regular-file
+  descriptor, reject symbolic links and file changes, and decode strict UTF-8
+  JSON with duplicate-key rejection.
+- Enforce exact root and nested schemas, exact scalar types (including
+  bool-as-int rejection), bounded lists and strings, trimmed/control-safe text,
+  ID patterns, uniqueness, and known evidence references.
+- Convert every nested value to `@dataclass(frozen=True, slots=True)` plus
+  tuples. The public `Lesson` API exposes typed fields such as
+  `prerequisite_ids`, `objectives`, `evidence`, `capability_progression`,
+  `lab`, `transfer_task`, `rubric`, `sources`, and `review`; it never exposes
+  the mutable decoded JSON object.
+- For `complete`, require the exact ordered capability progression
+  `recognize → explain → apply → diagnose → lead`. Each entry has exact
+  `{level, criterion, evidenceIds}` fields, a substantive criterion, and at
+  least one unique known evidence reference. This progression is independent
+  from the four rubric quality levels and must not be coupled to a particular
+  evidence kind.
+- A draft may omit `capabilityProgression` or provide a valid non-empty prefix
+  of the five levels. A complete lesson also enforces the objective, lab,
+  teach-back, assessment, transfer, rubric, source, review, date, stage,
+  difficulty, track, and estimate gates defined above.
 
 - [ ] **Step 5: Run tests and commit the mastery contract**
 
@@ -537,16 +474,23 @@ class CoreTrackTests(unittest.TestCase):
                 lesson.prerequisite_ids,
                 prerequisites,
             )
-            serialized = json.dumps(lesson.raw, ensure_ascii=False)
-            self.assertIn(artifact, serialized)
+            self.assertIsNotNone(lesson.lab)
+            assert lesson.lab is not None
+            self.assertEqual(lesson.lab.artifact, artifact)
             if transfer is not None:
-                self.assertIn(transfer, serialized)
+                self.assertEqual(lesson.transfer_task, transfer)
+            else:
+                self.assertTrue(lesson.transfer_task)
+            self.assertEqual(
+                tuple(item.level for item in lesson.capability_progression),
+                ("recognize", "explain", "apply", "diagnose", "lead"),
+            )
 
     def test_foundations(self) -> None:
         self.assert_track(FOUNDATIONS)
 ```
 
-Import `json`, `Path`, `unittest`, and `load_lesson` at the top of
+Import `Path`, `unittest`, and `load_lesson` at the top of
 `tests/test_core_tracks.py`.
 
 - [ ] **Step 2: Run the track test and verify RED**
