@@ -1814,6 +1814,82 @@ class BuildPublicationTests(unittest.TestCase):
                 "old",
             )
 
+    def test_cleanup_revalidates_each_opened_nested_directory(
+        self,
+    ) -> None:
+        cases = ["identity", "device", "mode"]
+        if hasattr(os, "geteuid"):
+            cases.append("owner")
+        for mutation in cases:
+            with self.subTest(mutation=mutation), TemporaryDirectory() as path:
+                root = Path(path).resolve(strict=True)
+                nested = root / "nested"
+                nested.mkdir()
+                sentinel = nested / "sentinel.txt"
+                sentinel.write_text("keep", encoding="utf-8")
+                root_fd = os.open(
+                    root,
+                    os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                )
+                original_open_directory = build_module._open_directory_at
+                original_fstat = os.fstat
+                original_unlink = os.unlink
+                nested_fd: int | None = None
+                unlink_calls: list[object] = []
+
+                def recording_open(parent_fd: int, name: str) -> int:
+                    nonlocal nested_fd
+                    descriptor = original_open_directory(parent_fd, name)
+                    if name == "nested":
+                        nested_fd = descriptor
+                    return descriptor
+
+                def mutating_fstat(descriptor: int) -> os.stat_result:
+                    current = original_fstat(descriptor)
+                    if descriptor != nested_fd:
+                        return current
+                    fields = list(current)
+                    if mutation == "identity":
+                        fields[1] = current.st_ino + 1
+                    elif mutation == "device":
+                        fields[2] = current.st_dev + 1
+                    elif mutation == "mode":
+                        fields[0] = current.st_mode | stat.S_IWGRP
+                    else:
+                        fields[4] = current.st_uid + 1
+                    return os.stat_result(fields)
+
+                def recording_unlink(
+                    target: object,
+                    *args: object,
+                    **kwargs: object,
+                ) -> None:
+                    unlink_calls.append(target)
+                    original_unlink(  # type: ignore[arg-type]
+                        target,
+                        *args,
+                        **kwargs,
+                    )
+
+                try:
+                    with patch(
+                        "curriculum_builder.build._open_directory_at",
+                        side_effect=recording_open,
+                    ), patch(
+                        "curriculum_builder.build.os.fstat",
+                        side_effect=mutating_fstat,
+                    ), patch(
+                        "curriculum_builder.build.os.unlink",
+                        side_effect=recording_unlink,
+                    ):
+                        with self.assertRaises(RuntimeError):
+                            build_module._clear_directory_fd(root_fd)
+                finally:
+                    os.close(root_fd)
+
+                self.assertEqual(unlink_calls, [])
+                self.assertEqual(sentinel.read_text(), "keep")
+
     def test_missing_input_never_partially_generates_or_damages_repository_site(
         self,
     ) -> None:

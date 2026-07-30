@@ -1307,17 +1307,87 @@ def _reconcile_failed_publication(
     )
 
 
-def _clear_directory_fd(directory_fd: int) -> None:
+def _require_safe_cleanup_directory(
+    node: os.stat_result,
+    root_device: int,
+    label: str,
+) -> None:
+    if not stat.S_ISDIR(node.st_mode):
+        raise RuntimeError(f"{label} is not a directory")
+    if node.st_dev != root_device:
+        # st_dev blocks ordinary mount crossings. Portable dirfd APIs cannot
+        # distinguish a same-device bind mount, so generated/recovery trees are
+        # required to be mount-free inside the exclusive workspace namespace.
+        raise RuntimeError(f"{label} crosses a filesystem boundary")
+    if hasattr(os, "geteuid") and node.st_uid != os.geteuid():
+        raise RuntimeError(f"{label} is not owned by the current user")
+    if node.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+        raise RuntimeError(f"{label} is group/world writable")
+
+
+def _clear_directory_fd(
+    directory_fd: int,
+    root_device: int | None = None,
+) -> None:
+    root = os.fstat(directory_fd)
+    if root_device is None:
+        root_device = root.st_dev
+    _require_safe_cleanup_directory(
+        root,
+        root_device,
+        "cleanup directory",
+    )
     with os.scandir(directory_fd) as entries:
         ordered = sorted(entries, key=lambda entry: entry.name)
     for entry in ordered:
         node = entry.stat(follow_symlinks=False)
         if stat.S_ISDIR(node.st_mode):
+            _require_safe_cleanup_directory(
+                node,
+                root_device,
+                "nested cleanup directory",
+            )
             child = _open_directory_at(directory_fd, entry.name)
+            child_error: BaseException | None = None
             try:
-                _clear_directory_fd(child)
+                opened = os.fstat(child)
+                _require_safe_cleanup_directory(
+                    opened,
+                    root_device,
+                    "opened nested cleanup directory",
+                )
+                if _identity(opened) != _identity(node):
+                    raise RuntimeError(
+                        "nested cleanup directory changed while opening"
+                    )
+                _clear_directory_fd(child, root_device)
+                current = os.stat(
+                    entry.name,
+                    dir_fd=directory_fd,
+                    follow_symlinks=False,
+                )
+                _require_safe_cleanup_directory(
+                    current,
+                    root_device,
+                    "nested cleanup directory before removal",
+                )
+                if _identity(current) != _identity(opened):
+                    raise RuntimeError(
+                        "nested cleanup directory changed before removal"
+                    )
+            except BaseException as error:
+                child_error = error
+                raise
             finally:
-                os.close(child)
+                try:
+                    os.close(child)
+                except OSError as close_error:
+                    if child_error is None:
+                        raise
+                    child_error.add_note(
+                        "nested cleanup descriptor also failed to close: "
+                        f"{close_error}"
+                    )
             os.rmdir(entry.name, dir_fd=directory_fd)
         else:
             # Symlinks and special files are unlinked as directory entries;
@@ -1331,19 +1401,28 @@ def _remove_owned_directory(
     directory_fd: int,
 ) -> None:
     expected = os.fstat(directory_fd)
+    _require_safe_cleanup_directory(
+        expected,
+        expected.st_dev,
+        "owned cleanup root",
+    )
     current = os.stat(
         name,
         dir_fd=parent_fd,
         follow_symlinks=False,
     )
+    _require_safe_cleanup_directory(
+        current,
+        expected.st_dev,
+        "owned cleanup entry",
+    )
     if (
-        not stat.S_ISDIR(current.st_mode)
-        or _identity(current) != _identity(expected)
+        _identity(current) != _identity(expected)
     ):
         raise RuntimeError(
             "owned directory entry was replaced; refusing cleanup"
         )
-    _clear_directory_fd(directory_fd)
+    _clear_directory_fd(directory_fd, expected.st_dev)
     os.rmdir(name, dir_fd=parent_fd)
 
 
