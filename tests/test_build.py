@@ -14,6 +14,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
+import curriculum_builder.build as build_module
 from curriculum_builder.build import (
     BuildCleanupError,
     BuildPostCommitError,
@@ -443,6 +444,67 @@ class BuildInputValidationTests(unittest.TestCase):
             self.assertEqual(catalog_reads, 2)
             self.assertIn("Pinned title", catalog)
             self.assertNotIn("Raced title", catalog)
+
+    def test_template_rendering_uses_pinned_bytes_during_root_swap(
+        self,
+    ) -> None:
+        with _fixture() as (root, content, templates, static_root):
+            original_marker = "Pinned template marker"
+            raced_marker = "Raced template marker"
+            index_path = templates / "index.html"
+            index_path.write_text(
+                index_path.read_text(encoding="utf-8").replace(
+                    "地図から入り、教科書として深く学ぶ",
+                    original_marker,
+                ),
+                encoding="utf-8",
+            )
+            raced = root / "templates-raced"
+            shutil.copytree(templates, raced)
+            raced_index = raced / "index.html"
+            raced_index.write_text(
+                raced_index.read_text(encoding="utf-8").replace(
+                    original_marker,
+                    raced_marker,
+                ),
+                encoding="utf-8",
+            )
+            saved = root / "templates-pinned"
+            original_render = build_module._render_artifacts
+            restored = False
+
+            def swapping_render(
+                items: object,
+                roadmap: object,
+                template_source: object,
+                stylesheet: bytes,
+            ) -> dict[object, bytes]:
+                nonlocal restored
+                templates.rename(saved)
+                raced.rename(templates)
+                try:
+                    return original_render(
+                        items,  # type: ignore[arg-type]
+                        roadmap,  # type: ignore[arg-type]
+                        template_source,  # type: ignore[arg-type]
+                        stylesheet,
+                    )
+                finally:
+                    templates.rename(raced)
+                    saved.rename(templates)
+                    restored = True
+
+            with patch(
+                "curriculum_builder.build._render_artifacts",
+                side_effect=swapping_render,
+            ):
+                build_site(content, templates, static_root, root / "site")
+
+            self.assertTrue(restored)
+            self.assertTrue(index_path.is_file())
+            home = (root / "site/index.html").read_text(encoding="utf-8")
+            self.assertIn(original_marker, home)
+            self.assertNotIn(raced_marker, home)
 
     def test_ambiguous_repository_catalog_path_cannot_bypass_provenance(
         self,

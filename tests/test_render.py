@@ -121,6 +121,111 @@ class RendererTests(unittest.TestCase):
         (root / name).write_text(source, encoding="utf-8")
         return Renderer(root)
 
+    def test_from_template_bytes_snapshots_once_without_path_reads(
+        self,
+    ) -> None:
+        sources = {
+            "base.html": (TEMPLATE_ROOT / "base.html").read_bytes(),
+            "index.html": b"<p>Pinned template</p>",
+        }
+        renderer = Renderer.from_template_bytes(
+            sources,
+            expected_names=frozenset({"base.html", "index.html"}),
+        )
+        sources["index.html"] = b"<p>Changed later</p>"
+
+        with patch(
+            "curriculum_builder.render.os.open",
+            side_effect=AssertionError("snapshot renderer reopened a path"),
+        ):
+            fragment = renderer.fragment(
+                "index.html",
+                text_values={},
+                html_values={},
+            )
+
+        self.assertEqual(fragment.value, "<p>Pinned template</p>")
+
+    def test_from_template_bytes_rejects_unsafe_incomplete_or_invalid_sources(
+        self,
+    ) -> None:
+        base = (TEMPLATE_ROOT / "base.html").read_bytes()
+        expected = frozenset({"base.html", "index.html"})
+        cases: tuple[tuple[object, frozenset[str], str], ...] = (
+            (
+                (),
+                expected,
+                "template_sources must be a mapping",
+            ),
+            (
+                EntriesMapping(
+                    (
+                        ("base.html", base),
+                        ("base.html", base),
+                    )
+                ),
+                frozenset({"base.html"}),
+                "duplicate template source names",
+            ),
+            (
+                {"../base.html": base, "index.html": b"<p>x</p>"},
+                expected,
+                "template source name is unsafe",
+            ),
+            (
+                {"base.html": base, "index.html": "<p>x</p>"},
+                expected,
+                "template source must be exact bytes",
+            ),
+            (
+                {
+                    "base.html": base,
+                    "index.html": b"x" * (MAX_TEMPLATE_BYTES + 1),
+                },
+                expected,
+                "template source exceeds maximum byte count",
+            ),
+            (
+                {"base.html": base, "index.html": b"\xff"},
+                expected,
+                "template source is not valid UTF-8 text",
+            ),
+            (
+                {"base.html": base},
+                expected,
+                "template source names do not match expected names",
+            ),
+            (
+                {
+                    "base.html": base,
+                    "index.html": b"<p>x</p>",
+                    "other.html": b"<p>other</p>",
+                },
+                expected,
+                "template source names do not match expected names",
+            ),
+        )
+        for sources, expected_names, message in cases:
+            with self.subTest(message=message):
+                self.assert_validation_error(
+                    message,
+                    Renderer.from_template_bytes,
+                    sources,
+                    expected_names=expected_names,
+                )
+
+    def test_from_template_bytes_reuses_base_policy_validation(self) -> None:
+        base = (TEMPLATE_ROOT / "base.html").read_bytes().replace(
+            b"script-src 'none'",
+            b"script-src 'self'",
+        )
+        self.assert_validation_error(
+            "base template CSP does not match required policy",
+            Renderer.from_template_bytes,
+            {"base.html": base},
+            expected_names=frozenset({"base.html"}),
+        )
+
     def assert_validation_error(
         self,
         message: str,
