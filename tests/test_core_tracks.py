@@ -996,6 +996,11 @@ class CoreTrackTests(unittest.TestCase):
     def test_network_harness_covers_every_lab_step_without_network(
         self,
     ) -> None:
+        body = self.body_path(
+            "core-05-networks-latency-failure"
+        ).read_text(encoding="utf-8")
+        self.assertIn("def main():", body)
+        self.assertIn('if __name__ == "__main__":', body)
         report = self.run_python_harness(
             "core-05-networks-latency-failure",
             "network_lab_v2",
