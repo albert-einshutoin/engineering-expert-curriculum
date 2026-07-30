@@ -19,6 +19,7 @@ import stat
 import sys
 from typing import Final
 import unicodedata
+from urllib.parse import urlsplit
 import uuid
 
 from .catalog import (
@@ -33,6 +34,11 @@ from .css_safety import (
 from .errors import CurriculumValidationError
 from .graph import topological_stages
 from .html_safety import SafeHtml, validate_fragment
+from .lesson_rendering import (
+    LoadedLesson,
+    load_lessons_from_root,
+    render_lesson_artifacts,
+)
 from .models import CatalogItem
 from .render import MAX_TEMPLATE_BYTES, Renderer
 
@@ -47,6 +53,10 @@ _READ_CHUNK_SIZE: Final = 64 * 1024
 _DETERMINISTIC_MTIME_NS: Final = 0
 _STAGING_ATTEMPTS: Final = 16
 _HTML_ID = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,63}", re.ASCII)
+_SAFE_ARTIFACT_PART = re.compile(
+    r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\Z",
+    re.ASCII,
+)
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 _REPOSITORY_CONTENT_ROOT = (_REPOSITORY_ROOT / "content").resolve(strict=True)
 _TEMPLATE_NAMES = (
@@ -54,9 +64,10 @@ _TEMPLATE_NAMES = (
     "index.html",
     "catalog.html",
     "roadmap.html",
-    "lessons.html",
+    "lesson.html",
+    "lessons-index.html",
 )
-_EXPECTED_ARTIFACTS = frozenset(
+_BASE_ARTIFACTS = frozenset(
     {
         PurePosixPath("index.html"),
         PurePosixPath("styles.css"),
@@ -665,6 +676,7 @@ class _SiteDocumentParser(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.ids: set[str] = set()
         self.links: list[str] = []
+        self.external_links: list[str] = []
         self.has_csp = False
 
     def handle_starttag(
@@ -675,38 +687,40 @@ class _SiteDocumentParser(HTMLParser):
         lowered_tag = tag.casefold()
         if lowered_tag == "script":
             raise _validation("generated site must not contain scripts")
-        normalized: dict[str, str | None] = {}
+        normalized = {
+            name.casefold(): value
+            for name, value in attrs
+        }
         for name, value in attrs:
             lowered_name = name.casefold()
             if lowered_name.startswith("on"):
                 raise _validation(
                     "generated site must not contain event attributes"
                 )
-            normalized[lowered_name] = value
             if lowered_name == "id" and value is not None:
                 if value in self.ids:
                     raise _validation("generated page contains duplicate ids")
                 self.ids.add(value)
-            if lowered_name == "href" and value is not None:
-                self.links.append(value)
             if lowered_name in {"href", "src", "action", "formaction"}:
                 candidate = value or ""
-                lowered_value = candidate.casefold()
-                if (
-                    "://" in candidate
-                    or candidate.startswith(("/", "\\", "//"))
-                    or lowered_value.startswith(
-                        (
-                            "data:",
-                            "javascript:",
-                            "vbscript:",
-                            "file:",
+                if _is_external_url(candidate):
+                    if (
+                        lowered_tag != "a"
+                        or lowered_name != "href"
+                        or normalized.get("rel") != "noreferrer"
+                    ):
+                        raise _validation(
+                            "generated external URLs must be noreferrer HTTPS anchors"
                         )
-                    )
-                ):
+                    _validate_external_https_url(candidate)
+                    self.external_links.append(candidate)
+                    continue
+                if not _is_local_url(candidate):
                     raise _validation(
                         "generated site URLs must be relative and local"
                     )
+                if lowered_name == "href":
+                    self.links.append(candidate)
         if (
             lowered_tag == "meta"
             and (normalized.get("http-equiv") or "").casefold()
@@ -717,13 +731,91 @@ class _SiteDocumentParser(HTMLParser):
     handle_startendtag = handle_starttag
 
 
+def _is_external_url(candidate: str) -> bool:
+    try:
+        parsed = urlsplit(candidate)
+    except ValueError:
+        raise _validation("generated site contains a malformed URL") from None
+    return bool(parsed.scheme or parsed.netloc)
+
+
+def _is_local_url(candidate: str) -> bool:
+    lowered = candidate.casefold()
+    return not (
+        not candidate
+        or candidate.startswith(("/", "\\", "//"))
+        or "\\" in candidate
+        or any(
+            unicodedata.category(character) in {"Cc", "Cf"}
+            or character.isspace()
+            for character in candidate
+        )
+        or lowered.startswith(
+            ("data:", "javascript:", "vbscript:", "file:")
+        )
+    )
+
+
+def _validate_external_https_url(candidate: str) -> None:
+    if (
+        "\\" in candidate
+        or any(
+            unicodedata.category(character) in {"Cc", "Cf"}
+            or character.isspace()
+            for character in candidate
+        )
+        or re.search(r"%(?:0[0-9a-f]|1[0-9a-f]|5c|7f)", candidate, re.I)
+    ):
+        raise _validation("generated external URL is unsafe")
+    try:
+        parsed = urlsplit(candidate)
+        port = parsed.port
+    except ValueError:
+        raise _validation("generated external URL is malformed") from None
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname is None
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.netloc.endswith(":")
+        or (port is not None and not 1 <= port <= 65_535)
+    ):
+        raise _validation("generated external URL must be credential-free HTTPS")
+
+
+def _expected_artifacts(
+    lessons: tuple[LoadedLesson, ...],
+) -> frozenset[PurePosixPath]:
+    return _BASE_ARTIFACTS | frozenset(
+        PurePosixPath("lessons") / item.lesson.id / "index.html"
+        for item in lessons
+    )
+
+
+def _expected_external_links(
+    lessons: tuple[LoadedLesson, ...],
+) -> dict[PurePosixPath, tuple[str, ...]]:
+    return {
+        PurePosixPath("lessons") / item.lesson.id / "index.html": tuple(
+            source.url for source in item.lesson.sources
+        )
+        for item in lessons
+    }
+
+
 def _validate_site_artifacts(
     artifacts: Mapping[PurePosixPath, bytes],
+    expected: frozenset[PurePosixPath],
+    expected_external_links: Mapping[
+        PurePosixPath,
+        tuple[str, ...],
+    ],
 ) -> None:
-    if frozenset(artifacts) != _EXPECTED_ARTIFACTS:
+    if frozenset(artifacts) != expected:
         raise _validation("generated site artifact set is incomplete")
     ids_by_page: dict[PurePosixPath, set[str]] = {}
     links_by_page: dict[PurePosixPath, list[str]] = {}
+    external_links_by_page: dict[PurePosixPath, tuple[str, ...]] = {}
     for path, raw in sorted(artifacts.items()):
         if path.suffix != ".html":
             continue
@@ -743,6 +835,13 @@ def _validate_site_artifacts(
             raise _validation("generated page is missing CSP")
         ids_by_page[path] = parser.ids
         links_by_page[path] = parser.links
+        external_links_by_page[path] = tuple(parser.external_links)
+
+    for page, links in external_links_by_page.items():
+        if links != expected_external_links.get(page, ()):
+            raise _validation(
+                "generated page external links do not match lesson sources"
+            )
 
     for page, links in links_by_page.items():
         for link in links:
@@ -775,6 +874,7 @@ def _render_artifacts(
     roadmap: tuple[_RoadmapNode, ...],
     template_sources: Mapping[str, bytes],
     stylesheet: bytes,
+    lessons: tuple[LoadedLesson, ...],
 ) -> dict[PurePosixPath, bytes]:
     renderer = Renderer.from_template_bytes(
         template_sources,
@@ -789,11 +889,6 @@ def _render_artifacts(
         "catalog.html",
         text_values={"count": f"{len(items):,}"},
         html_values={"sections": _catalog_content(items)},
-    )
-    lessons = renderer.fragment(
-        "lessons.html",
-        text_values={},
-        html_values={},
     )
     pages = {
         PurePosixPath("index.html"): renderer.page(
@@ -818,19 +913,18 @@ def _render_artifacts(
             ),
             content=_roadmap_content(renderer, roadmap),
         ),
-        PurePosixPath("lessons/index.html"): renderer.page(
-            output_path=Path("lessons/index.html"),
-            title="コアレッスン",
-            description="実践教材へつながるコアレッスン索引",
-            content=lessons,
-        ),
     }
     artifacts = {
         path: document.encode("utf-8")
         for path, document in pages.items()
     }
     artifacts[PurePosixPath("styles.css")] = stylesheet
-    _validate_site_artifacts(artifacts)
+    artifacts.update(render_lesson_artifacts(renderer, lessons))
+    _validate_site_artifacts(
+        artifacts,
+        _expected_artifacts(lessons),
+        _expected_external_links(lessons),
+    )
     return artifacts
 
 
@@ -1106,26 +1200,39 @@ def _populate_staging(
     staging_fd: int,
     artifacts: Mapping[PurePosixPath, bytes],
 ) -> None:
-    child_descriptors: dict[str, int] = {}
+    directories = _validated_artifact_directories(artifacts)
+    child_descriptors: dict[PurePosixPath, int] = {
+        PurePosixPath(): staging_fd
+    }
     try:
-        for directory in ("catalog", "lessons", "roadmap"):
-            os.mkdir(directory, mode=0o700, dir_fd=staging_fd)
+        for directory in directories:
+            parent = directory.parent
+            os.mkdir(
+                directory.name,
+                mode=0o700,
+                dir_fd=child_descriptors[parent],
+            )
             child_descriptors[directory] = _open_directory_at(
-                staging_fd,
-                directory,
+                child_descriptors[parent],
+                directory.name,
             )
         for path, raw in sorted(artifacts.items()):
-            if len(path.parts) == 1:
-                destination = staging_fd
-            else:
-                destination = child_descriptors[path.parts[0]]
-            _write_file_at(destination, path.name, raw)
-        for descriptor in child_descriptors.values():
-            _finish_directory(descriptor)
+            _write_file_at(
+                child_descriptors[path.parent],
+                path.name,
+                raw,
+            )
+        # A child entry changes its parent metadata, so finish from the leaves
+        # upward and make the root durable only after every nested directory.
+        for directory in reversed(directories):
+            _finish_directory(child_descriptors[directory])
         _finish_directory(staging_fd)
     finally:
         failures: list[OSError] = []
-        for descriptor in reversed(tuple(child_descriptors.values())):
+        for directory in reversed(directories):
+            descriptor = child_descriptors.get(directory)
+            if descriptor is None:
+                continue
             try:
                 os.close(descriptor)
             except OSError as error:
@@ -1139,6 +1246,42 @@ def _populate_staging(
             raise RuntimeError(
                 f"generated directory close failed: {failures[0]}"
             ) from active
+
+
+def _validated_artifact_directories(
+    artifacts: Mapping[PurePosixPath, bytes],
+) -> tuple[PurePosixPath, ...]:
+    files: set[PurePosixPath] = set()
+    directories: set[PurePosixPath] = set()
+    for path, raw in artifacts.items():
+        if (
+            type(path) is not PurePosixPath
+            or path.is_absolute()
+            or not path.parts
+            or any(
+                part in {"", ".", ".."}
+                or _SAFE_ARTIFACT_PART.fullmatch(part) is None
+                for part in path.parts
+            )
+        ):
+            raise _validation("generated artifact path is unsafe")
+        if type(raw) is not bytes:
+            raise _validation("generated artifact content must be exact bytes")
+        files.add(path)
+        parent = path.parent
+        while parent != PurePosixPath():
+            directories.add(parent)
+            parent = parent.parent
+    if files & directories:
+        raise _validation(
+            "generated artifact file conflicts with a directory"
+        )
+    return tuple(
+        sorted(
+            directories,
+            key=lambda path: (len(path.parts), path.parts),
+        )
+    )
 
 
 def _snapshot_generated_directory(
@@ -1194,13 +1337,11 @@ def _verify_staging(
     current, metadata = _snapshot_generated_directory(staging_fd)
     if current != dict(artifacts):
         raise _validation("staged site does not match rendered artifacts")
+    expected_directories = frozenset(
+        _validated_artifact_directories(artifacts)
+    ) | {PurePosixPath()}
     for path, (mode, mtime_ns) in metadata.items():
-        expected_mode = 0o755 if path in {
-            PurePosixPath(),
-            PurePosixPath("catalog"),
-            PurePosixPath("lessons"),
-            PurePosixPath("roadmap"),
-        } else 0o644
+        expected_mode = 0o755 if path in expected_directories else 0o644
         if mode != expected_mode or mtime_ns != _DETERMINISTIC_MTIME_NS:
             raise _validation("staged site metadata is not deterministic")
     os.fsync(staging_fd)
@@ -1828,6 +1969,7 @@ def build_site(
         )
         items = _load_catalog_from_root(content)
         roadmap = _load_roadmap(content)
+        lessons = load_lessons_from_root(content.descriptor)
         stylesheet = _read_stable_regular_file(
             static_files,
             "styles.css",
@@ -1847,6 +1989,7 @@ def build_site(
             roadmap,
             before_templates,
             stylesheet,
+            lessons,
         )
         after_templates = {
             name: _read_stable_regular_file(
@@ -1864,6 +2007,8 @@ def build_site(
             MAX_STYLESHEET_BYTES,
         ):
             raise _validation("styles.css changed during build")
+        if lessons != load_lessons_from_root(content.descriptor):
+            raise _validation("lessons changed during build")
         for handle in (content, templates, static_files, output_parent):
             _verify_directory_identity(handle)
         _stage_and_publish(

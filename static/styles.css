@@ -119,6 +119,7 @@ table {
 p,
 li,
 dd,
+caption,
 figcaption,
 td,
 th {
@@ -342,6 +343,14 @@ th {
   font-weight: 800;
 }
 
+caption {
+  padding-block: var(--space-2);
+  color: var(--color-ink);
+  font-family: var(--font-interface);
+  font-weight: 800;
+  text-align: start;
+}
+
 pre {
   max-inline-size: 100%;
   padding: var(--space-3);
@@ -491,6 +500,118 @@ mark {
   font-weight: 850;
 }
 
+.lesson {
+  padding-block: var(--space-3);
+}
+
+.lesson > header {
+  padding-block-end: var(--space-3);
+  border-block-end: var(--border-strong);
+}
+
+.lede {
+  max-inline-size: 52ch;
+  color: var(--color-muted);
+  font-size: clamp(1.1rem, 1rem + 0.5vw, 1.3rem);
+}
+
+.lesson-meta {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-1) var(--space-2);
+  padding: var(--space-3);
+  border: 0.0625rem solid var(--color-border);
+  background: var(--color-surface);
+  font-family: var(--font-interface);
+}
+
+.lesson-meta dt {
+  font-weight: 800;
+}
+
+.lesson-meta dd {
+  margin-inline-start: 0;
+}
+
+#learning-objectives,
+#capability-progression,
+#practice-lab,
+#teach-back,
+#assessment,
+#transfer-task,
+#review-schedule,
+#rubric,
+#sources {
+  margin-block-start: var(--space-5);
+}
+
+.lesson h2 {
+  padding-block-end: var(--space-1);
+  border-block-end: 0.0625rem solid var(--color-border);
+}
+
+.lessons-index {
+  margin-block-start: var(--space-4);
+}
+
+.lesson-index-list,
+.capability-list,
+.review-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: var(--space-3);
+  padding: 0;
+  list-style: none;
+}
+
+.lesson-index-item,
+.capability-level,
+.review-list > li {
+  min-inline-size: 0;
+  padding: var(--space-3);
+  border: 0.0625rem solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.lesson-index-item > a {
+  font-family: var(--font-interface);
+  font-size: 1.1rem;
+}
+
+.lesson-index-item > p,
+.evidence-label {
+  margin-block-start: var(--space-1);
+  color: var(--color-muted);
+}
+
+.empty-state {
+  padding: var(--space-3);
+  border: 0.0625rem dashed var(--color-border);
+  background: var(--color-surface);
+}
+
+.capability-level h3 {
+  margin-block-start: 0;
+  text-transform: capitalize;
+}
+
+.evidence-list,
+.source-list {
+  padding-inline-start: 1.25rem;
+}
+
+.artifact-label,
+.evidence-label {
+  padding-block: var(--space-1);
+  padding-inline: var(--space-2);
+  border-inline-start: 0.25rem solid var(--color-accent);
+  background: var(--color-surface);
+}
+
+.rubric-table {
+  inline-size: 100%;
+}
+
 footer {
   margin-block-start: var(--space-5);
   padding-block: clamp(1.5rem, 1rem + 2vw, 3rem);
@@ -533,6 +654,16 @@ footer p {
   }
 }
 
+@media (max-width: 22rem) {
+  .lesson-meta {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lesson-meta dd {
+    margin-block-end: var(--space-2);
+  }
+}
+
 /*
  * No motion is used for comprehension. This explicit preference contract also
  * neutralizes smooth scrolling that a host browser or embedding page may set.
@@ -551,6 +682,13 @@ footer p {
   .catalog-card,
   .learning-stage,
   .prerequisite-text,
+  .lesson-meta,
+  .lesson-index-item,
+  .capability-level,
+  .review-list > li,
+  .empty-state,
+  .artifact-label,
+  .evidence-label,
   footer {
     background: Canvas;
     color: CanvasText;
@@ -614,6 +752,13 @@ footer p {
   .catalog-card,
   .learning-stage,
   .prerequisite-text,
+  .lesson-meta,
+  .lesson-index-item,
+  .capability-level,
+  .review-list > li,
+  .empty-state,
+  .artifact-label,
+  .evidence-label,
   blockquote,
   figure,
   details,

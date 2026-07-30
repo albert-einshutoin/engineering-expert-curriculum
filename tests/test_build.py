@@ -561,6 +561,7 @@ class BuildInputValidationTests(unittest.TestCase):
                 roadmap: object,
                 template_source: object,
                 stylesheet: bytes,
+                lessons: object,
             ) -> dict[object, bytes]:
                 nonlocal restored
                 templates.rename(saved)
@@ -571,6 +572,7 @@ class BuildInputValidationTests(unittest.TestCase):
                         roadmap,  # type: ignore[arg-type]
                         template_source,  # type: ignore[arg-type]
                         stylesheet,
+                        lessons,  # type: ignore[arg-type]
                     )
                 finally:
                     templates.rename(raced)

@@ -658,6 +658,41 @@ class StyleContractTests(unittest.TestCase):
         self.assertIn("max-inline-size: 100%", self.css)
         self.assertIn("word-break: break-word", self.css)
 
+    def test_lesson_components_reflow_at_320px_and_keep_visible_evidence(
+        self,
+    ) -> None:
+        for selector in (
+            ".lesson",
+            ".lede",
+            ".lesson-meta",
+            ".lessons-index",
+            ".lesson-index-list",
+            ".lesson-index-item",
+            ".capability-list",
+            ".capability-level",
+            ".evidence-label",
+            ".artifact-label",
+            ".review-list",
+            ".rubric-table",
+            ".source-list",
+        ):
+            self.assertIn(selector, self.css)
+        narrow = _css_block(self.css, "@media (max-width: 22rem)")
+        lesson_meta = _css_block(narrow, ".lesson-meta")
+        self.assertRegex(
+            lesson_meta,
+            r"grid-template-columns:\s*minmax\(0,\s*1fr\)",
+        )
+        forced = _css_block(self.css, "@media (forced-colors: active)")
+        for selector in (
+            ".lesson-meta",
+            ".lesson-index-item",
+            ".capability-level",
+            ".review-list > li",
+            ".evidence-label",
+        ):
+            self.assertIn(selector, forced)
+
     def test_print_keeps_reading_order_and_expands_https_urls(self) -> None:
         print_rules = _css_block(self.css, "@media print")
         self.assertIn('a[href^="https://"]::after', print_rules)
@@ -683,6 +718,7 @@ class StyleContractTests(unittest.TestCase):
             {
                 "article",
                 "section",
+                ".lesson",
                 "table",
                 ".catalog-card",
                 "details",

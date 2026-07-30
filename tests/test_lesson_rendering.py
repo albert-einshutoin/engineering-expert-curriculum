@@ -4,13 +4,15 @@ from contextlib import contextmanager
 from html.parser import HTMLParser
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import shutil
 import stat
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
+import curriculum_builder.build as build_module
+import curriculum_builder.lesson_rendering as lesson_rendering
 from curriculum_builder.build import build_site
 from curriculum_builder.errors import CurriculumValidationError
 from curriculum_builder.html_safety import MAX_FRAGMENT_BYTES
@@ -131,7 +133,7 @@ class LessonRenderingTests(unittest.TestCase):
             ):
                 self.assertIn(f'id="{section_id}"', html)
             for level in ("recognize", "explain", "apply", "diagnose", "lead"):
-                self.assertIn(f'data-level="{level}"', html)
+                self.assertIn(f"<h3>{level}</h3>", html)
             self.assertIn("decision-record.md", html)
             self.assertIn("1日後", html)
             self.assertIn("7日後", html)
@@ -188,12 +190,55 @@ class LessonRenderingTests(unittest.TestCase):
                 (root / f"site/lessons/{second['id']}/index.html").is_file()
             )
 
+    def test_generated_external_links_must_exactly_match_lesson_sources(
+        self,
+    ) -> None:
+        with _site_fixture() as (root, content, templates, static_root):
+            lesson = _complete_document()
+            _add_lesson(content, lesson)
+            output = root / "site"
+            build_site(content, templates, static_root, output)
+            artifacts = {
+                PurePosixPath(path.relative_to(output).as_posix()):
+                path.read_bytes()
+                for path in output.rglob("*")
+                if path.is_file()
+            }
+            lesson_path = PurePosixPath(
+                "lessons/core-01-systems-tradeoffs/index.html"
+            )
+            source_urls = tuple(
+                str(source["url"])
+                for source in lesson["sources"]  # type: ignore[index]
+            )
+            page = artifacts[lesson_path].replace(
+                b' rel="noreferrer"',
+                b"",
+                1,
+            )
+            artifacts[lesson_path] = page
+
+            with self.assertRaisesRegex(
+                CurriculumValidationError,
+                "noreferrer|lesson sources",
+            ):
+                build_module._validate_site_artifacts(
+                    artifacts,
+                    frozenset(artifacts),
+                    {lesson_path: source_urls},
+                )
+
     def test_authored_body_and_lesson_collection_fail_closed(self) -> None:
         body_cases = {
             "script": "<script>alert(1)</script>",
             "event": '<p onclick="alert(1)">unsafe</p>',
             "style": '<p style="color:red">unsafe</p>',
             "external image": '<img src="https://example.com/x.png">',
+            "external authored anchor": (
+                '<p><a href="https://example.com/" rel="noreferrer">'
+                "unsafe source bypass"
+                "</a></p>"
+            ),
             "invalid UTF-8": b"<p>\xff</p>",
             "oversized": b"x" * (MAX_FRAGMENT_BYTES + 1),
         }
@@ -289,27 +334,32 @@ class LessonRenderingTests(unittest.TestCase):
             output = root / "site"
             output.mkdir()
             (output / "sentinel.txt").write_text("old", encoding="utf-8")
-            original_read = os.read
+            original_read = lesson_rendering._read_regular_file_at
             changed = False
 
-            def racing_read(descriptor: int, count: int) -> bytes:
+            def racing_read(
+                descriptor: int,
+                name: str,
+                maximum_bytes: int,
+                label: str,
+            ) -> tuple[bytes, tuple[int, int, int, int, int, int]]:
                 nonlocal changed
-                chunk = original_read(descriptor, count)
-                target = Path(os.readlink(f"/dev/fd/{descriptor}"))
-                if (
-                    chunk
-                    and not changed
-                    and target.name == "body.html"
-                ):
+                result = original_read(
+                    descriptor,
+                    name,
+                    maximum_bytes,
+                    label,
+                )
+                if not changed and name == "body.html":
                     changed = True
                     (directory / "body.html").write_text(
                         "<p>changed</p>",
                         encoding="utf-8",
                     )
-                return chunk
+                return result
 
             with patch(
-                "curriculum_builder.lesson_rendering.os.read",
+                "curriculum_builder.lesson_rendering._read_regular_file_at",
                 side_effect=racing_read,
             ):
                 with self.assertRaisesRegex(
@@ -372,6 +422,75 @@ class LessonRenderingTests(unittest.TestCase):
                 {mtime for _, _, mtime in first.values()},
                 {0},
             )
+
+    def test_generic_staging_creates_safe_arbitrary_nested_paths(self) -> None:
+        with TemporaryDirectory() as directory:
+            staging = Path(directory).resolve(strict=True) / "staging"
+            staging.mkdir()
+            descriptor = os.open(
+                staging,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+            )
+            try:
+                build_module._populate_staging(
+                    descriptor,
+                    {
+                        PurePosixPath("alpha/beta/gamma.txt"): b"nested",
+                        PurePosixPath("root.txt"): b"root",
+                    },
+                )
+            finally:
+                os.close(descriptor)
+
+            self.assertEqual(
+                (staging / "alpha/beta/gamma.txt").read_bytes(),
+                b"nested",
+            )
+            for path in (staging, staging / "alpha", staging / "alpha/beta"):
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o755)
+                self.assertEqual(path.stat().st_mtime_ns, 0)
+
+        unsafe_artifacts = (
+            {PurePosixPath("../escape.txt"): b"unsafe"},
+            {
+                PurePosixPath("collision"): b"file",
+                PurePosixPath("collision/nested.txt"): b"nested",
+            },
+        )
+        for artifacts in unsafe_artifacts:
+            with self.subTest(paths=tuple(artifacts)):
+                with self.assertRaises(CurriculumValidationError):
+                    build_module._validated_artifact_directories(artifacts)
+
+    def test_nested_staging_failure_keeps_previous_output_atomic(self) -> None:
+        with _site_fixture() as (root, content, templates, static_root):
+            _add_lesson(content, _complete_document())
+            output = root / "site"
+            output.mkdir()
+            (output / "sentinel.txt").write_text("old", encoding="utf-8")
+            original_write = build_module._write_file_at
+
+            def failing_lesson_write(
+                directory_fd: int,
+                name: str,
+                raw: bytes,
+            ) -> None:
+                if b'<article class="lesson reading">' in raw:
+                    raise OSError("nested lesson write failed")
+                original_write(directory_fd, name, raw)
+
+            with patch(
+                "curriculum_builder.build._write_file_at",
+                side_effect=failing_lesson_write,
+            ):
+                with self.assertRaisesRegex(
+                    OSError,
+                    "nested lesson write failed",
+                ):
+                    build_site(content, templates, static_root, output)
+
+            self.assertEqual((output / "sentinel.txt").read_text(), "old")
+            self.assertEqual(list(root.glob(".site.staging-*")), [])
 
 
 if __name__ == "__main__":

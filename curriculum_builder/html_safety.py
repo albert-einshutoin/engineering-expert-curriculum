@@ -26,6 +26,7 @@ ALLOWED_TAGS = frozenset(
         "article",
         "aside",
         "blockquote",
+        "caption",
         "code",
         "dd",
         "details",
@@ -106,13 +107,13 @@ _PHRASING_ELEMENTS = frozenset(
     {"a", "code", "dfn", "em", "kbd", "mark", "small", "strong"}
 )
 _PHRASING_ONLY_CONTAINERS = _PHRASING_ELEMENTS | frozenset(
-    {"h1", "h2", "h3", "h4", "p", "pre", "summary"}
+    {"caption", "h1", "h2", "h3", "h4", "p", "pre", "summary"}
 )
 _STRUCTURAL_CHILDREN = MappingProxyType(
     {
         "dl": frozenset({"dd", "dt"}),
         "ol": frozenset({"li"}),
-        "table": frozenset({"tbody", "thead"}),
+        "table": frozenset({"caption", "tbody", "thead"}),
         "tbody": frozenset({"tr"}),
         "thead": frozenset({"tr"}),
         "tr": frozenset({"td", "th"}),
@@ -123,7 +124,7 @@ _STRUCTURAL_CHILD_LABELS = MappingProxyType(
     {
         "dl": "dt or dd",
         "ol": "li",
-        "table": "thead or tbody",
+        "table": "caption, thead, or tbody",
         "tbody": "tr",
         "thead": "tr",
         "tr": "th or td",
@@ -142,6 +143,10 @@ _REQUIRED_PARENTS = MappingProxyType(
         "summary": (
             frozenset({"details"}),
             "summary requires parent details",
+        ),
+        "caption": (
+            frozenset({"table"}),
+            "caption requires parent table",
         ),
         "tbody": (frozenset({"table"}), "tbody requires parent table"),
         "td": (frozenset({"tr"}), "td requires parent tr"),

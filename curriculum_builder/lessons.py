@@ -189,33 +189,54 @@ def load_lesson(path: Path) -> Lesson:
         raise CurriculumValidationError("lesson path must be an exact Path")
 
     raw = read_stable_lesson_file(path, MAX_LESSON_BYTES)
+    return load_lesson_bytes(raw, path.name)
+
+
+def load_lesson_bytes(raw: bytes, source_name: str) -> Lesson:
+    """Parse one caller-pinned byte snapshot without reopening its pathname."""
+    if type(raw) is not bytes:
+        raise CurriculumValidationError("lesson input must be exact bytes")
+    if len(raw) > MAX_LESSON_BYTES:
+        raise CurriculumValidationError("lesson exceeds maximum byte count")
+    if (
+        type(source_name) is not str
+        or not source_name
+        or len(source_name) > 255
+        or source_name != Path(source_name).name
+        or any(
+            unicodedata.category(character)
+            in {"Cc", "Cf", "Cs", "Zl", "Zp"}
+            for character in source_name
+        )
+    ):
+        raise CurriculumValidationError("lesson source name is invalid")
     try:
         raw.decode("utf-8")
     except UnicodeDecodeError:
         raise CurriculumValidationError(
-            f"{path.name}: lesson is not valid UTF-8"
+            f"{source_name}: lesson is not valid UTF-8"
         ) from None
     try:
-        document = strict_json_loads(raw, path.name)
+        document = strict_json_loads(raw, source_name)
     except CurriculumValidationError as error:
         if "duplicate JSON key:" in str(error):
             raise CurriculumValidationError(
-                f"{path.name}: duplicate JSON key"
+                f"{source_name}: duplicate JSON key"
             ) from None
         raise
     if type(document) is not dict:
         raise CurriculumValidationError(
-            f"{path.name}: lesson root must be an object"
+            f"{source_name}: lesson root must be an object"
         )
 
-    context = path.name
+    context = source_name
     possible_id = document.get("id")
     if (
         type(possible_id) is str
         and len(possible_id) <= 96
         and _LESSON_ID_PATTERN.fullmatch(possible_id)
     ):
-        context = f"{path.name} [{possible_id}]"
+        context = f"{source_name} [{possible_id}]"
     try:
         return _parse_lesson(document)
     except CurriculumValidationError as error:
