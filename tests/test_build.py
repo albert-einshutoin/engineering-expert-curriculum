@@ -6,6 +6,7 @@ from html.parser import HTMLParser
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import stat
 import subprocess
@@ -35,25 +36,84 @@ from curriculum_builder.catalog import (
     serialize_catalog_document,
 )
 from curriculum_builder.errors import CurriculumValidationError
-from curriculum_builder.lesson_rendering import load_lessons_from_root
-
-
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+_CANONICAL_LESSON_DIRECTORY = re.compile(
+    r"core-(0[1-9]|[12][0-9]|30)-[a-z0-9]+(?:-[a-z0-9]+)*\Z",
+    re.ASCII,
+)
 
 
-def _repository_lesson_source_counts() -> dict[str, int]:
-    # Derive the output oracle from the independently validated authoring
-    # collection so adding a lesson cannot silently leave this test's manually
-    # duplicated inventory stale.
-    with _open_trusted_directory(
-        REPOSITORY_ROOT / "content",
-        "repository test content",
-    ) as content:
-        collection = load_lessons_from_root(content.descriptor)
-    return {
-        item.lesson.id: len(item.lesson.sources)
-        for item in collection.lessons
-    }
+def _repository_lesson_source_counts(
+    content_root: Path = REPOSITORY_ROOT / "content",
+) -> dict[str, int]:
+    # This acceptance oracle deliberately avoids the production collection
+    # loader. Independent namespace and JSON checks prevent one shared loader
+    # defect from making both generated output and its expected inventory agree.
+    lessons_root = content_root / "lessons"
+    if not lessons_root.is_dir() or lessons_root.is_symlink():
+        raise AssertionError("canonical lessons root must be a directory")
+    counts: dict[str, int] = {}
+    ordinals: set[int] = set()
+
+    def reject_duplicate_keys(
+        pairs: list[tuple[str, object]],
+    ) -> dict[str, object]:
+        value: dict[str, object] = {}
+        for key, item in pairs:
+            if key in value:
+                raise AssertionError("duplicate lesson JSON key")
+            value[key] = item
+        return value
+
+    with os.scandir(lessons_root) as entries:
+        discovered = sorted(entries, key=lambda entry: entry.name)
+    if len(discovered) > 30:
+        raise AssertionError("too many canonical lessons")
+    for entry in discovered:
+        match = _CANONICAL_LESSON_DIRECTORY.fullmatch(entry.name)
+        if (
+            match is None
+            or entry.is_symlink()
+            or not entry.is_dir(follow_symlinks=False)
+        ):
+            raise AssertionError("unsafe canonical lesson directory")
+        ordinal = int(match.group(1))
+        if ordinal in ordinals:
+            raise AssertionError("duplicate canonical lesson ordinal")
+        ordinals.add(ordinal)
+        directory = Path(entry.path)
+        with os.scandir(directory) as children:
+            names = {child.name for child in children}
+        if names != {"lesson.json", "body.html"}:
+            raise AssertionError("canonical lesson files must be exact")
+        for name in names:
+            node = os.lstat(directory / name)
+            if not stat.S_ISREG(node.st_mode) or stat.S_ISLNK(node.st_mode):
+                raise AssertionError("canonical lesson file must be regular")
+        try:
+            document = json.loads(
+                (directory / "lesson.json").read_text(encoding="utf-8"),
+                object_pairs_hook=reject_duplicate_keys,
+            )
+        except (OSError, UnicodeError, json.JSONDecodeError) as error:
+            raise AssertionError("canonical lesson JSON is invalid") from error
+        if type(document) is not dict or document.get("id") != entry.name:
+            raise AssertionError("canonical lesson directory/id mismatch")
+        sources = document.get("sources")
+        if type(sources) is not list or not sources:
+            raise AssertionError("canonical lesson sources are invalid")
+        for source in sources:
+            if (
+                type(source) is not dict
+                or set(source) != {"title", "url", "kind"}
+                or any(
+                    type(value) is not str or not value
+                    for value in source.values()
+                )
+            ):
+                raise AssertionError("canonical lesson source is invalid")
+        counts[entry.name] = len(sources)
+    return counts
 
 
 @contextmanager

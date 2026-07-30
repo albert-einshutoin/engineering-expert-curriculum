@@ -27,49 +27,198 @@
   <h2>動く例で考える</h2>
   <h3>実行可能な線形探索と集合参照の比較</h3>
   <pre><code>python3.13 - &lt;&lt;'PY' &gt; benchmark-results.json
+import hashlib
 import json
 import platform
+import random
 import statistics
-import timeit
+import time
 
-cases = {
-    "list_lookup": ("xs=list(range(10000)); q=9999", "q in xs"),
-    "set_lookup": ("xs=set(range(10000)); q=9999", "q in xs"),
-    "build_then_lookup": (
-        "raw=list(range(10000)); q=9999",
-        "q in set(raw)",
+HARNESS = "algorithm_lab_v2"
+SEED = 20260731
+SIZES = [1000, 10000, 100000]
+DISTRIBUTIONS = ["unique", "duplicate_90", "front_biased"]
+REPEAT = 7
+QUERY_COUNT = 8
+
+def make_data(distribution, size):
+    if distribution == "duplicate_90":
+        tail = list(range(size - size // 10))
+        data = [7] * (size - len(tail)) + tail
+        random.Random(SEED + size).shuffle(data)
+        return data
+    return list(range(size))
+
+def make_queries(distribution, size):
+    if distribution == "front_biased":
+        return [index % max(1, size // 100) for index in range(QUERY_COUNT)]
+    if distribution == "duplicate_90":
+        return [7, size // 20, 7, size // 30, 7, size // 40, 7, -1]
+    generator = random.Random(SEED + size)
+    return [
+        generator.randrange(size)
+        for _ in range(QUERY_COUNT - 1)
+    ] + [-1]
+
+def timed(operation):
+    start = time.perf_counter_ns()
+    value = operation()
+    return time.perf_counter_ns() - start, value
+
+def summarize(samples):
+    return {
+        "median": statistics.median(samples),
+        "minimum": min(samples),
+        "maximum": max(samples),
+    }
+
+conditions = []
+for distribution in DISTRIBUTIONS:
+    for size in SIZES:
+        data = make_data(distribution, size)
+        queries = make_queries(distribution, size)
+        lookup_set = set(data)
+        samples = {
+            "generation": [],
+            "set_build": [],
+            "linear_lookup": [],
+            "set_lookup": [],
+        }
+        expected = [query in data for query in queries]
+        for repeat in range(7):
+            elapsed, generated = timed(
+                lambda d=distribution, n=size: make_data(d, n)
+            )
+            assert len(generated) == size
+            samples["generation"].append(elapsed)
+            elapsed, built = timed(lambda values=data: set(values))
+            assert built == lookup_set
+            samples["set_build"].append(elapsed)
+            elapsed, observed = timed(
+                lambda values=data, qs=queries: [
+                    query in values for query in qs
+                ]
+            )
+            assert observed == expected
+            samples["linear_lookup"].append(elapsed)
+            elapsed, observed = timed(
+                lambda values=lookup_set, qs=queries: [
+                    query in values for query in qs
+                ]
+            )
+            assert observed == expected
+            samples["set_lookup"].append(elapsed)
+        summaries = {
+            name: summarize(values)
+            for name, values in samples.items()
+        }
+        linear_per_query = (
+            summaries["linear_lookup"]["median"] / len(queries)
+        )
+        set_per_query = summaries["set_lookup"]["median"] / len(queries)
+        advantage = linear_per_query - set_per_query
+        crossover = (
+            summaries["set_build"]["median"] / advantage
+            if advantage &gt; 0
+            else 0
+        )
+        conditions.append({
+            "distribution": distribution,
+            "size": size,
+            "repeat": REPEAT,
+            "query_count": len(queries),
+            "query_digest": hashlib.sha256(
+                json.dumps(queries).encode("utf-8")
+            ).hexdigest(),
+            "samples_ns": samples,
+            "median_ns": {
+                name: values["median"]
+                for name, values in summaries.items()
+            },
+            "range_ns": {
+                name: [values["minimum"], values["maximum"]]
+                for name, values in summaries.items()
+            },
+            "crossover_queries": max(0, round(crossover, 2)),
+        })
+
+growth_rates = []
+for distribution in DISTRIBUTIONS:
+    selected = [
+        item for item in conditions
+        if item["distribution"] == distribution
+    ]
+    for previous, current in zip(selected, selected[1:]):
+        growth_rates.append({
+            "distribution": distribution,
+            "from_size": previous["size"],
+            "to_size": current["size"],
+            "linear_lookup_ratio": round(
+                current["median_ns"]["linear_lookup"]
+                / max(1, previous["median_ns"]["linear_lookup"]),
+                3,
+            ),
+            "predicted_linear_ratio": (
+                current["size"] / previous["size"]
+            ),
+        })
+
+probe_data = make_data("unique", 10000)
+probe_queries = make_queries("unique", 10000)
+prebuilt = set(probe_data)
+prebuilt_samples = []
+rebuild_samples = []
+for repeat in range(7):
+    elapsed, _ = timed(
+        lambda: [query in prebuilt for query in probe_queries]
+    )
+    prebuilt_samples.append(elapsed)
+    elapsed, _ = timed(
+        lambda: [
+            query in set(probe_data)
+            for query in probe_queries
+        ]
+    )
+    rebuild_samples.append(elapsed)
+additional_measurement = {
+    "hypothesis": "集合参照そのものが構築込み費用を支配する",
+    "prebuilt_lookup_samples_ns": prebuilt_samples,
+    "rebuild_per_query_samples_ns": rebuild_samples,
+    "falsified": (
+        statistics.median(rebuild_samples)
+        &gt; statistics.median(prebuilt_samples) * 2
     ),
 }
-results = {}
-for name, (setup, statement) in cases.items():
-    samples = timeit.Timer(statement, setup).repeat(repeat=7, number=1000)
-    per_operation = [sample / 1000 for sample in samples]
-    results[name] = {
-        "seconds_all": per_operation,
-        "median_seconds": statistics.median(per_operation),
-        "minimum_seconds": min(per_operation),
-        "maximum_seconds": max(per_operation),
-    }
+
 print(json.dumps({
+    "harness": HARNESS,
+    "seed": SEED,
+    "sizes": SIZES,
+    "distributions": DISTRIBUTIONS,
+    "query_contract": "各condition内で両方式へ同じquery列を使用",
+    "conditions": conditions,
+    "growth_rates": growth_rates,
+    "hypotheses": [
+        "入力増加時の非線形差はcache階層の境界で説明できる",
+        "少数queryではset構築費が参照短縮を上回る",
+    ],
+    "additional_measurement": additional_measurement,
     "python": platform.python_version(),
     "platform": platform.platform(),
-    "repeat": 7,
-    "number": 1000,
-    "results": results,
-}, indent=2))
+}, ensure_ascii=False, indent=2))
 PY
 python3.13 -m json.tool benchmark-results.json</code></pre>
   <dl>
     <dt>前提</dt>
-    <dd>同じPython 3.13実行系、他負荷を抑えた環境、問い合わせ値は末尾、各条件のnumberは1000、repeatは7に固定する。</dd>
+    <dd>同じPython 3.13実行系、固定seed 20260731、他負荷を抑えた環境で各条件をrepeat=7に固定する。</dd>
     <dt>入力</dt>
-    <dd>0から9999までの10000整数と、探索対象9999。</dd>
+    <dd>重複なし、90%同値、探索対象が先頭1%寄りの三分布を、1000、10000、100000要素で生成する。各condition内では同じquery列をlistとsetへ渡す。</dd>
     <dt>操作</dt>
-    <dd>list参照、構築済みset参照、毎回setを構築して参照、の三区間を分け、全7反復値をJSONへ保存する。</dd>
+    <dd>入力生成、set構築、list参照、構築済みset参照を分離し、各区間の全7反復値、中央値、範囲をJSONへ保存する。</dd>
     <dt>観測</dt>
-    <dd>仮の一測定でlist参照85µs、構築済みset参照0.05µs、毎回構築210µsだったとする。100回問い合わせならlistは約8500µs、setは構築210µsと参照約5µsになる。</dd>
+    <dd>実行結果には入力を10倍にしたときの線形参照の実測増加率、理論上の予測率10、set構築を償却できるquery回数の交差点が全九条件について出る。</dd>
     <dt>結論</dt>
-    <dd>一回だけなら線形探索が勝ち得るが、同じデータへの反復問い合わせでは構築費用を償却できる。数値は環境固有なので自分の結果へ置き換える。</dd>
+    <dd>二仮説を宣言し、追加測定で「集合参照そのものが構築込み費用を支配する」を反証する。交差点と増加率は環境固有なので、自分の全値から再計算する。</dd>
   </dl>
   <p>nを1000、10000、100000へ10倍ずつ増やす。線形探索の時間比が概ね10倍なら予測と整合する。比が急に大きくなっても、直ちに計算量が変わったとは言えない。キャッシュ階層やGCの変化を追加測定する。</p>
   <p><strong>ラボ成果物:</strong> 「計算量予測と実測値の差を説明するベンチマーク報告」には、実行コマンド、全反復値、Python版、OS、CPU、入力生成、除外規則を残す。</p>

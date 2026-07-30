@@ -24,61 +24,160 @@
 </section>
 <section id="worked-example">
   <h2>動く例で考える</h2>
-  <h3>走査する要素数を揃えてアクセス順だけを変える</h3>
+  <h3>全要素を一回ずつ走査し、サイズとアクセス順だけを変える</h3>
   <pre><code>python3.13 - &lt;&lt;'PY' &gt; locality-results.json
 import json
+import os
 import platform
 import random
+import statistics
 import time
 
-n = 1_048_576
-access_count = 262_144
-values = list(range(n))
-sequential = tuple(range(access_count))
-random_pool = list(range(n))
-random.Random(42).shuffle(random_pool)
-random_indexes = tuple(random_pool[:access_count])
-stride_indexes = tuple((index * 4099) % n for index in range(access_count))
-indexes_by_name = {
-    "sequential": sequential,
-    "random": random_indexes,
-    "stride": stride_indexes,
+HARNESS = "memory_lab_v2"
+SEED = 20260731
+REPEAT = 7
+portable_defaults = {
+    "l1_probe": 4096,
+    "llc_probe": 262144,
+    "beyond_llc_probe": 1048576,
 }
-assert all(
-    type(indexes) is tuple
-    and len(indexes) == access_count
-    and all(type(index) is int for index in indexes)
-    for indexes in indexes_by_name.values()
+execution_sizes = (
+    {
+        "l1_probe": 1024,
+        "llc_probe": 4096,
+        "beyond_llc_probe": 16384,
+    }
+    if os.environ.get("CURRICULUM_LAB_QUICK") == "1"
+    else portable_defaults
 )
-expected_checksums = {
-    name: sum(values[index] for index in indexes)
-    for name, indexes in indexes_by_name.items()
-}
-base_order = tuple(indexes_by_name)
 results = []
-for repeat in range(7):
-    offset = repeat % len(base_order)
-    condition_order = base_order[offset:] + base_order[:offset]
-    if repeat % 2:
-        condition_order = tuple(reversed(condition_order))
-    for name in condition_order:
-        indexes = indexes_by_name[name]
-        start = time.perf_counter_ns()
-        checksum = sum(values[index] for index in indexes)
-        elapsed_ns = time.perf_counter_ns() - start
-        assert checksum == expected_checksums[name]
+cache_medians = {}
+largest_fixture = None
+for size_label, size in execution_sizes.items():
+    values = tuple(range(size))
+    access_count = size
+    sequential = tuple(range(access_count))
+    stride16 = tuple(
+        index
+        for offset in range(16)
+        for index in range(offset, access_count, 16)
+    )
+    random_pool = list(range(access_count))
+    random.Random(SEED + size).shuffle(random_pool)
+    random_indexes = tuple(random_pool)
+    indexes_by_name = {
+        "sequential": sequential,
+        "stride16": stride16,
+        "random": random_indexes,
+    }
+    assert all(
+        type(indexes) is tuple
+        and len(indexes) == access_count
+        and len(set(indexes)) == access_count
+        and all(type(index) is int for index in indexes)
+        for indexes in indexes_by_name.values()
+    )
+    expected_checksums = {
+        name: sum(values[index] for index in indexes)
+        for name, indexes in indexes_by_name.items()
+    }
+    assert len(set(expected_checksums.values())) == 1
+    for indexes in indexes_by_name.values():
+        # This untimed pass is the explicit warmup; only later samples
+        # contribute to reported medians.
+        assert sum(values[index] for index in indexes) == sum(values)
+    samples = {name: [] for name in indexes_by_name}
+    base_order = tuple(indexes_by_name)
+    for repeat in range(7):
+        offset = repeat % len(base_order)
+        condition_order = base_order[offset:] + base_order[:offset]
+        if repeat % 2:
+            condition_order = tuple(reversed(condition_order))
+        for name in condition_order:
+            indexes = indexes_by_name[name]
+            start = time.perf_counter_ns()
+            checksum = sum(values[index] for index in indexes)
+            elapsed_ns = time.perf_counter_ns() - start
+            assert checksum == expected_checksums[name]
+            samples[name].append(elapsed_ns)
+    for name, indexes in indexes_by_name.items():
         results.append({
-            "repeat": repeat,
-            "condition": name,
-            "elapsed_ns": elapsed_ns,
+            "size_label": size_label,
+            "size": size,
+            "pattern": name,
+            "repeat_count": REPEAT,
+            "samples_ns": samples[name],
+            "median_ns": statistics.median(samples[name]),
             "access_count": len(indexes),
-            "checksum": checksum,
+            "checksum": expected_checksums[name],
+            "checksum_matches": True,
+            "same_index_type": all(
+                type(candidate) is type(indexes)
+                for candidate in indexes_by_name.values()
+            ),
         })
+    cache_medians[size_label] = {
+        name: statistics.median(samples[name])
+        for name in samples
+    }
+    largest_fixture = (values, expected_checksums["sequential"])
+
+assert largest_fixture is not None
+largest_values, largest_checksum = largest_fixture
+page_stride_indexes = tuple(
+    index
+    for offset in range(512)
+    for index in range(offset, len(largest_values), 512)
+)
+tlb_samples = []
+for repeat in range(7):
+    start = time.perf_counter_ns()
+    checksum = sum(
+        largest_values[index] for index in page_stride_indexes
+    )
+    tlb_samples.append(time.perf_counter_ns() - start)
+    assert checksum == largest_checksum
+
 print(json.dumps({
+    "harness": HARNESS,
     "python": platform.python_version(),
     "platform": platform.platform(),
+    "portable_defaults": portable_defaults,
+    "portable_default_units": (
+        "8-byte integer payload bytes; topology-equivalence is not claimed"
+    ),
+    "execution_sizes": execution_sizes,
+    "topology_observation_commands": [
+        "lscpu --caches",
+        "sysctl -a | grep -E 'hw.(cache|memsize|pagesize)'",
+    ],
+    "warmup_excluded": True,
+    "condition_order": "rotate each repeat and reverse odd repeats",
+    "access_patterns": ["sequential", "stride16", "random"],
     "results": results,
-}, indent=2))
+    "additional_experiments": {
+        "cache_probe": {
+            "working_set_medians_ns": cache_medians,
+            "interpretation": (
+                "size inflection supports but does not prove a cache boundary"
+            ),
+        },
+        "tlb_probe": {
+            "organization": "512-element page-stride lanes",
+            "access_count": len(page_stride_indexes),
+            "samples_ns": tlb_samples,
+            "checksum_matches": True,
+            "interpretation": (
+                "page-stride change supports but does not prove a TLB cause"
+            ),
+        },
+    },
+    "limitations": [
+        "Python interpreter and object/index overhead remains in every sample",
+        "portable defaults are probes, not the measured machine topology",
+        "cache and TLB counters are not observed by this timing-only script",
+    ],
+}, ensure_ascii=False, indent=2))
 PY
 python3.13 -m json.tool locality-results.json
 lscpu
@@ -87,17 +186,17 @@ sysctl -n machdep.cpu.brand_string
 sysctl -a | grep -E 'hw.(cache|memsize|pagesize)'</code></pre>
   <dl>
     <dt>前提</dt>
-    <dd>入力生成を測定外に置き、同一プロセスで各条件を7回、条件順を回転と反転で交互化して測る。Linuxではlscpu、macOSではsysctlの成功した方を実機topology証拠として保存する。</dd>
+    <dd>入力生成と一回のwarmupを測定外に置き、同一プロセスで各条件を7回、条件順を回転と反転で交互化して測る。Linuxではlscpu、macOSではsysctlの成功した方を実機topology証拠として保存する。</dd>
     <dt>入力</dt>
-    <dd>同じlist[int]を対象に、同じtuple[int]型、同じ262144件のsequential、random、stride index列を用意する。</dd>
+    <dd>各sizeの同じ整数配列を対象に、同じtuple[int]型のsequential、stride16、固定seed random index列を作る。三列とも全indexを重複なく含み、全要素をちょうど一回読む。</dd>
     <dt>操作</dt>
-    <dd>三条件を同じアクセス回数で走査する。条件ごとの期待checksumを測定外で作り、全反復で一致を検証する。</dd>
+    <dd>L1 probe、LLC probe、LLC超過probeの三sizeで三走査を行う。portable defaultは32KiB、2MiB、8MiBの8-byte payloadだが実機相当とは断定せず、topology観測値を記録して調整する。</dd>
     <dt>観測</dt>
-    <dd>仮の中央値が連続45ms、stride 130ms、ランダム210msなら、同じ262144参照でも最大約4.7倍差である。全21測定を残し、順番、checksum、実機topologyと合わせて比較する。</dd>
+    <dd>全九conditionの各7値、中央値、全要素数、checksum一致を残す。追加のworking-set sweepをcache probe、512要素間隔のpage-stride lanesをTLB probeとして測る。</dd>
     <dt>結論</dt>
-    <dd>アクセス順が局所性を変えた仮説を支持する。ただしPython object参照やinterpreter費用も含むため、CPU cacheだけを確定原因とはしない。</dd>
+    <dd>サイズの折れ曲がりとpage-stride差は各仮説を支持し得るが確定しない。Python interpreter、index object、未取得のhardware counterを限界として報告する。</dd>
   </dl>
-  <p>次の段階で配列サイズを32KiB、8MiB、128MiB相当へ変え、strideを1、16、ページ相当へ変える。サイズの折れ曲がりはcache容量、ページstrideでの悪化はTLBを疑う手掛かりになるが、別変数を固定した追加測定が必要である。観測したL2/LLC topologyを経路図へ転記し、教材図をそのまま実機構成とみなさない。</p>
+  <p>観測したL1/L2/LLC容量とprivate/shared topologyを経路図へ転記し、portable defaultや教材図をそのまま実機構成とみなさない。cache probeとTLB probeはアクセス順まで変えるため完全な単独変数実験ではなく、可能ならhardware counterを追加して再検証する。</p>
   <p><strong>ラボ成果物:</strong> 「アクセス局所性を変えた測定とCPU・メモリ経路図」には、CPU名、OS、処理系、全反復値、走査順、総和、仮説と未観測区間を含める。</p>
 </section>
 <section id="tradeoffs">

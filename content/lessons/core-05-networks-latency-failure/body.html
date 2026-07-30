@@ -33,50 +33,192 @@
     <dt>入力</dt>
     <dd>一要求についてDNS、connect、TLS、time to first byte、body完了を単調時計で記録する。</dd>
     <dt>操作</dt>
-    <dd>一回目へ800ms、二回目へ800msを配り、残り100ms未満では新しい試行を開始しない。</dd>
+    <dd>一回目へ800ms、backoffへ100ms、二回目へ700ms、後処理へ200ms、cancel伝播へ100msを配り、残り100ms未満では新しい試行を開始しない。</dd>
     <dt>観測</dt>
-    <dd>cold経路がDNS80ms、TCP90ms、TLS140ms、server340ms、response50msで合計700ms。障害時に一回目800ms、backoff100ms、二回目700ms、後処理200msなら1800msで期限内に収まる。</dd>
+    <dd>localhost simulatorでcold/warmを各7回測り、制御したDNS/TLS delayを含む単調時刻を保存する。最悪時は800 + 100 + 700 + 200 + 100 = 1900msで期限内に収まる。</dd>
     <dt>結論</dt>
     <dd>各段へ2000msを設定すると、二試行で4000ms以上になり得る。試行ごとに残りdeadlineを再計算し、未開始区間を明示する。</dd>
   </dl>
-  <p>次の固定fixtureと集計コードは、欠測区間を含む時系列から総時間と残予算を作るstarterである。fixture名は<code>trace-fixture.csv</code>とし、まず期待値を再現してから実traceへ差し替える。</p>
+  <p>次の<code>trace-fixture.csv</code>相当のlocalhost simulatorは、外部network、秘密情報、curlを必要としない。DNS cacheとTLS handshakeは制御可能な待ち時間として模擬し、実protocol測定ではないことを出力へ明記する。</p>
   <pre><code>python3.13 - &lt;&lt;'PY'
-import csv
-import io
 import json
+import socket
+import statistics
+import threading
+import time
 
-fixture_name = "trace-fixture.csv"
-fixture = """request_id,phase,start_ms,end_ms
-req-001,dns,0,80
-req-001,tcp,80,170
-req-001,tls,170,310
-req-001,server,310,650
-req-001,response,650,700
-"""
-rows = list(csv.DictReader(io.StringIO(fixture)))
-events = []
-for row in rows:
-    start = int(row["start_ms"])
-    end = int(row["end_ms"])
-    assert end &gt;= start
-    events.append({
-        "request_id": row["request_id"],
-        "phase": row["phase"],
-        "duration_ms": end - start,
-    })
-total_ms = max(int(row["end_ms"]) for row in rows)
+HARNESS = "network_lab_v2"
+results = {}
+stopped = threading.Event()
+listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+listener.bind(("127.0.0.1", 0))
+listener.listen()
+listener.settimeout(0.1)
+port = listener.getsockname()[1]
+
+def receive_line(connection):
+    chunks = []
+    while True:
+        part = connection.recv(4096)
+        if not part:
+            break
+        chunks.append(part)
+        if b"\n" in part:
+            break
+    return b"".join(chunks).decode("utf-8").strip()
+
+def serve():
+    while not stopped.is_set():
+        try:
+            connection, _ = listener.accept()
+        except TimeoutError:
+            continue
+        with connection:
+            fields = receive_line(connection).split()
+            if not fields:
+                continue
+            command = fields[0]
+            if command == "APPLY":
+                request_id = fields[1]
+                delay_ms = int(fields[2])
+                drop_after_apply = fields[3] == "drop"
+                results.setdefault(request_id, "applied")
+                time.sleep(delay_ms / 1000)
+                if not drop_after_apply:
+                    connection.sendall(
+                        f"RESULT {request_id} applied\n".encode("utf-8")
+                    )
+            elif command == "LOOKUP":
+                request_id = fields[1]
+                value = results.get(request_id, "missing")
+                connection.sendall(
+                    f"RESULT {request_id} {value}\n".encode("utf-8")
+                )
+            elif command == "STOP":
+                stopped.set()
+                connection.sendall(b"STOPPED\n")
+
+server = threading.Thread(target=serve, name="localhost-fixture")
+server.start()
+
+def request(request_id, resolver_mode, delay_ms=0, drop=False):
+    timeline = {}
+    timeline["dns_start"] = time.monotonic_ns()
+    socket.getaddrinfo("localhost", port, type=socket.SOCK_STREAM)
+    # These injected waits make the fixture deterministic enough to compare;
+    # they do not claim to flush or observe the operating-system DNS cache.
+    time.sleep(0.002 if resolver_mode == "cold" else 0.0001)
+    timeline["dns_end"] = time.monotonic_ns()
+    timeline["connect_start"] = time.monotonic_ns()
+    connection = socket.create_connection(("127.0.0.1", port), timeout=1)
+    timeline["connect_end"] = time.monotonic_ns()
+    timeline["tls_start"] = time.monotonic_ns()
+    time.sleep(0.0002)
+    timeline["tls_end"] = time.monotonic_ns()
+    mode = "drop" if drop else "reply"
+    connection.sendall(
+        f"APPLY {request_id} {delay_ms} {mode}\n".encode("utf-8")
+    )
+    first = connection.recv(1)
+    timeline["first_byte"] = time.monotonic_ns()
+    body = bytearray(first)
+    while first:
+        first = connection.recv(4096)
+        body.extend(first)
+    timeline["body_finish"] = time.monotonic_ns()
+    connection.close()
+    return {
+        "request_id": request_id,
+        "resolver_mode": resolver_mode,
+        "monotonic_ns": timeline,
+        "body": body.decode("utf-8").strip(),
+        "duration_ms": (
+            timeline["body_finish"] - timeline["dns_start"]
+        ) / 1_000_000,
+    }
+
+baseline = {"cold": [], "warm": []}
+for mode in baseline:
+    for repeat in range(7):
+        baseline[mode].append(
+            request(f"{mode}-{repeat}", mode)
+        )
+baseline_values = [
+    sample["duration_ms"]
+    for samples in baseline.values()
+    for sample in samples
+]
+baseline_median_ms = statistics.median(baseline_values)
+
+delayed = request("delay-fixture", "warm", delay_ms=25)
+probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+probe.bind(("127.0.0.1", 0))
+closed_port = probe.getsockname()[1]
+probe.close()
+connection_failure = "not-observed"
+try:
+    socket.create_connection(("127.0.0.1", closed_port), timeout=0.2)
+except OSError:
+    connection_failure = "observed"
+
+ambiguous = request(
+    "order-001",
+    "warm",
+    drop=True,
+)
+with socket.create_connection(("127.0.0.1", port), timeout=1) as lookup:
+    lookup.sendall(b"LOOKUP order-001\n")
+    lookup_result = receive_line(lookup).split()[-1]
+
+budget = {
+    "deadline_ms": 2000,
+    "first_attempt_ms": 800,
+    "backoff_ms": 100,
+    "second_attempt_ms": 700,
+    "post_processing_ms": 200,
+    "cancel_propagation_ms": 100,
+}
+budget["worst_case_ms"] = sum(
+    value
+    for name, value in budget.items()
+    if name != "deadline_ms"
+)
+assert budget["worst_case_ms"] &lt;= budget["deadline_ms"]
+
+with socket.create_connection(("127.0.0.1", port), timeout=1) as control:
+    control.sendall(b"STOP\n")
+    receive_line(control)
+server.join(timeout=1)
+listener.close()
+
 print(json.dumps({
-    "fixture": fixture_name,
-    "events": events,
-    "total_ms": total_ms,
-    "remaining_ms": 2000 - total_ms,
-}, indent=2))
-PY
-TARGET='学習者が管理する検証先'
-curl -sS -o /dev/null \
-  -w 'dns=%{time_namelookup} connect=%{time_connect} tls=%{time_appconnect} ttfb=%{time_starttransfer} total=%{time_total}\n' \
-  "$TARGET"</code></pre>
-  <p>curlの各時刻は過程の手掛かりであり、server内部や業務確定を直接は証明しない。同じrequest IDをclient/server記録へ加え、coldとwarmを最低7回ずつ保存する。検証先は自分が管理し、許可のない相手へ負荷や障害を注入しない。</p>
+    "harness": HARNESS,
+    "fixture": "trace-fixture.csv",
+    "bind_address": "127.0.0.1",
+    "external_network_used": False,
+    "tls_simulated": True,
+    "dns_cache_simulated": True,
+    "baseline": baseline,
+    "baseline_median_ms": baseline_median_ms,
+    "budget": budget,
+    "retry_stop_conditions": [
+        "remaining deadline is below 100ms",
+        "non-idempotent APPLY has an unknown result",
+    ],
+    "faults": {
+        "dependency_delay_ms": delayed["duration_ms"],
+        "connection_failure": connection_failure,
+    },
+    "non_idempotent": {
+        "request_id": "order-001",
+        "first_response": ambiguous["body"] or "response-lost",
+        "automatic_retry": "stopped",
+        "lookup_result": lookup_result,
+    },
+}, ensure_ascii=False, indent=2))
+PY</code></pre>
+  <p>cold/warmは各7回だが、このfixtureのcoldは注入delay、warmは短い注入delayであり、OS resolver cacheのflushを証明しない。TLS区間も暗号処理のsimulationである。実環境へ移すときだけ管理下の検証先とcurl等を用い、同じrequest IDでclient/serverを相関する。</p>
   <p>同じrequest IDでclientとserverを相関する。clientのconnect区間と再送が増え、serverにrequestが届いていなければ損失説を支持する。connectは平常でserver内部のDB spanだけが伸びれば依存遅延説を支持する。どちらも観測できなければ原因確定ではなく観測不足である。</p>
   <p><strong>ラボ成果物:</strong> 「DNSからHTTPまでの時系列トレースとタイムアウト予算」には、coldとwarmの両経路、単位、単調時計、request ID、最悪時の足し算、retry停止条件を含める。</p>
 </section>

@@ -29,47 +29,160 @@
     <dt>前提</dt>
     <dd>毎秒20件、各処理100ms、外部依存は20回に1回だけ800ms、入力は1000件で固定する。</dd>
     <dt>入力</dt>
-    <dd>同じrequest ID列を同期案と「永続化して202を返す」キュー案へ投入する。</dd>
+    <dd>同じrequest ID列を同期完了、受付後queue、負荷時だけqueueの三案へ投入する。</dd>
     <dt>操作</dt>
     <dd>受付から応答、成果完了、再試行、重複、最古滞留時間を単調時計で記録する。</dd>
     <dt>観測</dt>
-    <dd>同期案はp95応答920ms、成果p95も920ms、重複0件。キュー案はp95応答42ms、成果p95は1480ms、最大滞留84件、再試行12件、冪等keyなしでは重複2件だった。</dd>
+    <dd>固定fixtureの五観測からp95応答、重複率、復旧時間、月間運用時間を再計算する。値を採点へ畳み込む前に全観測と測定条件を保存する。</dd>
     <dt>結論</dt>
-    <dd>キュー案は受付期限を守るが、成果完了と重複防止を別契約として設計する必要がある。応答42msだけでは優位を判断できない。</dd>
+    <dd>三案の全score、各二つ以上の反証条件、決定者、見直し日、未解決riskを同じdecision recordへ出力し、条件が変われば再計算する。</dd>
   </dl>
   <p>次の固定fixtureを観測コマンドへ渡せば、教材だけで元指標と点数を再計算できる。fixture名は<code>decision-observations.csv</code>とし、実案件では同じ列契約の生データへ差し替える。</p>
   <pre><code>python3.13 - &lt;&lt;'PY'
-import csv
-import io
 import json
-import statistics
 
-fixture_name = "decision-observations.csv"
-fixture = """option,response_ms,outcome_ms,retries,duplicates,backlog
-sync,120,120,0,0,0
-sync,920,920,0,0,0
-sync,140,140,0,0,0
-queue,35,1180,1,0,42
-queue,42,1480,2,2,84
-queue,38,1260,1,0,61
-"""
-rows = list(csv.DictReader(io.StringIO(fixture)))
-report = {}
-for option in ("sync", "queue"):
-    selected = [row for row in rows if row["option"] == option]
-    report[option] = {
-        "response_ms_all": [int(row["response_ms"]) for row in selected],
-        "outcome_ms_median": statistics.median(
-            int(row["outcome_ms"]) for row in selected
+HARNESS = "decision_lab_v2"
+WEIGHTS = {
+    "latency": 0.4,
+    "consistency": 0.3,
+    "operations": 0.2,
+    "reversibility": 0.1,
+}
+fixture = {
+    "sync": {
+        "response_ms": [120, 130, 140, 150, 920],
+        "duplicates": [0, 0, 0, 0, 0],
+        "requests": [1000, 1000, 1000, 1000, 1000],
+        "recovery_minutes": [20, 22, 24, 25, 30],
+        "monthly_operations_hours": [8, 8, 9, 8, 9],
+        "reversibility_score": 3,
+        "falsification_conditions": [
+            "p95応答が1000msを二窓連続で超える",
+            "外部依存timeoutで受付成功率が99.9%未満になる",
+        ],
+    },
+    "queued": {
+        "response_ms": [35, 38, 40, 42, 50],
+        "duplicates": [0, 0, 0, 0, 2],
+        "requests": [1000, 1000, 1000, 1000, 1000],
+        "recovery_minutes": [45, 50, 60, 70, 80],
+        "monthly_operations_hours": [18, 19, 20, 21, 22],
+        "reversibility_score": 4,
+        "falsification_conditions": [
+            "重複率が0.02%を超える",
+            "最古滞留時間が利用者期限の二倍を超える",
+        ],
+    },
+    "adaptive_queue": {
+        "response_ms": [80, 90, 110, 500, 700],
+        "duplicates": [0, 0, 0, 0, 1],
+        "requests": [1000, 1000, 1000, 1000, 1000],
+        "recovery_minutes": [30, 35, 40, 45, 55],
+        "monthly_operations_hours": [12, 13, 14, 15, 16],
+        "reversibility_score": 2,
+        "falsification_conditions": [
+            "切替境界で同一request IDが二経路へ流れる",
+            "月間運用時間が16時間を超える",
+        ],
+    },
+}
+
+def nearest_rank_p95(values):
+    ordered = sorted(values)
+    return ordered[(95 * len(ordered) + 99) // 100 - 1]
+
+def score(option):
+    raw = fixture[option]
+    requests = sum(raw["requests"])
+    duplicate_rate = sum(raw["duplicates"]) / requests
+    metrics = {
+        "p95_response_ms": nearest_rank_p95(raw["response_ms"]),
+        "duplicate_rate": duplicate_rate,
+        "recovery_minutes": max(raw["recovery_minutes"]),
+        "monthly_operations_hours": max(
+            raw["monthly_operations_hours"]
         ),
-        "retries": sum(int(row["retries"]) for row in selected),
-        "duplicates": sum(int(row["duplicates"]) for row in selected),
-        "backlog_max": max(int(row["backlog"]) for row in selected),
     }
-print(json.dumps({"fixture": fixture_name, "report": report}, indent=2))
+    latency = (
+        5 if metrics["p95_response_ms"] &lt;= 100
+        else 4 if metrics["p95_response_ms"] &lt;= 800
+        else 3
+    )
+    consistency = (
+        5 if duplicate_rate == 0
+        else 4 if duplicate_rate &lt;= 0.0002
+        else 3
+    )
+    operations = (
+        4
+        if metrics["recovery_minutes"] &lt;= 30
+        and metrics["monthly_operations_hours"] &lt;= 10
+        else 3
+        if metrics["recovery_minutes"] &lt;= 60
+        and metrics["monthly_operations_hours"] &lt;= 16
+        else 2
+    )
+    scores = {
+        "latency": latency,
+        "consistency": consistency,
+        "operations": operations,
+        "reversibility": raw["reversibility_score"],
+    }
+    scores["weighted_total"] = round(
+        sum(scores[name] * WEIGHTS[name] for name in WEIGHTS),
+        2,
+    )
+    return {
+        "raw": {
+            name: value
+            for name, value in raw.items()
+            if name not in {
+                "reversibility_score",
+                "falsification_conditions",
+            }
+        },
+        "metrics": metrics,
+        "scores": scores,
+        "falsification_conditions": raw["falsification_conditions"],
+    }
+
+options = {name: score(name) for name in fixture}
+report = {
+    "harness": HARNESS,
+    "measurement_conditions": {
+        "fixture": "decision-observations.csv",
+        "sample_count": 5,
+        "arrival_rate_per_second": 20,
+        "request_ids_reused_across_options": True,
+        "clock": "monotonic",
+        "score_scale": "1..5; thresholds fixed before comparison",
+        "weights": WEIGHTS,
+    },
+    "options": options,
+    "decision_record": {
+        "purpose": "利用者へ二秒以内に受付結果を返す",
+        "boundary": [
+            "利用者",
+            "受付API",
+            "worker",
+            "課金基盤",
+            "通知基盤",
+        ],
+        "selected": max(
+            options,
+            key=lambda name: options[name]["scores"]["weighted_total"],
+        ),
+        "decision_maker": "service owner",
+        "review_date": "2026-08-31",
+        "unresolved_risks": [
+            "同期案の外部依存tail latency",
+            "切替案の二経路整合性",
+        ],
+    },
+}
+print(json.dumps(report, ensure_ascii=False, indent=2))
 PY</code></pre>
-  <p>出力へ、目的、境界、制約、同期案とキュー案、採用理由、反証閾値、見直し日を追記して意思決定記録にする。観測値を点数だけへ変換せず、上の全値を添付する。</p>
-  <p>重み付き比較を使うなら計算を公開する。例として遅延40%、整合性30%、運用20%、可逆性10%とし、5点満点の同期案を3、5、4、3、キュー案を5、3、2、4とする。同期案は3×0.4 + 5×0.3 + 4×0.2 + 3×0.1 = 3.8、キュー案は5×0.4 + 3×0.3 + 2×0.2 + 4×0.1 = 3.7であり、同期案は3.8、キュー案は3.7、その差は0.1となる。ただし、この差は真理ではない。受付期限が最優先なら重みが変わり、冪等化後には整合性の点も変わる。</p>
+  <p>重みは遅延40%、整合性30%、運用20%、可逆性10%で、閾値も比較前に固定する。同期案は3×0.4 + 5×0.3 + 4×0.2 + 3×0.1 = 3.8、受付後queue案は5×0.4 + 3×0.3 + 2×0.2 + 4×0.1 = 3.7であり、全scoreでは同期案は3.8、キュー案は3.7、負荷時queue案は3.6となる。同期案と受付後queue案の差は0.1だが、これは真理ではない。出力には元データ、測定条件、全score、各案の反証条件、decision recordが残るため、重みや観測が変われば同じ手順で再判断できる。</p>
   <p><strong>ラボ成果物:</strong> 「制約、代替案、反証条件を含む意思決定記録」には、上の生データ、境界図、採否、見直し日を含める。</p>
 </section>
 <section id="tradeoffs">

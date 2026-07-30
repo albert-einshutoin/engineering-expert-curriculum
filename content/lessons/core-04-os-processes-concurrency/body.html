@@ -26,81 +26,129 @@
 <section id="worked-example">
   <h2>動く例で考える</h2>
   <h3>lost updateをイベント列で再現する</h3>
+  <aside>
+    <p><strong>安全上の注意:</strong> これは競合再現専用の意図的にunsafeな教材コード。本番へ流用しない。隔離した学習環境だけで実行し、racy版を修正例や性能baselineとして出荷しない。</p>
+  </aside>
   <p>次を<code>RaceLab.java</code>として保存する。racyとsynchronizedは同じJava 21、初期値、worker数、反復数、出力契約を使う。</p>
-  <pre><code>public final class RaceLab {
+  <pre><code>import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.atomic.AtomicReference;
+
+public final class RaceLab {
     private static final int INITIAL = 1000;
     private static final int PER_WORKER = 500;
     private static final int TRIALS = 200;
+    private static final long TIMEOUT_MILLIS = 2000;
     private static final Object LOCK = new Object();
     private static volatile int stock;
-    private static boolean synchronizedMode;
 
-    private static void decrementMany() {
-        for (int index = 0; index &lt; PER_WORKER; index++) {
-            if (synchronizedMode) {
-                synchronized (LOCK) {
-                    stock--;
-                }
-            } else {
-                int observed = stock;
-                Thread.yield();
-                stock = observed - 1;
-            }
+    private record Trial(int finalStock, long elapsedNs, boolean stalled) {}
+
+    private static Trial runTrial(String mode) throws InterruptedException {
+        stock = INITIAL;
+        long start = System.nanoTime();
+        if (mode.equals("serial")) {
+            stock -= PER_WORKER;
+            stock -= PER_WORKER;
+            return new Trial(stock, System.nanoTime() - start, false);
         }
+
+        CyclicBarrier readsCompleted = new CyclicBarrier(2);
+        AtomicReference&lt;Throwable&gt; failure = new AtomicReference&lt;&gt;();
+        Runnable operation = mode.equals("racy")
+                ? () -&gt; {
+                    try {
+                        int observed = stock;
+                        readsCompleted.await();
+                        stock = observed - PER_WORKER;
+                    } catch (Throwable error) {
+                        failure.compareAndSet(null, error);
+                    }
+                }
+                : () -&gt; {
+                    synchronized (LOCK) {
+                        int observed = stock;
+                        stock = observed - PER_WORKER;
+                    }
+                };
+        Thread first = new Thread(operation, "worker-A");
+        Thread second = new Thread(operation, "worker-B");
+        first.start();
+        second.start();
+        first.join(TIMEOUT_MILLIS);
+        second.join(TIMEOUT_MILLIS);
+        boolean stalled = first.isAlive() || second.isAlive();
+        if (stalled) {
+            first.interrupt();
+            second.interrupt();
+            first.join(TIMEOUT_MILLIS);
+            second.join(TIMEOUT_MILLIS);
+        }
+        if (failure.get() != null) {
+            throw new IllegalStateException("worker failed", failure.get());
+        }
+        return new Trial(stock, System.nanoTime() - start, stalled);
     }
 
     public static void main(String[] args) throws InterruptedException {
         if (args.length != 1
-                || (!args[0].equals("racy")
-                &amp;&amp; !args[0].equals("synchronized"))) {
+                || !(args[0].equals("racy")
+                || args[0].equals("synchronized")
+                || args[0].equals("serial"))) {
             throw new IllegalArgumentException(
-                    "usage: java RaceLab racy|synchronized");
+                    "usage: java RaceLab racy|synchronized|serial");
         }
-        synchronizedMode = args[0].equals("synchronized");
         int violations = 0;
         int minimum = Integer.MAX_VALUE;
-        int maximum = Integer.MIN_VALUE;
+        int finalStock = Integer.MIN_VALUE;
+        int stalled = 0;
+        long elapsedNs = 0;
         for (int trial = 0; trial &lt; TRIALS; trial++) {
-            stock = INITIAL;
-            Thread first = new Thread(RaceLab::decrementMany);
-            Thread second = new Thread(RaceLab::decrementMany);
-            first.start();
-            second.start();
-            first.join();
-            second.join();
-            int observed = stock;
-            if (observed != 0) {
+            Trial result = runTrial(args[0]);
+            finalStock = result.finalStock();
+            if (finalStock != 0) {
                 violations++;
             }
-            minimum = Math.min(minimum, observed);
-            maximum = Math.max(maximum, observed);
+            minimum = Math.min(minimum, finalStock);
+            elapsedNs += result.elapsedNs();
+            if (result.stalled()) {
+                stalled++;
+            }
         }
         System.out.printf(
-                "mode=%s trials=%d violations=%d min=%d max=%d%n",
-                args[0], TRIALS, violations, minimum, maximum);
-        if (synchronizedMode &amp;&amp; violations != 0) {
-            throw new AssertionError("synchronized invariant failed");
+                "mode=%s trials=%d expected=%d final=%d min=%d violations=%d stalled=%d elapsed_ns=%d%n",
+                args[0], TRIALS, 0, finalStock, minimum,
+                violations, stalled, elapsedNs);
+        if (args[0].equals("racy")) {
+            System.out.println(
+                    "event=A:read(1000),B:read(1000),A:write(500),B:write(500)");
+        }
+        int expectedViolations = args[0].equals("racy") ? TRIALS : 0;
+        if (violations != expectedViolations || stalled != 0) {
+            throw new AssertionError("unexpected trial result");
         }
     }
 }</code></pre>
   <pre><code>java --version
 javac RaceLab.java
 java RaceLab racy | tee race-before.txt
-java RaceLab synchronized | tee race-after.txt</code></pre>
-  <p>出力契約は<code>mode=... trials=200 violations=... min=... max=...</code>の一行である。racyで違反が一度も観測されない実行も仕様上あり得るため、一回の非再現を修正証拠にしない。synchronized側はコード上のmonitor関係と200試行の違反0を組にし、どちらか片方だけを証拠にしない。</p>
+java RaceLab synchronized | tee race-after.txt
+java RaceLab serial | tee serial.txt
+/usr/bin/time -p java RaceLab synchronized
+/usr/bin/time -p java RaceLab serial</code></pre>
+  <p>出力契約は<code>mode=... trials=200 expected=0 final=... min=... violations=... stalled=... elapsed_ns=...</code>である。racy版はCyclicBarrierで両workerのreadを先に完了させるため、schedulerやyieldの偶然ではなく全200試行で最小lost updateを構成する。synchronized版とserial版は同じ1000件相当の固定fixtureで200試行0違反を要求し、join timeoutとisAliveで停止性を検査する。なお、一般の確率的raceでは一回の非再現を修正証拠にしない。</p>
   <dl>
     <dt>前提</dt>
-    <dd>Java 21、在庫1000、platform thread AとBが各500回、一件ずつ在庫を減らす。不変条件は最終値0かつ途中で負数なし。</dd>
+    <dd>Java 21、在庫1000、worker AとBが各500件分を減らす。不変条件はexpected final 0、負数なし、stalled 0。</dd>
     <dt>入力</dt>
-    <dd>同じ1000件の減算命令を二workerへ均等配分し、racyとsynchronizedを各200試行する。</dd>
+    <dd>同じ1000件の減算fixtureをracy、synchronized、serialへ渡し、各200試行する。</dd>
     <dt>操作</dt>
-    <dd>volatile int stockのread、subtract、write間へyieldを挿入したracy版と、三操作全体を同じmonitorで囲む版を実行する。</dd>
+    <dd>racy版では両read後にbarrierを解放して二つのwriteを行い、同期版ではread-subtract-write全体を同じmonitorで囲む。</dd>
     <dt>観測</dt>
-    <dd>Aが値10を読み、Bも10を読み、Aが9を書き、Bも9を書くと二件処理して一件しか減らない。100試行中37試行で最終値が1以上なら不変条件違反である。</dd>
+    <dd>最小event列はA:read(1000)、B:read(1000)、A:write(500)、B:write(500)で、expected 0に対しfinal 500となる。出力のfinal、min、violations、stalled、elapsed_nsを全modeで比較する。</dd>
     <dt>結論</dt>
-    <dd>synchronizedでread-modify-write全体を囲む。修正後200試行で違反0でも確率だけの証明にはせず、monitor unlockから後続lockへのhappens-beforeと試験結果の両方を証拠にする。</dd>
+    <dd>synchronizedでread-modify-write全体を囲む。修正後200試行0違反と、monitor unlockから後続lockへのhappens-beforeを組にして修正根拠にする。</dd>
   </dl>
-  <p>性能も同条件で測る。仮に同期なし中央値18ms、mutex 31ms、message passing 44msなら、mutexの13ms増は正しさの費用である。process案は障害隔離を得るが、serializationとcopy、監視、再起動契約を追加する。</p>
+  <p>性能値はSystem.nanoTimeと<code>/usr/bin/time -p</code>の実測だけを報告し、例示値を捏造しない。process/message passingは共有memory版と同じ測定とはみなさず、別実験にする。owner processを一つ立て、標準入力protocolを<code>requestId,decrement</code>、標準出力を<code>requestId,remaining</code>と固定し、A,500、B,500、GETの三messageを送る。process PID、起動時間、送受信byte数、終了code、childを強制終了したときの親の継続、再送時のrequest ID重複排除を記録してから、IPC費用と障害半径を比較する。</p>
   <p><strong>ラボ成果物:</strong> 「競合を再現し不変条件で修正した実験記録」には、失敗頻度、最小interleaving、同期前後のコード差、停止性、性能分布を含める。</p>
 </section>
 <section id="tradeoffs">
