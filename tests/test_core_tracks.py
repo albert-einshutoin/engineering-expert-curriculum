@@ -43,7 +43,7 @@ FOUNDATION_SOURCES = {
             "primary",
         ),
         (
-            "SPEC CPU 2017 Run and Reporting Rules",
+            "SPEC CPU®2017 Run and Reporting Rules",
             "https://www.spec.org/cpu2017/Docs/runrules.html",
             "standard",
         ),
