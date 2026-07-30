@@ -25,6 +25,17 @@ class CatalogPublicationIntegrityError(RuntimeError):
     """A same-UID rename race made the published catalog entry untrustworthy."""
 
 
+def _close_all(descriptors: list[int]) -> list[OSError]:
+    """Consume FD ownership and attempt every close once, in reverse order."""
+    pending = list(reversed(descriptors))
+    descriptors.clear()
+    failures: list[OSError] = []
+    for descriptor in pending:
+        try: os.close(descriptor)
+        except OSError as error: failures.append(error)
+    return failures
+
+
 def _read_source(path: Path) -> tuple[object, str, tuple[int, int]]:
     raw_path = _absolute_lexical(path, "input")
     parent_path, name, parent_fd = _open_parent(raw_path)
@@ -44,8 +55,9 @@ def _read_source(path: Path) -> tuple[object, str, tuple[int, int]]:
     except OSError as error:
         raise CurriculumValidationError(f"{path}: cannot read source: {error}") from error
     finally:
-        if file_fd is not None: os.close(file_fd)
-        os.close(parent_fd)
+        owned = [parent_fd] + ([] if file_fd is None else [file_fd])
+        failures = _close_all(owned)
+        if failures: raise RuntimeError(f"source descriptor close failed: {failures[0]}")
 
 
 def _absolute_lexical(path: Path, label: str) -> Path:
