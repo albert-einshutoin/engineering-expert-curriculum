@@ -420,9 +420,21 @@ class PrototypeMigrationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             _rename_directory_noreplace(0, "../staging", "published")
     def _write_fixture(self, root: Path) -> None:
+        self._prepare_archive_parent(root)
         (root / "assets").mkdir()
         (root / "assets" / "styles.css").write_text("body{}", encoding="utf-8")
         (root / "index.html").write_text("<main>legacy</main>", encoding="utf-8")
+
+    def _prepare_archive_parent(self, root: Path) -> Path:
+        parent = root / ".archive"
+        parent.mkdir(mode=0o700)
+        parent.chmod(0o700)
+        return parent
+
+    def _assert_prepared_archive_parent_empty(self, root: Path) -> None:
+        parent = root / ".archive"
+        self.assertTrue(parent.exists())
+        self.assertEqual(list(parent.iterdir()), [])
 
     def test_preserves_only_allowlisted_files_and_writes_verified_manifest(self) -> None:
         with TemporaryDirectory() as directory:
@@ -474,6 +486,18 @@ class PrototypeMigrationTests(unittest.TestCase):
                 preserve_prototype(root, archive_parent / "prototype-v1")
             self.assertFalse(archive_parent.exists())
 
+    def test_preserve_rejects_missing_archive_parent_without_creating_it(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            (root / "index.html").write_text("legacy", encoding="utf-8")
+            archive_parent = root / ".archive"
+
+            with self.assertRaisesRegex(FileNotFoundError, "archive parent must already exist"):
+                preserve_prototype(root, archive_parent / "prototype-v1")
+
+            self.assertFalse(archive_parent.exists())
+            self.assertTrue((root / "index.html").exists())
+
     def test_copy_failure_leaves_source_and_archive_untouched(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory).resolve()
@@ -490,6 +514,7 @@ class PrototypeMigrationTests(unittest.TestCase):
     def test_durability_events_precede_native_publish_in_order(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory).resolve()
+            self._prepare_archive_parent(root)
             (root / "assets" / "nested").mkdir(parents=True)
             (root / "assets" / "nested" / "app.css").write_text("body{}", encoding="utf-8")
             archive = root / ".archive" / "prototype-v1"
@@ -541,7 +566,7 @@ class PrototypeMigrationTests(unittest.TestCase):
                     preserve_prototype(root, archive)
 
             self.assertFalse(archive.exists())
-            self.assertFalse((root / ".archive").exists())
+            self._assert_prepared_archive_parent_empty(root)
             self.assertEqual(list(root.glob(".prototype-staging-*")), [])
             self.assertTrue((root / "index.html").exists())
 
@@ -720,7 +745,7 @@ class PrototypeMigrationTests(unittest.TestCase):
                     preserve_prototype(root, archive)
             self.assertTrue((root / "index.html").exists())
             self.assertFalse(archive.exists())
-            self.assertFalse((root / ".archive").exists())
+            self._assert_prepared_archive_parent_empty(root)
 
     def test_directory_fsync_failure_rolls_back_archive(self) -> None:
         with TemporaryDirectory() as directory:
@@ -737,7 +762,7 @@ class PrototypeMigrationTests(unittest.TestCase):
                     preserve_prototype(root, archive)
             self.assertTrue((root / "index.html").exists())
             self.assertFalse(archive.exists())
-            self.assertFalse((root / ".archive").exists())
+            self._assert_prepared_archive_parent_empty(root)
 
     def test_checksum_failure_leaves_source_and_archive_untouched(self) -> None:
         with TemporaryDirectory() as directory:
@@ -758,7 +783,7 @@ class PrototypeMigrationTests(unittest.TestCase):
 
             self.assertTrue((root / "index.html").exists())
             self.assertFalse(os.path.lexists(archive))
-            self.assertFalse((root / ".archive").exists())
+            self._assert_prepared_archive_parent_empty(root)
 
     def test_publish_conflict_preserves_foreign_archive_and_original_error(self) -> None:
         with TemporaryDirectory() as directory:
@@ -793,7 +818,7 @@ class PrototypeMigrationTests(unittest.TestCase):
 
             self.assertTrue((root / "index.html").exists())
             self.assertFalse(os.path.lexists(archive))
-            self.assertFalse((root / ".archive").exists())
+            self._assert_prepared_archive_parent_empty(root)
 
     def test_publish_failure_reports_parent_close_failure_with_publish_as_cause(self) -> None:
         with TemporaryDirectory() as directory:
@@ -815,7 +840,7 @@ class PrototypeMigrationTests(unittest.TestCase):
             self.assertIsInstance(error.exception.__cause__, OSError)
             self.assertEqual(str(error.exception.__cause__), "publish failed")
             self.assertFalse(archive.exists())
-            self.assertFalse((root / ".archive").exists())
+            self._assert_prepared_archive_parent_empty(root)
             self.assertTrue((root / "index.html").exists())
 
     def test_pre_commit_directory_fsync_failure_never_renames_manifest(self) -> None:
@@ -950,7 +975,7 @@ class PrototypeMigrationTests(unittest.TestCase):
 
             self.assertFalse(assets.exists())
 
-    def test_copy_failure_removes_new_archive_parent(self) -> None:
+    def test_copy_failure_keeps_prepared_archive_parent_empty(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             self._write_fixture(root)
@@ -961,30 +986,7 @@ class PrototypeMigrationTests(unittest.TestCase):
                 with self.assertRaisesRegex(OSError, "copy failed"):
                     preserve_prototype(root, archive)
 
-            self.assertFalse(archive_parent.exists())
-
-    def test_copy_failure_remains_the_cause_when_parent_cleanup_fails(self) -> None:
-        with TemporaryDirectory() as directory:
-            root = Path(directory).resolve()
-            self._write_fixture(root)
-            archive_parent = root / ".archive"
-            archive = archive_parent / "prototype-v1"
-            real_rmdir = Path.rmdir
-
-            def fail_parent_cleanup(path: Path) -> None:
-                if path == archive_parent:
-                    raise OSError("parent cleanup failed")
-                real_rmdir(path)
-
-            with patch("tools.migrate_prototype._copy_allowlisted_tree", side_effect=OSError("copy failed")):
-                with patch.object(Path, "rmdir", autospec=True, side_effect=fail_parent_cleanup):
-                    with self.assertRaisesRegex(RuntimeError, "parent cleanup failed") as error:
-                        preserve_prototype(root, archive)
-
-            self.assertIsInstance(error.exception.__cause__, OSError)
-            self.assertEqual(str(error.exception.__cause__), "copy failed")
-            self.assertTrue((root / "index.html").exists())
-            self.assertFalse(archive.exists())
+            self._assert_prepared_archive_parent_empty(root)
 
     def test_parent_replacement_after_reservation_never_deletes_foreign_archive(self) -> None:
         with TemporaryDirectory() as directory:
@@ -1023,37 +1025,18 @@ class PrototypeMigrationTests(unittest.TestCase):
 
             self.assertFalse((root / "ASSETS").exists())
 
-    def test_parent_creation_rolls_back_when_a_later_mkdir_fails(self) -> None:
+    def test_parent_fd_open_failure_keeps_prepared_parent(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             self._write_fixture(root)
             archive_parent = root / ".archive"
-            archive = archive_parent / "level-one" / "level-two" / "prototype-v1"
-            real_mkdir = Path.mkdir
-
-            def fail_second_level(path: Path, *args: object, **kwargs: object) -> None:
-                if path.name == "level-two":
-                    raise OSError("second parent mkdir failed")
-                real_mkdir(path, *args, **kwargs)
-
-            with patch.object(Path, "mkdir", autospec=True, side_effect=fail_second_level):
-                with self.assertRaisesRegex(OSError, "second parent mkdir failed"):
-                    preserve_prototype(root, archive)
-
-            self.assertFalse(archive_parent.exists())
-
-    def test_parent_fd_open_failure_rolls_back_new_parents(self) -> None:
-        with TemporaryDirectory() as directory:
-            root = Path(directory).resolve()
-            self._write_fixture(root)
-            archive_parent = root / ".archive"
-            archive = archive_parent / "nested" / "prototype-v1"
+            archive = archive_parent / "prototype-v1"
 
             with patch("tools.migrate_prototype._open_directory_fd", side_effect=OSError("open failed")):
                 with self.assertRaisesRegex(OSError, "open failed"):
                     preserve_prototype(root, archive)
 
-            self.assertFalse(archive_parent.exists())
+            self._assert_prepared_archive_parent_empty(root)
 
     def test_directory_fd_fstat_failure_closes_the_opened_descriptor(self) -> None:
         with TemporaryDirectory() as directory:
@@ -1100,54 +1083,6 @@ class PrototypeMigrationTests(unittest.TestCase):
             self.assertIn("archive parent changed while opening", str(error.exception.__cause__))
             self.assertEqual(len(opened), 1)
             os.close(opened[0])
-
-    def test_parent_fd_open_failure_preserves_open_error_when_cleanup_fails(self) -> None:
-        with TemporaryDirectory() as directory:
-            root = Path(directory).resolve()
-            self._write_fixture(root)
-            archive_parent = root / ".archive"
-            archive = archive_parent / "prototype-v1"
-            real_rmdir = Path.rmdir
-
-            def fail_parent_cleanup(path: Path) -> None:
-                if path == archive_parent:
-                    raise OSError("parent cleanup failed")
-                real_rmdir(path)
-
-            with patch("tools.migrate_prototype._open_directory_fd", side_effect=OSError("open failed")):
-                with patch.object(Path, "rmdir", autospec=True, side_effect=fail_parent_cleanup):
-                    with self.assertRaisesRegex(RuntimeError, "parent cleanup failed") as error:
-                        preserve_prototype(root, archive)
-
-            self.assertIsInstance(error.exception.__cause__, OSError)
-            self.assertEqual(str(error.exception.__cause__), "open failed")
-
-    def test_parent_creation_reports_cleanup_failure_with_original_cause(self) -> None:
-        with TemporaryDirectory() as directory:
-            root = Path(directory).resolve()
-            self._write_fixture(root)
-            archive_parent = root / ".archive"
-            archive = archive_parent / "level-one" / "level-two" / "prototype-v1"
-            real_mkdir = Path.mkdir
-            real_rmdir = Path.rmdir
-
-            def fail_second_level(path: Path, *args: object, **kwargs: object) -> None:
-                if path.name == "level-two":
-                    raise OSError("second parent mkdir failed")
-                real_mkdir(path, *args, **kwargs)
-
-            def fail_cleanup(path: Path) -> None:
-                if path == archive_parent:
-                    raise OSError("parent cleanup failed")
-                real_rmdir(path)
-
-            with patch.object(Path, "mkdir", autospec=True, side_effect=fail_second_level):
-                with patch.object(Path, "rmdir", autospec=True, side_effect=fail_cleanup):
-                    with self.assertRaisesRegex(RuntimeError, "parent cleanup failed") as error:
-                        preserve_prototype(root, archive)
-
-            self.assertIsInstance(error.exception.__cause__, OSError)
-            self.assertEqual(str(error.exception.__cause__), "second parent mkdir failed")
 
     def test_rejects_archive_path_with_parent_traversal_before_reservation(self) -> None:
         with TemporaryDirectory() as directory:

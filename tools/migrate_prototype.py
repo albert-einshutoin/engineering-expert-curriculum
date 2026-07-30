@@ -133,59 +133,6 @@ def _existing_archive_parent(raw_parent: Path) -> Path:
     return canonical
 
 
-def _create_archive_parent(raw_parent: Path) -> tuple[Path, list[tuple[Path, tuple[int, int]]]]:
-    """Create missing parents from a validated ancestor and report only owned directories."""
-    missing: list[str] = []
-    current = raw_parent
-    while not _lexists(current):
-        missing.append(current.name)
-        current = current.parent
-    _validate_existing_components(current, "archive")
-    canonical = current.resolve(strict=True)
-    if not canonical.is_dir():
-        raise ValueError(f"archive parent is not a directory: {canonical}")
-    created: list[tuple[Path, tuple[int, int]]] = []
-    try:
-        for name in reversed(missing):
-            next_parent = canonical / name
-            next_parent.mkdir(mode=0o700, exist_ok=False)
-            node = os.lstat(next_parent)
-            created.append((next_parent, (node.st_dev, node.st_ino)))
-            _validate_existing_components(next_parent, "archive")
-            canonical = next_parent.resolve(strict=True)
-    except BaseException as creation_error:
-        try:
-            _cleanup_created_parents(created)
-        except RuntimeError as cleanup_error:
-            raise RuntimeError(
-                f"archive parent cleanup failed after creation error: {cleanup_error}"
-            ) from creation_error
-        raise
-    return canonical, created
-
-
-def _cleanup_created_parents(
-    created: list[tuple[Path, tuple[int, int]]], *, report_failures: bool = True
-) -> None:
-    """Remove only empty directories created by this invocation, deepest first."""
-    failures: list[OSError] = []
-    for directory, identity in reversed(created):
-        try:
-            node = os.lstat(directory)
-            if (node.st_dev, node.st_ino) != identity:
-                continue
-            directory.rmdir()
-        except OSError as error:
-            # A concurrent publisher may have placed a foreign entry below an owned parent.
-            # Keep that entry intact while preserving the operation that exposed the race.
-            if error.errno in {errno.ENOTEMPTY, errno.EEXIST}:
-                continue
-            failures.append(error)
-    if failures and report_failures:
-        details = "; ".join(str(error) for error in failures)
-        raise RuntimeError(f"archive parent cleanup failed: {details}") from failures[0]
-
-
 def _source_directory(source: Path) -> Path:
     raw_source = _raw_absolute(source, "source")
     _validate_existing_components(raw_source, "source")
@@ -599,30 +546,12 @@ def preserve_prototype(source: Path, archive: Path) -> PrototypeManifest:
         raise FileNotFoundError("no allowlisted prototype files found")
 
     raw_archive = _archive_path(source_path, archive)
-    canonical_parent, created_parents = _create_archive_parent(raw_archive.parent)
-    try:
-        parent_fd = _open_directory_fd(canonical_parent)
-    except BaseException as open_error:
-        try:
-            _cleanup_created_parents(created_parents)
-        except RuntimeError as cleanup_error:
-            raise RuntimeError(
-                f"archive parent cleanup failed after open error: {cleanup_error}"
-            ) from open_error
-        raise
+    canonical_parent = _existing_archive_parent(raw_archive.parent)
+    parent_fd = _open_directory_fd(canonical_parent)
     completed = False
     try:
         manifest = _publish_verified_archive(source_path, parent_fd, raw_archive.name, initial)
         completed = True
-    except BaseException as operation_error:
-        try:
-            _cleanup_created_parents(created_parents)
-        except RuntimeError as cleanup_error:
-            raise RuntimeError(
-                f"incomplete archive without manifest: parent cleanup failed for {raw_archive}: "
-                f"{cleanup_error}"
-            ) from operation_error
-        raise
     finally:
         # Native publish is the commit point; later parent-descriptor close errors cannot reverse it.
         close_failures = _close_all((parent_fd,))
