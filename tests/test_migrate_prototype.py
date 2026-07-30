@@ -300,6 +300,35 @@ class PrototypeMigrationTests(unittest.TestCase):
             self.assertEqual(foreign_sentinel.read_text(encoding="utf-8"), "foreign")
             self.assertTrue((root / "index.html").exists())
 
+    def test_archive_replacement_before_open_preserves_foreign_sentinel(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            self._write_fixture(root)
+            archive_parent = root / ".archive"
+            archive = archive_parent / "prototype-v1"
+            moved_archive = archive_parent / "reserved-original"
+            sentinel = archive / "sentinel.txt"
+            real_open = os.open
+            replaced = False
+
+            def replace_before_archive_open(path: str, flags: int, *args: object, **kwargs: object) -> int:
+                nonlocal replaced
+                if not replaced and path == "prototype-v1" and "dir_fd" in kwargs:
+                    replaced = True
+                    archive.rename(moved_archive)
+                    archive.mkdir()
+                    sentinel.write_text("foreign", encoding="utf-8")
+                return real_open(path, flags, *args, **kwargs)
+
+            with patch("tools.migrate_prototype.os.open", side_effect=replace_before_archive_open):
+                with self.assertRaisesRegex(RuntimeError, "reserved archive changed before opening"):
+                    preserve_prototype(root, archive)
+
+            self.assertEqual(sentinel.read_text(encoding="utf-8"), "foreign")
+            self.assertTrue(archive.exists())
+            self.assertTrue((root / "index.html").exists())
+            self.assertFalse((archive / "manifest.json").exists())
+
     def test_rejects_casefolded_allowlist_archive_boundary_before_parent_creation(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory).resolve()

@@ -161,11 +161,13 @@ def _reserve_archive(archive: Path) -> None:
         raise FileExistsError(f"archive already exists: {archive}") from error
 
 
-def _reserve_archive_at(parent_fd: int, name: str) -> None:
+def _reserve_archive_at(parent_fd: int, name: str) -> tuple[int, int]:
     try:
         os.mkdir(name, mode=0o700, dir_fd=parent_fd)
     except FileExistsError as error:
         raise FileExistsError(f"archive already exists: {name}") from error
+    node = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+    return node.st_dev, node.st_ino
 
 
 def _open_directory_fd(path: Path) -> int:
@@ -417,7 +419,7 @@ def preserve_prototype(source: Path, archive: Path) -> PrototypeManifest:
             ) from open_error
         raise
     try:
-        _reserve_archive_at(parent_fd, raw_archive.name)
+        reservation_identity = _reserve_archive_at(parent_fd, raw_archive.name)
     except BaseException:
         # A racing process may have populated an otherwise newly created parent.
         # It is not ours to remove, so preserve the reservation failure instead.
@@ -429,6 +431,11 @@ def preserve_prototype(source: Path, archive: Path) -> PrototypeManifest:
     committed = False
     try:
         archive_fd = os.open(raw_archive.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd)
+        opened = os.fstat(archive_fd)
+        if (opened.st_dev, opened.st_ino) != reservation_identity:
+            _close_all((archive_fd,))
+            archive_fd = None
+            raise RuntimeError("reserved archive changed before opening")
         staging_name = f".staging-{uuid.uuid4().hex}"
         os.mkdir(staging_name, mode=0o700, dir_fd=archive_fd)
         staging_fd = os.open(staging_name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=archive_fd)
@@ -451,9 +458,10 @@ def preserve_prototype(source: Path, archive: Path) -> PrototypeManifest:
         manifest = _write_manifest(archive_fd, initial)
         committed = True
     except BaseException as operation_error:
+        if archive_fd is None:
+            _cleanup_created_parents(created_parents, report_failures=False)
+            raise
         try:
-            if archive_fd is None:
-                raise RuntimeError("reserved archive descriptor could not be opened")
             _remove_owned_archive(parent_fd, raw_archive.name, archive_fd)
         except (OSError, RuntimeError) as cleanup_error:
             raise RuntimeError(
