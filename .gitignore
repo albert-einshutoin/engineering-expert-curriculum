@@ -1,0 +1,16 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.coverage
+htmlcov/
+.venv/
+
+# Brainstorming mockups are local design artifacts, not product assets.
+.superpowers/
+
+# The generated prototype is retained locally during migration but must not
+# inflate the public repository or preserve duplicated generated pages.
+.archive/
+
+# Generated output is reproducible from version-controlled source content.
+site/
