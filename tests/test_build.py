@@ -401,6 +401,34 @@ class BuildAcceptanceTests(unittest.TestCase):
             self.assertIn(str(output), result.stdout)
             _assert_static_site(self, output)
 
+    def test_cli_rejects_control_characters_without_log_injection(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve(strict=True)
+            unrelated = root / "cwd"
+            unrelated.mkdir()
+            output = root / "published\nFORGED\x1b[31m"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(REPOSITORY_ROOT / "tools/build.py"),
+                    "--output",
+                    str(output),
+                ],
+                cwd=unrelated,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(result.stdout, "")
+            self.assertIn("control character", result.stderr)
+            self.assertNotIn("FORGED", result.stderr)
+            self.assertNotIn("\x1b", result.stderr)
+            self.assertFalse(output.exists())
+
 
 class BuildInputValidationTests(unittest.TestCase):
     def test_repository_catalog_uses_fixed_provenance_but_fixture_is_generic(
