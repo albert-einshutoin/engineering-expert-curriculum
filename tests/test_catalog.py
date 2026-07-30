@@ -15,6 +15,7 @@ from curriculum_builder.catalog import (
     load_repository_catalog,
     load_repository_catalog_bytes,
     serialize_catalog_document,
+    strict_json_loads,
 )
 from curriculum_builder.errors import CurriculumValidationError
 
@@ -35,6 +36,64 @@ def item(**overrides: object) -> dict[str, object]:
 
 
 class CatalogLoaderTests(unittest.TestCase):
+    def test_strict_json_rejects_non_finite_numbers(self) -> None:
+        for constant in (b"NaN", b"Infinity", b"-Infinity"):
+            with self.subTest(constant=constant):
+                with self.assertRaisesRegex(
+                    CurriculumValidationError,
+                    r"fixture\.json: non-finite JSON number",
+                ) as caught:
+                    strict_json_loads(
+                        b'{"value":' + constant + b"}",
+                        Path("fixture.json"),
+                    )
+                self.assertIsInstance(
+                    caught.exception.__cause__,
+                    CurriculumValidationError,
+                )
+
+    def test_strict_json_normalizes_huge_integer_errors_without_leaking_details(
+        self,
+    ) -> None:
+        digits = b"9" * 10_000
+        try:
+            strict_json_loads(
+                b'{"value":' + digits + b"}",
+                Path("fixture.json"),
+            )
+        except BaseException as error:
+            caught = error
+        else:
+            self.fail("huge JSON integer was accepted")
+
+        self.assertIsInstance(caught, CurriculumValidationError)
+        self.assertEqual(
+            str(caught),
+            "fixture.json: invalid JSON numeric value",
+        )
+        self.assertIsInstance(caught.__cause__, ValueError)
+        self.assertNotIn("10000", str(caught))
+        self.assertNotIn("digit", str(caught))
+
+    def test_strict_json_normalizes_excessive_nesting_without_leaking_input(
+        self,
+    ) -> None:
+        try:
+            with patch(
+                "curriculum_builder.catalog.json.loads",
+                side_effect=RecursionError("private-nesting-detail"),
+            ):
+                strict_json_loads(b"[]", Path("fixture.json"))
+        except BaseException as error:
+            caught = error
+        else:
+            self.fail("recursive JSON parser failure was accepted")
+
+        self.assertIsInstance(caught, CurriculumValidationError)
+        self.assertEqual(str(caught), "fixture.json: JSON nesting is too deep")
+        self.assertIsInstance(caught.__cause__, RecursionError)
+        self.assertNotIn("private-nesting-detail", str(caught))
+
     def test_bytes_loaders_reject_mutable_views_and_subclasses(self) -> None:
         official_path = Path("content/catalog.json")
         official = official_path.read_bytes()

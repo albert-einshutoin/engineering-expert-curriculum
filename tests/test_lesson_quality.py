@@ -390,6 +390,38 @@ class LessonQualityTests(unittest.TestCase):
             ):
                 load_lesson(linked_parent / "lesson.json")
 
+    def test_symlinked_ancestor_above_the_immediate_parent_is_rejected(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            real_ancestor = root / "real"
+            nested = real_ancestor / "level-two"
+            nested.mkdir(parents=True)
+            (nested / "lesson.json").write_bytes(COMPLETE.read_bytes())
+            linked_ancestor = root / "linked"
+            linked_ancestor.symlink_to(real_ancestor, target_is_directory=True)
+
+            with self.assertRaisesRegex(
+                CurriculumValidationError, r"symbolic link"
+            ):
+                load_lesson(
+                    linked_ancestor / "level-two" / "lesson.json"
+                )
+
+    def test_lexical_parent_traversal_is_rejected(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            safe = root / "safe"
+            safe.mkdir()
+            (safe / "lesson.json").write_bytes(COMPLETE.read_bytes())
+            ambiguous = safe / ".." / "safe" / "lesson.json"
+
+            with self.assertRaisesRegex(
+                CurriculumValidationError, r"parent traversal"
+            ):
+                load_lesson(ambiguous)
+
     def test_lesson_file_size_and_utf8_are_bounded(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
@@ -430,6 +462,46 @@ class LessonQualityTests(unittest.TestCase):
                     CurriculumValidationError, r"changed during read"
                 ):
                     load_lesson(path)
+
+    def test_ancestor_rebinding_to_a_hard_link_is_rejected(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            ancestor = root / "ancestor"
+            nested = ancestor / "nested"
+            nested.mkdir(parents=True)
+            path = nested / "lesson.json"
+            path.write_bytes(COMPLETE.read_bytes())
+            replacement = root / "replacement"
+            replacement_nested = replacement / "nested"
+            replacement_nested.mkdir(parents=True)
+            os.link(path, replacement_nested / "lesson.json")
+            retired = root / "retired"
+            real_open = os.open
+            swapped = False
+
+            def swap_ancestor_after_file_open(
+                target: object,
+                flags: int,
+                *args: object,
+                **kwargs: object,
+            ) -> int:
+                nonlocal swapped
+                descriptor = real_open(target, flags, *args, **kwargs)
+                if not swapped and Path(target).name == "lesson.json":
+                    swapped = True
+                    ancestor.rename(retired)
+                    replacement.rename(ancestor)
+                return descriptor
+
+            with patch(
+                "curriculum_builder.lessons.os.open",
+                side_effect=swap_ancestor_after_file_open,
+            ):
+                with self.assertRaisesRegex(
+                    CurriculumValidationError, r"ancestor changed during read"
+                ):
+                    load_lesson(path)
+            self.assertTrue(swapped)
 
     def test_post_read_metadata_change_is_rejected(self) -> None:
         real_fstat = os.fstat
@@ -472,6 +544,105 @@ class LessonQualityTests(unittest.TestCase):
         self.assertIn(COMPLETE.name, message)
         self.assertNotIn("/private/customer", message)
         self.assertNotIn("システム思考", message)
+
+    def test_all_descriptors_close_once_in_reverse_open_order(self) -> None:
+        real_open = os.open
+        real_close = os.close
+        opened: list[int] = []
+        closed: list[int] = []
+
+        def track_open(
+            target: object,
+            flags: int,
+            *args: object,
+            **kwargs: object,
+        ) -> int:
+            descriptor = real_open(target, flags, *args, **kwargs)
+            opened.append(descriptor)
+            return descriptor
+
+        def track_close(descriptor: int) -> None:
+            closed.append(descriptor)
+            real_close(descriptor)
+
+        with (
+            patch(
+                "curriculum_builder.lessons.os.open",
+                side_effect=track_open,
+            ),
+            patch(
+                "curriculum_builder.lessons.os.close",
+                side_effect=track_close,
+            ),
+        ):
+            load_lesson(COMPLETE)
+
+        self.assertGreater(len(opened), 2)
+        self.assertEqual(closed, list(reversed(opened)))
+        self.assertEqual(len(closed), len(set(closed)))
+
+    def test_successful_read_reports_close_failure_and_closes_remaining_fds(
+        self,
+    ) -> None:
+        real_close = os.close
+        closed: list[int] = []
+
+        def close_with_one_failure(descriptor: int) -> None:
+            closed.append(descriptor)
+            real_close(descriptor)
+            if len(closed) == 1:
+                raise OSError("private-close-detail")
+
+        with patch(
+            "curriculum_builder.lessons.os.close",
+            side_effect=close_with_one_failure,
+        ):
+            with self.assertRaisesRegex(
+                CurriculumValidationError,
+                r"lesson descriptor close failed",
+            ) as caught:
+                load_lesson(COMPLETE)
+
+        self.assertGreater(len(closed), 2)
+        self.assertEqual(len(closed), len(set(closed)))
+        self.assertNotIn("private-close-detail", str(caught.exception))
+
+    def test_primary_read_failure_is_preserved_when_close_also_fails(
+        self,
+    ) -> None:
+        real_close = os.close
+        closed: list[int] = []
+
+        def close_with_one_failure(descriptor: int) -> None:
+            closed.append(descriptor)
+            real_close(descriptor)
+            if len(closed) == 1:
+                raise OSError("private-close-detail")
+
+        with (
+            patch(
+                "curriculum_builder.lessons.os.read",
+                side_effect=OSError("private-read-detail"),
+            ),
+            patch(
+                "curriculum_builder.lessons.os.close",
+                side_effect=close_with_one_failure,
+            ),
+        ):
+            with self.assertRaisesRegex(
+                CurriculumValidationError,
+                r"lesson cannot be read safely",
+            ) as caught:
+                load_lesson(COMPLETE)
+
+        self.assertGreater(len(closed), 2)
+        self.assertEqual(len(closed), len(set(closed)))
+        self.assertNotIn("private-read-detail", str(caught.exception))
+        self.assertNotIn("private-close-detail", str(caught.exception))
+        self.assertIn(
+            "lesson descriptor also failed to close",
+            getattr(caught.exception, "__notes__", ()),
+        )
 
     def test_boolean_values_are_not_accepted_as_integers(self) -> None:
         mutations = (
@@ -653,6 +824,92 @@ class LessonQualityTests(unittest.TestCase):
                 raw = self.complete_document()
                 mutate(raw)
                 self.assert_invalid(raw, message)
+
+    def test_source_identity_normalizes_host_port_and_fragment(self) -> None:
+        cases = (
+            (
+                "host case",
+                "https://EXAMPLE.com/reference",
+                "https://example.com/reference",
+            ),
+            (
+                "default port",
+                "https://example.com:443/reference",
+                "https://example.com/reference",
+            ),
+            (
+                "trailing dot",
+                "https://example.com./reference",
+                "https://example.com/reference",
+            ),
+            (
+                "fragment",
+                "https://example.com/reference#first",
+                "https://example.com/reference#second",
+            ),
+        )
+        for label, first, second in cases:
+            with self.subTest(label=label):
+                raw = self.complete_document()
+                raw["sources"][0]["url"] = first
+                raw["sources"][1]["url"] = second
+                self.assert_invalid(raw, r"duplicate source URL")
+
+    def test_source_identity_keeps_distinct_paths_and_queries(self) -> None:
+        cases = (
+            (
+                "path",
+                "https://example.com/first",
+                "https://example.com/second",
+            ),
+            (
+                "query",
+                "https://example.com/reference?version=1",
+                "https://example.com/reference?version=2",
+            ),
+        )
+        for label, first, second in cases:
+            with self.subTest(label=label), TemporaryDirectory() as directory:
+                raw = self.complete_document()
+                raw["sources"][0]["url"] = first
+                raw["sources"][1]["url"] = second
+                lesson = load_lesson(self.write_document(directory, raw))
+                self.assertEqual(
+                    tuple(source.url for source in lesson.sources),
+                    (first, second),
+                )
+
+    def test_source_url_rejects_invalid_dns_names_and_ports(self) -> None:
+        invalid_hosts = (
+            ".",
+            "bad_host.example",
+            "-bad.example",
+            "bad-.example",
+            "bad..example",
+            f"{'a' * 64}.example",
+            ".".join(["a" * 63] * 4),
+        )
+        for host in invalid_hosts:
+            with self.subTest(host=host):
+                raw = self.complete_document()
+                raw["sources"][0]["url"] = f"https://{host}/reference"
+                self.assert_invalid(raw, r"source URL host")
+
+        for port in ("0", "65536", "invalid"):
+            with self.subTest(port=port):
+                raw = self.complete_document()
+                raw["sources"][0]["url"] = (
+                    f"https://example.com:{port}/reference"
+                )
+                self.assert_invalid(raw, r"source URL port")
+
+    def test_source_url_preserves_valid_unicode_display_url(self) -> None:
+        raw = self.complete_document()
+        display_url = "https://例え.テスト/リファレンス"
+        raw["sources"][0]["url"] = display_url
+        with TemporaryDirectory() as directory:
+            lesson = load_lesson(self.write_document(directory, raw))
+        self.assertEqual(lesson.sources[0].url, display_url)
 
     def test_review_cycle_has_exact_intervals_and_two_prompts(self) -> None:
         raw = self.complete_document()
