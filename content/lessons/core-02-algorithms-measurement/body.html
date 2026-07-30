@@ -26,16 +26,46 @@
 <section id="worked-example">
   <h2>動く例で考える</h2>
   <h3>実行可能な線形探索と集合参照の比較</h3>
-  <pre><code>python3.13 -m timeit -s "xs=list(range(10000)); q=9999" "q in xs"
-python3.13 -m timeit -s "xs=set(range(10000)); q=9999" "q in xs"
-python3.13 -m timeit -s "raw=list(range(10000)); q=9999" "q in set(raw)"</code></pre>
+  <pre><code>python3.13 - &lt;&lt;'PY' &gt; benchmark-results.json
+import json
+import platform
+import statistics
+import timeit
+
+cases = {
+    "list_lookup": ("xs=list(range(10000)); q=9999", "q in xs"),
+    "set_lookup": ("xs=set(range(10000)); q=9999", "q in xs"),
+    "build_then_lookup": (
+        "raw=list(range(10000)); q=9999",
+        "q in set(raw)",
+    ),
+}
+results = {}
+for name, (setup, statement) in cases.items():
+    samples = timeit.Timer(statement, setup).repeat(repeat=7, number=1000)
+    per_operation = [sample / 1000 for sample in samples]
+    results[name] = {
+        "seconds_all": per_operation,
+        "median_seconds": statistics.median(per_operation),
+        "minimum_seconds": min(per_operation),
+        "maximum_seconds": max(per_operation),
+    }
+print(json.dumps({
+    "python": platform.python_version(),
+    "platform": platform.platform(),
+    "repeat": 7,
+    "number": 1000,
+    "results": results,
+}, indent=2))
+PY
+python3.13 -m json.tool benchmark-results.json</code></pre>
   <dl>
     <dt>前提</dt>
-    <dd>同じPython 3.13実行系、他負荷を抑えた環境、問い合わせ値は末尾、timeitが反復回数を調整する。</dd>
+    <dd>同じPython 3.13実行系、他負荷を抑えた環境、問い合わせ値は末尾、各条件のnumberは1000、repeatは7に固定する。</dd>
     <dt>入力</dt>
     <dd>0から9999までの10000整数と、探索対象9999。</dd>
     <dt>操作</dt>
-    <dd>list参照、構築済みset参照、毎回setを構築して参照、の三区間を分けて測る。</dd>
+    <dd>list参照、構築済みset参照、毎回setを構築して参照、の三区間を分け、全7反復値をJSONへ保存する。</dd>
     <dt>観測</dt>
     <dd>仮の一測定でlist参照85µs、構築済みset参照0.05µs、毎回構築210µsだったとする。100回問い合わせならlistは約8500µs、setは構築210µsと参照約5µsになる。</dd>
     <dt>結論</dt>

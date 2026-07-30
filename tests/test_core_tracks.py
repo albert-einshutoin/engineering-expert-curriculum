@@ -229,7 +229,11 @@ class _BodyContractParser(HTMLParser):
             self.table_headers_without_scope.append(values.get("scope", ""))
         if normalized_tag == "li":
             self._list_item_text = []
-        if normalized_tag == "code" and self._in_worked_example:
+        if (
+            normalized_tag == "code"
+            and parent == "pre"
+            and self._in_worked_example
+        ):
             self._worked_code_text = []
         if (
             normalized_tag == "h2"
@@ -493,6 +497,12 @@ class CoreTrackTests(unittest.TestCase):
         without_marker = "".join(
             part if part.startswith("<") else re.sub(r"\d", "", part)
             for part in re.split(r"(<[^>]+>)", worked)
+        )
+        without_marker = re.sub(
+            r"<pre><code>.*?</code></pre>",
+            "<pre><code></code></pre>",
+            without_marker,
+            flags=re.DOTALL,
         )
         diagnosis_start = body.index("<li><strong>誤診:</strong>")
         rebuttal_start = body.index(

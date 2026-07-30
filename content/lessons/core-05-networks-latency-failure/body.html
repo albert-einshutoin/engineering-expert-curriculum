@@ -39,6 +39,44 @@
     <dt>結論</dt>
     <dd>各段へ2000msを設定すると、二試行で4000ms以上になり得る。試行ごとに残りdeadlineを再計算し、未開始区間を明示する。</dd>
   </dl>
+  <p>次の固定fixtureと集計コードは、欠測区間を含む時系列から総時間と残予算を作るstarterである。fixture名は<code>trace-fixture.csv</code>とし、まず期待値を再現してから実traceへ差し替える。</p>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+import csv
+import io
+import json
+
+fixture_name = "trace-fixture.csv"
+fixture = """request_id,phase,start_ms,end_ms
+req-001,dns,0,80
+req-001,tcp,80,170
+req-001,tls,170,310
+req-001,server,310,650
+req-001,response,650,700
+"""
+rows = list(csv.DictReader(io.StringIO(fixture)))
+events = []
+for row in rows:
+    start = int(row["start_ms"])
+    end = int(row["end_ms"])
+    assert end &gt;= start
+    events.append({
+        "request_id": row["request_id"],
+        "phase": row["phase"],
+        "duration_ms": end - start,
+    })
+total_ms = max(int(row["end_ms"]) for row in rows)
+print(json.dumps({
+    "fixture": fixture_name,
+    "events": events,
+    "total_ms": total_ms,
+    "remaining_ms": 2000 - total_ms,
+}, indent=2))
+PY
+TARGET='学習者が管理する検証先'
+curl -sS -o /dev/null \
+  -w 'dns=%{time_namelookup} connect=%{time_connect} tls=%{time_appconnect} ttfb=%{time_starttransfer} total=%{time_total}\n' \
+  "$TARGET"</code></pre>
+  <p>curlの各時刻は過程の手掛かりであり、server内部や業務確定を直接は証明しない。同じrequest IDをclient/server記録へ加え、coldとwarmを最低7回ずつ保存する。検証先は自分が管理し、許可のない相手へ負荷や障害を注入しない。</p>
   <p>同じrequest IDでclientとserverを相関する。clientのconnect区間と再送が増え、serverにrequestが届いていなければ損失説を支持する。connectは平常でserver内部のDB spanだけが伸びれば依存遅延説を支持する。どちらも観測できなければ原因確定ではなく観測不足である。</p>
   <p><strong>ラボ成果物:</strong> 「DNSからHTTPまでの時系列トレースとタイムアウト予算」には、coldとwarmの両経路、単位、単調時計、request ID、最悪時の足し算、retry停止条件を含める。</p>
 </section>

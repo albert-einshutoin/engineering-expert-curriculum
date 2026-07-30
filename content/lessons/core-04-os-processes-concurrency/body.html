@@ -3,12 +3,12 @@
   <p>並行処理では、同じコードが正しい順序で動くという暗黙の期待が壊れる。二つのworkerが在庫を一つずつ減らすだけでも、読取りと書込みが分離していれば更新を失う。低頻度の競合を「再現しないから直った」と扱うと、負荷が高い本番で不変条件を破る。</p>
   <p>プロセスは独立したアドレス空間を持つ実行環境、スレッドはプロセス内の資源を共有する実行単位である。ただし、常にプロセスが重くスレッドが軽いという一軸では選べない。生成方式、OS、通信量、権限境界、クラッシュ時の巻込みが判断を変える。</p>
   <aside>
-    <p><strong>断定への注意:</strong> volatileやmemory barrierだけで複合操作のatomicityは保証されず、lockを置くだけでdeadlockが消えるわけでもない。守る不変条件と同期範囲を先に定義する。</p>
+    <p><strong>断定への注意:</strong> このラボの基準はJava SE 21である。Javaのvolatileはvisibilityとorderingに関する同期関係を作るが、複合incrementのatomicityは保証しない。C/C++のvolatileは別の言語契約であり、Javaの説明を移植しない。lockを置くだけでdeadlockが消えるわけでもない。</p>
   </aside>
 </section>
 <section id="mental-model">
   <h2>メンタルモデル</h2>
-  <p>並行性の正しさを四つに分ける。atomicityは操作が途中状態を見せないこと、可視性は一方の書込みを他方が観測できること、順序性は必要な前後関係が成立すること、停止性は処理がいつか進むことである。一つを満たしても他を自動では満たさない。</p>
+  <p>並行性の正しさを四つに分ける。atomicityは操作が途中状態を見せないこと、可視性は一方の書込みを他方が観測できること、順序性は必要な前後関係が成立すること、停止性は処理がいつか進むことである。一つを満たしても他を自動では満たさない。Java SE 21では、あるvolatile書込みは同じfieldへの後続volatile読取りにhappens-beforeするが、<code>stock--</code>全体はread、compute、writeの複合操作である。</p>
   <figure>
     <figcaption>共有境界から不変条件を守る診断経路</figcaption>
     <ol>
@@ -26,17 +26,79 @@
 <section id="worked-example">
   <h2>動く例で考える</h2>
   <h3>lost updateをイベント列で再現する</h3>
+  <p>次を<code>RaceLab.java</code>として保存する。racyとsynchronizedは同じJava 21、初期値、worker数、反復数、出力契約を使う。</p>
+  <pre><code>public final class RaceLab {
+    private static final int INITIAL = 1000;
+    private static final int PER_WORKER = 500;
+    private static final int TRIALS = 200;
+    private static final Object LOCK = new Object();
+    private static volatile int stock;
+    private static boolean synchronizedMode;
+
+    private static void decrementMany() {
+        for (int index = 0; index &lt; PER_WORKER; index++) {
+            if (synchronizedMode) {
+                synchronized (LOCK) {
+                    stock--;
+                }
+            } else {
+                int observed = stock;
+                Thread.yield();
+                stock = observed - 1;
+            }
+        }
+    }
+
+    public static void main(String[] args) throws InterruptedException {
+        if (args.length != 1
+                || (!args[0].equals("racy")
+                &amp;&amp; !args[0].equals("synchronized"))) {
+            throw new IllegalArgumentException(
+                    "usage: java RaceLab racy|synchronized");
+        }
+        synchronizedMode = args[0].equals("synchronized");
+        int violations = 0;
+        int minimum = Integer.MAX_VALUE;
+        int maximum = Integer.MIN_VALUE;
+        for (int trial = 0; trial &lt; TRIALS; trial++) {
+            stock = INITIAL;
+            Thread first = new Thread(RaceLab::decrementMany);
+            Thread second = new Thread(RaceLab::decrementMany);
+            first.start();
+            second.start();
+            first.join();
+            second.join();
+            int observed = stock;
+            if (observed != 0) {
+                violations++;
+            }
+            minimum = Math.min(minimum, observed);
+            maximum = Math.max(maximum, observed);
+        }
+        System.out.printf(
+                "mode=%s trials=%d violations=%d min=%d max=%d%n",
+                args[0], TRIALS, violations, minimum, maximum);
+        if (synchronizedMode &amp;&amp; violations != 0) {
+            throw new AssertionError("synchronized invariant failed");
+        }
+    }
+}</code></pre>
+  <pre><code>java --version
+javac RaceLab.java
+java RaceLab racy | tee race-before.txt
+java RaceLab synchronized | tee race-after.txt</code></pre>
+  <p>出力契約は<code>mode=... trials=200 violations=... min=... max=...</code>の一行である。racyで違反が一度も観測されない実行も仕様上あり得るため、一回の非再現を修正証拠にしない。synchronized側はコード上のmonitor関係と200試行の違反0を組にし、どちらか片方だけを証拠にしない。</p>
   <dl>
     <dt>前提</dt>
-    <dd>在庫1000、worker AとBが各500回、一件ずつ在庫を減らす。不変条件は最終値0かつ途中で負数なし。</dd>
+    <dd>Java 21、在庫1000、platform thread AとBが各500回、一件ずつ在庫を減らす。不変条件は最終値0かつ途中で負数なし。</dd>
     <dt>入力</dt>
-    <dd>同じ1000件の減算命令を二workerへ均等配分し、100試行以上実行する。</dd>
+    <dd>同じ1000件の減算命令を二workerへ均等配分し、racyとsynchronizedを各200試行する。</dd>
     <dt>操作</dt>
-    <dd>同期なしのread、subtract、writeへ意図的なyieldを挿入し、失敗試行のevent番号と値を記録する。</dd>
+    <dd>volatile int stockのread、subtract、write間へyieldを挿入したracy版と、三操作全体を同じmonitorで囲む版を実行する。</dd>
     <dt>観測</dt>
     <dd>Aが値10を読み、Bも10を読み、Aが9を書き、Bも9を書くと二件処理して一件しか減らない。100試行中37試行で最終値が1以上なら不変条件違反である。</dd>
     <dt>結論</dt>
-    <dd>mutexでread-modify-write全体を囲むか、同じ意味を持つatomic operationへ置き換える。修正後1000試行で違反0でも、確率0の証明ではなく、同期契約と試験の両方を証拠にする。</dd>
+    <dd>synchronizedでread-modify-write全体を囲む。修正後200試行で違反0でも確率だけの証明にはせず、monitor unlockから後続lockへのhappens-beforeと試験結果の両方を証拠にする。</dd>
   </dl>
   <p>性能も同条件で測る。仮に同期なし中央値18ms、mutex 31ms、message passing 44msなら、mutexの13ms増は正しさの費用である。process案は障害隔離を得るが、serializationとcopy、監視、再起動契約を追加する。</p>
   <p><strong>ラボ成果物:</strong> 「競合を再現し不変条件で修正した実験記録」には、失敗頻度、最小interleaving、同期前後のコード差、停止性、性能分布を含める。</p>
@@ -77,7 +139,7 @@
   <h3>もっともらしい誤診と反証</h3>
   <ol>
     <li><strong>誤診:</strong> 「二workerが止まったのでdeadlock」。<strong>反証:</strong> lock取得と待機の循環を記録する。I/O待ちなら外部完了で進み、starvationなら他workerだけ進捗する。停止だけでは循環待ちを証明しない。</li>
-    <li><strong>誤診:</strong> 「volatileを付けて100回通ったのでrace修正済み」。<strong>反証:</strong> read-modify-writeをeventへ分解し、同じinterleavingが仕様上可能か確認する。volatileが可視性へ作用しても複合操作を不可分にはしない。</li>
+    <li><strong>誤診:</strong> 「Java volatileを付けて100回通ったのでrace修正済み」。<strong>反証:</strong> read-modify-writeをeventへ分解し、同じinterleavingがJava Language Specification上可能か確認する。volatileがvisibilityとorderingのhappens-beforeを作っても複合incrementのatomicityを保証しない。</li>
   </ol>
   <p>lock範囲を広げると不変条件は守りやすいが並列性が下がり、複数lockは並列性を上げる一方で順序規約が必要になる。timeoutでlockを諦める場合も、途中状態のrollbackまたは再試行契約が要る。</p>
 </section>
@@ -95,6 +157,6 @@
 </section>
 <section id="sources-next">
   <h2>出典と次の学習</h2>
-  <p>POSIX.1-2024のpthread_createとforkは生成後に共有または複製される実行文脈、Linux kernel memory barriers文書は順序保証の注意、MicrosoftのProcesses and ThreadsはWindows上の資源境界を確認するために使う。本文へ外部リンクを置かず、正確なURLはmetadataのsourcesに置いた。</p>
+  <p>Java Language Specification SE 21 Chapter 17はthread、monitor、volatile、happens-beforeの正準、POSIX.1-2024のpthread_createとforkは生成後に共有または複製される実行文脈、Linux kernel memory barriers文書はkernel実装上の順序保証、MicrosoftのProcesses and ThreadsはWindows上の資源境界を確認するために使う。異なる言語・OSの契約を混ぜず、正確なURLはmetadataのsourcesに置いた。</p>
   <p>次はネットワークの部分失敗を扱い、process外の待機と期限を時系列で診断する。1日後はinterleaving、7日後はdeadlock反証、30日後は実コードの不変条件、90日後は隔離単位の判断を再レビューする。</p>
 </section>

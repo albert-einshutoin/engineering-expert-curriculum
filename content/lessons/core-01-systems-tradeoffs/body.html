@@ -37,6 +37,38 @@
     <dt>結論</dt>
     <dd>キュー案は受付期限を守るが、成果完了と重複防止を別契約として設計する必要がある。応答42msだけでは優位を判断できない。</dd>
   </dl>
+  <p>次の固定fixtureを観測コマンドへ渡せば、教材だけで元指標と点数を再計算できる。fixture名は<code>decision-observations.csv</code>とし、実案件では同じ列契約の生データへ差し替える。</p>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+import csv
+import io
+import json
+import statistics
+
+fixture_name = "decision-observations.csv"
+fixture = """option,response_ms,outcome_ms,retries,duplicates,backlog
+sync,120,120,0,0,0
+sync,920,920,0,0,0
+sync,140,140,0,0,0
+queue,35,1180,1,0,42
+queue,42,1480,2,2,84
+queue,38,1260,1,0,61
+"""
+rows = list(csv.DictReader(io.StringIO(fixture)))
+report = {}
+for option in ("sync", "queue"):
+    selected = [row for row in rows if row["option"] == option]
+    report[option] = {
+        "response_ms_all": [int(row["response_ms"]) for row in selected],
+        "outcome_ms_median": statistics.median(
+            int(row["outcome_ms"]) for row in selected
+        ),
+        "retries": sum(int(row["retries"]) for row in selected),
+        "duplicates": sum(int(row["duplicates"]) for row in selected),
+        "backlog_max": max(int(row["backlog"]) for row in selected),
+    }
+print(json.dumps({"fixture": fixture_name, "report": report}, indent=2))
+PY</code></pre>
+  <p>出力へ、目的、境界、制約、同期案とキュー案、採用理由、反証閾値、見直し日を追記して意思決定記録にする。観測値を点数だけへ変換せず、上の全値を添付する。</p>
   <p>重み付き比較を使うなら計算を公開する。例として遅延40%、整合性30%、運用20%、可逆性10%とし、5点満点の同期案を3、5、4、3、キュー案を5、3、2、4とする。同期案は3×0.4 + 5×0.3 + 4×0.2 + 3×0.1 = 3.8、キュー案は5×0.4 + 3×0.3 + 2×0.2 + 4×0.1 = 3.7であり、同期案は3.8、キュー案は3.7、その差は0.1となる。ただし、この差は真理ではない。受付期限が最優先なら重みが変わり、冪等化後には整合性の点も変わる。</p>
   <p><strong>ラボ成果物:</strong> 「制約、代替案、反証条件を含む意思決定記録」には、上の生データ、境界図、採否、見直し日を含める。</p>
 </section>

@@ -8,14 +8,14 @@
 </section>
 <section id="mental-model">
   <h2>メンタルモデル</h2>
-  <p>ロード命令がデータへ到達するまでを「変換」と「転送」に分ける。仮想アドレスのページ変換を得た後、該当するキャッシュラインを探し、なければより遠い階層へ要求する。実装から直接見えるのは経過時間でも、仮説は階層ごとに立てる。</p>
+  <p>ロード命令がデータへ到達するまでを「変換」と「転送」に分ける。次の図は診断用の論理段階であり、普遍的な逐次時系列ではない。たとえばVIPT方式では、TLBのアドレス変換とL1 cacheのindex lookupが並行し得る。物理tagの照合を含む具体的な重なり方は実装依存なので、実機資料とcounterで仮説を絞る。</p>
   <figure>
-    <figcaption>一つのロードを追うCPU・メモリ経路</figcaption>
+    <figcaption>一つのロードを診断する論理段階</figcaption>
     <ol>
       <li><strong>命令:</strong> 仮想アドレスAの値を要求する。</li>
       <li><strong>TLB:</strong> Aのページ変換を検索する。missならページテーブルwalkが必要になる。</li>
       <li><strong>L1 cache:</strong> Aを含むcache lineを検索する。hitなら近い階層で返る。</li>
-      <li><strong>L2と最終レベルcache:</strong> L1 miss時により大きい共有階層を探索する。</li>
+      <li><strong>L2と最終レベルcache:</strong> L1 miss後の候補を調べる。L2やLLCがcore-privateか複数coreでsharedかというprivate/shared範囲は機種依存である。</li>
       <li><strong>memory controller:</strong> 全cacheでmissなら主記憶からline単位で転送する。</li>
       <li><strong>再利用:</strong> 同じline内の次要素を使えば空間的局所性、短時間に同じ値を使えば時間的局所性を得る。</li>
     </ol>
@@ -25,31 +25,79 @@
 <section id="worked-example">
   <h2>動く例で考える</h2>
   <h3>走査する要素数を揃えてアクセス順だけを変える</h3>
-  <pre><code>python3.13 - &lt;&lt;'PY'
-import random, time
-n = 1_000_000
-xs = list(range(n))
-order = list(range(n))
-random.Random(42).shuffle(order)
-for name, indexes in (("sequential", range(n)), ("random", order)):
-    start = time.perf_counter_ns()
-    total = sum(xs[i] for i in indexes)
-    elapsed = time.perf_counter_ns() - start
-    print(name, elapsed, total)
-PY</code></pre>
+  <pre><code>python3.13 - &lt;&lt;'PY' &gt; locality-results.json
+import json
+import platform
+import random
+import time
+
+n = 1_048_576
+access_count = 262_144
+values = list(range(n))
+sequential = tuple(range(access_count))
+random_pool = list(range(n))
+random.Random(42).shuffle(random_pool)
+random_indexes = tuple(random_pool[:access_count])
+stride_indexes = tuple((index * 4099) % n for index in range(access_count))
+indexes_by_name = {
+    "sequential": sequential,
+    "random": random_indexes,
+    "stride": stride_indexes,
+}
+assert all(
+    type(indexes) is tuple
+    and len(indexes) == access_count
+    and all(type(index) is int for index in indexes)
+    for indexes in indexes_by_name.values()
+)
+expected_checksums = {
+    name: sum(values[index] for index in indexes)
+    for name, indexes in indexes_by_name.items()
+}
+base_order = tuple(indexes_by_name)
+results = []
+for repeat in range(7):
+    offset = repeat % len(base_order)
+    condition_order = base_order[offset:] + base_order[:offset]
+    if repeat % 2:
+        condition_order = tuple(reversed(condition_order))
+    for name in condition_order:
+        indexes = indexes_by_name[name]
+        start = time.perf_counter_ns()
+        checksum = sum(values[index] for index in indexes)
+        elapsed_ns = time.perf_counter_ns() - start
+        assert checksum == expected_checksums[name]
+        results.append({
+            "repeat": repeat,
+            "condition": name,
+            "elapsed_ns": elapsed_ns,
+            "access_count": len(indexes),
+            "checksum": checksum,
+        })
+print(json.dumps({
+    "python": platform.python_version(),
+    "platform": platform.platform(),
+    "results": results,
+}, indent=2))
+PY
+python3.13 -m json.tool locality-results.json
+lscpu
+lscpu --caches
+sysctl -n machdep.cpu.brand_string
+sysctl -a | grep -E 'hw.(cache|memsize|pagesize)'</code></pre>
   <dl>
     <dt>前提</dt>
-    <dd>入力生成を測定外に置き、同一プロセスで各条件を7回以上、順序を交互にして測る。</dd>
+    <dd>入力生成を測定外に置き、同一プロセスで各条件を7回、条件順を回転と反転で交互化して測る。Linuxではlscpu、macOSではsysctlの成功した方を実機topology証拠として保存する。</dd>
     <dt>入力</dt>
-    <dd>100万個の整数と、0から順のindex列、固定seedでshuffleしたindex列。</dd>
+    <dd>同じlist[int]を対象に、同じtuple[int]型、同じ262144件のsequential、random、stride index列を用意する。</dd>
     <dt>操作</dt>
-    <dd>どちらも100万回の参照と加算を行い、総和が一致することを確認する。</dd>
+    <dd>三条件を同じアクセス回数で走査する。条件ごとの期待checksumを測定外で作り、全反復で一致を検証する。</dd>
     <dt>観測</dt>
-    <dd>仮の中央値が連続45ms、ランダム210msなら約4.7倍差である。両者とも参照と加算の支配操作は入力数に比例するΘ(n)で、差は演算回数だけでは説明できない。</dd>
+    <dd>仮の中央値が連続45ms、stride 130ms、ランダム210msなら、同じ262144参照でも最大約4.7倍差である。全21測定を残し、順番、checksum、実機topologyと合わせて比較する。</dd>
     <dt>結論</dt>
     <dd>アクセス順が局所性を変えた仮説を支持する。ただしPython object参照やinterpreter費用も含むため、CPU cacheだけを確定原因とはしない。</dd>
   </dl>
-  <p>配列サイズを32KiB、8MiB、128MiB相当へ変え、strideを1、16、ページ相当へ変える。サイズの折れ曲がりはcache容量、ページstrideでの悪化はTLBを疑う手掛かりになるが、別変数を固定した追加測定が必要である。</p>
+  <p>次の段階で配列サイズを32KiB、8MiB、128MiB相当へ変え、strideを1、16、ページ相当へ変える。サイズの折れ曲がりはcache容量、ページstrideでの悪化はTLBを疑う手掛かりになるが、別変数を固定した追加測定が必要である。観測したL2/LLC topologyを経路図へ転記し、教材図をそのまま実機構成とみなさない。</p>
   <p><strong>ラボ成果物:</strong> 「アクセス局所性を変えた測定とCPU・メモリ経路図」には、CPU名、OS、処理系、全反復値、走査順、総和、仮説と未観測区間を含める。</p>
 </section>
 <section id="tradeoffs">
