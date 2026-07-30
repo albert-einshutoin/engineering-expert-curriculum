@@ -244,7 +244,7 @@ class _FragmentParser(HTMLParser):
         if raw_tag is None or _START_TAG_PATTERN.fullmatch(raw_tag) is None:
             raise CurriculumValidationError("malformed HTML start tag")
         if tag not in ALLOWED_TAGS:
-            raise CurriculumValidationError(f"disallowed HTML element: {tag}")
+            raise CurriculumValidationError("disallowed HTML element")
         if len(attrs) > MAX_ATTRIBUTES_PER_ELEMENT:
             raise CurriculumValidationError(
                 "HTML element exceeds maximum attribute count"
@@ -259,7 +259,7 @@ class _FragmentParser(HTMLParser):
             normalized_name = name.casefold()
             if normalized_name.startswith("on") or normalized_name not in allowed:
                 raise CurriculumValidationError(
-                    f"disallowed attribute: {tag}.{normalized_name}"
+                    f"disallowed HTML attribute on {tag}"
                 )
             if value is None:
                 raise CurriculumValidationError("HTML attributes require values")
@@ -288,7 +288,7 @@ class _FragmentParser(HTMLParser):
 
     def handle_endtag(self, tag: str) -> None:
         if tag not in ALLOWED_TAGS:
-            raise CurriculumValidationError(f"disallowed HTML element: {tag}")
+            raise CurriculumValidationError("disallowed HTML element")
         if not self._open_tags:
             raise CurriculumValidationError(f"stray closing tag: {tag}")
         frame = self._open_tags[-1]

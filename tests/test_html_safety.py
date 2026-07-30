@@ -150,21 +150,43 @@ class HtmlSafetyTests(unittest.TestCase):
             with self.subTest(fragment=fragment):
                 with self.assertRaisesRegex(
                     CurriculumValidationError,
-                    r"^disallowed HTML element: [a-z0-9-]+$",
+                    r"^disallowed HTML element$",
                 ):
                     validate_fragment(fragment)
 
     def test_rejects_event_handlers_style_and_unknown_attributes(self) -> None:
         cases = (
-            ("<p onclick='run()'>x</p>", "disallowed attribute: p.onclick"),
-            ("<p OnLoad='run()'>x</p>", "disallowed attribute: p.onload"),
-            ("<p style='color:red'>x</p>", "disallowed attribute: p.style"),
-            ("<p title='tooltip'>x</p>", "disallowed attribute: p.title"),
-            ("<a target='_blank'>x</a>", "disallowed attribute: a.target"),
+            ("<p onclick='run()'>x</p>", "disallowed HTML attribute on p"),
+            ("<p OnLoad='run()'>x</p>", "disallowed HTML attribute on p"),
+            ("<p style='color:red'>x</p>", "disallowed HTML attribute on p"),
+            ("<p title='tooltip'>x</p>", "disallowed HTML attribute on p"),
+            ("<a target='_blank'>x</a>", "disallowed HTML attribute on a"),
         )
         for fragment, message in cases:
             with self.subTest(fragment=fragment):
                 self.assert_rejected(fragment, message)
+
+    def test_disallowed_names_cannot_amplify_or_leak_through_errors(self) -> None:
+        marker = "sensitiveleakmarker"
+        oversized_name = marker * 1_300
+        cases = (
+            (
+                f"<{oversized_name}>x</{oversized_name}>",
+                "disallowed HTML element",
+            ),
+            (
+                f'<p data-{oversized_name}="x">x</p>',
+                "disallowed HTML attribute on p",
+            ),
+        )
+        for fragment, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaises(CurriculumValidationError) as caught:
+                    validate_fragment(fragment)
+                rendered = str(caught.exception)
+                self.assertEqual(rendered, message)
+                self.assertLess(len(rendered), 128)
+                self.assertNotIn(marker, rendered)
 
     def test_rejects_duplicate_attributes_after_case_normalization(self) -> None:
         for fragment in (
