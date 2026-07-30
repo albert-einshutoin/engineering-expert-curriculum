@@ -697,7 +697,7 @@ the required final document-ID pass.
 
 - [ ] **Step 1: Write renderer contracts**
 
-The checked-in `tests/test_render.py` is the authoritative 26-test contract.
+The checked-in `tests/test_render.py` is the authoritative 30-test contract.
 It covers structured escaping, exact and freshly revalidated `SafeHtml`,
 file-compatible links at three depths, semantic Japanese document landmarks,
 and decoded-ID collisions after the single completed-document parse.
@@ -714,6 +714,13 @@ asset policy, and bounded non-leaking errors. A 10,000-entry custom mapping
 must be rejected after consuming no more than `MAX_VALUE_ENTRIES + 1` items;
 `items()` acquisition, iteration, and entry decoding failures remain
 controlled and never expose their raw exceptions.
+
+Template lexing is linear: closing tags must match the stack top, and stray,
+mismatched, unclosed, comment, quote, script, or style states fail before
+substitution. A deep-open/repeated-mismatch regression proves processing stops
+at the first mismatch without a depth scan. Output paths are capped at 32
+directories and 1,024 total characters so relative-root expansion is bounded,
+including adversarial 10,000-level paths.
 
 - [ ] **Step 2: Run renderer tests and verify RED**
 
@@ -735,11 +742,22 @@ Only an exact `SafeHtml` that succeeds under a fresh `validate_fragment()` may
 cross a raw placeholder. Validate each rendered fragment once.
 
 Resolve and pin the template root at construction so later `cwd` changes do
-not affect reads. Validate base placeholder counts and their contexts, the
-semantic landmarks and restrictive CSP, and reject external or absolute asset
-URLs before accepting the base template. The completed page receives one
-additional parse solely to reject decoded duplicate IDs across the trusted
-base and validated content.
+not affect reads. A template read must preserve device, inode, type/mode, size,
+`mtime_ns`, and `ctime_ns` from directory-relative stat through open and the
+post-read stat. Read exactly the opened size, reject early EOF and any extra
+byte, then close the file and directory descriptors in reverse ownership
+order.
+
+Validate base placeholder counts and contexts, semantic landmarks, restrictive
+CSP, and external or absolute asset policy before accepting the base template.
+The document structure is exact and browser-stable: `html` contains
+`head` then `body`; head has the four ordered meta records, title, and
+stylesheet; body has the skip link, header, main, and footer; header/nav/footer
+children and their text are fixed. Direct non-whitespace text, unexpected
+parents, browser-auto-closing patterns, closing void elements, missing
+children, and reordered or duplicate nodes fail closed. The completed page
+receives one additional parse solely to reject decoded duplicate IDs across
+the trusted base and validated content.
 
 The base accepts exactly four meta records: UTF-8 charset, the fixed viewport,
 the structured description placeholder, and one CSP. Unknown, duplicate, or
@@ -819,7 +837,7 @@ Run:
 python3.13 -m unittest tests.test_render -v
 ```
 
-Expected at Task 7 completion: all 26 renderer trust-boundary and rendering
+Expected at Task 7 completion: all 30 renderer trust-boundary and rendering
 tests pass.
 
 - [ ] **Step 5: Commit file-compatible rendering**
