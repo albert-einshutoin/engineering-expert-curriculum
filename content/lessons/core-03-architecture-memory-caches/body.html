@@ -175,6 +175,10 @@ print(json.dumps({
     "limitations": [
         "Python interpreter and object/index overhead remains in every sample",
         "portable defaults are probes, not the measured machine topology",
+        (
+            "512 elements is a nominal 4KiB payload stride; "
+            "Python layout does not establish a physical page boundary"
+        ),
         "cache and TLB counters are not observed by this timing-only script",
     ],
 }, ensure_ascii=False, indent=2))
