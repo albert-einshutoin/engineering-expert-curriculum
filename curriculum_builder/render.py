@@ -23,6 +23,8 @@ MAX_PLACEHOLDERS = 128
 MAX_STRUCTURED_TEXT_CHARS = 4_096
 MAX_STRUCTURED_TEXT_BYTES = 16_384
 MAX_VALUE_ENTRIES = 128
+MAX_OUTPUT_DEPTH = 32
+MAX_OUTPUT_PATH_CHARS = 1_024
 
 _SAFE_TEMPLATE_NAME = re.compile(
     r"[A-Za-z][A-Za-z0-9_-]{0,63}\.html",
@@ -53,7 +55,7 @@ _BASE_ATTRIBUTES = MappingProxyType(
         "title": frozenset(),
     }
 )
-_BASE_PLACEHOLDER_COUNTS = Counter(
+_BASE_PLACEHOLDER_COUNTS = MappingProxyType(
     {
         "title": 1,
         "description": 1,
@@ -61,19 +63,21 @@ _BASE_PLACEHOLDER_COUNTS = Counter(
         "content": 1,
     }
 )
-_REQUIRED_CSP = {
-    "default-src": ("'none'",),
-    "script-src": ("'none'",),
-    "style-src": ("'self'",),
-    "img-src": ("'self'", "data:"),
-    "font-src": ("'self'",),
-    "connect-src": ("'none'",),
-    "base-uri": ("'none'",),
-    "form-action": ("'none'",),
-    "object-src": ("'none'",),
-    "frame-src": ("'none'",),
-    "frame-ancestors": ("'none'",),
-}
+_REQUIRED_CSP = MappingProxyType(
+    {
+        "default-src": ("'none'",),
+        "script-src": ("'none'",),
+        "style-src": ("'self'",),
+        "img-src": ("'self'", "data:"),
+        "font-src": ("'self'",),
+        "connect-src": ("'none'",),
+        "base-uri": ("'none'",),
+        "form-action": ("'none'",),
+        "object-src": ("'none'",),
+        "frame-src": ("'none'",),
+        "frame-ancestors": ("'none'",),
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,10 +199,14 @@ def _placeholder_contexts(
         name, closing, self_closing = _tag_details(token)
         if name is not None:
             if closing:
-                if open_elements and open_elements[-1] == name:
-                    open_elements.pop()
-                elif name in open_elements:
-                    del open_elements[open_elements.index(name) :]
+                # Requiring the stack top makes every tag a single push/pop.
+                # Searching deeper would both accept browser-mutating markup and
+                # reintroduce quadratic behavior for adversarial close sequences.
+                if not open_elements or open_elements[-1] != name:
+                    raise CurriculumValidationError(
+                        "template markup is invalid"
+                    )
+                open_elements.pop()
             elif not self_closing and name not in _VOID_ELEMENTS:
                 open_elements.append(name)
         if not closing and not self_closing and name in {"script", "style"}:
@@ -207,6 +215,8 @@ def _placeholder_contexts(
             state = "data"
         index += 1
 
+    if state != "data" or open_elements:
+        raise CurriculumValidationError("template markup is invalid")
     return tuple(results)
 
 
@@ -327,6 +337,10 @@ def _validate_output_path(output_path: object) -> tuple[Path, int]:
             "output_path must be a safe relative HTML file"
         )
     rendered = str(output_path)
+    if len(rendered) > MAX_OUTPUT_PATH_CHARS:
+        raise CurriculumValidationError(
+            "output_path must be a safe relative HTML file"
+        )
     parts = output_path.parts
     if (
         output_path.is_absolute()
@@ -337,6 +351,7 @@ def _validate_output_path(output_path: object) -> tuple[Path, int]:
         or any(part in {"", ".", ".."} for part in parts)
         or any(_SAFE_OUTPUT_PART.fullmatch(part) is None for part in parts)
         or output_path.suffix != ".html"
+        or len(parts) - 1 > MAX_OUTPUT_DEPTH
     ):
         raise CurriculumValidationError(
             "output_path must be a safe relative HTML file"
@@ -359,7 +374,7 @@ def _validate_placeholder_contract(
 ) -> None:
     counts = Counter(placeholder.name for placeholder in placeholders)
     if base:
-        if counts != _BASE_PLACEHOLDER_COUNTS:
+        if dict(counts) != _BASE_PLACEHOLDER_COUNTS:
             raise CurriculumValidationError(
                 "base template placeholders do not match required counts"
             )
