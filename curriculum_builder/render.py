@@ -340,6 +340,101 @@ def _snapshot_mapping(
     )
 
 
+def _snapshot_template_sources(
+    value: object,
+) -> tuple[tuple[str, str], ...]:
+    if not isinstance(value, Mapping):
+        raise CurriculumValidationError(
+            "template_sources must be a mapping"
+        )
+    try:
+        item_iterator = iter(value.items())
+    except Exception:
+        raise CurriculumValidationError(
+            "cannot snapshot template sources"
+        ) from None
+
+    entries: list[tuple[object, object]] = []
+    for index in range(MAX_VALUE_ENTRIES + 1):
+        try:
+            raw_entry = next(item_iterator)
+        except StopIteration:
+            break
+        except Exception:
+            raise CurriculumValidationError(
+                "cannot snapshot template sources"
+            ) from None
+        if index == MAX_VALUE_ENTRIES:
+            raise CurriculumValidationError(
+                "template sources exceed maximum entry count"
+            )
+        try:
+            entry_iterator = iter(raw_entry)
+            key = next(entry_iterator)
+            source = next(entry_iterator)
+            try:
+                next(entry_iterator)
+            except StopIteration:
+                pass
+            else:
+                raise ValueError
+        except Exception:
+            raise CurriculumValidationError(
+                "cannot snapshot template sources"
+            ) from None
+        entries.append((key, source))
+
+    if any(type(key) is not str for key, _ in entries):
+        raise CurriculumValidationError(
+            "template source names must be exact strings"
+        )
+    names = tuple(key for key, _ in entries if type(key) is str)
+    if any(_SAFE_TEMPLATE_NAME.fullmatch(name) is None for name in names):
+        raise CurriculumValidationError("template source name is unsafe")
+    if any(count > 1 for count in Counter(names).values()):
+        raise CurriculumValidationError("duplicate template source names")
+
+    decoded: list[tuple[str, str]] = []
+    for name, source in entries:
+        assert type(name) is str
+        if type(source) is not bytes:
+            raise CurriculumValidationError(
+                "template source must be exact bytes"
+            )
+        if len(source) > MAX_TEMPLATE_BYTES:
+            raise CurriculumValidationError(
+                "template source exceeds maximum byte count"
+            )
+        try:
+            text = source.decode("utf-8")
+        except UnicodeError:
+            raise CurriculumValidationError(
+                "template source is not valid UTF-8 text"
+            ) from None
+        decoded.append((name, text))
+    return tuple(decoded)
+
+
+def _validate_expected_template_names(
+    value: object,
+) -> frozenset[str] | None:
+    if value is None:
+        return None
+    if type(value) is not frozenset or any(
+        type(name) is not str
+        or _SAFE_TEMPLATE_NAME.fullmatch(name) is None
+        for name in value
+    ):
+        raise CurriculumValidationError(
+            "expected_names must be a frozenset of safe template names"
+        )
+    if len(value) > MAX_VALUE_ENTRIES:
+        raise CurriculumValidationError(
+            "expected template names exceed maximum entry count"
+        )
+    return value
+
+
 def _validate_structured_text(value: object, *, label: str) -> str:
     if type(value) is not str:
         raise CurriculumValidationError(f"{label} must be an exact string")
@@ -875,7 +970,39 @@ class Renderer:
                 "template_root must be a real directory"
             ) from None
         self._template_root_identity = (root_stat.st_dev, root_stat.st_ino)
+        self._template_sources: Mapping[str, str] | None = None
+        self._initialize_base()
 
+    @classmethod
+    def from_template_bytes(
+        cls,
+        template_sources: Mapping[str, bytes],
+        *,
+        expected_names: frozenset[str] | None = None,
+    ) -> Renderer:
+        """Create a renderer from one immutable, caller-pinned byte snapshot."""
+        entries = _snapshot_template_sources(template_sources)
+        required = _validate_expected_template_names(expected_names)
+        names = frozenset(name for name, _ in entries)
+        if "base.html" not in names:
+            raise CurriculumValidationError(
+                "template source names do not include base.html"
+            )
+        if required is not None and names != required:
+            raise CurriculumValidationError(
+                "template source names do not match expected names"
+            )
+
+        renderer = cls.__new__(cls)
+        renderer._template_root = None
+        renderer._template_root_identity = None
+        # MappingProxyType prevents internal replacement; strings are decoded
+        # only after exact-byte/type/size validation and are immutable.
+        renderer._template_sources = MappingProxyType(dict(entries))
+        renderer._initialize_base()
+        return renderer
+
+    def _initialize_base(self) -> None:
         base_source = self._read_template("base.html")
         base_placeholders = _analyze_template(base_source)
         _validate_placeholder_contract(
@@ -983,6 +1110,16 @@ class Renderer:
         return validate_fragment(rendered)
 
     def _read_template(self, name: str) -> str:
+        if self._template_sources is not None:
+            try:
+                return self._template_sources[name]
+            except KeyError:
+                raise CurriculumValidationError(
+                    "could not read template"
+                ) from None
+
+        assert self._template_root is not None
+        assert self._template_root_identity is not None
         common_flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
         no_follow = getattr(os, "O_NOFOLLOW", 0)
         root_flags = common_flags | no_follow | getattr(os, "O_DIRECTORY", 0)

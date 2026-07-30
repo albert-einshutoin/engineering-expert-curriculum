@@ -607,10 +607,13 @@ def _validate_site_artifacts(
 def _render_artifacts(
     items: tuple[CatalogItem, ...],
     roadmap: tuple[_RoadmapNode, ...],
-    template_root: Path,
+    template_sources: Mapping[str, bytes],
     stylesheet: bytes,
 ) -> dict[PurePosixPath, bytes]:
-    renderer = Renderer(template_root)
+    renderer = Renderer.from_template_bytes(
+        template_sources,
+        expected_names=frozenset(_TEMPLATE_NAMES),
+    )
     home = renderer.fragment(
         "index.html",
         text_values={},
@@ -1347,7 +1350,7 @@ def build_site(
         artifacts = _render_artifacts(
             items,
             roadmap,
-            templates.path,
+            before_templates,
             stylesheet,
         )
         after_templates = {

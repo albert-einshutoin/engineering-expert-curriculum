@@ -220,7 +220,7 @@ class RendererTests(unittest.TestCase):
             b"script-src 'self'",
         )
         self.assert_validation_error(
-            "base template CSP does not match required policy",
+            "base template CSP is incomplete",
             Renderer.from_template_bytes,
             {"base.html": base},
             expected_names=frozenset({"base.html"}),
