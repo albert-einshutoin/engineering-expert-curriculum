@@ -10,7 +10,20 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from tools.migrate_prototype import LEGACY_PATHS, _build_verified_archive, _copy_allowlisted_tree, _create_private_staging, _open_directory_fd, _publish_verified_archive, _rename_directory_noreplace, _snapshot, main, preserve_prototype
+from tools.migrate_prototype import (
+    LEGACY_PATHS,
+    _build_verified_archive,
+    _clear_directory_fd,
+    _copy_allowlisted_tree,
+    _create_private_staging,
+    _open_directory_fd,
+    _publish_verified_archive,
+    _rename_directory_noreplace,
+    _snapshot,
+    _snapshot_fd,
+    main,
+    preserve_prototype,
+)
 
 
 class PrototypeMigrationTests(unittest.TestCase):
@@ -130,6 +143,73 @@ class PrototypeMigrationTests(unittest.TestCase):
                 os.close(staging_fd)
                 os.rmdir(name, dir_fd=parent_fd)
                 os.close(parent_fd)
+
+    def test_nested_snapshot_read_failure_reports_close_failure_with_read_cause(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            (root / "assets" / "nested").mkdir(parents=True)
+            (root / "assets" / "nested" / "payload.txt").write_text("payload", encoding="utf-8")
+            root_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+            attempted: list[int] = []
+            close_calls = 0
+
+            def fail_read(descriptor: int, size: int) -> bytes:
+                raise OSError("read failed")
+
+            def close_descriptors(descriptors: tuple[int | None, ...]) -> list[OSError]:
+                nonlocal close_calls
+                close_calls += 1
+                for descriptor in descriptors:
+                    if descriptor is not None:
+                        attempted.append(descriptor)
+                        os.close(descriptor)
+                return [OSError("read descriptor close failed")] if close_calls == 1 else []
+
+            try:
+                with patch("tools.migrate_prototype.os.read", side_effect=fail_read):
+                    with patch("tools.migrate_prototype._close_all", side_effect=close_descriptors):
+                        with self.assertRaisesRegex(RuntimeError, "read descriptor close failed") as error:
+                            _snapshot_fd(root_fd)
+                self.assertIsInstance(error.exception.__cause__, OSError)
+                self.assertEqual(str(error.exception.__cause__), "read failed")
+                self.assertEqual(len(attempted), 3)
+            finally:
+                os.close(root_fd)
+
+    def test_recursive_clear_failure_reports_child_close_failure_without_parent_deletion(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            child = root / "child"
+            child.mkdir()
+            payload = child / "payload.txt"
+            payload.write_text("keep", encoding="utf-8")
+            root_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+            real_unlink = os.unlink
+
+            def fail_child_unlink(name: str, *args: object, **kwargs: object) -> None:
+                if name == "payload.txt":
+                    raise OSError("clear failed")
+                real_unlink(name, *args, **kwargs)
+
+            def close_child(descriptors: tuple[int | None, ...]) -> list[OSError]:
+                for descriptor in descriptors:
+                    if descriptor is not None:
+                        os.close(descriptor)
+                return [OSError("child close failed")]
+
+            try:
+                with patch("tools.migrate_prototype.os.unlink", side_effect=fail_child_unlink):
+                    with patch("tools.migrate_prototype._close_all", side_effect=close_child):
+                        with patch("tools.migrate_prototype.os.rmdir", wraps=os.rmdir) as rmdir:
+                            with self.assertRaisesRegex(RuntimeError, "child close failed") as error:
+                                _clear_directory_fd(root_fd)
+                self.assertIsInstance(error.exception.__cause__, OSError)
+                self.assertEqual(str(error.exception.__cause__), "clear failed")
+                rmdir.assert_not_called()
+                self.assertTrue(payload.exists())
+                self.assertTrue(child.exists())
+            finally:
+                os.close(root_fd)
 
     def test_private_staging_stat_race_preserves_foreign_sentinel(self) -> None:
         with TemporaryDirectory() as directory:
@@ -587,6 +667,12 @@ class PrototypeMigrationTests(unittest.TestCase):
             original_cwd = Path.cwd()
             attempted: list[int] = []
             received: list[tuple[int | None, ...]] = []
+            parent_descriptor: int | None = None
+
+            def record_parent_descriptor(path: Path) -> int:
+                nonlocal parent_descriptor
+                parent_descriptor = _open_directory_fd(path)
+                return parent_descriptor
 
             def close_with_reported_failure(descriptors: tuple[int | None, ...]) -> list[OSError]:
                 received.append(descriptors)
@@ -594,15 +680,16 @@ class PrototypeMigrationTests(unittest.TestCase):
                     if descriptor is not None:
                         attempted.append(descriptor)
                         os.close(descriptor)
-                return [OSError("first close failed")] if len(received) == 3 else []
+                return [OSError("first close failed")] if descriptors == (parent_descriptor,) else []
 
-            with patch("tools.migrate_prototype._close_all", side_effect=close_with_reported_failure):
-                manifest = preserve_prototype(root, archive)
+            with patch("tools.migrate_prototype._open_directory_fd", side_effect=record_parent_descriptor):
+                with patch("tools.migrate_prototype._close_all", side_effect=close_with_reported_failure):
+                    manifest = preserve_prototype(root, archive)
 
             self.assertEqual(manifest["fileCount"], 2)
             self.assertTrue((archive / "manifest.json").exists())
             self.assertEqual(Path.cwd(), original_cwd)
-            self.assertEqual(len(received), 3)
+            self.assertGreater(len(received), 3)
             expected = [
                 descriptor
                 for descriptors in received
@@ -610,7 +697,7 @@ class PrototypeMigrationTests(unittest.TestCase):
                 if descriptor is not None
             ]
             self.assertEqual(attempted, expected)
-            self.assertEqual(len(received[-1]), 1)
+            self.assertEqual(received[-1], (parent_descriptor,))
 
     def test_rejects_a_symlinked_source(self) -> None:
         with TemporaryDirectory() as directory:

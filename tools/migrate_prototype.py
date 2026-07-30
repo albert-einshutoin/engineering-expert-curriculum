@@ -268,21 +268,20 @@ def _open_directory_fd(path: Path) -> int:
 
 def _clear_directory_fd(descriptor: int) -> None:
     """Delete entries through a pinned descriptor, never through a replaceable pathname."""
-    for entry in os.scandir(descriptor):
-        mode = entry.stat(follow_symlinks=False).st_mode
-        if stat.S_ISDIR(mode):
-            child = os.open(
-                entry.name,
-                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
-                dir_fd=descriptor,
-            )
-            try:
-                _clear_directory_fd(child)
-            finally:
-                os.close(child)
-            os.rmdir(entry.name, dir_fd=descriptor)
-        else:
-            os.unlink(entry.name, dir_fd=descriptor)
+    with os.scandir(descriptor) as entries:
+        for entry in entries:
+            mode = entry.stat(follow_symlinks=False).st_mode
+            if stat.S_ISDIR(mode):
+                child = os.open(
+                    entry.name,
+                    os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                    dir_fd=descriptor,
+                )
+                with _managed_descriptor(child, f"directory cleanup: {entry.name}"):
+                    _clear_directory_fd(child)
+                os.rmdir(entry.name, dir_fd=descriptor)
+            else:
+                os.unlink(entry.name, dir_fd=descriptor)
 
 
 def _remove_owned_directory(parent_fd: int, name: str, directory_fd: int) -> None:
@@ -429,14 +428,12 @@ def _copy_allowlisted_tree(source: Path, staging_fd: int) -> None:
 
 def _snapshot_regular_file_at(directory_fd: int, name: str) -> FileSnapshot:
     descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_fd)
-    try:
+    with _managed_descriptor(descriptor, f"snapshot regular file: {name}"):
         digest = hashlib.sha256()
         byte_count = 0
         while chunk := os.read(descriptor, _CHUNK_SIZE):
             digest.update(chunk)
             byte_count += len(chunk)
-    finally:
-        os.close(descriptor)
     return {"sha256": digest.hexdigest(), "byteCount": byte_count}
 
 
@@ -444,19 +441,18 @@ def _snapshot_fd(root_fd: int) -> dict[str, FileSnapshot]:
     result: dict[str, FileSnapshot] = {}
 
     def walk(directory_fd: int, prefix: str) -> None:
-        for entry in os.scandir(directory_fd):
-            relative = f"{prefix}/{entry.name}" if prefix else entry.name
-            mode = entry.stat(follow_symlinks=False).st_mode
-            if stat.S_ISREG(mode):
-                result[relative] = _snapshot_regular_file_at(directory_fd, entry.name)
-            elif stat.S_ISDIR(mode):
-                child = os.open(entry.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory_fd)
-                try:
-                    walk(child, relative)
-                finally:
-                    os.close(child)
-            else:
-                raise _unsupported(Path(relative), mode)
+        with os.scandir(directory_fd) as entries:
+            for entry in entries:
+                relative = f"{prefix}/{entry.name}" if prefix else entry.name
+                mode = entry.stat(follow_symlinks=False).st_mode
+                if stat.S_ISREG(mode):
+                    result[relative] = _snapshot_regular_file_at(directory_fd, entry.name)
+                elif stat.S_ISDIR(mode):
+                    child = os.open(entry.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory_fd)
+                    with _managed_descriptor(child, f"snapshot directory: {relative}"):
+                        walk(child, relative)
+                else:
+                    raise _unsupported(Path(relative), mode)
 
     for name in LEGACY_PATHS:
         try:
@@ -467,10 +463,8 @@ def _snapshot_fd(root_fd: int) -> dict[str, FileSnapshot]:
             result[name] = _snapshot_regular_file_at(root_fd, name)
         elif stat.S_ISDIR(node.st_mode):
             child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root_fd)
-            try:
+            with _managed_descriptor(child, f"snapshot directory: {name}"):
                 walk(child, name)
-            finally:
-                os.close(child)
         else:
             raise _unsupported(Path(name), node.st_mode)
     return dict(sorted(result.items()))
