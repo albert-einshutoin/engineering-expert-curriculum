@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 from html.parser import HTMLParser
 import json
@@ -26,6 +27,66 @@ BODY = (
     "<p>制約、証拠、再評価条件を結び付けます。</p>"
     "</section>"
 )
+
+
+class _SyntheticDirEntry:
+    def __init__(self, name: str, node: os.stat_result) -> None:
+        self.name = name
+        self._node = node
+
+    def stat(self, *, follow_symlinks: bool) -> os.stat_result:
+        if follow_symlinks:
+            raise AssertionError("synthetic entries must not follow symlinks")
+        return self._node
+
+
+class _GuardedScandir:
+    def __init__(
+        self,
+        entries: Iterator[object],
+        maximum_next_calls: int,
+    ) -> None:
+        self._entries = entries
+        self._maximum_next_calls = maximum_next_calls
+        self.next_calls = 0
+
+    def __enter__(self) -> _GuardedScandir:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        return None
+
+    def __iter__(self) -> _GuardedScandir:
+        return self
+
+    def __next__(self) -> object:
+        self.next_calls += 1
+        if self.next_calls > self._maximum_next_calls:
+            raise AssertionError("scandir was consumed past the rejecting entry")
+        return next(self._entries)
+
+
+def _synthetic_lesson_roots(
+    node: os.stat_result,
+) -> Iterator[_SyntheticDirEntry]:
+    for ordinal in range(1, 31):
+        yield _SyntheticDirEntry(
+            f"core-{ordinal:02}-lesson-{ordinal}",
+            node,
+        )
+    yield _SyntheticDirEntry("core-30-duplicate-suffix", node)
+    while True:
+        yield _SyntheticDirEntry("PRIVATE-UNBOUNDED-ROOT-CONTENT", node)
+
+
+def _synthetic_lesson_files(
+    node: os.stat_result,
+) -> Iterator[_SyntheticDirEntry]:
+    yield _SyntheticDirEntry("lesson.json", node)
+    yield _SyntheticDirEntry("body.html", node)
+    yield _SyntheticDirEntry("PRIVATE-EXTRA-LESSON-CONTENT", node)
+    while True:
+        yield _SyntheticDirEntry("PRIVATE-UNBOUNDED-LESSON-CONTENT", node)
 
 
 class _LinkParser(HTMLParser):
@@ -277,63 +338,140 @@ class LessonRenderingTests(unittest.TestCase):
         self,
     ) -> None:
         with TemporaryDirectory() as directory:
-            lessons = Path(directory).resolve(strict=True) / "lessons"
-            lessons.mkdir()
-            for ordinal in range(1, 31):
-                (lessons / f"core-{ordinal:02}-lesson-{ordinal}").mkdir()
-            (lessons / "core-30-zzzz-duplicate").mkdir()
+            node = Path(directory).resolve(strict=True).stat()
+            guarded = _GuardedScandir(
+                _synthetic_lesson_roots(node),
+                maximum_next_calls=31,
+            )
+            with patch(
+                "curriculum_builder.lesson_rendering.os.scandir",
+                return_value=guarded,
+            ):
+                with self.assertRaisesRegex(
+                    CurriculumValidationError,
+                    "maximum lesson count",
+                ):
+                    lesson_rendering._discover_lesson_names(12345)
 
+            self.assertEqual(guarded.next_calls, 31)
+
+    def test_lesson_directory_rejects_third_entry_without_lookahead(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as directory:
+            content = Path(directory).resolve(strict=True)
+            lessons = content / "lessons"
+            lesson_id = "core-01-systems-tradeoffs"
+            lesson_directory = lessons / lesson_id
+            lesson_directory.mkdir(parents=True)
+            node = lesson_directory.stat()
+            guarded = _GuardedScandir(
+                _synthetic_lesson_files(node),
+                maximum_next_calls=3,
+            )
             flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
-            descriptor = os.open(lessons, flags)
-            real_scandir = os.scandir
-            next_calls = 0
-
-            class GuardedScandir:
-                def __init__(self, target: int) -> None:
-                    self._entries = real_scandir(target)
-                    self._ordered = iter(
-                        sorted(self._entries, key=lambda entry: entry.name)
-                    )
-
-                def __enter__(self) -> GuardedScandir:
-                    return self
-
-                def __exit__(self, *args: object) -> None:
-                    self._entries.close()
-
-                def __iter__(self) -> GuardedScandir:
-                    return self
-
-                def __next__(self) -> os.DirEntry[str]:
-                    nonlocal next_calls
-                    next_calls += 1
-                    if next_calls > 31:
-                        raise AssertionError(
-                            "lesson discovery read beyond the rejecting entry"
-                        )
-                    return next(self._ordered)
-
-            def guarded_scandir(
-                target: int | str | bytes | os.PathLike[str],
-            ) -> object:
-                if target == descriptor:
-                    return GuardedScandir(descriptor)
-                return real_scandir(target)
-
+            lessons_descriptor = os.open(lessons, flags)
             try:
                 with patch(
                     "curriculum_builder.lesson_rendering.os.scandir",
-                    side_effect=guarded_scandir,
+                    return_value=guarded,
                 ):
-                    with self.assertRaisesRegex(
-                        CurriculumValidationError,
-                        "maximum lesson count",
-                    ):
-                        lesson_rendering._discover_lesson_names(descriptor)
+                    with self.assertRaises(Exception) as caught:
+                        lesson_rendering._load_lesson_directory(
+                            lessons_descriptor,
+                            lesson_id,
+                            lesson_rendering.MAX_LESSON_COLLECTION_INPUT_BYTES,
+                        )
             finally:
-                os.close(descriptor)
+                os.close(lessons_descriptor)
 
-            self.assertEqual(next_calls, 31)
+            self.assertIsInstance(
+                caught.exception,
+                CurriculumValidationError,
+            )
+            self.assertRegex(str(caught.exception), "pair")
+            self.assertNotIn(
+                "PRIVATE-EXTRA-LESSON-CONTENT",
+                str(caught.exception),
+            )
+            self.assertEqual(guarded.next_calls, 3)
+
+    def test_present_empty_lesson_root_is_an_authoring_empty_state(self) -> None:
+        with _site_fixture() as (root, content, templates, static_root):
+            (content / "lessons").mkdir()
+            flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+            content_descriptor = os.open(content, flags)
+            try:
+                collection = lesson_rendering.load_lessons_from_root(
+                    content_descriptor
+                )
+            finally:
+                os.close(content_descriptor)
+
+            self.assertTrue(collection.directory_present)
+            self.assertEqual(collection.lessons, ())
+
+            output = root / "site"
+            build_site(content, templates, static_root, output)
+            index = (output / "lessons/index.html").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("公開済みのコアレッスンはまだありません", index)
+            self.assertEqual(
+                list((output / "lessons").glob("*/index.html")),
+                [],
+            )
+
+    def test_lesson_directory_discovery_errors_do_not_leak_input(self) -> None:
+        class FailingNameEntry:
+            @property
+            def name(self) -> str:
+                raise OSError("PRIVATE-ENTRY-NAME-CONTENT")
+
+        def failing_name_entries() -> Iterator[object]:
+            yield FailingNameEntry()
+
+        with TemporaryDirectory() as directory:
+            content = Path(directory).resolve(strict=True)
+            lessons = content / "lessons"
+            lesson_id = "core-01-systems-tradeoffs"
+            (lessons / lesson_id).mkdir(parents=True)
+            flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+            lessons_descriptor = os.open(lessons, flags)
+            cases = {
+                "scandir": OSError("PRIVATE-SCANDIR-CONTENT"),
+                "entry name": _GuardedScandir(
+                    failing_name_entries(),
+                    maximum_next_calls=1,
+                ),
+            }
+            try:
+                for label, effect in cases.items():
+                    with self.subTest(label=label):
+                        patcher = (
+                            patch(
+                                "curriculum_builder.lesson_rendering.os.scandir",
+                                side_effect=effect,
+                            )
+                            if isinstance(effect, OSError)
+                            else patch(
+                                "curriculum_builder.lesson_rendering.os.scandir",
+                                return_value=effect,
+                            )
+                        )
+                        with patcher:
+                            with self.assertRaisesRegex(
+                                CurriculumValidationError,
+                                "cannot be discovered safely",
+                            ) as caught:
+                                lesson_rendering._load_lesson_directory(
+                                    lessons_descriptor,
+                                    lesson_id,
+                                    lesson_rendering.MAX_LESSON_COLLECTION_INPUT_BYTES,
+                                )
+                        self.assertNotIn("PRIVATE-", str(caught.exception))
+            finally:
+                os.close(lessons_descriptor)
 
     def test_duplicate_numeric_ordinal_fails_before_publication(self) -> None:
         with _site_fixture() as (root, content, templates, static_root):

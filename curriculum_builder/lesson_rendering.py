@@ -249,9 +249,26 @@ def _load_lesson_directory(
             raise CurriculumValidationError(
                 f"lesson {name} changed while opening"
             )
+        entry_names: list[str] = []
         try:
             with os.scandir(descriptor) as entries:
-                entry_names = tuple(entry.name for entry in entries)
+                for entry in entries:
+                    # Only the exact two-file pair is valid. Rejecting the
+                    # third observed entry before reading its name bounds both
+                    # enumeration and retained attacker-controlled data.
+                    if len(entry_names) >= len(_PAIR):
+                        raise CurriculumValidationError(
+                            f"lesson {name} must contain the "
+                            "lesson.json/body.html pair"
+                        )
+                    entry_name = entry.name
+                    if type(entry_name) is not str:
+                        raise CurriculumValidationError(
+                            f"lesson {name} cannot be discovered safely"
+                        )
+                    entry_names.append(entry_name)
+        except CurriculumValidationError:
+            raise
         except OSError:
             raise CurriculumValidationError(
                 f"lesson {name} cannot be discovered safely"
