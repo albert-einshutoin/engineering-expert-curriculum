@@ -19,6 +19,8 @@ from curriculum_builder.build import (
     BuildCleanupError,
     BuildPostCommitError,
     BuildPublicationDurabilityError,
+    BuildPublicationStateError,
+    BuildStagingCleanupError,
     MAX_ROADMAP_BYTES,
     MAX_STYLESHEET_BYTES,
     _open_trusted_directory,
@@ -35,6 +37,54 @@ from curriculum_builder.errors import CurriculumValidationError
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+
+
+@contextmanager
+def _fail_root_close(target: Path):
+    original_open = os.open
+    original_close = os.close
+    state: dict[str, object] = {
+        "descriptor": None,
+        "failed": False,
+    }
+    canonical_target = target.resolve(strict=True)
+
+    def recording_open(
+        path: object,
+        *args: object,
+        **kwargs: object,
+    ) -> int:
+        descriptor = original_open(  # type: ignore[arg-type]
+            path,
+            *args,
+            **kwargs,
+        )
+        if (
+            kwargs.get("dir_fd") is None
+            and isinstance(path, (str, os.PathLike))
+            and Path(path) == canonical_target
+        ):
+            state["descriptor"] = descriptor
+        return descriptor
+
+    def failing_close(descriptor: int) -> None:
+        if (
+            descriptor == state["descriptor"]
+            and not state["failed"]
+        ):
+            state["failed"] = True
+            original_close(descriptor)
+            raise OSError(f"root close failed: {canonical_target.name}")
+        original_close(descriptor)
+
+    with patch(
+        "curriculum_builder.build.os.open",
+        side_effect=recording_open,
+    ), patch(
+        "curriculum_builder.build.os.close",
+        side_effect=failing_close,
+    ):
+        yield state
 
 
 def _catalog_item(**overrides: object) -> dict[str, object]:
@@ -742,6 +792,243 @@ class BuildInputValidationTests(unittest.TestCase):
 
 
 class BuildPublicationTests(unittest.TestCase):
+    def test_each_root_close_failure_after_publish_is_postcommit(self) -> None:
+        for root_label in (
+            "content",
+            "templates",
+            "static",
+            "output-parent",
+        ):
+            with self.subTest(root_label=root_label), _fixture() as (
+                root,
+                content,
+                templates,
+                static_root,
+            ):
+                output = root / "site"
+                target = {
+                    "content": content,
+                    "templates": templates,
+                    "static": static_root,
+                    "output-parent": root,
+                }[root_label]
+                with _fail_root_close(target) as state:
+                    with self.assertRaises(
+                        BuildPublicationStateError
+                    ) as raised:
+                        build_site(
+                            content,
+                            templates,
+                            static_root,
+                            output,
+                        )
+
+                self.assertTrue(state["failed"])
+                self.assertIn("site is visible", str(raised.exception))
+                _assert_static_site(self, output)
+
+    def test_root_close_is_secondary_to_existing_postcommit_failure(
+        self,
+    ) -> None:
+        with _fixture() as (root, content, templates, static_root):
+            output = root / "site"
+            output.mkdir()
+            (output / "sentinel.txt").write_text("old", encoding="utf-8")
+            with _fail_root_close(root) as state, patch(
+                "curriculum_builder.build._fsync_parent_after_publish",
+                side_effect=OSError("primary publish fsync failure"),
+            ):
+                with self.assertRaises(
+                    BuildPublicationDurabilityError
+                ) as raised:
+                    build_site(
+                        content,
+                        templates,
+                        static_root,
+                        output,
+                    )
+
+            self.assertTrue(state["failed"])
+            self.assertIsInstance(raised.exception.__cause__, OSError)
+            self.assertIn(
+                "primary publish fsync failure",
+                str(raised.exception.__cause__),
+            )
+            self.assertTrue(
+                any(
+                    "root close failed" in note
+                    for note in raised.exception.__notes__
+                )
+            )
+            _assert_static_site(self, output)
+            self.assertEqual(len(list(root.glob(".site.staging-*"))), 1)
+
+    def test_staging_initialization_cleanup_preserves_primary_and_reports_residue(
+        self,
+    ) -> None:
+        cases = (
+            ("fstat", True, False),
+            ("fstat", False, True),
+            ("scandir", True, True),
+        )
+        for primary_kind, fail_close, fail_rmdir in cases:
+            with self.subTest(
+                primary_kind=primary_kind,
+                fail_close=fail_close,
+                fail_rmdir=fail_rmdir,
+            ), _fixture() as (root, content, templates, static_root):
+                output = root / "site"
+                output.mkdir()
+                (output / "sentinel.txt").write_text(
+                    "old",
+                    encoding="utf-8",
+                )
+                original_open_directory = build_module._open_directory_at
+                original_fstat = os.fstat
+                original_scandir = os.scandir
+                original_close = os.close
+                original_rmdir = os.rmdir
+                staging_descriptor: int | None = None
+                primary_failed = False
+                close_failed = False
+                rmdir_failed = False
+
+                def recording_open(
+                    parent_fd: int,
+                    name: str,
+                ) -> int:
+                    nonlocal staging_descriptor
+                    descriptor = original_open_directory(parent_fd, name)
+                    if name.startswith(".site.staging-"):
+                        staging_descriptor = descriptor
+                    return descriptor
+
+                def failing_fstat(descriptor: int) -> os.stat_result:
+                    nonlocal primary_failed
+                    if (
+                        primary_kind == "fstat"
+                        and descriptor == staging_descriptor
+                        and not primary_failed
+                    ):
+                        primary_failed = True
+                        raise OSError("staging fstat primary")
+                    return original_fstat(descriptor)
+
+                def failing_scandir(path: object):
+                    nonlocal primary_failed
+                    if (
+                        primary_kind == "scandir"
+                        and path == staging_descriptor
+                        and not primary_failed
+                    ):
+                        primary_failed = True
+                        raise OSError("staging scandir primary")
+                    return original_scandir(path)  # type: ignore[arg-type]
+
+                def failing_close(descriptor: int) -> None:
+                    nonlocal close_failed
+                    if (
+                        fail_close
+                        and descriptor == staging_descriptor
+                        and not close_failed
+                    ):
+                        close_failed = True
+                        original_close(descriptor)
+                        raise OSError("staging close secondary")
+                    original_close(descriptor)
+
+                def failing_rmdir(
+                    path: object,
+                    *args: object,
+                    **kwargs: object,
+                ) -> None:
+                    nonlocal rmdir_failed
+                    if (
+                        fail_rmdir
+                        and isinstance(path, str)
+                        and path.startswith(".site.staging-")
+                        and not rmdir_failed
+                    ):
+                        rmdir_failed = True
+                        raise OSError("staging rmdir secondary")
+                    original_rmdir(  # type: ignore[arg-type]
+                        path,
+                        *args,
+                        **kwargs,
+                    )
+
+                with patch(
+                    "curriculum_builder.build._open_directory_at",
+                    side_effect=recording_open,
+                ), patch(
+                    "curriculum_builder.build.os.fstat",
+                    side_effect=failing_fstat,
+                ), patch(
+                    "curriculum_builder.build.os.scandir",
+                    side_effect=failing_scandir,
+                ), patch(
+                    "curriculum_builder.build.os.close",
+                    side_effect=failing_close,
+                ), patch(
+                    "curriculum_builder.build.os.rmdir",
+                    side_effect=failing_rmdir,
+                ):
+                    if fail_rmdir:
+                        with self.assertRaises(
+                            BuildStagingCleanupError
+                        ) as raised:
+                            build_site(
+                                content,
+                                templates,
+                                static_root,
+                                output,
+                            )
+                    else:
+                        with self.assertRaisesRegex(
+                            OSError,
+                            f"staging {primary_kind} primary",
+                        ) as raised:
+                            build_site(
+                                content,
+                                templates,
+                                static_root,
+                                output,
+                            )
+
+                self.assertTrue(primary_failed)
+                self.assertEqual(close_failed, fail_close)
+                self.assertEqual(rmdir_failed, fail_rmdir)
+                self.assertEqual(
+                    (output / "sentinel.txt").read_text(),
+                    "old",
+                )
+                residue = list(root.glob(".site.staging-*"))
+                self.assertEqual(len(residue), int(fail_rmdir))
+                if fail_rmdir:
+                    self.assertIsInstance(
+                        raised.exception.__cause__,
+                        OSError,
+                    )
+                    self.assertIn(
+                        f"staging {primary_kind} primary",
+                        str(raised.exception.__cause__),
+                    )
+                notes = raised.exception.__notes__
+                if fail_close:
+                    self.assertTrue(
+                        any(
+                            "staging close secondary" in note
+                            for note in notes
+                        )
+                    )
+                if fail_rmdir:
+                    self.assertTrue(
+                        any(
+                            "staging rmdir secondary" in note
+                            for note in notes
+                        )
+                    )
+
     def test_prepublication_failure_preserves_previous_output_and_cleans_stage(
         self,
     ) -> None:
@@ -835,6 +1122,80 @@ class BuildPublicationTests(unittest.TestCase):
                 b"foreign",
             )
             self.assertEqual(list(root.glob(".site.staging-*")), [])
+
+    def test_existing_target_replacement_at_exchange_is_preserved(
+        self,
+    ) -> None:
+        with _fixture() as (root, content, templates, static_root):
+            output = root / "site"
+            output.mkdir()
+            (output / "original.txt").write_text(
+                "original",
+                encoding="utf-8",
+            )
+            displaced_name = "site.displaced-by-competitor"
+            original_publish = _publish_directory
+
+            def competing_exchange(
+                parent_fd: int,
+                source_name: str,
+                target_name: str,
+                *,
+                replace_existing: bool,
+            ) -> None:
+                self.assertTrue(replace_existing)
+                os.rename(
+                    target_name,
+                    displaced_name,
+                    src_dir_fd=parent_fd,
+                    dst_dir_fd=parent_fd,
+                )
+                os.mkdir(target_name, mode=0o700, dir_fd=parent_fd)
+                competitor_fd = os.open(
+                    target_name,
+                    os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                    dir_fd=parent_fd,
+                )
+                try:
+                    sentinel_fd = os.open(
+                        "competitor.txt",
+                        os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                        0o600,
+                        dir_fd=competitor_fd,
+                    )
+                    try:
+                        os.write(sentinel_fd, b"competitor")
+                    finally:
+                        os.close(sentinel_fd)
+                finally:
+                    os.close(competitor_fd)
+                original_publish(
+                    parent_fd,
+                    source_name,
+                    target_name,
+                    replace_existing=replace_existing,
+                )
+
+            with patch(
+                "curriculum_builder.build._publish_directory",
+                side_effect=competing_exchange,
+            ):
+                with self.assertRaises(
+                    BuildPublicationStateError
+                ):
+                    build_site(content, templates, static_root, output)
+
+            _assert_static_site(self, output)
+            recovery = list(root.glob(".site.staging-*"))
+            self.assertEqual(len(recovery), 1)
+            self.assertEqual(
+                (recovery[0] / "competitor.txt").read_bytes(),
+                b"competitor",
+            )
+            self.assertEqual(
+                (root / displaced_name / "original.txt").read_text(),
+                "original",
+            )
 
     def test_file_and_directory_fsync_fail_before_publish(self) -> None:
         for fail_directory in (False, True):

@@ -19,6 +19,10 @@ from curriculum_builder.catalog import (
 from curriculum_builder.errors import CurriculumValidationError
 
 
+class BytesSubclass(bytes):
+    pass
+
+
 def item(**overrides: object) -> dict[str, object]:
     value: dict[str, object] = {
         "id": "D01-M01-L1", "title": "Intro", "domainId": 1,
@@ -31,6 +35,32 @@ def item(**overrides: object) -> dict[str, object]:
 
 
 class CatalogLoaderTests(unittest.TestCase):
+    def test_bytes_loaders_reject_mutable_views_and_subclasses(self) -> None:
+        official_path = Path("content/catalog.json")
+        official = official_path.read_bytes()
+        for candidate in (
+            bytearray(official),
+            memoryview(official),
+            BytesSubclass(official),
+        ):
+            with self.subTest(type=type(candidate).__name__):
+                with self.assertRaisesRegex(
+                    CurriculumValidationError,
+                    "catalog snapshot must be exact bytes",
+                ):
+                    load_catalog_bytes(  # type: ignore[arg-type]
+                        candidate,
+                        official_path,
+                    )
+                with self.assertRaisesRegex(
+                    CurriculumValidationError,
+                    "catalog snapshot must be exact bytes",
+                ):
+                    load_repository_catalog_bytes(  # type: ignore[arg-type]
+                        candidate,
+                        official_path,
+                    )
+
     def test_bytes_loaders_parse_the_supplied_snapshot_and_fix_provenance(
         self,
     ) -> None:
