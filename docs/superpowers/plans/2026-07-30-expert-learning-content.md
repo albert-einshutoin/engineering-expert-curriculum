@@ -530,10 +530,12 @@ Import `Path`, `unittest`, and `load_lesson` at the top of
 Run:
 
 ```bash
-python3 -m unittest tests.test_core_tracks.CoreTrackTests.test_foundations -v
+python3.13 -m unittest tests.test_core_tracks -v
 ```
 
-Expected: failure listing all five missing lesson directories.
+Expected: the Foundations module fails because all five lesson directories are
+missing. Run the whole module so canonical body, arithmetic, Big-O, and mutation
+contracts cannot be bypassed as the module grows.
 
 - [x] **Step 3: Author each lesson using the complete mastery loop**
 
@@ -559,22 +561,27 @@ transfer scenario, and a four-level rubric.
 Run:
 
 ```bash
-python3 -m unittest \
+python3.13 -m unittest \
   tests.test_lesson_quality \
-  tests.test_core_tracks.CoreTrackTests.test_foundations \
+  tests.test_core_tracks \
   tests.test_lesson_rendering -v
 ```
 
-Expected: all tests pass and five lesson pages render.
+Expected: all 72 focused tests pass and five lesson pages render. The 72 tests
+include every `tests.test_core_tracks` contract, including canonical body,
+weighted-score arithmetic, Big-O/Θ, and mutation coverage.
 
-Implementation note (2026-07-31): the contract test first failed with five
-missing lesson files, then the focused gates and full suite passed. An
+Implementation note (2026-07-31): the Foundations module first failed with five
+missing lesson files, then the complete 72-test focused bundle and full suite
+passed. An
 Important-review follow-up added exact contracts for all 19 source records,
 ordered semantic body structure, weighted-score arithmetic, and the Big-O/Θ
 distinction. The pre-fix source titles and score failed the exact contracts;
 mutations of the first H2 and Big-O definition also failed the canonical
-tests. The final full suite passed 334 tests, and two repository-external
-builds emitted the five lesson pages,
+tests. A second review corrected the SPEC reference to the official H1
+`SPEC CPU®2017 Run and Reporting Rules`; the old title failed the source
+oracle before the lesson metadata was changed. The final full suite passed 334
+tests, and two repository-external builds emitted the five lesson pages,
 index, and 1,140 catalog items with the same aggregate SHA-256
 `fbde24b2f31d3e9247db85aced9a1207b92820c7e6863081b3c3ca52eeb55252`.
 The initial content was committed as `b385baf`; the review fixes and regression
