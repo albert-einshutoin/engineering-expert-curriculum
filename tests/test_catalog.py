@@ -7,7 +7,15 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from curriculum_builder.catalog import CANONICAL_CATALOG_SHA256, LEGACY_SOURCE_SHA256, load_catalog, load_repository_catalog, serialize_catalog_document
+from curriculum_builder.catalog import (
+    CANONICAL_CATALOG_SHA256,
+    LEGACY_SOURCE_SHA256,
+    load_catalog,
+    load_catalog_bytes,
+    load_repository_catalog,
+    load_repository_catalog_bytes,
+    serialize_catalog_document,
+)
 from curriculum_builder.errors import CurriculumValidationError
 
 
@@ -23,6 +31,37 @@ def item(**overrides: object) -> dict[str, object]:
 
 
 class CatalogLoaderTests(unittest.TestCase):
+    def test_bytes_loaders_parse_the_supplied_snapshot_and_fix_provenance(
+        self,
+    ) -> None:
+        official_path = Path("content/catalog.json")
+        official = official_path.read_bytes()
+        self.assertEqual(
+            load_repository_catalog_bytes(official, official_path),
+            load_repository_catalog(official_path),
+        )
+
+        tampered = official.replace(
+            b'"title": "',
+            b'"title": "Changed ',
+            1,
+        )
+        with self.assertRaisesRegex(
+            CurriculumValidationError,
+            "catalog SHA-256 mismatch",
+        ):
+            load_repository_catalog_bytes(tampered, official_path)
+
+        fixture = serialize_catalog_document(
+            [item(title="Pinned")],
+            "fixture",
+            source_sha256="0" * 64,
+        )
+        self.assertEqual(
+            load_catalog_bytes(fixture, Path("fixture.json"))[0].title,
+            "Pinned",
+        )
+
     def test_repository_loader_parses_the_same_bytes_it_hashes(self) -> None:
         official = Path("content/catalog.json").read_bytes()
         altered = official.replace(b'"title": "', b'"title": "Changed ', 1)

@@ -16,6 +16,7 @@ from unittest.mock import patch
 
 from curriculum_builder.build import (
     BuildCleanupError,
+    BuildPostCommitError,
     BuildPublicationDurabilityError,
     MAX_ROADMAP_BYTES,
     MAX_STYLESHEET_BYTES,
@@ -26,7 +27,9 @@ from curriculum_builder.build import (
 )
 from curriculum_builder.catalog import (
     load_catalog,
+    load_catalog_bytes,
     load_repository_catalog,
+    load_repository_catalog_bytes,
     serialize_catalog_document,
 )
 from curriculum_builder.errors import CurriculumValidationError
@@ -385,6 +388,63 @@ class BuildInputValidationTests(unittest.TestCase):
                 build_site(content, templates, static_root, root / "site")
             repository_loader.assert_not_called()
             generic_loader.assert_called_once()
+
+    def test_catalog_rendering_uses_the_pinned_bytes_during_path_race(
+        self,
+    ) -> None:
+        with _fixture(
+            catalog_items=[_catalog_item(title="Pinned title")]
+        ) as (root, content, templates, static_root):
+            catalog_path = content / "catalog.json"
+            pinned = catalog_path.read_bytes()
+            raced = serialize_catalog_document(
+                [_catalog_item(title="Raced title")],
+                "test fixture",
+                source_sha256="0" * 64,
+            )
+            original_reader = _read_stable_regular_file
+            catalog_reads = 0
+
+            def racing_reader(
+                directory: object,
+                name: str,
+                maximum_bytes: int,
+            ) -> bytes:
+                nonlocal catalog_reads
+                if name != "catalog.json":
+                    return original_reader(
+                        directory,  # type: ignore[arg-type]
+                        name,
+                        maximum_bytes,
+                    )
+                catalog_reads += 1
+                if catalog_reads == 1:
+                    snapshot = original_reader(
+                        directory,  # type: ignore[arg-type]
+                        name,
+                        maximum_bytes,
+                    )
+                    catalog_path.write_bytes(raced)
+                    return snapshot
+                catalog_path.write_bytes(pinned)
+                return original_reader(
+                    directory,  # type: ignore[arg-type]
+                    name,
+                    maximum_bytes,
+                )
+
+            with patch(
+                "curriculum_builder.build._read_stable_regular_file",
+                side_effect=racing_reader,
+            ):
+                build_site(content, templates, static_root, root / "site")
+
+            catalog = (root / "site/catalog/index.html").read_text(
+                encoding="utf-8"
+            )
+            self.assertEqual(catalog_reads, 2)
+            self.assertIn("Pinned title", catalog)
+            self.assertNotIn("Raced title", catalog)
 
     def test_ambiguous_repository_catalog_path_cannot_bypass_provenance(
         self,
@@ -825,6 +885,114 @@ class BuildPublicationTests(unittest.TestCase):
             self.assertEqual(len(recovery), 1)
             self.assertEqual(
                 (recovery[0] / "sentinel.txt").read_text(encoding="utf-8"),
+                "old",
+            )
+
+    def test_postrename_stat_failure_is_explicitly_postcommit(
+        self,
+    ) -> None:
+        with _fixture() as (root, content, templates, static_root):
+            output = root / "site"
+            output.mkdir()
+            (output / "sentinel.txt").write_text("old", encoding="utf-8")
+            original_publish = _publish_directory
+            original_stat = os.stat
+            committed = False
+
+            def publishing(
+                parent_fd: int,
+                source_name: str,
+                target_name: str,
+                *,
+                replace_existing: bool,
+            ) -> None:
+                nonlocal committed
+                original_publish(
+                    parent_fd,
+                    source_name,
+                    target_name,
+                    replace_existing=replace_existing,
+                )
+                committed = True
+
+            def failing_stat(
+                path: object,
+                *args: object,
+                **kwargs: object,
+            ) -> os.stat_result:
+                if committed and path == "site":
+                    raise OSError("post-rename stat failed")
+                return original_stat(path, *args, **kwargs)  # type: ignore[arg-type]
+
+            with patch(
+                "curriculum_builder.build._publish_directory",
+                side_effect=publishing,
+            ), patch(
+                "curriculum_builder.build.os.stat",
+                side_effect=failing_stat,
+            ):
+                with self.assertRaises(BuildPostCommitError) as raised:
+                    build_site(content, templates, static_root, output)
+
+            self.assertNotIn("before publication", str(raised.exception))
+            _assert_static_site(self, output)
+            recovery = list(root.glob(".site.staging-*"))
+            self.assertEqual(len(recovery), 1)
+            self.assertEqual(
+                (recovery[0] / "sentinel.txt").read_text(),
+                "old",
+            )
+
+    def test_previous_descriptor_close_failure_is_postcommit_and_keeps_recovery(
+        self,
+    ) -> None:
+        with _fixture() as (root, content, templates, static_root):
+            output = root / "site"
+            output.mkdir()
+            (output / "sentinel.txt").write_text("old", encoding="utf-8")
+            original_open = __import__(
+                "curriculum_builder.build",
+                fromlist=["_open_directory_at"],
+            )._open_directory_at
+            original_close = os.close
+            previous_descriptor: int | None = None
+            close_failed = False
+
+            def recording_open(parent_fd: int, name: str) -> int:
+                nonlocal previous_descriptor
+                descriptor = original_open(parent_fd, name)
+                if name == "site":
+                    previous_descriptor = descriptor
+                return descriptor
+
+            def failing_close(descriptor: int) -> None:
+                nonlocal close_failed
+                if (
+                    descriptor == previous_descriptor
+                    and not close_failed
+                ):
+                    close_failed = True
+                    original_close(descriptor)
+                    raise OSError("previous close failed")
+                original_close(descriptor)
+
+            with patch(
+                "curriculum_builder.build._open_directory_at",
+                side_effect=recording_open,
+            ), patch(
+                "curriculum_builder.build.os.close",
+                side_effect=failing_close,
+            ):
+                with self.assertRaises(BuildPostCommitError) as raised:
+                    build_site(content, templates, static_root, output)
+
+            self.assertTrue(close_failed)
+            self.assertNotIn("before publication", str(raised.exception))
+            _assert_static_site(self, output)
+            recovery = list(root.glob(".site.staging-*"))
+            self.assertEqual(len(recovery), 1)
+            self.assertEqual(
+                (recovery[0] / "sentinel.txt").read_text(),
                 "old",
             )
 
