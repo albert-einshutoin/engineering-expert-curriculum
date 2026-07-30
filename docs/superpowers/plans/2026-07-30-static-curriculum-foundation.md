@@ -710,7 +710,10 @@ The suite additionally pins missing/extra/overlapping keys, invalid template
 syntax, one-shot mapping snapshots, type and size bounds, safe output paths,
 safe fragment names, template symlink/non-regular/oversize/UTF-8/OSError
 failures, working-directory independence, base placeholder counts, CSP and
-asset policy, and bounded non-leaking errors.
+asset policy, and bounded non-leaking errors. A 10,000-entry custom mapping
+must be rejected after consuming no more than `MAX_VALUE_ENTRIES + 1` items;
+`items()` acquisition, iteration, and entry decoding failures remain
+controlled and never expose their raw exceptions.
 
 - [ ] **Step 2: Run renderer tests and verify RED**
 
@@ -737,6 +740,12 @@ semantic landmarks and restrictive CSP, and reject external or absolute asset
 URLs before accepting the base template. The completed page receives one
 additional parse solely to reject decoded duplicate IDs across the trusted
 base and validated content.
+
+The base accepts exactly four meta records: UTF-8 charset, the fixed viewport,
+the structured description placeholder, and one CSP. Unknown, duplicate, or
+refresh meta records fail closed. The parsed CSP directive map must equal the
+declared policy exactly; extra directives such as `script-src-elem` or
+`script-src-attr` are forbidden even when `script-src 'none'` remains present.
 
 ```html
 <!doctype html>
