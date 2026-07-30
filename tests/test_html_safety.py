@@ -264,6 +264,10 @@ class HtmlSafetyTests(unittest.TestCase):
                 "whitespace is not allowed in URLs",
             ),
             (
+                "\u200bjavascript:alert(1)",
+                "control characters are not allowed in URLs",
+            ),
+            (
                 "https://user:pass@example.com/x",
                 "URL credentials are not allowed",
             ),

@@ -7,6 +7,7 @@ from html.parser import HTMLParser
 import ipaddress
 import re
 from types import MappingProxyType
+import unicodedata
 from urllib.parse import urlsplit
 
 from .errors import CurriculumValidationError
@@ -305,6 +306,10 @@ def _validate_url(value: str) -> None:
     # original fragment is safe only when obfuscated schemes cannot be reinterpreted.
     if any(character.isspace() for character in value):
         raise CurriculumValidationError("whitespace is not allowed in URLs")
+    if any(unicodedata.category(character) in {"Cc", "Cf"} for character in value):
+        raise CurriculumValidationError(
+            "control characters are not allowed in URLs"
+        )
     if "\\" in value:
         raise CurriculumValidationError("backslashes are not allowed in URLs")
     if _ENCODED_URL_CONTROL_PATTERN.search(value):
