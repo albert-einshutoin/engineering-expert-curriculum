@@ -1,0 +1,175 @@
+{
+  "version": 1,
+  "id": "core-07-api-contract-design",
+  "title": "API契約を失敗、再送、進化まで設計する",
+  "summary": "wire形式だけでなく意味、認可、失敗、冪等性を契約化し、オフライン利用者を壊さず進化させる。",
+  "track": "build",
+  "stage": 2,
+  "difficulty": "intermediate",
+  "estimatedMinutes": 300,
+  "prerequisiteIds": ["core-06-requirements-domain-modeling"],
+  "objectives": [
+    {
+      "id": "obj-contract",
+      "statement": "HTTP意味論、schema、業務不変条件、認可、失敗形式を分離したAPI契約を記述できる",
+      "evidenceIds": ["api-contract", "teach-back"]
+    },
+    {
+      "id": "obj-replay",
+      "statement": "応答喪失後の再送で同じ副作用を一回に保ちつつ、同じ応答やexactly-onceを誤って保証しない",
+      "evidenceIds": ["api-contract", "assessment"]
+    },
+    {
+      "id": "obj-evolution",
+      "statement": "source、wire、意味の互換性を区別し、長時間オフラインの利用者へ契約変更を移せる",
+      "evidenceIds": ["assessment", "transfer"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "api-contract",
+      "kind": "artifact",
+      "description": "version、冪等key、状態遷移、Problem Details、互換性判定を含む実行可能API契約"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "冪等性と同一応答、schema妥当性と業務妥当性、認可を混同しない5分説明"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "再送と契約進化の障害シナリオを観測で切り分ける回答"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "長時間オフライン端末に対する互換な同期と失敗契約"
+    }
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "HTTP method、表現schema、業務意味、認証、認可、失敗形式を別の契約面として分類できる",
+      "evidenceIds": ["api-contract"]
+    },
+    {
+      "level": "explain",
+      "criterion": "同じ冪等keyの再送が同じ効果を保っても同じresponseやexactly-onceを意味しない理由を説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "version、再送、状態遷移、Problem Detailsを含むローカル契約fixtureを実装できる",
+      "evidenceIds": ["api-contract"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "schema違反、意味違反、認可拒否、version非互換を証拠から切り分けられる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "利用者の更新遅延と撤回困難性を考慮し、互換性方針と廃止条件をレビューできる",
+      "evidenceIds": ["transfer"]
+    }
+  ],
+  "lab": {
+    "title": "オフライン現場端末の再送と契約進化を検証する",
+    "artifact": "互換性、冪等性、失敗形式を含むAPI契約",
+    "steps": [
+      "v1とv2で共有する作業完了コマンド、状態遷移、認可境界を宣言する",
+      "同じ冪等keyを二度処理し、副作用回数が一のままresponse生成時刻が異なる証拠を記録する",
+      "任意field追加、必須field削除、enum拡張をsource、wire、意味の観点で分類する",
+      "RFC 9457のProblem Details必須memberだけを持つ失敗表現を生成する",
+      "schema上正しい別tenantのrequestを認可で拒否し、外部networkなしで三つ以上の状態遷移を検査する"
+    ]
+  },
+  "teachBack": "5分で、HTTPの冪等methodと業務上の冪等key、同じ効果と同じresponse、at-least-once再送とexactly-once主張を分け、schema妥当性が業務意味と認可を保証しない理由を説明する。",
+  "assessment": [
+    {
+      "prompt": "端末が作業完了POSTの応答を失い、同じkeyで再送した。初回と異なるresponse時刻を返したら冪等でないか。",
+      "expectedEvidence": "対象resourceの意図した効果、副作用回数、response表現の違い、保存済み結果、結果照会、exactly-once非保証の区別"
+    },
+    {
+      "prompt": "v2でenum値を追加した。JSON Schemaを通る旧clientなら互換と断定できるか。",
+      "expectedEvidence": "旧clientの未知値処理、sourceとwireと意味の互換性、長期offline端末、段階的提供と観測"
+    }
+  ],
+  "transferTask": "長時間オフラインになる現場端末へ互換な再送・同期API契約を設計する",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "schemaが通れば業務と認可も正しいとみなし、timeout時に無条件再送する",
+        "developing": "冪等keyとversionはあるが、状態遷移または失敗形式の意味が曖昧である",
+        "proficient": "HTTP、schema、意味、認可、冪等性、失敗、互換性を分けて契約化する",
+        "exemplary": "並行再送、key保持期間、意味変更、未知値の反例と限界まで扱う"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "providerの都合だけで破壊的変更を即時公開する",
+        "developing": "versionを増やすが、利用者の更新遅延と運用費用を比較しない",
+        "proficient": "利用者分布、撤回可能性、観測、移行期間から進化方針を選ぶ",
+        "exemplary": "互換層の費用と意味的負債を定量化し、廃止条件とrollbackを合意する"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "OpenAPI文書が生成されたことだけを互換性の証拠にする",
+        "developing": "schema差分はあるが、replay時の副作用と旧client挙動を検証しない",
+        "proficient": "固定fixtureで再送、状態遷移、失敗、認可、互換性を機械検査する",
+        "exemplary": "利用中versionの観測とconsumer例を結び、意味変更の反証まで自動化する"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "status codeとfield一覧だけで、利用者が次の操作を判断できない",
+        "developing": "成功経路は分かるが、retry可否と移行期限が不明である",
+        "proficient": "前提、状態、失敗、再送、互換性、廃止条件をconsumer視点で説明する",
+        "exemplary": "実装者、運用者、利用者へ同じ契約証拠から異なる判断情報を提供する"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "RFC 9110: HTTP Semantics",
+      "url": "https://www.rfc-editor.org/rfc/rfc9110.html",
+      "kind": "standard"
+    },
+    {
+      "title": "OpenAPI Specification v3.2.0",
+      "url": "https://spec.openapis.org/oas/v3.2.0.html",
+      "kind": "standard"
+    },
+    {
+      "title": "JSON Schema Validation: A Vocabulary for Structural Validation of JSON",
+      "url": "https://json-schema.org/draft/2020-12/json-schema-validation",
+      "kind": "standard"
+    },
+    {
+      "title": "AIP-180: Backwards compatibility",
+      "url": "https://google.aip.dev/180",
+      "kind": "primary"
+    },
+    {
+      "title": "RFC 9457: Problem Details for HTTP APIs",
+      "url": "https://www.rfc-editor.org/rfc/rfc9457.html",
+      "kind": "standard"
+    }
+  ],
+  "review": {
+    "intervalDays": [1, 7, 30, 90],
+    "prompts": [
+      "同じ効果だが同じresponseでない冪等再送の例を示す",
+      "schema妥当性だけでは検出できない業務違反と認可違反は何か",
+      "enum追加が意味的に破壊的となる旧clientの挙動を示す"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}
