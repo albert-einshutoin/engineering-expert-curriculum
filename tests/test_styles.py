@@ -93,7 +93,9 @@ class StyleContractTests(unittest.TestCase):
         )
         self.assertNotRegex(self.css, r"(?i)@import\b")
         self.assertNotRegex(self.css, r"(?i)\burl\s*\(")
-        self.assertNotRegex(self.css, r"(?i)https?://|javascript:")
+        # The print-only href prefix selector intentionally contains "https://";
+        # dependency-bearing imports and url() values are rejected above.
+        self.assertNotRegex(self.css, r"(?i)javascript:")
         self.assertLess(len(self.raw_css), 32_768)
 
     def test_has_balanced_comments_and_braces(self) -> None:
