@@ -5,6 +5,12 @@ from pathlib import Path
 import re
 import unittest
 
+from curriculum_builder.css_safety import (
+    MAX_STYLESHEET_BYTES,
+    validate_stylesheet_bytes,
+)
+from curriculum_builder.errors import CurriculumValidationError
+
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 STYLESHEET_PATH = REPOSITORY_ROOT / "static" / "styles.css"
@@ -21,23 +27,6 @@ _HEX_COLOR = re.compile(r"#[0-9a-fA-F]{6}\Z")
 _CUSTOM_PROPERTY = re.compile(
     r"(?m)^\s*(--[a-z0-9-]+)\s*:\s*([^;]+);"
 )
-_RESOURCE_IMAGE_FUNCTION = re.compile(
-    r"(?i)(?<![a-z0-9_-])(?:(?:-webkit-)?image(?:-set)?|src)\s*\("
-)
-
-
-def _assert_local_only_css(css: str) -> None:
-    forbidden_patterns = (
-        r"(?i)@import\b",
-        r"(?i)\burl\s*\(",
-        r"(?i)@font-face\b",
-        r"(?i)javascript:",
-    )
-    if "\\" in css or any(
-        re.search(pattern, css) is not None
-        for pattern in forbidden_patterns
-    ) or _RESOURCE_IMAGE_FUNCTION.search(css) is not None:
-        raise AssertionError("local-only CSS contains a forbidden resource syntax")
 
 
 def _consume_css_escape(css: str, index: int) -> int:
@@ -263,46 +252,74 @@ class StyleContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.raw_css = STYLESHEET_PATH.read_bytes()
-        cls.css = cls.raw_css.decode("utf-8")
+        cls.css = validate_stylesheet_bytes(cls.raw_css)
         cls.properties = {
             name: value.strip()
             for name, value in _CUSTOM_PROPERTY.findall(cls.css)
         }
 
     def test_is_local_dependency_free_utf8_css(self) -> None:
-        self.assertEqual(self.raw_css.decode("utf-8").encode("utf-8"), self.raw_css)
-        self.assertNotIn("\x00", self.css)
-        self.assertFalse(
-            any(
-                ord(character) < 0x20 and character not in "\n\r\t"
-                for character in self.css
-            )
-        )
-        self.assertNotRegex(self.css, r"(?i)@import\b")
-        self.assertNotRegex(self.css, r"(?i)\burl\s*\(")
         # The print-only href prefix selector intentionally contains "https://";
-        # dependency-bearing imports and url() values are rejected above.
-        self.assertNotRegex(self.css, r"(?i)javascript:")
+        # the production validator rejects resource-bearing syntax instead of
+        # banning inert HTTPS text.
+        self.assertIn('a[href^="https://"]::after', self.css)
         self.assertLess(len(self.raw_css), 32_768)
-        _assert_local_only_css(self.css)
-        for resource_function in (
-            'image-set("https://evil.example/a.png" 1x)',
-            '-webkit-image-set("https://evil.example/a.png" 1x)',
-            'image("https://evil.example/a.png")',
-            'src("https://evil.example/a.png")',
-            "src(var(--remote))",
-            r'@\69mport "https://evil.example/a.css";',
-            r'a { background: u\72l("https://evil.example/a.png"); }',
-            r'a { background: i\6d age-set("https://evil.example/a.png" 1x); }',
-        ):
-            with self.subTest(resource_function=resource_function):
+        self.assertEqual(
+            validate_stylesheet_bytes(self.raw_css),
+            self.css,
+        )
+
+    def test_production_validator_rejects_resource_and_encoding_mutations(
+        self,
+    ) -> None:
+        malicious_sources = (
+            b'@import "https://evil.example/a.css";',
+            b'a { background: url("https://evil.example/a.png"); }',
+            b"@font-face { font-family: evil; src: local(evil); }",
+            b'a { color: javascript:alert(1); }',
+            b'a { background: image-set("https://evil.example/a.png" 1x); }',
+            b'a { background: -webkit-image-set("evil.png" 1x); }',
+            b'a { background: image("evil.png"); }',
+            b"a { background: src(var(--remote)); }",
+            b'/* @import "https://evil.example/a.css"; */',
+            b'a::after { content: "url(https://evil.example/a.png)"; }',
+            rb'@\69mport "https://evil.example/a.css";',
+            rb'a { background: u\72l("https://evil.example/a.png"); }',
+            rb'a { background: i\6d age-set("evil.png" 1x); }',
+            b"a { color: red; }\x00",
+            b"a { color: red; }\x01",
+            b"\xff",
+        )
+        for malicious_source in malicious_sources:
+            with self.subTest(source=malicious_source):
                 with self.assertRaisesRegex(
-                    AssertionError,
-                    "local-only CSS",
+                    CurriculumValidationError,
+                    "styles.css",
                 ):
-                    _assert_local_only_css(
-                        f"{self.css}\na {{ background-image: {resource_function}; }}"
-                    )
+                    validate_stylesheet_bytes(malicious_source)
+
+        class BytesSubclass(bytes):
+            pass
+
+        for invalid_type in (
+            bytearray(b"a {}"),
+            memoryview(b"a {}"),
+            BytesSubclass(b"a {}"),
+        ):
+            with self.subTest(invalid_type=type(invalid_type).__name__):
+                with self.assertRaisesRegex(
+                    CurriculumValidationError,
+                    "exact bytes",
+                ):
+                    validate_stylesheet_bytes(invalid_type)  # type: ignore[arg-type]
+
+        with self.assertRaisesRegex(
+            CurriculumValidationError,
+            "maximum byte count",
+        ):
+            validate_stylesheet_bytes(
+                b"a" * (MAX_STYLESHEET_BYTES + 1)
+            )
 
     def test_has_balanced_comments_and_braces(self) -> None:
         _scan_css_structure(self.css)

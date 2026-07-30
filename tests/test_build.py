@@ -676,6 +676,33 @@ class BuildInputValidationTests(unittest.TestCase):
             ):
                 build_site(content, templates, static_root, root / "site")
 
+        with _fixture() as (root, content, templates, static_root):
+            output = root / "site"
+            output.mkdir()
+            (output / "sentinel.txt").write_text("old", encoding="utf-8")
+            (static_root / "styles.css").write_bytes(
+                b'a { background: url("https://evil.example/a.png"); }'
+            )
+            with self.assertRaisesRegex(
+                CurriculumValidationError,
+                "styles.css",
+            ):
+                build_site(
+                    content,
+                    templates,
+                    static_root,
+                    output,
+                )
+
+            self.assertEqual(
+                (output / "sentinel.txt").read_text(),
+                "old",
+            )
+            self.assertEqual(
+                list(root.glob(".site.staging-*")),
+                [],
+            )
+
         with _fixture() as (_, __, ___, static_root):
             with _open_trusted_directory(
                 static_root,
