@@ -491,7 +491,7 @@ git commit -m "feat: preserve 1140 items in canonical catalog"
 
 - [ ] **Step 1: Write graph behavior tests**
 
-Write the 20 Task 5 tests in `tests/test_graph.py`. They form the public graph
+Write the 26 Task 5 tests in `tests/test_graph.py`. They form the public graph
 contract and cover:
 
 - Sorted parallel stages returned as an immutable tuple of tuples.
@@ -503,11 +503,20 @@ contract and cover:
   mapping keys, string or non-iterable dependency collections, non-string,
   empty, or whitespace-padded dependency IDs, duplicate dependencies, and
   explicit self-dependencies.
-- Single consumption of generator-based node and dependency inputs.
+- Exact built-in `str` identifiers, including controlled rejection of
+  unhashable `str` subclasses in node, key, and dependency positions.
+- Single consumption of generator-based node and dependency inputs, plus a
+  one-time `items()` snapshot of the prerequisite mapping.
+- Deterministic invalid-value rendering that calls each `repr` once and
+  converts a failing `repr` into `CurriculumValidationError`.
+- Edge-driven Kahn staging of a 1,024-node chain without per-stage scans of all
+  unresolved nodes.
 - Results independent of node, dependency, and mapping insertion order.
 - No input mutation, immutable output, and the empty-graph result.
 - The checked-in roadmap's strict version 1 root and node schemas, four unique
-  IDs, exact initial titles and prerequisites, and expected topological stages.
+  IDs, exact initial titles and prerequisites, and expected topological stages,
+  including successful validation when the test runs outside the repository
+  working directory.
 
 Use `strict_json_loads` for the checked-in roadmap test so duplicate JSON keys
 cannot bypass the schema assertions. Keep the graph API independent from the
@@ -529,16 +538,21 @@ Implement the validated contract in `curriculum_builder/graph.py`; the source
 file is canonical, so do not duplicate its complete implementation in this
 plan. The implementation must:
 
-1. Materialize `node_ids` exactly once, validate the original sequence, and
-   reject duplicate IDs before creating any set-like lookup structure.
-2. Validate the prerequisite mapping's type and all keys before reading
-   dependency collections.
+1. Materialize `node_ids` exactly once, require exact built-in `str` values,
+   and reject duplicate IDs before creating any set-like lookup structure.
+2. Snapshot the prerequisite mapping through one `items()` call, then validate
+   and use only that snapshot; never iterate, query, or index the original
+   mapping again.
 3. Materialize each dependency iterable exactly once in sorted node order,
-   validate its original sequence, and reject duplicates before converting it
-   to a `frozenset`.
-4. Reject self-references and missing nodes with sorted messages.
-5. Run Kahn staging and sort each ready stage and unresolved cycle report.
-6. Return a tuple of tuples without mutating caller-owned inputs.
+   require exact built-in `str` values, validate its original sequence, and
+   reject duplicates before converting it to a `frozenset`.
+4. Render invalid values once before sorting their rendered forms. Replace
+   failures from adversarial `repr` methods with a stable type-name placeholder.
+5. Reject self-references and missing nodes with sorted messages.
+6. Build indegrees and prerequisite-to-dependent reverse adjacency, then run
+   edge-driven Kahn staging so each outgoing edge is updated once. Sort each
+   ready stage and the complete unresolved cycle report.
+7. Return a tuple of tuples without mutating caller-owned inputs.
 
 Sorting is a reproducibility requirement: generated HTML and CSS graph
 placement must not inherit set, generator, or mapping insertion order.
@@ -563,7 +577,7 @@ Run:
 python3.13 -m unittest tests.test_graph -v
 ```
 
-Expected at Task 5 completion: all 20 graph and checked-in roadmap contract
+Expected at Task 5 completion: all 26 graph and checked-in roadmap contract
 tests pass. The count documents this task's reviewed baseline; later roadmap
 expansion may add or deliberately replace acceptance tests.
 
