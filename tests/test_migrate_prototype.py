@@ -75,7 +75,7 @@ class PrototypeMigrationTests(unittest.TestCase):
             self._write_fixture(root)
             archive = root / ".archive" / "prototype-v1"
 
-            with patch("tools.migrate_prototype.shutil.copy2", side_effect=OSError("copy failed")):
+            with patch("tools.migrate_prototype._copy_allowlisted_tree", side_effect=OSError("copy failed")):
                 with self.assertRaisesRegex(OSError, "copy failed"):
                     preserve_prototype(root, archive)
 
@@ -222,7 +222,7 @@ class PrototypeMigrationTests(unittest.TestCase):
             archive_parent = root / ".archive"
             archive = archive_parent / "prototype-v1"
 
-            with patch("tools.migrate_prototype.shutil.copy2", side_effect=OSError("copy failed")):
+            with patch("tools.migrate_prototype._copy_allowlisted_tree", side_effect=OSError("copy failed")):
                 with self.assertRaisesRegex(OSError, "copy failed"):
                     preserve_prototype(root, archive)
 
@@ -241,7 +241,7 @@ class PrototypeMigrationTests(unittest.TestCase):
                     raise OSError("parent cleanup failed")
                 real_rmdir(path)
 
-            with patch("tools.migrate_prototype.shutil.copy2", side_effect=OSError("copy failed")):
+            with patch("tools.migrate_prototype._copy_allowlisted_tree", side_effect=OSError("copy failed")):
                 with patch.object(Path, "rmdir", autospec=True, side_effect=fail_parent_cleanup):
                     with self.assertRaisesRegex(RuntimeError, "parent cleanup failed") as error:
                         preserve_prototype(root, archive)
@@ -303,6 +303,19 @@ class PrototypeMigrationTests(unittest.TestCase):
 
             with patch.object(Path, "mkdir", autospec=True, side_effect=fail_second_level):
                 with self.assertRaisesRegex(OSError, "second parent mkdir failed"):
+                    preserve_prototype(root, archive)
+
+            self.assertFalse(archive_parent.exists())
+
+    def test_parent_fd_open_failure_rolls_back_new_parents(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            self._write_fixture(root)
+            archive_parent = root / ".archive"
+            archive = archive_parent / "nested" / "prototype-v1"
+
+            with patch("tools.migrate_prototype._open_directory_fd", side_effect=OSError("open failed")):
+                with self.assertRaisesRegex(OSError, "open failed"):
                     preserve_prototype(root, archive)
 
             self.assertFalse(archive_parent.exists())

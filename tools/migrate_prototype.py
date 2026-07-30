@@ -258,27 +258,91 @@ def _snapshot(root: Path) -> dict[str, FileSnapshot]:
     }
 
 
-def _copy_allowlisted_tree(source: Path, staging: Path) -> None:
-    def copy_node(origin: Path, destination: Path) -> None:
+def _copy_allowlisted_tree(source: Path, staging_fd: int) -> None:
+    def copy_node(origin: Path, destination_fd: int, name: str) -> None:
         mode = os.lstat(origin).st_mode
         if stat.S_ISREG(mode):
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(origin, destination)
+            output = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=destination_fd)
+            try:
+                with origin.open("rb") as input_file, os.fdopen(output, "wb") as output_file:
+                    while chunk := input_file.read(_CHUNK_SIZE):
+                        output_file.write(chunk)
+            except BaseException:
+                try:
+                    os.close(output)
+                except OSError:
+                    pass
+                raise
             return
         if not stat.S_ISDIR(mode):
             raise _unsupported(origin, mode)
-        destination.mkdir()
-        with os.scandir(origin) as entries:
-            for entry in entries:
-                copy_node(Path(entry.path), destination / entry.name)
+        os.mkdir(name, mode=0o700, dir_fd=destination_fd)
+        child_fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=destination_fd)
+        try:
+            for entry in os.scandir(origin):
+                copy_node(Path(entry.path), child_fd, entry.name)
+        finally:
+            os.close(child_fd)
 
     for relative_path in LEGACY_PATHS:
         origin = source / relative_path
         if _lexists(origin):
-            copy_node(origin, staging / relative_path)
+            copy_node(origin, staging_fd, relative_path)
 
 
-def _write_manifest(archive: Path, snapshot: dict[str, FileSnapshot]) -> PrototypeManifest:
+def _snapshot_fd(root_fd: int) -> dict[str, FileSnapshot]:
+    result: dict[str, FileSnapshot] = {}
+
+    def walk(directory_fd: int, prefix: str) -> None:
+        for entry in os.scandir(directory_fd):
+            relative = f"{prefix}/{entry.name}" if prefix else entry.name
+            mode = entry.stat(follow_symlinks=False).st_mode
+            if stat.S_ISREG(mode):
+                descriptor = os.open(entry.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_fd)
+                try:
+                    digest = hashlib.sha256()
+                    count = 0
+                    while chunk := os.read(descriptor, _CHUNK_SIZE):
+                        digest.update(chunk)
+                        count += len(chunk)
+                finally:
+                    os.close(descriptor)
+                result[relative] = {"sha256": digest.hexdigest(), "byteCount": count}
+            elif stat.S_ISDIR(mode):
+                child = os.open(entry.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory_fd)
+                try:
+                    walk(child, relative)
+                finally:
+                    os.close(child)
+            else:
+                raise _unsupported(Path(relative), mode)
+
+    for name in LEGACY_PATHS:
+        try:
+            node = os.stat(name, dir_fd=root_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            continue
+        if stat.S_ISREG(node.st_mode):
+            descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=root_fd)
+            try:
+                digest = hashlib.sha256(); count = 0
+                while chunk := os.read(descriptor, _CHUNK_SIZE):
+                    digest.update(chunk); count += len(chunk)
+            finally:
+                os.close(descriptor)
+            result[name] = {"sha256": digest.hexdigest(), "byteCount": count}
+        elif stat.S_ISDIR(node.st_mode):
+            child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root_fd)
+            try:
+                walk(child, name)
+            finally:
+                os.close(child)
+        else:
+            raise _unsupported(Path(name), node.st_mode)
+    return dict(sorted(result.items()))
+
+
+def _write_manifest(archive_fd: int, snapshot: dict[str, FileSnapshot]) -> PrototypeManifest:
     checksums = {path: record["sha256"] for path, record in snapshot.items()}
     manifest: PrototypeManifest = {
         "algorithm": "sha256",
@@ -286,11 +350,11 @@ def _write_manifest(archive: Path, snapshot: dict[str, FileSnapshot]) -> Prototy
         "byteCount": sum(record["byteCount"] for record in snapshot.values()),
         "files": checksums,
     }
-    temporary_manifest = archive / ".manifest.json.tmp"
     descriptor = os.open(
-        temporary_manifest,
+        ".manifest.json.tmp",
         os.O_WRONLY | os.O_CREAT | os.O_EXCL,
         0o600,
+        dir_fd=archive_fd,
     )
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as file:
@@ -306,12 +370,8 @@ def _write_manifest(archive: Path, snapshot: dict[str, FileSnapshot]) -> Prototy
         raise
     # Make archive entries and the temp manifest durable before rename. The rename is the
     # completion marker: if power loss loses it, no manifest means safely incomplete.
-    directory_descriptor = os.open(archive, os.O_RDONLY)
-    try:
-        os.fsync(directory_descriptor)
-    finally:
-        os.close(directory_descriptor)
-    os.replace(temporary_manifest, archive / "manifest.json")
+    os.fsync(archive_fd)
+    os.replace(".manifest.json.tmp", "manifest.json", src_dir_fd=archive_fd, dst_dir_fd=archive_fd)
     return manifest
 
 
@@ -325,7 +385,11 @@ def preserve_prototype(source: Path, archive: Path) -> PrototypeManifest:
     raw_archive = _archive_path(source_path, archive)
     canonical_parent, created_parents = _create_archive_parent(raw_archive.parent)
     archive_path = canonical_parent / raw_archive.name
-    parent_fd = _open_directory_fd(canonical_parent)
+    try:
+        parent_fd = _open_directory_fd(canonical_parent)
+    except BaseException:
+        _cleanup_created_parents(created_parents)
+        raise
     try:
         _reserve_archive_at(parent_fd, raw_archive.name)
     except BaseException:
@@ -335,32 +399,31 @@ def preserve_prototype(source: Path, archive: Path) -> PrototypeManifest:
         os.close(parent_fd)
         raise
     archive_fd: int | None = None
-    cwd_fd: int | None = None
+    staging_fd: int | None = None
+    committed = False
     try:
-        archive_fd = os.open(
-            raw_archive.name,
-            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
-            dir_fd=parent_fd,
-        )
-        cwd_fd = os.open(".", os.O_RDONLY)
-        os.fchdir(archive_fd)
-        archive_path = Path(".")
-        staging = Path(f".staging-{uuid.uuid4().hex}")
-        staging.mkdir(mode=0o700)
-        _copy_allowlisted_tree(source_path, staging)
-        staged = _snapshot(staging)
+        archive_fd = os.open(raw_archive.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd)
+        staging_name = f".staging-{uuid.uuid4().hex}"
+        os.mkdir(staging_name, mode=0o700, dir_fd=archive_fd)
+        staging_fd = os.open(staging_name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=archive_fd)
+        _copy_allowlisted_tree(source_path, staging_fd)
+        staged = _snapshot_fd(staging_fd)
         current = _snapshot(source_path)
         if initial != staged or initial != current:
             raise RuntimeError("prototype checksum verification failed")
         for relative_path in LEGACY_PATHS:
-            staged_path = staging / relative_path
-            if _lexists(staged_path):
-                os.replace(staged_path, archive_path / relative_path)
-        staging.rmdir()
-        archived = _snapshot(archive_path)
-        if initial != archived:
+            try:
+                os.stat(relative_path, dir_fd=staging_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                continue
+            os.replace(relative_path, relative_path, src_dir_fd=staging_fd, dst_dir_fd=archive_fd)
+        os.close(staging_fd)
+        staging_fd = None
+        os.rmdir(staging_name, dir_fd=archive_fd)
+        if initial != _snapshot_fd(archive_fd):
             raise RuntimeError("prototype checksum verification failed")
-        manifest = _write_manifest(archive_path, initial)
+        manifest = _write_manifest(archive_fd, initial)
+        committed = True
     except BaseException as operation_error:
         try:
             if archive_fd is None:
@@ -380,12 +443,13 @@ def preserve_prototype(source: Path, archive: Path) -> PrototypeManifest:
             ) from operation_error
         raise
     finally:
-        if cwd_fd is not None:
-            os.fchdir(cwd_fd)
-            os.close(cwd_fd)
-        if archive_fd is not None:
-            os.close(archive_fd)
-        os.close(parent_fd)
+        # Manifest rename is the durable commit point; later close errors cannot reverse success.
+        for descriptor in (staging_fd, archive_fd, parent_fd):
+            if descriptor is not None:
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
 
     # The original is deliberately retained: a later, separately reviewed retirement task can clean it safely.
     return manifest
