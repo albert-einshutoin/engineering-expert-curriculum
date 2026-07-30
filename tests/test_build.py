@@ -34,16 +34,10 @@ from curriculum_builder.catalog import (
     serialize_catalog_document,
 )
 from curriculum_builder.errors import CurriculumValidationError
+from curriculum_builder.lesson_rendering import load_lessons_from_root
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-FOUNDATION_SOURCE_COUNTS = {
-    "core-01-systems-tradeoffs": 3,
-    "core-02-algorithms-measurement": 4,
-    "core-03-architecture-memory-caches": 3,
-    "core-04-os-processes-concurrency": 4,
-    "core-05-networks-latency-failure": 5,
-}
 
 
 @contextmanager
@@ -319,7 +313,11 @@ class BuildAcceptanceTests(unittest.TestCase):
                 output_root=output,
             )
 
-            _assert_static_site(self, output, FOUNDATION_SOURCE_COUNTS)
+            _assert_static_site(
+                self,
+                output,
+                _repository_lesson_source_counts(),
+            )
             catalog = (output / "catalog/index.html").read_text(
                 encoding="utf-8"
             )
@@ -372,7 +370,7 @@ class BuildAcceptanceTests(unittest.TestCase):
             first_bytes = _assert_static_site(
                 self,
                 output,
-                FOUNDATION_SOURCE_COUNTS,
+                _repository_lesson_source_counts(),
             )
             first_metadata = {
                 path.relative_to(output): (
@@ -391,7 +389,7 @@ class BuildAcceptanceTests(unittest.TestCase):
             second_bytes = _assert_static_site(
                 self,
                 output,
-                FOUNDATION_SOURCE_COUNTS,
+                _repository_lesson_source_counts(),
             )
             second_metadata = {
                 path.relative_to(output): (
@@ -451,7 +449,11 @@ class BuildAcceptanceTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn(str(output), result.stdout)
-            _assert_static_site(self, output, FOUNDATION_SOURCE_COUNTS)
+            _assert_static_site(
+                self,
+                output,
+                _repository_lesson_source_counts(),
+            )
 
     def test_cli_rejects_control_characters_without_log_injection(
         self,
