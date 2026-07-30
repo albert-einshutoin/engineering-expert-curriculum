@@ -122,7 +122,10 @@ class StyleContractTests(unittest.TestCase):
             "--color-accent",
             "--color-warm",
             "--color-success",
+            "--color-warning",
             "--color-focus",
+            "--color-print-ink",
+            "--color-print-muted",
             "--space-1",
             "--space-2",
             "--space-3",
@@ -130,6 +133,8 @@ class StyleContractTests(unittest.TestCase):
             "--space-5",
             "--measure-reading",
             "--measure-wide",
+            "--border-strong",
+            "--shadow-card",
             "--focus-ring",
         }
         self.assertTrue(required_tokens <= self.properties.keys())
@@ -167,6 +172,9 @@ class StyleContractTests(unittest.TestCase):
             "muted on surface": ("--color-muted", "--color-surface", 4.5),
             "focus on paper": ("--color-focus", "--color-paper", 3.0),
             "connector on paper": ("--color-warm", "--color-paper", 3.0),
+            "border on paper": ("--color-border", "--color-paper", 3.0),
+            "success on paper": ("--color-success", "--color-paper", 4.5),
+            "warning on paper": ("--color-warning", "--color-paper", 4.5),
         }
         for label, (foreground, background, minimum) in pairs.items():
             with self.subTest(label=label):
@@ -264,13 +272,15 @@ class StyleContractTests(unittest.TestCase):
         self.assertIn(".learning-stage::before", self.css)
         self.assertIn("counter-increment: learning-stage", self.css)
         self.assertIn('content: counter(learning-stage)', self.css)
-        self.assertIn(".learning-stage:not(:last-child)::after", self.css)
-        self.assertIn("pointer-events: none", self.css)
-        self.assertRegex(
+        connector = re.search(
+            r"\.learning-stage:not\(:last-child\)::after\s*\{(?P<body>[^}]*)\}",
             self.css,
-            r"\.learning-stage:not\(:last-child\)::after\s*\{[^}]*"
-            r"border(?:-block-start|-top):",
         )
+        self.assertIsNotNone(connector)
+        connector_body = connector.group("body") if connector is not None else ""
+        self.assertRegex(connector_body, r'content:\s*""')
+        self.assertRegex(connector_body, r"pointer-events:\s*none")
+        self.assertRegex(connector_body, r"border(?:-block-start|-top):")
         self.assertIn("linear-gradient(", self.css)
         self.assertNotRegex(self.css, r"(?i)@keyframes\b|animation\s*:|transition\s*:")
 
