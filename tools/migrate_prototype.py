@@ -83,6 +83,10 @@ class PrototypeManifest(TypedDict):
     files: dict[str, str]
 
 
+class PrototypePublicationDurabilityError(RuntimeError):
+    """The final archive was published, but parent-directory durability is unknown."""
+
+
 def _lexists(path: Path) -> bool:
     return os.path.lexists(path)
 
@@ -514,6 +518,12 @@ def _publish_verified_archive(
         manifest = _build_verified_archive(source_path, staging_fd, initial)
         _rename_directory_noreplace(parent_fd, staging_name, target_name)
         published = True
+        try:
+            _fsync_fd(parent_fd, "archive parent after native publish")
+        except OSError as error:
+            raise PrototypePublicationDurabilityError(
+                "archive published but parent-directory fsync failed"
+            ) from error
         return manifest
     except BaseException as operation_error:
         if not published:
@@ -552,6 +562,10 @@ def preserve_prototype(source: Path, archive: Path) -> PrototypeManifest:
     try:
         manifest = _publish_verified_archive(source_path, parent_fd, raw_archive.name, initial)
         completed = True
+    except PrototypePublicationDurabilityError:
+        # The final archive already exists; parent close failures cannot replace this durability signal.
+        completed = True
+        raise
     finally:
         # Native publish is the commit point; later parent-descriptor close errors cannot reverse it.
         close_failures = _close_all((parent_fd,))

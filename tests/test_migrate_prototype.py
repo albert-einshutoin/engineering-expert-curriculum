@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 from tools.migrate_prototype import (
     LEGACY_PATHS,
+    PrototypePublicationDurabilityError,
     _build_verified_archive,
     _clear_directory_fd,
     _copy_allowlisted_tree,
@@ -548,8 +549,33 @@ class PrototypeMigrationTests(unittest.TestCase):
                     "manifest rename",
                     "staging root after manifest rename",
                     "native publish",
+                    "archive parent after native publish",
                 ],
             )
+
+    def test_parent_fsync_failure_after_native_publish_reports_durability_unknown_without_rollback(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            self._write_fixture(root)
+            archive = root / ".archive" / "prototype-v1"
+
+            def fail_parent_fsync(descriptor: int, purpose: str) -> None:
+                if purpose == "archive parent after native publish":
+                    raise OSError("parent fsync failed")
+
+            with patch("tools.migrate_prototype._fsync_fd", side_effect=fail_parent_fsync):
+                with patch("tools.migrate_prototype._remove_owned_directory") as remove_owned:
+                    with self.assertRaises(PrototypePublicationDurabilityError) as error:
+                        preserve_prototype(root, archive)
+
+            self.assertIsInstance(error.exception.__cause__, OSError)
+            self.assertEqual(str(error.exception.__cause__), "parent fsync failed")
+            remove_owned.assert_not_called()
+            self.assertTrue((archive / "manifest.json").exists())
+            self.assertTrue((archive / "index.html").exists())
+            self.assertEqual(list((root / ".archive").glob(".prototype-staging-*")), [])
+            self.assertTrue((root / "index.html").exists())
+            self.assertTrue((root / ".archive").exists())
 
     def test_post_manifest_rename_fsync_failure_cleans_private_staging_without_final_archive(self) -> None:
         with TemporaryDirectory() as directory:
