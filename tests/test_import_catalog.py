@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -34,6 +35,25 @@ def legacy_source(lessons: list[dict[str, object]]) -> dict[str, object]:
 
 
 class CatalogImportTests(unittest.TestCase):
+    def test_cli_imports_complete_fixture_with_its_actual_source_hash(self) -> None:
+        domains: list[dict[str, object]] = []; lessons: list[dict[str, object]] = []
+        for domain_id in range(1, 39):
+            modules: list[dict[str, object]] = []
+            for module_index in range(1, 11):
+                title, concepts, outcome = f"Module {module_index}", ["concept"], "Outcome"
+                modules.append({"index": module_index, "title": title, "concepts": concepts, "outcome": outcome})
+                for level in range(1, 4):
+                    lessons.append({"id": f"D{domain_id:02}-M{module_index:02}-L{level}", "title": f"Lesson {level}", "domainId": domain_id, "domainTitle": f"Domain {domain_id}", "domainSlug": f"domain-{domain_id}", "moduleIndex": module_index, "moduleTitle": title, "level": level, "levelLabel": f"Level {level}", "concepts": concepts, "outcome": outcome, "path": f"legacy/{domain_id}/{module_index}/{level}.html"})
+            domains.append({"id": domain_id, "slug": f"domain-{domain_id}", "title": f"Domain {domain_id}", "description": "Description", "prerequisites": [], "modules": modules})
+        source_document = {"version": 1, "title": "Fixture", "generated": "fixture", "domainCount": 38, "moduleCount": 380, "lessonCount": 1140, "tracks": {}, "domains": domains, "lessons": lessons}
+        with TemporaryDirectory(dir=Path.cwd()) as directory:
+            root = Path(directory); root.chmod(0o700); source, output = root / "input.json", root / "catalog.json"
+            raw = json.dumps(source_document, ensure_ascii=False, separators=(",", ":")).encode("utf-8"); source.write_bytes(raw); expected = hashlib.sha256(raw).hexdigest()
+            self.assertEqual(main(["--input", str(source), "--output", str(output), "--expected-source-sha256", expected]), 0)
+            result = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result["sourceSha256"], expected); self.assertEqual(len(result["items"]), 1140); self.assertEqual(len({item["domainId"] for item in result["items"]}), 38)
+            self.assertEqual([item["id"] for item in result["items"]], sorted(item["id"] for item in result["items"])); self.assertEqual(output.stat().st_mode & 0o777, 0o644)
+            self.assertEqual(source.read_bytes(), raw); self.assertEqual(list(root.glob(".catalog-*.tmp")), [])
     def test_writer_fchmod_and_file_fsync_fail_before_publish(self) -> None:
         document = {"version": 1, "generatedFrom": "source", "sourceSha256": "a55a0d0b1cfa3773031e787c2ce7ca0df34534e16a70b65ed1baa91975c82da8", "items": [{**lesson(), "coreLessonId": None}]}; document["items"][0].pop("path")
         for target in ("fchmod", "fsync"):
