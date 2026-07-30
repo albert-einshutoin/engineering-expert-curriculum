@@ -426,6 +426,13 @@ class CoreTrackTests(unittest.TestCase):
         self.assertIs(type(document), dict)
         return document
 
+    def pre_code_blocks(self, lesson_id: str) -> list[str]:
+        body = self.body_path(lesson_id).read_text(encoding="utf-8")
+        parser = _PreCodeParser()
+        parser.feed(body)
+        parser.close()
+        return parser.blocks
+
     def assert_body_contract(self, body: str, lesson_id: str) -> None:
         parser = _BodyContractParser()
         parser.feed(body)
@@ -860,11 +867,20 @@ class CoreTrackTests(unittest.TestCase):
         self.assertIn("isAlive()", body)
         self.assertIn("System.nanoTime()", body)
         self.assertIn("expected=%d final=%d min=%d violations=%d", body)
+        self.assertIn("minimumStock", body)
+        self.assertIn("elapsedNsSamples", body)
+        self.assertIn("elapsed_ns_median", body)
+        self.assertIn("process-message", body)
+        self.assertIn("ProcessBuilder", body)
+        self.assertIn("destroyForcibly()", body)
+        self.assertIn("dedupe_prevented", body)
+        self.assertIn("failure_radius", body)
         self.assertIn(
             "A:read(1000),B:read(1000),A:write(500),B:write(500)",
             body,
         )
         self.assertIn("java RaceLab serial", body)
+        self.assertIn("java RaceLab process-message", body)
         self.assertNotIn("Thread.yield()", body)
 
         mutated = safety_pattern.sub(
@@ -877,6 +893,105 @@ class CoreTrackTests(unittest.TestCase):
             "Regex didn't match",
         ):
             self.assertRegex(mutated, safety_pattern)
+
+    def test_concurrency_java21_harness_executes_when_configured(self) -> None:
+        java_home_text = os.environ.get("CURRICULUM_JAVA21_HOME")
+        if java_home_text is None:
+            # Static contracts above remain mandatory on machines without a
+            # JDK; CI or a local evidence run can opt into execution.
+            return
+
+        java_home = Path(java_home_text)
+        javac = java_home / "bin" / "javac"
+        java = java_home / "bin" / "java"
+        self.assertTrue(javac.is_file(), javac)
+        self.assertTrue(java.is_file(), java)
+        version = subprocess.run(
+            [java, "--version"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertEqual(version.returncode, 0, version.stderr)
+        self.assertRegex(version.stdout, r"(?m)^openjdk 21(?:\.|\s)")
+
+        blocks = self.pre_code_blocks(
+            "core-04-os-processes-concurrency"
+        )
+        matching = [
+            block
+            for block in blocks
+            if "public final class RaceLab" in block
+        ]
+        self.assertEqual(len(matching), 1)
+        with TemporaryDirectory() as directory:
+            source = Path(directory) / "RaceLab.java"
+            source.write_text(matching[0], encoding="utf-8")
+            compiled = subprocess.run(
+                [javac, "--release", "21", source.name],
+                cwd=directory,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
+
+            reports: dict[str, dict[str, object]] = {}
+            for mode in (
+                "racy",
+                "synchronized",
+                "serial",
+                "process-message",
+            ):
+                executed = subprocess.run(
+                    [java, "RaceLab", mode],
+                    cwd=directory,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                self.assertEqual(
+                    executed.returncode,
+                    0,
+                    f"{mode}: {executed.stderr}\n{executed.stdout}",
+                )
+                try:
+                    report = json.loads(executed.stdout.splitlines()[-1])
+                except (IndexError, json.JSONDecodeError) as error:
+                    self.fail(f"{mode}: invalid final JSON line: {error}")
+                self.assertEqual(report["mode"], mode)
+                reports[mode] = report
+
+        for mode in ("racy", "synchronized", "serial"):
+            report = reports[mode]
+            self.assertEqual(report["trials"], 200)
+            self.assertGreaterEqual(report["minimum_stock"], 0)
+            elapsed = report["elapsed_ns"]
+            self.assertEqual(len(elapsed["samples"]), 200)
+            self.assertLessEqual(elapsed["min"], elapsed["median"])
+            self.assertLessEqual(elapsed["median"], elapsed["max"])
+        self.assertEqual(reports["racy"]["violations"], 200)
+        self.assertEqual(reports["synchronized"]["violations"], 0)
+        self.assertEqual(reports["serial"]["violations"], 0)
+
+        process_report = reports["process-message"]
+        self.assertEqual(
+            process_report["trial_scope"],
+            "single-owner-session-not-200-thread-trials",
+        )
+        self.assertEqual(process_report["final_stock"], 0)
+        self.assertEqual(process_report["minimum_stock"], 0)
+        self.assertEqual(process_report["dedupe_prevented"], 1)
+        self.assertEqual(process_report["child_exit"], 0)
+        self.assertTrue(process_report["forced_cleanup"])
+        self.assertTrue(process_report["parent_continued"])
+        self.assertEqual(
+            process_report["failure_radius"],
+            "owner-child-process",
+        )
 
     def test_network_harness_covers_every_lab_step_without_network(
         self,
@@ -911,6 +1026,33 @@ class CoreTrackTests(unittest.TestCase):
             report["faults"]["dependency_delay_ms"],
             report["baseline_median_ms"],
         )
-        self.assertEqual(report["faults"]["connection_failure"], "observed")
         self.assertEqual(report["non_idempotent"]["automatic_retry"], "stopped")
         self.assertEqual(report["non_idempotent"]["lookup_result"], "applied")
+
+        security = report["protocol_security"]
+        self.assertEqual(security["max_line_bytes"], 256)
+        self.assertLessEqual(security["socket_deadline_ms"], 1000)
+        self.assertEqual(
+            security["rejections"],
+            {
+                "unterminated": "newline_required",
+                "oversized": "line_too_long",
+                "timeout": "receive_timeout",
+                "invalid_id": "invalid_request_id",
+                "excessive_delay": "invalid_delay_ms",
+                "invalid_arity": "invalid_arity",
+                "invalid_mode": "invalid_mode",
+            },
+        )
+        self.assertEqual(
+            report["faults"]["connection_failure"],
+            "injected_before_socket_creation",
+        )
+        self.assertEqual(report["faults"]["real_connector_calls"], 0)
+        self.assertEqual(
+            report["cleanup"]["injected_exception"],
+            "observed",
+        )
+        self.assertTrue(report["cleanup"]["server_stopped"])
+        self.assertFalse(report["cleanup"]["thread_alive"])
+        self.assertTrue(report["cleanup"]["listener_closed"])
