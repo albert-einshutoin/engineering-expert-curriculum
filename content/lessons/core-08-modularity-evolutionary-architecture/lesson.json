@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "id": "core-08-modularity-architecture-decisions",
+  "id": "core-08-modularity-evolutionary-architecture",
   "title": "変更理由でモジュール境界を設計しADRで更新する",
   "summary": "同時に変わる知識を隠蔽し、依存方向と複数viewを検証可能なADRへ記録する。",
   "track": "build",
@@ -9,7 +9,7 @@
   "estimatedMinutes": 280,
   "prerequisiteIds": [
     "core-06-requirements-domain-modeling",
-    "core-07-api-contracts-evolution"
+    "core-07-api-contract-design"
   ],
   "objectives": [
     {

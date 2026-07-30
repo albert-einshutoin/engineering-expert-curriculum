@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "id": "core-09-testing-strategy-tdd",
+  "id": "core-09-test-strategy-tdd",
   "title": "TDDとリスク別テスト戦略で変更を証明する",
   "summary": "RED-GREEN-REFACTORを実行履歴として残し、単体・統合・契約・性質・メタモルフィックテストを失敗リスクへ割り当てる。",
   "track": "build",
@@ -9,7 +9,7 @@
   "estimatedMinutes": 300,
   "prerequisiteIds": [
     "core-02-algorithms-measurement",
-    "core-08-modularity-architecture-decisions"
+    "core-08-modularity-evolutionary-architecture"
   ],
   "objectives": [
     {

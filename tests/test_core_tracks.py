@@ -168,7 +168,7 @@ BUILD_SOURCES = {
             "primary",
         ),
     ),
-    "core-07-api-contracts-evolution": (
+    "core-07-api-contract-design": (
         (
             "RFC 9110: HTTP Semantics",
             "https://www.rfc-editor.org/rfc/rfc9110.html",
@@ -197,7 +197,7 @@ BUILD_SOURCES = {
             "standard",
         ),
     ),
-    "core-08-modularity-architecture-decisions": (
+    "core-08-modularity-evolutionary-architecture": (
         (
             "On the Criteria To Be Used in Decomposing Systems into "
             "Modules",
@@ -224,7 +224,7 @@ BUILD_SOURCES = {
             "primary",
         ),
     ),
-    "core-09-testing-strategy-tdd": (
+    "core-09-test-strategy-tdd": (
         (
             "ISTQB Certified Tester Foundation Level Syllabus v4.0.1",
             "https://istqb.org/wp-content/uploads/2024/11/"
@@ -255,7 +255,7 @@ BUILD_SOURCES = {
             "primary",
         ),
     ),
-    "core-10-secure-by-design": (
+    "core-10-threat-modeling-secure-design": (
         (
             "Secure Software Development Framework (SSDF) Version 1.1: "
             "Recommendations for Mitigating the Risk of Software "
@@ -329,7 +329,7 @@ BUILD = {
             "境界と例外を再構成する"
         ),
     },
-    "core-07-api-contracts-evolution": {
+    "core-07-api-contract-design": {
         "prerequisites": ("core-06-requirements-domain-modeling",),
         "artifact": "互換性、冪等性、失敗形式を含むAPI契約",
         "transfer": (
@@ -337,10 +337,10 @@ BUILD = {
             "設計する"
         ),
     },
-    "core-08-modularity-architecture-decisions": {
+    "core-08-modularity-evolutionary-architecture": {
         "prerequisites": (
             "core-06-requirements-domain-modeling",
-            "core-07-api-contracts-evolution",
+            "core-07-api-contract-design",
         ),
         "artifact": "変更理由と依存方向を説明するモジュール図とADR",
         "transfer": (
@@ -348,10 +348,10 @@ BUILD = {
             "ADRで判断を更新する"
         ),
     },
-    "core-09-testing-strategy-tdd": {
+    "core-09-test-strategy-tdd": {
         "prerequisites": (
             "core-02-algorithms-measurement",
-            "core-08-modularity-architecture-decisions",
+            "core-08-modularity-evolutionary-architecture",
         ),
         "artifact": "RED-GREEN-REFACTOR履歴とリスク別テスト戦略",
         "transfer": (
@@ -359,10 +359,10 @@ BUILD = {
             "リスク別テスト戦略で診断する"
         ),
     },
-    "core-10-secure-by-design": {
+    "core-10-threat-modeling-secure-design": {
         "prerequisites": (
-            "core-07-api-contracts-evolution",
-            "core-09-testing-strategy-tdd",
+            "core-07-api-contract-design",
+            "core-09-test-strategy-tdd",
         ),
         "artifact": "資産、境界、攻撃経路、検証を結ぶ脅威モデル",
         "transfer": (
@@ -1319,7 +1319,7 @@ class CoreTrackTests(unittest.TestCase):
 
     def test_api_contract_harness_models_replay_and_evolution(self) -> None:
         report = self.run_python_harness(
-            "core-07-api-contracts-evolution",
+            "core-07-api-contract-design",
             "api_contract_lab_v1",
         )
 
@@ -1352,7 +1352,7 @@ class CoreTrackTests(unittest.TestCase):
         self,
     ) -> None:
         report = self.run_python_harness(
-            "core-08-modularity-architecture-decisions",
+            "core-08-modularity-evolutionary-architecture",
             "architecture_lab_v1",
         )
 
@@ -1390,11 +1390,11 @@ class CoreTrackTests(unittest.TestCase):
         self,
     ) -> None:
         body = self.body_path(
-            "core-09-testing-strategy-tdd"
+            "core-09-test-strategy-tdd"
         ).read_text(encoding="utf-8")
         self.assertIn("subprocess.run", body)
         report = self.run_python_harness(
-            "core-09-testing-strategy-tdd",
+            "core-09-test-strategy-tdd",
             "test_strategy_lab_v1",
         )
 
@@ -1441,7 +1441,7 @@ class CoreTrackTests(unittest.TestCase):
         self,
     ) -> None:
         report = self.run_python_harness(
-            "core-10-secure-by-design",
+            "core-10-threat-modeling-secure-design",
             "threat_model_lab_v1",
         )
 
