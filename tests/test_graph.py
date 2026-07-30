@@ -301,6 +301,15 @@ class RoadmapContractTests(unittest.TestCase):
         self.assertEqual(ids, ("foundation", "build", "operate", "lead"))
         self.assertEqual(titles, ("Think", "Build", "Run", "Lead"))
         self.assertEqual(
+            prerequisites,
+            {
+                "foundation": (),
+                "build": ("foundation",),
+                "operate": ("build",),
+                "lead": ("operate",),
+            },
+        )
+        self.assertEqual(
             topological_stages(ids, prerequisites),
             (("foundation",), ("build",), ("operate",), ("lead",)),
         )
