@@ -16,6 +16,33 @@ from curriculum_builder.lessons import MAX_LESSON_BYTES, load_lesson
 FIXTURES = Path(__file__).parent / "fixtures"
 COMPLETE = FIXTURES / "complete-lesson.json"
 INCOMPLETE = FIXTURES / "incomplete-lesson.json"
+CAPABILITY_PROGRESSION = [
+    {
+        "level": "recognize",
+        "criterion": "制約と利害関係者を特定し、判断対象の境界を示せる",
+        "evidenceIds": ["lab-map"],
+    },
+    {
+        "level": "explain",
+        "criterion": "選択肢の機構と主要なトレードオフを自分の言葉で説明できる",
+        "evidenceIds": ["teach-back"],
+    },
+    {
+        "level": "apply",
+        "criterion": "制約に基づく比較を行い、レビュー可能な判断記録を作成できる",
+        "evidenceIds": ["lab-map"],
+    },
+    {
+        "level": "diagnose",
+        "criterion": "観測した証拠から障害の因果経路を切り分け、反証を示せる",
+        "evidenceIds": ["assessment"],
+    },
+    {
+        "level": "lead",
+        "criterion": "異なる領域へ判断方法を移し、再評価条件を関係者へ説明できる",
+        "evidenceIds": ["transfer"],
+    },
+]
 
 
 class LessonQualityTests(unittest.TestCase):
@@ -33,6 +60,14 @@ class LessonQualityTests(unittest.TestCase):
             encoding="utf-8",
         )
         return path
+
+    def add_capability_progression(
+        self, document: dict[str, object]
+    ) -> dict[str, object]:
+        document["capabilityProgression"] = json.loads(
+            json.dumps(CAPABILITY_PROGRESSION, ensure_ascii=False)
+        )
+        return document
 
     def assert_invalid(
         self,
@@ -70,6 +105,125 @@ class LessonQualityTests(unittest.TestCase):
 
         self.assertIn("core-01-systems-tradeoffs", str(caught.exception))
         self.assertIn(INCOMPLETE.name, str(caught.exception))
+
+    def test_complete_status_requires_capability_progression(self) -> None:
+        self.assert_invalid(
+            self.complete_document(),
+            r"complete lesson missing: capabilityProgression",
+        )
+
+    def test_capability_progression_is_typed_ordered_and_immutable(self) -> None:
+        raw = self.add_capability_progression(self.complete_document())
+        with TemporaryDirectory() as directory:
+            lesson = load_lesson(self.write_document(directory, raw))
+
+        self.assertEqual(
+            tuple(item.level for item in lesson.capability_progression),
+            ("recognize", "explain", "apply", "diagnose", "lead"),
+        )
+        self.assertEqual(
+            lesson.capability_progression[0].evidence_ids,
+            ("lab-map",),
+        )
+        with self.assertRaises(FrozenInstanceError):
+            lesson.capability_progression[0].criterion = "changed"  # type: ignore[misc]
+
+    def test_capability_progression_rejects_invalid_mastery_contracts(self) -> None:
+        mutations = (
+            (
+                "ordered",
+                lambda progression: progression.__setitem__(
+                    slice(0, 2), [progression[1], progression[0]]
+                ),
+            ),
+            (
+                "duplicate",
+                lambda progression: progression[1].__setitem__(
+                    "level", "recognize"
+                ),
+            ),
+            (
+                "criterion",
+                lambda progression: progression[0].__setitem__(
+                    "criterion", ""
+                ),
+            ),
+            (
+                "unknown evidence",
+                lambda progression: progression[0].__setitem__(
+                    "evidenceIds", ["missing-evidence"]
+                ),
+            ),
+            (
+                "duplicate evidence",
+                lambda progression: progression[0].__setitem__(
+                    "evidenceIds", ["lab-map", "lab-map"]
+                ),
+            ),
+            (
+                "five capability levels",
+                lambda progression: progression.pop(),
+            ),
+            (
+                "unknown fields",
+                lambda progression: progression[0].__setitem__(
+                    "unexpected", True
+                ),
+            ),
+        )
+        for message, mutate in mutations:
+            with self.subTest(message=message):
+                raw = self.add_capability_progression(
+                    self.complete_document()
+                )
+                progression = raw["capabilityProgression"]
+                self.assertIsInstance(progression, list)
+                mutate(progression)
+                self.assert_invalid(raw, message)
+
+    def test_draft_capability_progression_must_be_an_ordered_prefix(self) -> None:
+        raw = self.add_capability_progression(self.complete_document())
+        raw["status"] = "draft"
+        raw["capabilityProgression"] = raw["capabilityProgression"][:2]
+        with TemporaryDirectory() as directory:
+            lesson = load_lesson(self.write_document(directory, raw))
+        self.assertEqual(
+            tuple(item.level for item in lesson.capability_progression),
+            ("recognize", "explain"),
+        )
+
+        raw = self.add_capability_progression(self.complete_document())
+        raw["status"] = "draft"
+        raw["capabilityProgression"] = [
+            raw["capabilityProgression"][0],
+            raw["capabilityProgression"][2],
+        ]
+        self.assert_invalid(raw, "ordered prefix")
+
+    def test_capability_levels_may_reference_any_known_evidence_kind(self) -> None:
+        raw = self.add_capability_progression(self.complete_document())
+        raw["capabilityProgression"][0]["evidenceIds"] = ["assessment"]
+        with TemporaryDirectory() as directory:
+            lesson = load_lesson(self.write_document(directory, raw))
+        self.assertEqual(
+            lesson.capability_progression[0].evidence_ids,
+            ("assessment",),
+        )
+
+    def test_track_gates_use_typed_lesson_fields_without_raw_metadata(self) -> None:
+        raw = self.add_capability_progression(self.complete_document())
+        with TemporaryDirectory() as directory:
+            lesson = load_lesson(self.write_document(directory, raw))
+
+        self.assertIsNotNone(lesson.lab)
+        assert lesson.lab is not None
+        self.assertEqual(lesson.lab.artifact, "decision-record.md")
+        self.assertEqual(
+            lesson.transfer_task,
+            "医療予約システムという別領域で同じ比較をやり直す。",
+        )
+        self.assertEqual(lesson.prerequisite_ids, ())
+        self.assertFalse(hasattr(lesson, "raw"))
 
     def test_complete_status_rejects_explicit_null_quality_dimensions(self) -> None:
         for field in ("lab", "assessment", "rubric", "sources", "review"):
