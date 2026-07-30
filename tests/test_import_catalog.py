@@ -56,6 +56,20 @@ class CatalogImportTests(unittest.TestCase):
             with patch("tools.import_catalog._same_parent", return_value=False):
                 with self.assertRaisesRegex(RuntimeError, "output parent changed"): _write_atomic(output, document)
             self.assertFalse(output.exists()); self.assertEqual(list(root.glob(".catalog-*.tmp")), [])
+
+    def test_writer_rejects_prepublication_temporary_name_substitution(self) -> None:
+        document = {"version": 1, "generatedFrom": "source", "sourceSha256": "a55a0d0b1cfa3773031e787c2ce7ca0df34534e16a70b65ed1baa91975c82da8", "items": [{**lesson(), "coreLessonId": None}]}; document["items"][0].pop("path")
+        with TemporaryDirectory(dir=Path.cwd()) as directory:
+            root = Path(directory); output = root / "catalog.json"; output.write_bytes(b"old")
+            def replace_temp(*args: object) -> bool:
+                temporary = next(root.glob(".catalog-*.tmp")); backup = root / "owned-backup.tmp"
+                temporary.rename(backup); temporary.write_bytes(b"foreign")
+                return True
+            with patch("tools.import_catalog._same_parent", side_effect=replace_temp), patch("tools.import_catalog.os.replace") as publish:
+                with self.assertRaisesRegex(RuntimeError, "catalog temporary changed before publish"): _write_atomic(output, document)
+            self.assertEqual(publish.call_count, 0); self.assertEqual(output.read_bytes(), b"old")
+            self.assertEqual(next(root.glob(".catalog-*.tmp")).read_bytes(), b"foreign")
+            self.assertTrue((root / "owned-backup.tmp").exists())
     def test_close_all_attempts_every_descriptor_once_in_reverse_order(self) -> None:
         closed: list[int] = []
         def close(descriptor: int) -> None:
