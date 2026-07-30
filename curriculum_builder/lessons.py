@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+import ipaddress
 from pathlib import Path
 import re
 import unicodedata
@@ -57,6 +58,9 @@ _EVIDENCE_ID_PATTERN = re.compile(
 )
 _ENCODED_CONTROL_PATTERN = re.compile(
     r"%(?:0[0-9a-f]|1[0-9a-f]|7f)", re.IGNORECASE
+)
+_DNS_LABEL_PATTERN = re.compile(
+    r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
 )
 
 _ROOT_REQUIRED_FIELDS = frozenset(
@@ -848,10 +852,13 @@ def _parse_sources(
         )
     fields = frozenset({"title", "url", "kind"})
     sources: list[Source] = []
+    identities: list[tuple[str, str, int | None, str, str]] = []
     for index, item in enumerate(items):
         raw = _require_exact_object(
             item, fields, fields, f"source {index + 1}"
         )
+        url, identity = _require_https_url(raw["url"])
+        identities.append(identity)
         sources.append(
             Source(
                 title=_require_text(
@@ -859,17 +866,20 @@ def _parse_sources(
                     f"source {index + 1} title",
                     maximum=300,
                 ),
-                url=_require_https_url(raw["url"]),
+                url=url,
                 kind=_require_choice(
                     raw["kind"], SOURCE_KINDS, "source kind"
                 ),
             )
         )
-    _require_unique(tuple(item.url for item in sources), "source URL")
+    if len(set(identities)) != len(identities):
+        raise CurriculumValidationError("duplicate source URL")
     return tuple(sources)
 
 
-def _require_https_url(value: object) -> str:
+def _require_https_url(
+    value: object,
+) -> tuple[str, tuple[str, str, int | None, str, str]]:
     url = _require_text(value, "source URL", maximum=2_048)
     if any(character.isspace() for character in url):
         raise CurriculumValidationError("source URL must not contain whitespace")
@@ -883,19 +893,63 @@ def _require_https_url(value: object) -> str:
         )
     try:
         parsed = urlsplit(url)
-        hostname = parsed.hostname
-        parsed.port
     except ValueError:
         raise CurriculumValidationError("source URL is malformed") from None
     if parsed.scheme != "https":
         raise CurriculumValidationError("source URL must use HTTPS")
-    if hostname is None:
-        raise CurriculumValidationError("source URL must have a host")
     if parsed.username is not None or parsed.password is not None:
         raise CurriculumValidationError(
             "source URL credentials are not allowed"
         )
-    return url
+    try:
+        hostname = parsed.hostname
+    except ValueError:
+        raise CurriculumValidationError("source URL host is invalid") from None
+    if hostname is None:
+        raise CurriculumValidationError("source URL must have a host")
+    try:
+        port = parsed.port
+    except ValueError:
+        raise CurriculumValidationError("source URL port is invalid") from None
+    if port is not None and not 1 <= port <= 65_535:
+        raise CurriculumValidationError("source URL port is invalid")
+
+    normalized_host = _normalize_source_host(hostname)
+    normalized_port = None if port in (None, 443) else port
+    identity = (
+        "https",
+        normalized_host,
+        normalized_port,
+        parsed.path,
+        parsed.query,
+    )
+    return url, identity
+
+
+def _normalize_source_host(hostname: str) -> str:
+    without_root_dot = hostname[:-1] if hostname.endswith(".") else hostname
+    if not without_root_dot or without_root_dot.endswith("."):
+        raise CurriculumValidationError("source URL host is invalid")
+    try:
+        address = ipaddress.ip_address(without_root_dot)
+    except ValueError:
+        try:
+            ascii_host = (
+                without_root_dot.encode("idna").decode("ascii").lower()
+            )
+        except UnicodeError:
+            raise CurriculumValidationError(
+                "source URL host is invalid"
+            ) from None
+        if len(ascii_host) > 253:
+            raise CurriculumValidationError("source URL host is invalid")
+        labels = ascii_host.split(".")
+        if not labels or any(
+            _DNS_LABEL_PATTERN.fullmatch(label) is None for label in labels
+        ):
+            raise CurriculumValidationError("source URL host is invalid")
+        return ascii_host
+    return address.compressed.lower()
 
 
 def _parse_review(
