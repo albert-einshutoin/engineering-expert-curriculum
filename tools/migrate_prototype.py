@@ -113,6 +113,26 @@ def _validate_existing_components(
             raise ValueError(f"{label} parent is not a directory: {current}")
 
 
+def _existing_archive_parent(raw_parent: Path) -> Path:
+    """Return a canonical operator-prepared archive parent without mutating the filesystem."""
+    _validate_existing_components(raw_parent, "archive")
+    if not _lexists(raw_parent):
+        raise FileNotFoundError(f"archive parent must already exist: {raw_parent}")
+    recorded = os.lstat(raw_parent)
+    if not stat.S_ISDIR(recorded.st_mode):
+        raise ValueError(f"archive parent is not a directory: {raw_parent}")
+    canonical = raw_parent.resolve(strict=True)
+    effective = os.stat(canonical, follow_symlinks=False)
+    if (recorded.st_dev, recorded.st_ino) != (effective.st_dev, effective.st_ino):
+        raise RuntimeError(f"archive parent changed while validating: {raw_parent}")
+    # The tool must not infer ownership by creating parents; it pins an operator-prepared trusted boundary.
+    if hasattr(os, "geteuid") and effective.st_uid != os.geteuid():
+        raise PermissionError(f"archive parent must be owned by the current user: {canonical}")
+    if effective.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+        raise PermissionError(f"archive parent must not be group/world writable: {canonical}")
+    return canonical
+
+
 def _create_archive_parent(raw_parent: Path) -> tuple[Path, list[tuple[Path, tuple[int, int]]]]:
     """Create missing parents from a validated ancestor and report only owned directories."""
     missing: list[str] = []

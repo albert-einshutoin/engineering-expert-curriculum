@@ -16,6 +16,7 @@ from tools.migrate_prototype import (
     _clear_directory_fd,
     _copy_allowlisted_tree,
     _create_private_staging,
+    _existing_archive_parent,
     _open_directory_fd,
     _publish_verified_archive,
     _rename_directory_noreplace,
@@ -28,6 +29,40 @@ from tools.migrate_prototype import (
 
 
 class PrototypeMigrationTests(unittest.TestCase):
+    def test_existing_archive_parent_rejects_missing_parent_without_creating_it(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            parent = root / "missing" / "archive"
+
+            with self.assertRaisesRegex(FileNotFoundError, "archive parent must already exist"):
+                _existing_archive_parent(parent)
+
+            self.assertFalse((root / "missing").exists())
+
+    def test_existing_archive_parent_rejects_symlink(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            target = root / "target"
+            target.mkdir(mode=0o700)
+            parent = root / "archive-link"
+            parent.symlink_to(target, target_is_directory=True)
+
+            with self.assertRaisesRegex(ValueError, "archive contains a symbolic link"):
+                _existing_archive_parent(parent)
+
+    def test_existing_archive_parent_requires_owned_private_directory_and_returns_canonical_path(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            parent = root / "archive"
+            parent.mkdir(mode=0o700)
+            parent.chmod(0o700)
+
+            self.assertEqual(_existing_archive_parent(parent), parent.resolve(strict=True))
+
+            parent.chmod(0o777)
+            with self.assertRaisesRegex(PermissionError, "group/world writable"):
+                _existing_archive_parent(parent)
+
     def test_publish_verified_archive_natively_publishes_private_staging(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory).resolve()
