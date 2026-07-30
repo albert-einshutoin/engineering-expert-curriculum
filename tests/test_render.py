@@ -188,6 +188,7 @@ class RendererTests(unittest.TestCase):
         self.assertIn('class="skip-link" href="#main"', html)
         self.assertIn('<nav aria-label="主要ナビゲーション">', html)
         self.assertIn("script-src 'none'", html)
+        self.assertNotIn("frame-ancestors", html)
         self.assertNotIn("<script", html.casefold())
 
     def test_fragment_escapes_text_and_accepts_exact_safe_html(self) -> None:
