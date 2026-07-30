@@ -612,10 +612,16 @@ following before implementation:
 - The fragment parser rejects comments, declarations, processing instructions,
   malformed markup, stray/mismatched/unclosed tags, excessive nesting,
   excessive attributes, and long attribute values with deterministic errors.
-- `href` is checked after character-reference decoding. Only safe relative or
-  fragment references and HTTPS URLs with a valid host are accepted;
-  non-HTTPS schemes, scheme-relative paths, backslashes, whitespace/control
-  obfuscation, credentials, invalid hosts, and invalid ports are rejected.
+- A conservative content model prevents browser auto-closing, foster
+  parenting, and implicit table nodes from changing the validated tree:
+  phrasing-only containers, list/description/table parent-child chains,
+  leading `summary`, leading `figcaption`, and structural whitespace are all
+  checked explicitly.
+- `href` is checked after character-reference decoding. Only file-compatible
+  path-relative, query-only, or fragment references and HTTPS URLs with a
+  valid host are accepted. Root-relative paths, non-HTTPS schemes,
+  backslashes, whitespace/control obfuscation, credentials, invalid hosts, and
+  invalid ports are rejected.
 - Mixed-case markup and encoded schemes are covered. Parser/Unicode failures
   become `CurriculumValidationError`, and error strings never echo the complete
   authored fragment.
@@ -636,11 +642,13 @@ Keep the implementation in `curriculum_builder/html_safety.py` and use only
 the Python standard library. Make all public allowlists immutable. Perform
 cheap type/empty/size/control checks before parsing, lexically restrict start
 and end tag syntax, then use `HTMLParser(convert_charrefs=True)` with an
-explicit open-tag stack and duplicate-ID set. Catch unexpected parser or
-Unicode exceptions at the trust boundary without including input content in
-the error. Construct `SafeHtml` only through a private issuer after every
-validation step succeeds; future renderers must call `validate_fragment()`
-instead of directly constructing trusted HTML.
+explicit per-element frame stack, conservative content-model state, and
+duplicate-ID set. Use `handle_data()` to reject non-whitespace text in
+structural containers so the browser DOM matches the validated tree. Catch
+unexpected parser or Unicode exceptions at the trust boundary without
+including input content in the error. Construct `SafeHtml` only through a
+private issuer after every validation step succeeds; future renderers must
+call `validate_fragment()` instead of directly constructing trusted HTML.
 
 - [ ] **Step 4: Run the safety tests**
 
@@ -650,7 +658,7 @@ Run:
 python3.13 -m unittest tests.test_html_safety -v
 ```
 
-Expected at Task 6 completion: all 24 HTML trust-boundary tests pass.
+Expected at Task 6 completion: all 30 HTML trust-boundary tests pass.
 
 - [ ] **Step 5: Commit the authored-content trust boundary**
 
