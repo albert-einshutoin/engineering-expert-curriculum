@@ -38,7 +38,7 @@ def _close_all(descriptors: list[int]) -> list[OSError]:
 
 def _read_source(path: Path) -> tuple[object, str, tuple[int, int]]:
     raw_path = _absolute_lexical(path, "input")
-    parent_path, name, parent_fd = _open_parent(raw_path)
+    parent_path, name, parent_fd, parent_fds = _open_parent(raw_path)
     file_fd: int | None = None
     try:
         file_fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent_fd)
@@ -55,8 +55,7 @@ def _read_source(path: Path) -> tuple[object, str, tuple[int, int]]:
     except OSError as error:
         raise CurriculumValidationError(f"{path}: cannot read source: {error}") from error
     finally:
-        owned = [parent_fd] + ([] if file_fd is None else [file_fd])
-        failures = _close_all(owned)
+        failures = _close_all(parent_fds + ([] if file_fd is None else [file_fd]))
         if failures: raise RuntimeError(f"source descriptor close failed: {failures[0]}")
 
 
@@ -66,37 +65,38 @@ def _absolute_lexical(path: Path, label: str) -> Path:
     return candidate
 
 
-def _open_parent(path: Path) -> tuple[Path, str, int]:
+def _open_parent(path: Path) -> tuple[Path, str, int, list[int]]:
     raw = _absolute_lexical(path, "output")
     name = raw.name
     if not name or name in {".", ".."} or "\0" in name:
         raise ValueError("output name must be a safe basename")
     flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
-    fd = os.open(raw.anchor, flags)
+    owned = [os.open(raw.anchor, flags)]
     try:
         for part in raw.parent.parts[1:]:
-            next_fd = os.open(part, flags, dir_fd=fd)
-            os.close(fd); fd = next_fd
-        info = os.fstat(fd)
+            owned.append(os.open(part, flags, dir_fd=owned[-1]))
+        info = os.fstat(owned[-1])
         if hasattr(os, "geteuid") and info.st_uid != os.geteuid():
             raise PermissionError("output parent must be owned by the current user")
         if info.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
             raise PermissionError("output parent must not be group/world writable")
-        return raw.parent, name, fd
-    except BaseException:
-        os.close(fd)
+        return raw.parent, name, owned[-1], owned
+    except BaseException as error:
+        failures = _close_all(owned)
+        if failures: raise RuntimeError(f"output parent descriptor close failed: {failures[0]}") from error
         raise
 
 
 def _same_parent(raw_parent: Path, parent_fd: int) -> bool:
     try:
-        _, _, current_fd = _open_parent(raw_parent / "probe")
+        _, _, current_fd, current_fds = _open_parent(raw_parent / "probe")
     except OSError:
         return False
     try:
-        return os.fstat(current_fd).st_dev == os.fstat(parent_fd).st_dev and os.fstat(current_fd).st_ino == os.fstat(parent_fd).st_ino
+        result = os.fstat(current_fd).st_dev == os.fstat(parent_fd).st_dev and os.fstat(current_fd).st_ino == os.fstat(parent_fd).st_ino
     finally:
-        os.close(current_fd)
+        if _close_all(current_fds): return False
+    return result
 
 
 def _write_all(fd: int, payload: bytes) -> None:
@@ -128,7 +128,7 @@ def _write_atomic(path: Path, document: dict[str, object], *, forbidden_identity
     same-euid writer racing the final syscall is out of scope; callers run alone.
     Post-replace verification detects that race but intentionally never rolls back.
     """
-    parent_path, final_name, parent_fd = _open_parent(path)
+    parent_path, final_name, parent_fd, parent_fds = _open_parent(path)
     temporary_name: str | None = None
     temporary_identity: tuple[int, int] | None = None
     published = False
@@ -164,10 +164,8 @@ def _write_atomic(path: Path, document: dict[str, object], *, forbidden_identity
             except OSError as cleanup_error: raise RuntimeError(f"catalog temporary cleanup failed: {cleanup_error}") from error
         raise
     finally:
-        try: os.close(parent_fd)
-        except OSError as close_error:
-            if operation_error is not None: raise RuntimeError(f"output parent close failed: {close_error}") from operation_error
-            if not published: raise
+        failures = _close_all(parent_fds)
+        if failures and operation_error is not None: raise RuntimeError(f"output parent close failed: {failures[0]}") from operation_error
 
 
 def main(argv: list[str] | None = None) -> int:
