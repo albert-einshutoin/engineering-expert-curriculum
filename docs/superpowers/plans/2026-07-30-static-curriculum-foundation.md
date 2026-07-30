@@ -885,17 +885,22 @@ git commit -m "feat: render semantic file-compatible pages"
 Add dependency-free `unittest` contracts in `tests/test_styles.py`. Resolve the
 repository root from `__file__`, not the process working directory, and verify:
 
-- UTF-8 text, balanced comments/braces, a bounded file size, no C0/NUL,
-  `@import`, `url()`, external font, script URL, animation, transition, or
-  `!important`.
+- UTF-8 text, a bounded file size, no C0/NUL or backslash, and no `@import`,
+  `url()`, `image()`, `image-set()`, vendor image-set, `src()`, external font,
+  script URL, animation, transition, or `!important`. Backslash rejection keeps
+  CSS escapes from disguising resource-bearing syntax.
+- A dependency-free linear structural scanner that distinguishes comments,
+  quoted strings, escapes, and data-state braces; rejects unclosed or stray
+  structures; and extracts exact responsive, forced-color, and print blocks so
+  one media query cannot satisfy another query's contract.
 - One definition of each palette, spacing, measure, border, shadow, and focus
   token; system Japanese/Latin sans, serif, and mono stacks; a 70ch reading
   measure; and numeric WCAG AA contrast checks for primary text, muted text,
   links, focus, and connector colors on their intended surfaces.
 - Semantic textbook coverage for headings, links, navigation, sections,
   articles, lists, disclosure controls, quotations, figures, tables, code,
-  keyboard input, and marks. Parse all four templates and require an intentional
-  selector for every current class and ID.
+  keyboard input, and marks, including an explicit `h4` level. Parse all four
+  templates and require an intentional selector for every current class and ID.
 - Catalog cards and a four-stage `.learning-path` grid with visible CSS counter
   numbers, explicit prerequisite text, and a non-interactive right-facing
   polygon arrow connector at
@@ -909,7 +914,9 @@ repository root from `__file__`, not the process working directory, and verify:
 - Logical properties, conservative fluid `clamp()` bounds, local system
   typography, narrow-screen code/table overflow, forced-colors and
   reduced-motion preferences, and print rules that preserve reading order,
-  prerequisite text, HTTPS URL destinations, and break avoidance.
+  prerequisite text, HTTPS URL destinations, repeated table headings, and
+  break avoidance only for bounded rows/items/stages. Large articles, sections,
+  catalog cards, tables, disclosures, code blocks, and quotations may fragment.
 
 - [ ] **Step 2: Run CSS tests and verify RED**
 
@@ -1012,6 +1019,22 @@ class BuildTests(unittest.TestCase):
                 self.assertNotIn("javascript:", html.lower())
                 self.assertNotIn('href="/', html)
             self.assertEqual(list(output.rglob("*.js")), [])
+            catalog_html = (
+                output / "catalog" / "index.html"
+            ).read_text(encoding="utf-8")
+            self.assertEqual(
+                catalog_html.count('<section class="catalog-card">'),
+                38,
+            )
+            self.assertEqual(
+                catalog_html.count('<h2 class="catalog-card__title">'),
+                38,
+            )
+            self.assertEqual(
+                catalog_html.count('<ol class="catalog-card__list">'),
+                38,
+            )
+            self.assertEqual(catalog_html.count("<li id="), 1_140)
             roadmap_html = (
                 output / "roadmap" / "index.html"
             ).read_text(encoding="utf-8")
@@ -1084,7 +1107,11 @@ def _catalog_content(items: tuple[object, ...]) -> SafeHtml:
             f'<p>{escape(item.outcome)}</p></li>'
             for item in groups[domain]
         )
-        sections.append(f"<section><h2>{escape(domain)}</h2><ol>{entries}</ol></section>")
+        sections.append(
+            f'<section class="catalog-card">'
+            f'<h2 class="catalog-card__title">{escape(domain)}</h2>'
+            f'<ol class="catalog-card__list">{entries}</ol></section>'
+        )
     return validate_fragment("".join(sections))
 
 
