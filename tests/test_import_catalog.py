@@ -34,6 +34,28 @@ def legacy_source(lessons: list[dict[str, object]]) -> dict[str, object]:
 
 
 class CatalogImportTests(unittest.TestCase):
+    def test_writer_rejects_hardlinked_input_identity_before_temp_creation(self) -> None:
+        document = {"version": 1, "generatedFrom": "source", "sourceSha256": "a55a0d0b1cfa3773031e787c2ce7ca0df34534e16a70b65ed1baa91975c82da8", "items": [{**lesson(), "coreLessonId": None}]}; document["items"][0].pop("path")
+        with TemporaryDirectory(dir=Path.cwd()) as directory:
+            root = Path(directory); source = root / "source"; source.write_bytes(b"source"); output = root / "output"; output.hardlink_to(source)
+            identity = (source.stat().st_dev, source.stat().st_ino)
+            with self.assertRaisesRegex(ValueError, "must not alias input"): _write_atomic(output, document, forbidden_identity=identity)
+            self.assertEqual(source.read_bytes(), b"source"); self.assertEqual(list(root.glob(".catalog-*.tmp")), [])
+
+    def test_writer_rejects_final_symlink_without_touching_target(self) -> None:
+        document = {"version": 1, "generatedFrom": "source", "sourceSha256": "a55a0d0b1cfa3773031e787c2ce7ca0df34534e16a70b65ed1baa91975c82da8", "items": [{**lesson(), "coreLessonId": None}]}; document["items"][0].pop("path")
+        with TemporaryDirectory(dir=Path.cwd()) as directory:
+            root = Path(directory); target = root / "target"; target.write_bytes(b"keep"); output = root / "catalog.json"; output.symlink_to(target)
+            with self.assertRaises(ValueError): _write_atomic(output, document)
+            self.assertTrue(output.is_symlink()); self.assertEqual(target.read_bytes(), b"keep"); self.assertEqual(list(root.glob(".catalog-*.tmp")), [])
+
+    def test_writer_stops_when_pinned_parent_path_is_replaced(self) -> None:
+        document = {"version": 1, "generatedFrom": "source", "sourceSha256": "a55a0d0b1cfa3773031e787c2ce7ca0df34534e16a70b65ed1baa91975c82da8", "items": [{**lesson(), "coreLessonId": None}]}; document["items"][0].pop("path")
+        with TemporaryDirectory(dir=Path.cwd()) as directory:
+            root = Path(directory); output = root / "catalog.json"
+            with patch("tools.import_catalog._same_parent", return_value=False):
+                with self.assertRaisesRegex(RuntimeError, "output parent changed"): _write_atomic(output, document)
+            self.assertFalse(output.exists()); self.assertEqual(list(root.glob(".catalog-*.tmp")), [])
     def test_close_all_attempts_every_descriptor_once_in_reverse_order(self) -> None:
         closed: list[int] = []
         def close(descriptor: int) -> None:
