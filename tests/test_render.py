@@ -46,6 +46,59 @@ class EntriesMapping(Mapping[object, object]):
         return self.entries
 
 
+class LargeEntriesMapping(Mapping[object, object]):
+    def __init__(self) -> None:
+        self.items_calls = 0
+        self.consumed = 0
+
+    def __getitem__(self, key: object) -> object:
+        raise AssertionError("renderer must use the mapping snapshot")
+
+    def __iter__(self) -> Iterator[object]:
+        raise AssertionError("renderer must use items() exactly once")
+
+    def __len__(self) -> int:
+        return 10_000
+
+    def items(self) -> Iterator[tuple[str, str]]:
+        self.items_calls += 1
+        for index in range(10_000):
+            self.consumed += 1
+            yield f"value{index}", "x"
+
+
+class RaisingItemsMapping(Mapping[object, object]):
+    def __getitem__(self, key: object) -> object:
+        raise AssertionError("renderer must not use __getitem__")
+
+    def __iter__(self) -> Iterator[object]:
+        raise AssertionError("renderer must not use __iter__")
+
+    def __len__(self) -> int:
+        return 1
+
+    def items(self) -> object:
+        raise RuntimeError("sensitive-items-marker")
+
+
+class RaisingIterationMapping(RaisingItemsMapping):
+    def items(self) -> Iterator[tuple[str, str]]:
+        def entries() -> Iterator[tuple[str, str]]:
+            raise RuntimeError("sensitive-iteration-marker")
+            yield "unused", "unused"
+
+        return entries()
+
+
+class RaisingEntryMapping(RaisingItemsMapping):
+    def items(self) -> tuple[object, ...]:
+        class RaisingEntry:
+            def __iter__(self) -> Iterator[object]:
+                raise RuntimeError("sensitive-entry-marker")
+
+        return (RaisingEntry(),)
+
+
 class RendererTests(unittest.TestCase):
     def setUp(self) -> None:
         self.renderer = Renderer(TEMPLATE_ROOT)
@@ -363,6 +416,34 @@ class RendererTests(unittest.TestCase):
             html_values={},
         )
 
+        large = LargeEntriesMapping()
+        self.assert_validation_error(
+            "text values exceed maximum entry count",
+            renderer.fragment,
+            "mapping.html",
+            text_values=large,
+            html_values={},
+        )
+        self.assertEqual(large.items_calls, 1)
+        self.assertLessEqual(large.consumed, 129)
+
+        for broken in (
+            RaisingItemsMapping(),
+            RaisingIterationMapping(),
+            RaisingEntryMapping(),
+        ):
+            with self.subTest(mapping_type=type(broken).__name__):
+                with self.assertRaisesRegex(
+                    CurriculumValidationError,
+                    r"^cannot snapshot text values$",
+                ) as caught:
+                    renderer.fragment(
+                        "mapping.html",
+                        text_values=broken,
+                        html_values={},
+                    )
+                self.assertNotIn("sensitive-", str(caught.exception))
+
     def test_rejects_non_mapping_non_string_and_oversized_values(self) -> None:
         renderer = self.renderer_with_fragment("value.html", "<p>$value</p>")
         cases = (
@@ -645,6 +726,50 @@ class RendererTests(unittest.TestCase):
             (
                 base.replace("script-src 'none'; ", ""),
                 "base template CSP is incomplete",
+            ),
+            (
+                base.replace(
+                    "script-src 'none';",
+                    "script-src 'none'; script-src-elem 'self';",
+                ),
+                "base template CSP is incomplete",
+            ),
+            (
+                base.replace(
+                    "script-src 'none';",
+                    "script-src 'none'; script-src-attr 'unsafe-inline';",
+                ),
+                "base template CSP is incomplete",
+            ),
+            (
+                base.replace(
+                    "script-src 'none';",
+                    "script-src 'none'; script-src 'self';",
+                ),
+                "base template CSP is incomplete",
+            ),
+            (
+                base.replace(
+                    "  <title>",
+                    '  <meta http-equiv="refresh" '
+                    'content="0;url=https://evil.example">\n'
+                    "  <title>",
+                ),
+                "base template markup is invalid",
+            ),
+            (
+                base.replace(
+                    "  <title>",
+                    '  <meta name="robots" content="index">\n  <title>',
+                ),
+                "base template markup is invalid",
+            ),
+            (
+                base.replace(
+                    '  <meta charset="utf-8">',
+                    '  <meta charset="utf-8">\n  <meta charset="utf-8">',
+                ),
+                "base template markup is invalid",
             ),
             (
                 base.replace(
