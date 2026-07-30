@@ -136,20 +136,22 @@ Cover the exact eleven-element `LEGACY_PATHS`, an empty source, independent
 manifest SHA-256/byte-count checks, and the CLI. Use `TemporaryDirectory` only.
 Also cover injected copy and checksum failures, source/dangling-archive/nested
 symlinks, special files such as FIFOs when available, and an archive path inside
-an allowlisted subtree. Add a reservation-race test that creates a sentinel
-archive immediately before the exclusive reservation and proves it remains
-untouched. Every owned-failure path must retain the source and leave no manifest.
-Reject lexical `..` input, source/archive intermediate symlinks, and symlink
-routes into allowlisted archive subtrees before any copy or reservation.
-Also cover replacement of the archive parent after reservation: cleanup must be
-anchored to pinned directory file descriptors and must never touch a sentinel in
-the replacement directory. Treat allowlist boundary components case-insensitively.
+an allowlisted subtree. Reject lexical `..` input, source/archive intermediate
+symlinks, symlink routes into allowlisted archive subtrees, and casefolded
+allowlist boundaries before copying. Test private staging `mkdir`/`stat`/`open`
+races, a native target collision immediately before publish, and foreign
+sentinels: no foreign entry may be written or deleted. Cover parent-FD identity,
+FD close failures with the original operation as the cause, and a full durability
+order for regular files, nested directories, staging root, manifest temp, and
+manifest rename. Every owned-failure path retains the source and publishes no
+final archive. Test only temporary fixtures, never repository prototype files.
 
 - [ ] **Step 2: Verify RED**
 
 Run `python3.13 -m unittest tests.test_migrate_prototype -v` after adding each
-new failure case. Confirm the old direct-move behavior fails for the intended
-safety reason before changing production code.
+new failure case. Confirm the missing private-staging, no-clobber publication,
+or durability boundary fails for the intended safety reason before changing
+production code.
 
 - [ ] **Step 3: Implement transactional copy and atomic publication**
 
@@ -168,40 +170,38 @@ archive under an allowlisted source subtree.
 The ordering is deliberately read-only until safety is established: validate the
 source, take its initial snapshot (and reject empty input), then perform archive
 lexical/canonical boundary validation. Only then create missing archive parents
-and reserve the archive. On every later failure, remove empty parent directories
-created by this invocation in reverse order; never remove a pre-existing parent.
+and open the validated parent. On every later failure, remove only empty parent
+directories created by this invocation in reverse order; never remove a
+pre-existing or foreign-populated parent.
 The parent-creation helper is transactional itself: if a later `mkdir` or its
 post-create validation fails, it rolls back every earlier newly created parent
 before re-raising. If rollback fails, report that concrete cleanup failure while
 retaining the original creation error as the cause.
 
-Open the canonical archive parent with `O_DIRECTORY|O_NOFOLLOW`, verify its
-inode with `fstat`, and reserve/cleanup archive entries with `dir_fd` operations.
-This pins ownership to a directory rather than a pathname, because a pathname can
-be renamed or replaced between reservation and rollback. Fail closed where the
-required descriptor operations are unavailable.
+Open the canonical archive parent with `O_DIRECTORY|O_NOFOLLOW` and verify its
+inode with `fstat`. Create a random `0o700` private staging directory below that
+pinned parent using `dir_fd` operations; verify its identity and emptiness before
+use. This pins cleanup to owned inodes rather than replaceable pathnames. Fail
+closed where required descriptor operations are unavailable.
 
 Walk all existing allowlisted trees before copying and fail closed for symlinks,
 FIFOs, sockets, devices, or other non-regular/non-directory nodes. Build a
 source snapshot from streaming reads that produce each file's SHA-256 and byte
-count together. Safely create the archive parent, then reserve the archive path
-with `mkdir(mode=0o700, exist_ok=False)`. This is the no-clobber point: an
-existing directory, file, or symlink always fails without replacement. Copy only
-approved entries into a hidden staging directory inside that reservation.
-Snapshot staging and source again; publish nothing unless all three snapshots
-match.
+count together. Copy only approved entries into private staging, `fsync` every
+regular file, nested directory, and staging root, then compare initial, staged,
+and current source snapshots. Write the typed manifest through an exclusively
+created temp file, `fsync` it, `fsync` staging before its internal
+`manifest.json` rename, then `fsync` staging again after that rename.
 
-Move the verified staging top-level entries into the reserved archive, then
-re-snapshot the archive. Write the typed manifest to an exclusively created
-temporary file in the archive, flush and `fsync` it, then `fsync` and close the
-archive directory before atomically replacing `manifest.json`. That rename is
-the sole completion marker and must be the final failure-capable operation: if
-power loss loses the rename, missing manifest still means safely incomplete. On
-any failure before the manifest exists, remove the owned reservation while
-leaving source intact. If cleanup fails, report the incomplete archive
-explicitly; its missing manifest still marks it as incomplete. Do not delete or
-rename source after publication: source retirement is a separate reviewed task,
-prioritizing preservation over cleanup.
+The sole external commit point is a native no-overwrite directory rename of the
+verified private staging directory to the final archive name:
+`renameatx_np(RENAME_EXCL)` on macOS or `renameat2(RENAME_NOREPLACE)` on Linux.
+An existing target always fails without replacement, and an unsupported native
+primitive fails closed. Any failure before this publish removes only the still
+owned private staging directory; foreign sentinels and nonempty foreign parents
+are retained. Source files are retained after publication, and the migration is
+never run against real repository prototype files during tests. The Python 3.13
+suite exercises the same contract on macOS and Linux.
 
 - [ ] **Step 4: Verify GREEN without running on repository files**
 
@@ -211,11 +211,11 @@ python3.13 -m unittest discover -s tests -v
 git diff --check
 ```
 
-- [ ] **Step 5: Commit the reservation-safe tool**
+- [ ] **Step 5: Commit the private-staging publication tool**
 
 ```bash
 git add tools/migrate_prototype.py tests/test_migrate_prototype.py docs/superpowers/plans/2026-07-30-static-curriculum-foundation.md
-git commit -m "fix: reserve archive without overwrite races"
+git commit -m "fix: publish verified prototype without clobbering"
 ```
 
 ### Task 3: Define immutable catalog models

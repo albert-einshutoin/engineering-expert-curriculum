@@ -407,14 +407,23 @@ Before public-repository files replace the current root layout:
 
 1. Enumerate the existing prototype files using an explicit allowlist.
 2. Calculate SHA-256 checksums and a file-count/byte-count manifest.
-3. Move the prototype into `.archive/prototype-v1/`.
+3. Copy while retaining the source into `.archive/prototype-v1/`.
 4. Recalculate and compare checksums.
-5. Stop immediately if any file is absent or changed.
+5. Stop immediately if any file is absent or changed; retire the source only in a
+   separate reviewed task.
 
 `.archive/` and `.superpowers/` remain local and gitignored. The public
 repository receives the canonical catalog data and new authored content, not
-the 1,140 duplicated generated HTML pages. The migration tool is idempotent and
-refuses to overwrite an existing archive.
+the 1,140 duplicated generated HTML pages. The migration tool is one-shot and
+rerun-safe: it never clobbers an existing archive.
+
+It builds the copy, checksum verification, and manifest in a randomly named
+private staging directory below the archive parent. Regular data files, nested
+directories, the staging root, and the manifest are `fsync`ed before publication;
+the staging root is also `fsync`ed after its internal manifest rename. The only
+publication commit point is a no-overwrite native directory rename:
+`renameatx_np(RENAME_EXCL)` on macOS or `renameat2(RENAME_NOREPLACE)` on Linux.
+Unsupported platforms or unavailable native primitives fail closed.
 
 ## 13. Accessibility, security, and privacy
 
