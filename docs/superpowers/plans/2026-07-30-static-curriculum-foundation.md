@@ -697,124 +697,20 @@ the required final document-ID pass.
 
 - [ ] **Step 1: Write renderer contracts**
 
-```python
-# tests/test_render.py
-from __future__ import annotations
+The checked-in `tests/test_render.py` is the authoritative 26-test contract.
+It covers structured escaping, exact and freshly revalidated `SafeHtml`,
+file-compatible links at three depths, semantic Japanese document landmarks,
+and decoded-ID collisions after the single completed-document parse.
 
-from pathlib import Path
-from tempfile import TemporaryDirectory
-import unittest
-
-from curriculum_builder.errors import CurriculumValidationError
-from curriculum_builder.html_safety import SafeHtml, validate_fragment
-from curriculum_builder.render import Renderer
-
-
-class RendererTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.renderer = Renderer(Path("templates"))
-
-    def test_escapes_structured_values_but_keeps_validated_content(self) -> None:
-        html = self.renderer.page(
-            output_path=Path("lessons/example/index.html"),
-            title="<判断>",
-            description="比較 & 選択",
-            content=validate_fragment("<section><h2>本文</h2></section>"),
-        )
-        self.assertIn("&lt;判断&gt;", html)
-        self.assertIn("比較 &amp; 選択", html)
-        self.assertIn("<section><h2>本文</h2></section>", html)
-
-    def test_uses_relative_links_for_nested_file_pages(self) -> None:
-        html = self.renderer.page(
-            output_path=Path("lessons/example/index.html"),
-            title="例",
-            description="説明",
-            content=validate_fragment("<p>本文</p>"),
-        )
-        self.assertIn('href="../../styles.css"', html)
-        self.assertIn('href="../../index.html"', html)
-        self.assertNotIn('href="/', html)
-
-    def test_fragment_escapes_text_and_accepts_only_safe_html(self) -> None:
-        fragment = self.renderer.fragment(
-            "catalog.html",
-            text_values={"count": "<1140>"},
-            html_values={"sections": validate_fragment("<section>安全</section>")},
-        )
-        self.assertIn("&lt;1140&gt;", fragment.value)
-        self.assertIn("<section>安全</section>", fragment.value)
-
-    def test_rejects_forged_subclasses_and_revalidates_exact_safe_html(self) -> None:
-        # Construct adversarial fixtures without weakening SafeHtml's public API.
-        class ForgedSafeHtml(SafeHtml):
-            pass
-
-        forged = object.__new__(ForgedSafeHtml)
-        object.__setattr__(forged, "value", "<p>forged</p>")
-        with self.assertRaises(CurriculumValidationError):
-            self.renderer.page(
-                output_path=Path("index.html"),
-                title="例",
-                description="説明",
-                content=forged,
-            )
-        with self.assertRaises(CurriculumValidationError):
-            self.renderer.fragment(
-                "catalog.html",
-                text_values={"count": "1"},
-                html_values={"sections": forged},
-            )
-
-        modified = validate_fragment("<p>valid</p>")
-        object.__setattr__(modified, "value", "<script>changed</script>")
-        with self.assertRaises(CurriculumValidationError):
-            self.renderer.page(
-                output_path=Path("index.html"),
-                title="例",
-                description="説明",
-                content=modified,
-            )
-
-    def test_rejects_content_id_collisions_in_completed_document(self) -> None:
-        with self.assertRaisesRegex(
-            CurriculumValidationError, r"^duplicate rendered HTML id$"
-        ):
-            self.renderer.page(
-                output_path=Path("index.html"),
-                title="例",
-                description="説明",
-                content=validate_fragment('<section id="main">本文</section>'),
-            )
-
-    def test_keeps_raw_html_in_element_body_context_and_disables_script(self) -> None:
-        base = (Path("templates") / "base.html").read_text(encoding="utf-8")
-        self.assertEqual(base.count("$content"), 1)
-        self.assertIn('<main id="main">$content</main>', base)
-        self.assertIn("script-src 'none'", base)
-
-    def test_rejects_raw_html_placeholder_inside_an_attribute(self) -> None:
-        with TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            (root / "base.html").write_text(
-                (Path("templates") / "base.html").read_text(encoding="utf-8"),
-                encoding="utf-8",
-            )
-            (root / "unsafe.html").write_text(
-                '<p class="$sections">本文</p>',
-                encoding="utf-8",
-            )
-            renderer = Renderer(root)
-            with self.assertRaisesRegex(
-                CurriculumValidationError,
-                r"^raw HTML placeholder requires element-body context$",
-            ):
-                renderer.fragment(
-                    "unsafe.html",
-                    text_values={},
-                    html_values={"sections": validate_fragment("<strong>x</strong>")},
-                )
-```
+The trust-boundary table must exercise both `$name` and `${name}` syntax and
+must reject raw or text placeholders in tag-name, comment, script, style, and
+unquoted-attribute contexts. Raw placeholders in quoted attributes and
+duplicate placeholders in otherwise valid element-body contexts also fail.
+The suite additionally pins missing/extra/overlapping keys, invalid template
+syntax, one-shot mapping snapshots, type and size bounds, safe output paths,
+safe fragment names, template symlink/non-regular/oversize/UTF-8/OSError
+failures, working-directory independence, base placeholder counts, CSP and
+asset policy, and bounded non-leaking errors.
 
 - [ ] **Step 2: Run renderer tests and verify RED**
 
@@ -828,78 +724,19 @@ Expected: import fails because `curriculum_builder.render` does not exist.
 
 - [ ] **Step 3: Implement escaped rendering with path-relative assets**
 
-```python
-# curriculum_builder/render.py
-from __future__ import annotations
+Implement the contract directly in `curriculum_builder/render.py`; do not keep
+a second copy of production code in this plan. Use bounded one-read template
+loading with symlink and regular-file checks, snapshot input mappings once,
+lex template contexts before substitution, and escape all structured values.
+Only an exact `SafeHtml` that succeeds under a fresh `validate_fragment()` may
+cross a raw placeholder. Validate each rendered fragment once.
 
-from html import escape
-from pathlib import Path
-from string import Template
-
-from curriculum_builder.errors import CurriculumValidationError
-from curriculum_builder.html_safety import SafeHtml, validate_fragment
-
-
-class Renderer:
-    def __init__(self, template_root: Path) -> None:
-        self._template_root = template_root
-        self._base = Template((template_root / "base.html").read_text(encoding="utf-8"))
-        self._require_element_body_placeholders(
-            self._base.template, frozenset({"content"})
-        )
-
-    def page(
-        self,
-        *,
-        output_path: Path,
-        title: str,
-        description: str,
-        content: SafeHtml,
-    ) -> str:
-        safe_content = self._require_safe_html(content)
-        depth = max(0, len(output_path.parent.parts))
-        root = "../" * depth
-        document = self._base.substitute(
-            title=escape(title),
-            description=escape(description, quote=True),
-            root=root,
-            content=safe_content.value,
-        )
-        self._reject_duplicate_document_ids(document)
-        return document
-
-    def fragment(
-        self,
-        name: str,
-        *,
-        text_values: dict[str, str],
-        html_values: dict[str, SafeHtml],
-    ) -> SafeHtml:
-        template = Template(
-            (self._template_root / name).read_text(encoding="utf-8")
-        )
-        safe_values = {
-            key: self._require_safe_html(value)
-            for key, value in html_values.items()
-        }
-        self._require_element_body_placeholders(
-            template.template, frozenset(safe_values)
-        )
-        values = {key: escape(value) for key, value in text_values.items()}
-        values.update({key: value.value for key, value in safe_values.items()})
-        return validate_fragment(template.substitute(values))
-
-    @staticmethod
-    def _require_safe_html(value: object) -> SafeHtml:
-        if type(value) is not SafeHtml:
-            raise CurriculumValidationError("raw HTML requires exact SafeHtml")
-        return validate_fragment(value.value)
-```
-
-Implement `_require_element_body_placeholders()` as a fail-closed template
-context check before substitution. Implement `_reject_duplicate_document_ids()`
-as the single necessary parse of the completed document; it tracks decoded
-`id` values without attempting to sanitize or rewrite markup.
+Resolve and pin the template root at construction so later `cwd` changes do
+not affect reads. Validate base placeholder counts and their contexts, the
+semantic landmarks and restrictive CSP, and reject external or absolute asset
+URLs before accepting the base template. The completed page receives one
+additional parse solely to reject decoded duplicate IDs across the trusted
+base and validated content.
 
 ```html
 <!doctype html>
@@ -909,7 +746,7 @@ as the single necessary parse of the completed document; it tracks decoded
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="$description">
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; script-src 'none'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+        content="default-src 'none'; script-src 'none'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; frame-src 'none'; frame-ancestors 'none'">
   <title>$title · Engineering Expert Curriculum</title>
   <link rel="stylesheet" href="${root}styles.css">
 </head>
@@ -973,7 +810,8 @@ Run:
 python3.13 -m unittest tests.test_render -v
 ```
 
-Expected: all seven renderer trust-boundary and rendering tests pass.
+Expected at Task 7 completion: all 26 renderer trust-boundary and rendering
+tests pass.
 
 - [ ] **Step 5: Commit file-compatible rendering**
 
