@@ -1197,7 +1197,7 @@ from pathlib import Path
 import shutil
 from tempfile import TemporaryDirectory
 
-from curriculum_builder.catalog import load_catalog
+from curriculum_builder.catalog import load_catalog, load_repository_catalog
 from curriculum_builder.html_safety import SafeHtml
 from curriculum_builder.render import Renderer
 
