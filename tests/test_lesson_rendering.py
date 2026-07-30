@@ -139,7 +139,15 @@ def _site_fixture():
         content = root / "content"
         templates = root / "templates"
         static_root = root / "static"
-        shutil.copytree(REPOSITORY_ROOT / "content", content)
+        # Rendering edge-case tests author their own absent/empty/one/multiple
+        # lesson collections. Keep that fixture independent from the growing
+        # canonical authored corpus while retaining real catalog and roadmap
+        # inputs; canonical lesson publication is covered by the real build.
+        shutil.copytree(
+            REPOSITORY_ROOT / "content",
+            content,
+            ignore=shutil.ignore_patterns("lessons"),
+        )
         shutil.copytree(REPOSITORY_ROOT / "templates", templates)
         shutil.copytree(REPOSITORY_ROOT / "static", static_root)
         yield root, content, templates, static_root

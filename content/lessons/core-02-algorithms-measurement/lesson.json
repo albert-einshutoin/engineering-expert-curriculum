@@ -1,0 +1,170 @@
+{
+  "version": 1,
+  "id": "core-02-algorithms-measurement",
+  "title": "アルゴリズム選択を計算量と測定で検証する",
+  "summary": "漸近的な予測と再現可能な実測を分け、入力分布に合うアルゴリズムを選ぶ。",
+  "track": "foundations",
+  "stage": 1,
+  "difficulty": "foundation",
+  "estimatedMinutes": 240,
+  "prerequisiteIds": ["core-01-systems-tradeoffs"],
+  "objectives": [
+    {
+      "id": "obj-predict",
+      "statement": "入力サイズを2倍にしたときの操作回数の増え方を、三つの候補アルゴリズムについて予測できる",
+      "evidenceIds": ["benchmark-report", "assessment"]
+    },
+    {
+      "id": "obj-measure",
+      "statement": "ウォームアップ、反復、中央値、入力生成の分離を含む再現可能なベンチマークを実行できる",
+      "evidenceIds": ["benchmark-report", "teach-back"]
+    },
+    {
+      "id": "obj-reselect",
+      "statement": "予測と実測の差を入力分布、定数項、処理系の観測から説明し、別分布でアルゴリズムを再選択できる",
+      "evidenceIds": ["assessment", "transfer"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "benchmark-report",
+      "kind": "artifact",
+      "description": "仮説、入力生成、実行条件、生データ、要約統計、差の説明を含む報告"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "Big-Oと絶対時間の違いをグラフなしでも説明できる5分説明"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "実測の逆転を複数仮説と追加測定で診断する回答"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "偏りと重複率が変化した未知データに対する再選択"
+    }
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "入力サイズ、データ分布、比較対象、測定環境をベンチマークの独立した条件として列挙できる",
+      "evidenceIds": ["benchmark-report"]
+    },
+    {
+      "level": "explain",
+      "criterion": "漸近的上界が成長率を表し、特定マシンの秒数を表さない理由を具体例で説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "同一入力を使った反復測定から中央値とばらつきを報告し、計算量予測と照合できる",
+      "evidenceIds": ["benchmark-report"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "予測と実測が逆転したとき、入力生成、キャッシュ、GC、外れ値を追加測定で切り分けられる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "本番データの分布変化を監視条件へ変換し、アルゴリズム再選択のレビューを主導できる",
+      "evidenceIds": ["transfer"]
+    }
+  ],
+  "lab": {
+    "title": "線形探索と集合参照の交差点を測る",
+    "artifact": "計算量予測と実測値の差を説明するベンチマーク報告",
+    "steps": [
+      "重複なし、90パーセント同一値、探索対象が先頭寄りの三分布を固定seedで生成する",
+      "入力サイズ1000、10000、100000について線形探索と集合構築後の参照を同じ問い合わせ列で測る",
+      "入力生成と集合構築を参照時間から分離し、各条件を7回以上反復して中央値と範囲を残す",
+      "計算量から予測した増加率と実測の比を並べ、差を説明する仮説を二つ立てる",
+      "追加測定で仮説を一つ反証し、どの問い合わせ回数で選択が逆転するか報告する"
+    ]
+  },
+  "teachBack": "5分で、Big-Oが絶対時間ではないこと、入力分布と定数項が選択を変えること、再現に必要な実行条件を説明する。",
+  "assessment": [
+    {
+      "prompt": "O(n log n)の実装がO(n²)の実装よりn=200で遅かった。直ちに後者を採用できない理由と追加測定を示す。",
+      "expectedEvidence": "交差点、入力分布、定数項、ウォームアップ、処理系、反復統計を分けた仮説と測定計画"
+    },
+    {
+      "prompt": "7回の結果のうち1回だけ20倍遅い。削除してよいかを判断する前に何を観測するか。",
+      "expectedEvidence": "GC、他プロセス負荷、ページフォールト、入力差を確認し、除外規則を事前定義する説明"
+    }
+  ],
+  "transferTask": "データ分布が変わる場合のアルゴリズム再選択",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "Big-Oを実行秒数として扱うか、構築費用を参照費用から落としている",
+        "developing": "成長率は正しいが、平均時と最悪時または償却計算量を区別できない",
+        "proficient": "操作モデル、成長率、構築費用、問い合わせ回数を整合する式で説明する",
+        "exemplary": "分布依存の期待値と病的入力を分け、実装上の定数項まで予測に反映する"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "最速だった一条件だけで本番採用を決める",
+        "developing": "複数サイズを比較するが、本番分布と保守費用を判断に含めない",
+        "proficient": "本番のサイズ、分布、呼出回数、メモリ制約から交差点を示して選ぶ",
+        "exemplary": "分布変化の監視閾値とロールバック可能な再選択手順まで設計する"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "単発の所要時間だけで、コード、入力、環境を再現できない",
+        "developing": "反復値はあるが、入力生成やウォームアップが測定に混ざる",
+        "proficient": "固定入力、分離した区間、7回以上の値、中央値と範囲を提示する",
+        "exemplary": "外れ値の扱いを事前定義し、複数サイズの比と環境差でも結論を検証する"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "速い遅いの結論だけで、比較条件と単位が分からない",
+        "developing": "表は読めるが、仮説と結論の対応または測定限界が曖昧である",
+        "proficient": "予測、手順、生データ、要約、差の説明、推奨を追跡できる",
+        "exemplary": "非専門家にも成長率と絶対時間を混同させず、再測定条件を伝えられる"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "NIST DADS big-O",
+      "url": "https://www.nist.gov/dads/HTML/bigOnotation.html",
+      "kind": "primary"
+    },
+    {
+      "title": "SPEC CPU 2017 Run and Reporting Rules",
+      "url": "https://www.spec.org/cpu2017/Docs/runrules.html",
+      "kind": "standard"
+    },
+    {
+      "title": "Python timeit",
+      "url": "https://docs.python.org/3/library/timeit.html",
+      "kind": "primary"
+    },
+    {
+      "title": "Princeton COS226 Quicksort",
+      "url": "https://www.cs.princeton.edu/courses/archive/spr18/cos226/lectures/23Quicksort.pdf",
+      "kind": "primary"
+    }
+  ],
+  "review": {
+    "intervalDays": [1, 7, 30, 90],
+    "prompts": [
+      "Big-Oから予測できることと予測できないことを一例ずつ示す",
+      "入力生成を測定区間へ含めると、どの結論が変わり得るか",
+      "本番分布のどの変化を再選択のトリガーにするか"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}

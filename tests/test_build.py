@@ -37,6 +37,13 @@ from curriculum_builder.errors import CurriculumValidationError
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+FOUNDATION_SOURCE_COUNTS = {
+    "core-01-systems-tradeoffs": 3,
+    "core-02-algorithms-measurement": 4,
+    "core-03-architecture-memory-caches": 3,
+    "core-04-os-processes-concurrency": 4,
+    "core-05-networks-latency-failure": 5,
+}
 
 
 @contextmanager
@@ -175,6 +182,7 @@ class _DocumentParser(HTMLParser):
         self.has_script = False
         self.event_attributes: list[str] = []
         self.remote_attributes: list[str] = []
+        self.external_links: list[tuple[str, str | None]] = []
 
     def handle_starttag(
         self,
@@ -201,6 +209,15 @@ class _DocumentParser(HTMLParser):
             if normalized_name in {"href", "src", "action", "formaction"}:
                 candidate = value or ""
                 if (
+                    normalized_tag == "a"
+                    and normalized_name == "href"
+                    and candidate.startswith("https://")
+                ):
+                    self.external_links.append(
+                        (candidate, values.get("rel"))
+                    )
+                    continue
+                if (
                     "://" in candidate
                     or candidate.startswith(("/", "\\", "//"))
                     or candidate.casefold().startswith(
@@ -215,7 +232,9 @@ class _DocumentParser(HTMLParser):
 def _assert_static_site(
     test: unittest.TestCase,
     output: Path,
+    lesson_source_counts: dict[str, int] | None = None,
 ) -> dict[Path, bytes]:
+    source_counts = lesson_source_counts or {}
     expected = {
         Path("index.html"),
         Path("styles.css"),
@@ -223,6 +242,10 @@ def _assert_static_site(
         Path("roadmap/index.html"),
         Path("lessons/index.html"),
     }
+    expected.update(
+        Path("lessons") / lesson_id / "index.html"
+        for lesson_id in source_counts
+    )
     actual = {
         path.relative_to(output)
         for path in output.rglob("*")
@@ -242,11 +265,32 @@ def _assert_static_site(
         test.assertFalse(parser.has_script, relative)
         test.assertEqual(parser.event_attributes, [], relative)
         test.assertEqual(parser.remote_attributes, [], relative)
+        lesson_id = (
+            relative.parts[1]
+            if len(relative.parts) == 3
+            and relative.parts[0] == "lessons"
+            else None
+        )
+        expected_source_count = source_counts.get(lesson_id or "", 0)
+        test.assertEqual(
+            len(parser.external_links),
+            expected_source_count,
+            relative,
+        )
+        test.assertTrue(
+            all(
+                href.startswith("https://") and rel == "noreferrer"
+                for href, rel in parser.external_links
+            ),
+            relative,
+        )
         ids_by_page[relative] = parser.ids
         links_by_page[relative] = parser.links
 
     for page, links in links_by_page.items():
         for link in links:
+            if link.startswith("https://"):
+                continue
             path_part, separator, fragment = link.partition("#")
             target = (
                 page
@@ -275,7 +319,7 @@ class BuildAcceptanceTests(unittest.TestCase):
                 output_root=output,
             )
 
-            _assert_static_site(self, output)
+            _assert_static_site(self, output, FOUNDATION_SOURCE_COUNTS)
             catalog = (output / "catalog/index.html").read_text(
                 encoding="utf-8"
             )
@@ -325,7 +369,11 @@ class BuildAcceptanceTests(unittest.TestCase):
                 output,
             )
             build_site(*arguments)
-            first_bytes = _assert_static_site(self, output)
+            first_bytes = _assert_static_site(
+                self,
+                output,
+                FOUNDATION_SOURCE_COUNTS,
+            )
             first_metadata = {
                 path.relative_to(output): (
                     stat.S_IMODE(path.stat().st_mode),
@@ -340,7 +388,11 @@ class BuildAcceptanceTests(unittest.TestCase):
 
             build_site(*arguments)
 
-            second_bytes = _assert_static_site(self, output)
+            second_bytes = _assert_static_site(
+                self,
+                output,
+                FOUNDATION_SOURCE_COUNTS,
+            )
             second_metadata = {
                 path.relative_to(output): (
                     stat.S_IMODE(path.stat().st_mode),
@@ -399,7 +451,7 @@ class BuildAcceptanceTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn(str(output), result.stdout)
-            _assert_static_site(self, output)
+            _assert_static_site(self, output, FOUNDATION_SOURCE_COUNTS)
 
     def test_cli_rejects_control_characters_without_log_injection(
         self,

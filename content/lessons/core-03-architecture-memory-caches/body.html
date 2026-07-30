@@ -1,0 +1,111 @@
+<section id="why">
+  <h2>なぜ重要か</h2>
+  <p>CPUが命令を実行する速さと、必要なデータが届く速さは同じではない。計算量が同じ二つの実装でも、データの並びと走査順序によって実効帯域が大きく変わる。大きな配列をランダムにたどる処理は、演算よりもキャッシュライン転送やアドレス変換待ちに支配され得る。</p>
+  <p>ここでいうキャッシュは、近くまたは最近使ったデータの複製をCPU近傍へ保持する階層である。TLBはTranslation Lookaside Bufferの略で、仮想ページから物理ページへの変換結果を保持する。似た性能症状を起こすが、同じ機構ではない。誤診すると、配列を小さくすべき場面で巨大ページを試すなど、原因とずれた最適化になる。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> L1は何nsという値を普遍定数として扱わない。世代、周波数、競合、命令、測定法で変わる。coherence、TLB、language memory modelも、それぞれ別の契約である。</p>
+  </aside>
+</section>
+<section id="mental-model">
+  <h2>メンタルモデル</h2>
+  <p>ロード命令がデータへ到達するまでを「変換」と「転送」に分ける。仮想アドレスのページ変換を得た後、該当するキャッシュラインを探し、なければより遠い階層へ要求する。実装から直接見えるのは経過時間でも、仮説は階層ごとに立てる。</p>
+  <figure>
+    <figcaption>一つのロードを追うCPU・メモリ経路</figcaption>
+    <ol>
+      <li><strong>命令:</strong> 仮想アドレスAの値を要求する。</li>
+      <li><strong>TLB:</strong> Aのページ変換を検索する。missならページテーブルwalkが必要になる。</li>
+      <li><strong>L1 cache:</strong> Aを含むcache lineを検索する。hitなら近い階層で返る。</li>
+      <li><strong>L2と最終レベルcache:</strong> L1 miss時により大きい共有階層を探索する。</li>
+      <li><strong>memory controller:</strong> 全cacheでmissなら主記憶からline単位で転送する。</li>
+      <li><strong>再利用:</strong> 同じline内の次要素を使えば空間的局所性、短時間に同じ値を使えば時間的局所性を得る。</li>
+    </ol>
+  </figure>
+  <p>データ構造の選択では、オブジェクト数だけでなく、hot pathで同時に読むfieldを考える。Array of Structuresは一要素の全fieldを同時に使う処理に向き、Structure of Arraysは同じfieldを多数要素から読む処理に向き得る。ただし更新の一貫性と可読性の費用も比較する。</p>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>走査する要素数を揃えてアクセス順だけを変える</h3>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+import random, time
+n = 1_000_000
+xs = list(range(n))
+order = list(range(n))
+random.Random(42).shuffle(order)
+for name, indexes in (("sequential", range(n)), ("random", order)):
+    start = time.perf_counter_ns()
+    total = sum(xs[i] for i in indexes)
+    elapsed = time.perf_counter_ns() - start
+    print(name, elapsed, total)
+PY</code></pre>
+  <dl>
+    <dt>前提</dt>
+    <dd>入力生成を測定外に置き、同一プロセスで各条件を7回以上、順序を交互にして測る。</dd>
+    <dt>入力</dt>
+    <dd>100万個の整数と、0から順のindex列、固定seedでshuffleしたindex列。</dd>
+    <dt>操作</dt>
+    <dd>どちらも100万回の参照と加算を行い、総和が一致することを確認する。</dd>
+    <dt>観測</dt>
+    <dd>仮の中央値が連続45ms、ランダム210msなら約4.7倍差である。両者のBig-OはO(n)で、差は演算回数だけでは説明できない。</dd>
+    <dt>結論</dt>
+    <dd>アクセス順が局所性を変えた仮説を支持する。ただしPython object参照やinterpreter費用も含むため、CPU cacheだけを確定原因とはしない。</dd>
+  </dl>
+  <p>配列サイズを32KiB、8MiB、128MiB相当へ変え、strideを1、16、ページ相当へ変える。サイズの折れ曲がりはcache容量、ページstrideでの悪化はTLBを疑う手掛かりになるが、別変数を固定した追加測定が必要である。</p>
+  <p><strong>ラボ成果物:</strong> 「アクセス局所性を変えた測定とCPU・メモリ経路図」には、CPU名、OS、処理系、全反復値、走査順、総和、仮説と未観測区間を含める。</p>
+</section>
+<section id="tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <table>
+    <caption>データ配置を選ぶdecision table</caption>
+    <thead>
+      <tr>
+        <th scope="col">アクセス特性</th>
+        <th scope="col">候補配置</th>
+        <th scope="col">期待する機構</th>
+        <th scope="col">採用しない条件</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row">一要素の全fieldを同時に読む</th>
+        <td>Array of Structures</td>
+        <td>同じ要素のデータを近接配置</td>
+        <td>一部fieldだけの大量走査が支配的</td>
+      </tr>
+      <tr>
+        <th scope="row">同じfieldを多数要素から読む</th>
+        <td>Structure of Arrays</td>
+        <td>不要fieldのline転送を減らす</td>
+        <td>要素単位の更新整合性が複雑化する</td>
+      </tr>
+      <tr>
+        <th scope="row">疎なkeyで挿入削除が多い</th>
+        <td>間接参照を許容</td>
+        <td>更新と識別の単純さを優先</td>
+        <td>profileでpointer chasingがhot pathと判明</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3>もっともらしい誤診と反証</h3>
+  <ol>
+    <li><strong>誤診:</strong> 「配列拡大で遅くなったのでL2 cache容量を超えた」。<strong>反証:</strong> 作業集合、ページ数、アクセス順を別々に変える。ページstrideだけで段差が出るならTLB、初回だけならページフォールトも疑う。</li>
+    <li><strong>誤診:</strong> 「別変数を更新しているから共有cacheの競合ではない」。<strong>反証:</strong> 変数間へpaddingを入れて配置だけを変える。同一cache line上のfalse sharingなら、意味上は別変数でもcoherence trafficが減って改善する。</li>
+  </ol>
+  <p>局所性のための平坦化は、境界違反や重複状態を招くことがある。profileで支配的と確認した経路に限定し、同じ入力の正しさ試験と性能測定を対にする。機種が変わればcache構成も変わるため再検証する。</p>
+</section>
+<section id="knowledge-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>TLB hitならcacheにもhitするか。しない。アドレス変換結果とデータ複製は別であり、一方だけhitし得る。</li>
+    <li>連続走査が速ければhardware prefetchが原因と確定できるか。できない。line内再利用、少ないTLB miss、処理系最適化も候補である。</li>
+    <li>paddingで改善したらdata raceも解消したか。解消を意味しない。配置はcoherence trafficを変えるが、language memory model上の同期を置き換えない。</li>
+  </ol>
+  <h3>5分teach-back</h3>
+  <p>ロード一回の経路図を使い、TLB miss、cache miss、主記憶転送を順に説明する。連続とランダムの測定差を図のどこへ結ぶか、確定できない部分を明言する。</p>
+  <h3>未知へのtransfer</h3>
+  <p>データ指向設計を別の処理系へ適用する。画像のRGBA処理または分析DBの列走査を選び、使うfield、更新単位、ベクトル化、メモリ増加を比較し、元のPython測定値を流用せず再測定する。</p>
+</section>
+<section id="sources-next">
+  <h2>出典と次の学習</h2>
+  <p>Intel Optimization Reference Manualはcache階層とデータアクセス最適化、Armv8-A memory model guideは順序と共有メモリの概念、Linux kernelのTLB文書は変換cacheを無効化するOS上の論点を確認するために使う。URLはmetadataのsourcesに集約し、本文は機構を自分の言葉で要約した。</p>
+  <p>次は並行性で、cache coherenceとプログラム上の同期契約を混同せずに扱う。1日後は経路図、7日後はstride実験、30日後は実サービスのprofile、90日後は別CPUで再測定する。</p>
+</section>

@@ -1,0 +1,175 @@
+{
+  "version": 1,
+  "id": "core-05-networks-latency-failure",
+  "title": "ネットワーク遅延と部分失敗を層別に診断する",
+  "summary": "DNS、TCP、TLS、HTTPの時系列を分け、期限内に失敗を扱う予算を設計する。",
+  "track": "foundations",
+  "stage": 1,
+  "difficulty": "foundation",
+  "estimatedMinutes": 270,
+  "prerequisiteIds": ["core-04-os-processes-concurrency"],
+  "objectives": [
+    {
+      "id": "obj-timeline",
+      "statement": "DNS問い合わせからHTTP応答完了までを少なくとも六イベントの時系列として図示できる",
+      "evidenceIds": ["trace-budget", "teach-back"]
+    },
+    {
+      "id": "obj-budget",
+      "statement": "利用者期限から接続、TLS、応答、再試行へ時間を配分し、最悪時の合計を計算できる",
+      "evidenceIds": ["trace-budget", "assessment"]
+    },
+    {
+      "id": "obj-diagnose",
+      "statement": "パケット損失と依存サービス遅延の仮説を層別の時刻と再送観測で反証し、未知経路へ診断を移せる",
+      "evidenceIds": ["assessment", "transfer"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "trace-budget",
+      "kind": "artifact",
+      "description": "DNSからHTTPまでの時刻、期限、再試行条件、未観測区間を含むトレース"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "輸送成功とアプリケーション成功を区別する5分説明"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "損失、名前解決、接続、依存遅延の仮説を反証する診断"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "未知の多段依存で損失と依存遅延を切り分けた調査計画"
+    }
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "DNS、TCP、TLS、HTTPの開始・完了イベントと各層の失敗を時系列上で識別できる",
+      "evidenceIds": ["trace-budget"]
+    },
+    {
+      "level": "explain",
+      "criterion": "TCP到達、TLS認証、HTTP応答、業務処理成功が別の契約である理由を説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "総期限から各段の予算と再試行回数を逆算し、合計が期限を超えないトレースを作成できる",
+      "evidenceIds": ["trace-budget"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "DNS時間、接続時間、再送、server timingを比較し、損失と依存遅延を反証できる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "冪等性、deadline伝播、retry stormを含む障害レビューを未知の依存グラフで主導できる",
+      "evidenceIds": ["transfer"]
+    }
+  ],
+  "lab": {
+    "title": "名前解決から応答完了までを期限へ収める",
+    "artifact": "DNSからHTTPまでの時系列トレースとタイムアウト予算",
+    "steps": [
+      "cold DNSとwarm DNSで、名前解決、接続、TLS、最初のbyte、本文完了の単調時計時刻を記録する",
+      "利用者期限2000msから各段の上限、後処理余白、キャンセル伝播時間を配分する",
+      "一回の再試行を含む最悪時合計を計算し、期限を超える場合は試行予算を修正する",
+      "制御可能な遅延依存と接続失敗を別々に注入し、時系列上の差を観測する",
+      "非冪等操作では再試行を止める条件と、結果不明を照会するための識別子を記録する"
+    ]
+  },
+  "teachBack": "5分で、DNS、TCP、TLS、HTTPの役割、TCP成功が業務成功を保証しない理由、exactly-onceを安易に主張できない理由を説明する。",
+  "assessment": [
+    {
+      "prompt": "HTTPのp99が800msへ悪化した。『パケット損失だ』という診断と『依存DBが遅い』という診断をどう区別するか。",
+      "expectedEvidence": "TCP再送または接続時間、server-side区間、依存span、同時刻比較による反証"
+    },
+    {
+      "prompt": "POSTの応答がtimeoutした。即時retryが常に安全でない理由と必要な契約を示す。",
+      "expectedEvidence": "処理済みだが応答喪失の状態、冪等key、結果照会、期限とbackoffを含む説明"
+    }
+  ],
+  "transferTask": "パケット損失と依存遅延を区別する診断",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "TCP接続、TLS、HTTP成功、業務処理完了を同じ成功として扱う",
+        "developing": "層は区別するが、再送またはtimeout後の結果不明状態を説明できない",
+        "proficient": "各層のイベント、期限、失敗状態、retryの影響を正しい順序で説明する",
+        "exemplary": "DNS cache、TLS 0-RTT、TCP再送、冪等性の境界と反例まで扱う"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "各段へ総期限と同じtimeoutを設定し、無条件に再試行する",
+        "developing": "予算を分けるが、後処理余白、deadline伝播、操作の冪等性が抜ける",
+        "proficient": "利用者期限から逆算し、操作種別に応じて試行回数と停止条件を選ぶ",
+        "exemplary": "retry stormと部分成功を考慮し、適応的縮退と結果照会を設計する"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "総所要時間だけでネットワーク層の原因を断定する",
+        "developing": "client時刻はあるが、serverまたは再送の観測と時刻基準が揃わない",
+        "proficient": "単調時計の層別時刻、再送、server区間を同じ要求IDで相関する",
+        "exemplary": "coldとwarm経路、複数地点、欠測区間を比較し、観測限界を結論へ反映する"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "ネットワークが遅いという表現だけで、層と時間帯が分からない",
+        "developing": "時系列はあるが、期限超過への寄与と次の反証操作が不明である",
+        "proficient": "要求ID、層別区間、予算、仮説、反証、次の操作を一枚で追跡できる",
+        "exemplary": "client、network、service各担当へ責任断定を避けつつ同じ証拠を提示する"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "RFC1035",
+      "url": "https://www.rfc-editor.org/rfc/rfc1035.html",
+      "kind": "standard"
+    },
+    {
+      "title": "RFC9293",
+      "url": "https://www.rfc-editor.org/rfc/rfc9293.html",
+      "kind": "standard"
+    },
+    {
+      "title": "RFC6298",
+      "url": "https://www.rfc-editor.org/rfc/rfc6298.html",
+      "kind": "standard"
+    },
+    {
+      "title": "RFC8446",
+      "url": "https://www.rfc-editor.org/rfc/rfc8446.html",
+      "kind": "standard"
+    },
+    {
+      "title": "RFC9110",
+      "url": "https://www.rfc-editor.org/rfc/rfc9110.html",
+      "kind": "standard"
+    }
+  ],
+  "review": {
+    "intervalDays": [1, 7, 30, 90],
+    "prompts": [
+      "総期限2000msへ一回の再試行を入れるなら、各試行へ何ms配分するか",
+      "TCP成功から業務成功までに残る結果不明状態は何か",
+      "パケット損失説を反証するclient側とserver側の観測を一つずつ示す"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}

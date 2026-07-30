@@ -1,0 +1,173 @@
+{
+  "version": 1,
+  "id": "core-04-os-processes-concurrency",
+  "title": "プロセス・スレッド・並行性の不変条件",
+  "summary": "隔離と共有の境界を選び、再現可能な競合を不変条件で修正する。",
+  "track": "foundations",
+  "stage": 1,
+  "difficulty": "foundation",
+  "estimatedMinutes": 270,
+  "prerequisiteIds": [
+    "core-02-algorithms-measurement",
+    "core-03-architecture-memory-caches"
+  ],
+  "objectives": [
+    {
+      "id": "obj-boundaries",
+      "statement": "プロセスの隔離資源とスレッドの共有資源を、障害伝播と通信経路を含めて図示できる",
+      "evidenceIds": ["race-record", "teach-back"]
+    },
+    {
+      "id": "obj-race",
+      "statement": "100回以上の反復で競合を再現し、失敗時のinterleavingと破られた不変条件を記録できる",
+      "evidenceIds": ["race-record", "assessment"]
+    },
+    {
+      "id": "obj-fix",
+      "statement": "同期方法を適用した後に正しさ、停止性、性能を再測定し、別の共有境界で選択を再比較できる",
+      "evidenceIds": ["assessment", "transfer"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "race-record",
+      "kind": "artifact",
+      "description": "再現条件、interleaving、不変条件、修正、回帰測定を含む実験記録"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "隔離と共有の失敗半径を比較する5分説明"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "競合、deadlock、可視性の仮説を観測で切り分ける回答"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "未知のワーカー処理でプロセス分離とスレッド共有を再評価した設計"
+    }
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "アドレス空間、ファイル記述子、実行状態、共有データを隔離または共有の観点で分類できる",
+      "evidenceIds": ["race-record"]
+    },
+    {
+      "level": "explain",
+      "criterion": "操作のatomicity、可視性、順序性、deadlockを別の正しさ条件として説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "失敗頻度を測れる競合実験を作り、明示した不変条件に対して同期方法を適用できる",
+      "evidenceIds": ["race-record"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "イベント列、ロック取得順、進捗カウンタからdata race、deadlock、starvationを切り分けられる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "信頼境界、障害半径、通信量、デバッグ容易性から隔離単位のレビューを主導できる",
+      "evidenceIds": ["transfer"]
+    }
+  ],
+  "lab": {
+    "title": "在庫更新のlost updateを再現して不変条件で直す",
+    "artifact": "競合を再現し不変条件で修正した実験記録",
+    "steps": [
+      "在庫初期値1000を二つのworkerが各500回減らす処理を同期なしで100試行以上実行する",
+      "最終値は0であり負数にならないという不変条件を先に明文化し、違反回数を記録する",
+      "失敗試行の読取り、計算、書込みinterleavingを最小のイベント列として再構成する",
+      "mutexまたはatomic read-modify-writeで修正し、同じ試行数で不変条件と停止性を確認する",
+      "直列、同期ありスレッド、プロセス間メッセージの所要時間と障害半径を比較する"
+    ]
+  },
+  "teachBack": "5分で、プロセスとスレッドの共有境界、lost updateのinterleaving、volatileやbarrierだけではatomicityを得られない理由を説明する。",
+  "assessment": [
+    {
+      "prompt": "二つのworkerが停止した。『deadlockだ』という診断を確定するために必要な証拠と、別のもっともらしい原因を示す。",
+      "expectedEvidence": "待機資源とロック取得順の循環、進捗観測、I/O待ちまたはstarvationとの反証"
+    },
+    {
+      "prompt": "共有変数へvolatileを付けたら再現しなくなった。修正完了と判断できない理由は何か。",
+      "expectedEvidence": "atomicity、happens-before、コンパイラとCPUの順序、確率的な非再現を分けた説明"
+    }
+  ],
+  "transferTask": "プロセス分離とスレッド共有の再比較",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "volatile、barrier、mutexを同義に扱うか、lost updateの操作列を説明できない",
+        "developing": "競合は説明するが、atomicityと可視性またはdeadlockとstarvationを混同する",
+        "proficient": "不変条件、interleaving、happens-before、同期範囲を一貫して説明する",
+        "exemplary": "停止性とメモリ順序の反例を含め、実装とOS境界の双方を正確に扱う"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "プロセスは重い、スレッドは軽いという一軸だけで選択する",
+        "developing": "性能と隔離を比較するが、通信、復旧、信頼境界が抜ける",
+        "proficient": "障害半径、共有量、通信費、観測性を制約に合わせて比較する",
+        "exemplary": "権限分離と段階的な並列度を設計し、負荷変化時の撤回条件を示す"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "一度再現しなかったことを修正の証拠にする",
+        "developing": "反復試験はあるが、失敗時のイベント列または停止性の観測がない",
+        "proficient": "100試行以上の失敗頻度、最小interleaving、修正後の同条件回帰を示す",
+        "exemplary": "スケジューリングを変えたstress試験と性能分布で正しさと費用を検証する"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "raceがあったという結論だけで、不変条件と再現方法がない",
+        "developing": "コード変更は示すが、なぜ修正になるかをイベント列で説明しない",
+        "proficient": "再現条件、不変条件、原因、同期範囲、回帰結果をレビュー可能に結ぶ",
+        "exemplary": "運用者へ検知方法を、実装者へ同期規約を同じ証拠から説明できる"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "POSIX.1-2024 pthread_create",
+      "url": "https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/functions/pthread_create.html",
+      "kind": "standard"
+    },
+    {
+      "title": "POSIX.1-2024 fork",
+      "url": "https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/functions/fork.html",
+      "kind": "standard"
+    },
+    {
+      "title": "Linux kernel memory barriers",
+      "url": "https://docs.kernel.org/core-api/wrappers/memory-barriers.html",
+      "kind": "primary"
+    },
+    {
+      "title": "Microsoft About Processes and Threads",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/procthread/about-processes-and-threads",
+      "kind": "primary"
+    }
+  ],
+  "review": {
+    "intervalDays": [1, 7, 30, 90],
+    "prompts": [
+      "atomicity、可視性、順序性のうち、今回の不変条件に必要なのはどれか",
+      "deadlock説を反証する最小のイベント証拠は何か",
+      "隔離を強めると通信と復旧の設計はどう変わるか"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}
