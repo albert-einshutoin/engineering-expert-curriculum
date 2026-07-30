@@ -175,7 +175,7 @@ class PrototypeMigrationTests(unittest.TestCase):
             self.assertEqual(manifest["fileCount"], 2)
             self.assertTrue((archive / "manifest.json").exists())
             self.assertEqual(Path.cwd(), original_cwd)
-            self.assertEqual(len(attempted), 2)
+            self.assertEqual(len(attempted), 3)
 
     def test_rejects_a_symlinked_source(self) -> None:
         with TemporaryDirectory() as directory:
@@ -309,12 +309,13 @@ class PrototypeMigrationTests(unittest.TestCase):
             moved_archive = archive_parent / "reserved-original"
             sentinel = archive / "sentinel.txt"
             real_open = os.open
-            replaced = False
+            prototype_opens = 0
 
             def replace_before_archive_open(path: str, flags: int, *args: object, **kwargs: object) -> int:
-                nonlocal replaced
-                if not replaced and path == "prototype-v1" and "dir_fd" in kwargs:
-                    replaced = True
+                nonlocal prototype_opens
+                if path == "prototype-v1" and "dir_fd" in kwargs:
+                    prototype_opens += 1
+                if prototype_opens == 2:
                     archive.rename(moved_archive)
                     archive.mkdir()
                     sentinel.write_text("foreign", encoding="utf-8")
