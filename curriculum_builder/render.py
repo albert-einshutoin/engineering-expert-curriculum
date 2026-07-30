@@ -224,23 +224,40 @@ def _snapshot_mapping(
     if not isinstance(value, Mapping):
         raise CurriculumValidationError(f"{parameter} must be a mapping")
     try:
-        raw_entries = tuple(value.items())
+        raw_items = value.items()
+        item_iterator = iter(raw_items)
     except Exception:
         raise CurriculumValidationError(
             f"cannot snapshot {label} values"
         ) from None
-    if len(raw_entries) > MAX_VALUE_ENTRIES:
-        raise CurriculumValidationError(
-            f"{label} values exceed maximum entry count"
-        )
 
     entries: list[tuple[object, object]] = []
-    for entry in raw_entries:
+    for index in range(MAX_VALUE_ENTRIES + 1):
         try:
-            key, entry_value = entry
+            raw_entry = next(item_iterator)
+        except StopIteration:
+            break
         except Exception:
             raise CurriculumValidationError(
-                f"{label} mapping items must be key-value pairs"
+                f"cannot snapshot {label} values"
+            ) from None
+        if index == MAX_VALUE_ENTRIES:
+            raise CurriculumValidationError(
+                f"{label} values exceed maximum entry count"
+            )
+        try:
+            entry_iterator = iter(raw_entry)
+            key = next(entry_iterator)
+            entry_value = next(entry_iterator)
+            try:
+                next(entry_iterator)
+            except StopIteration:
+                pass
+            else:
+                raise ValueError
+        except Exception:
+            raise CurriculumValidationError(
+                f"cannot snapshot {label} values"
             ) from None
         entries.append((key, entry_value))
 
@@ -411,6 +428,7 @@ class _BasePolicyParser(HTMLParser):
         self.title_placeholder_count = 0
         self.hrefs: Counter[str] = Counter()
         self.stylesheet_count = 0
+        self.meta_counts: Counter[str] = Counter()
 
     def handle_decl(self, decl: str) -> None:
         if decl.strip().casefold() != "doctype html":
@@ -480,6 +498,33 @@ class _BasePolicyParser(HTMLParser):
             for name, value in attrs
             if value is not None
         }
+        if normalized_tag == "meta":
+            if attributes == {"charset": "utf-8"}:
+                meta_kind = "charset"
+            elif attributes == {
+                "name": "viewport",
+                "content": "width=device-width, initial-scale=1",
+            }:
+                meta_kind = "viewport"
+            elif attributes == {
+                "name": "description",
+                "content": "$description",
+            }:
+                meta_kind = "description"
+            elif (
+                frozenset(attributes) == {"http-equiv", "content"}
+                and attributes["http-equiv"] == "Content-Security-Policy"
+            ):
+                meta_kind = "csp"
+            else:
+                raise CurriculumValidationError(
+                    "base template markup is invalid"
+                )
+            self.meta_counts[meta_kind] += 1
+            if self.meta_counts[meta_kind] > 1:
+                raise CurriculumValidationError(
+                    "base template markup is invalid"
+                )
 
         if normalized_tag == "html" and attributes.get("lang") == "ja":
             self.html_ja_count += 1
@@ -606,6 +651,15 @@ def _validate_base_policy(source: str) -> None:
         or parser.description_placeholder_count != 1
         or parser.title_placeholder_count != 1
         or parser.stylesheet_count != 1
+        or parser.meta_counts
+        != Counter(
+            {
+                "charset": 1,
+                "viewport": 1,
+                "description": 1,
+                "csp": 1,
+            }
+        )
     ):
         raise CurriculumValidationError("base template markup is invalid")
     required_hrefs = Counter(
@@ -623,7 +677,7 @@ def _validate_base_policy(source: str) -> None:
     if len(parser.csp_values) != 1:
         raise CurriculumValidationError("base template CSP is incomplete")
     directives = _parse_csp(parser.csp_values[0])
-    if any(directives.get(name) != values for name, values in _REQUIRED_CSP.items()):
+    if directives != _REQUIRED_CSP:
         raise CurriculumValidationError("base template CSP is incomplete")
 
 
