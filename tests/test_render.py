@@ -195,6 +195,16 @@ class RendererTests(unittest.TestCase):
             description="説明",
             content=modified,
         )
+        deleted = validate_fragment("<p>valid</p>")
+        object.__delattr__(deleted, "value")
+        self.assert_validation_error(
+            "raw HTML could not be revalidated",
+            self.renderer.page,
+            output_path=Path("index.html"),
+            title="例",
+            description="説明",
+            content=deleted,
+        )
 
     def test_rejects_raw_placeholders_outside_element_body_context(self) -> None:
         cases = (
@@ -357,7 +367,7 @@ class RendererTests(unittest.TestCase):
         cases = (
             (
                 {"value": ExactString("x")},
-                "text values must be exact strings",
+                "text value must be an exact string",
             ),
             (
                 EntriesMapping(((ExactString("value"), "x"),)),
@@ -543,6 +553,55 @@ class RendererTests(unittest.TestCase):
 
         self.assertIn("<section", fragment.value)
 
+    def test_pins_template_root_identity_against_directory_replacement(
+        self,
+    ) -> None:
+        with self.temporary_templates() as root:
+            (root / "index.html").write_text("<p>trusted</p>", encoding="utf-8")
+            renderer = Renderer(root)
+            moved = root.with_name(f"{root.name}-moved")
+            root.rename(moved)
+            root.mkdir()
+            (root / "index.html").write_text("<p>replacement</p>", encoding="utf-8")
+
+            self.assert_validation_error(
+                "template_root changed during rendering",
+                renderer.fragment,
+                "index.html",
+                text_values={},
+                html_values={},
+            )
+
+    def test_closes_template_descriptors_in_reverse_ownership_order(
+        self,
+    ) -> None:
+        opened: list[int] = []
+        closed: list[int] = []
+        real_open = os.open
+        real_close = os.close
+
+        def recording_open(*args: object, **kwargs: object) -> int:
+            descriptor = real_open(*args, **kwargs)  # type: ignore[arg-type]
+            opened.append(descriptor)
+            return descriptor
+
+        def recording_close(descriptor: int) -> None:
+            closed.append(descriptor)
+            real_close(descriptor)
+
+        with (
+            patch("curriculum_builder.render.os.open", side_effect=recording_open),
+            patch("curriculum_builder.render.os.close", side_effect=recording_close),
+        ):
+            self.renderer.fragment(
+                "index.html",
+                text_values={},
+                html_values={},
+            )
+
+        self.assertEqual(len(opened), 2)
+        self.assertEqual(closed, list(reversed(opened)))
+
     def test_rejects_invalid_template_roots(self) -> None:
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -589,7 +648,7 @@ class RendererTests(unittest.TestCase):
             (
                 base.replace(
                     "${root}styles.css",
-                    "https://cdn.example/styles.css",
+                    "https://cdn.example/${root}styles.css",
                 ),
                 "base template contains an external or absolute asset URL",
             ),
