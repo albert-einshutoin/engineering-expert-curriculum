@@ -76,7 +76,8 @@ li {
 
 h1,
 h2,
-h3 {
+h3,
+h4 {
   margin-block: 1.4em 0.55em;
   color: var(--color-ink);
   font-family: var(--font-interface);
@@ -97,6 +98,11 @@ h2 {
 
 h3 {
   font-size: clamp(1.2rem, 1.1rem + 0.5vw, 1.55rem);
+}
+
+h4 {
+  margin-block: 1.25em 0.45em;
+  font-size: clamp(1.05rem, 1rem + 0.25vw, 1.25rem);
 }
 
 p,
@@ -631,17 +637,32 @@ footer p {
     border-style: solid;
   }
 
-  article,
-  section,
-  .catalog-card,
+  h1,
+  h2,
+  h3,
+  h4,
+  .catalog-card__title {
+    break-after: avoid;
+  }
+
+  li,
+  tr,
   .learning-stage,
-  blockquote,
-  figure,
-  details,
-  pre,
-  table,
-  tr {
+  .prerequisite-text {
     break-inside: avoid;
+  }
+
+  table {
+    display: table;
+    overflow: visible;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+
+  tfoot {
+    display: table-footer-group;
   }
 
   footer {

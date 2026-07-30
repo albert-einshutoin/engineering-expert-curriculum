@@ -22,13 +22,171 @@ _CUSTOM_PROPERTY = re.compile(
     r"(?m)^\s*(--[a-z0-9-]+)\s*:\s*([^;]+);"
 )
 _RESOURCE_IMAGE_FUNCTION = re.compile(
-    r"(?i)(?<![a-z0-9_-])(?:-webkit-)?image(?:-set)?\s*\("
+    r"(?i)(?<![a-z0-9_-])(?:(?:-webkit-)?image(?:-set)?|src)\s*\("
 )
 
 
 def _assert_local_only_css(css: str) -> None:
-    if _RESOURCE_IMAGE_FUNCTION.search(css) is not None:
-        raise AssertionError("resource-bearing image function is not allowed")
+    forbidden_patterns = (
+        r"(?i)@import\b",
+        r"(?i)\burl\s*\(",
+        r"(?i)@font-face\b",
+        r"(?i)javascript:",
+    )
+    if "\\" in css or any(
+        re.search(pattern, css) is not None
+        for pattern in forbidden_patterns
+    ) or _RESOURCE_IMAGE_FUNCTION.search(css) is not None:
+        raise AssertionError("local-only CSS contains a forbidden resource syntax")
+
+
+def _consume_css_escape(css: str, index: int) -> int:
+    next_index = index + 1
+    if next_index >= len(css):
+        raise AssertionError("CSS structure has a trailing escape")
+    if css[next_index] in "\n\r\f":
+        if (
+            css[next_index] == "\r"
+            and next_index + 1 < len(css)
+            and css[next_index + 1] == "\n"
+        ):
+            return next_index + 2
+        return next_index + 1
+    if css[next_index] in "0123456789abcdefABCDEF":
+        end = next_index
+        while (
+            end < len(css)
+            and end - next_index < 6
+            and css[end] in "0123456789abcdefABCDEF"
+        ):
+            end += 1
+        if end < len(css) and css[end].isspace():
+            end += 1
+        return end
+    return next_index + 1
+
+
+def _scan_css_structure(
+    css: str,
+) -> tuple[dict[int, int], tuple[bool, ...]]:
+    pairs: dict[int, int] = {}
+    openings: list[int] = []
+    data_positions = [False] * len(css)
+    state = "data"
+    index = 0
+    while index < len(css):
+        character = css[index]
+        if state == "comment":
+            if css.startswith("*/", index):
+                state = "data"
+                index += 2
+            else:
+                index += 1
+            continue
+        if state in {"single-quoted", "double-quoted"}:
+            expected_quote = "'" if state == "single-quoted" else '"'
+            if character == "\\":
+                index = _consume_css_escape(css, index)
+            elif character == expected_quote:
+                state = "data"
+                index += 1
+            elif character in "\n\r\f":
+                raise AssertionError("CSS structure has an unclosed string")
+            else:
+                index += 1
+            continue
+
+        if css.startswith("/*", index):
+            state = "comment"
+            index += 2
+            continue
+        if css.startswith("*/", index):
+            raise AssertionError("CSS structure has a stray comment close")
+        if character == "\\":
+            index = _consume_css_escape(css, index)
+            continue
+        if character == "'":
+            state = "single-quoted"
+            index += 1
+            continue
+        if character == '"':
+            state = "double-quoted"
+            index += 1
+            continue
+
+        data_positions[index] = True
+        if character == "{":
+            openings.append(index)
+        elif character == "}":
+            if not openings:
+                raise AssertionError("CSS structure has a stray block close")
+            pairs[openings.pop()] = index
+        index += 1
+
+    if state == "comment":
+        raise AssertionError("CSS structure has an unclosed comment")
+    if state != "data":
+        raise AssertionError("CSS structure has an unclosed string")
+    if openings:
+        raise AssertionError("CSS structure has an unclosed block")
+    return pairs, tuple(data_positions)
+
+
+def _top_level_css_blocks(css: str) -> tuple[tuple[str, str], ...]:
+    pairs, data_positions = _scan_css_structure(css)
+    blocks: list[tuple[str, str]] = []
+    cursor = 0
+    for opening in sorted(pairs):
+        if opening < cursor:
+            continue
+        closing = pairs[opening]
+        raw_prelude = "".join(
+            css[position] if data_positions[position] else " "
+            for position in range(cursor, opening)
+        )
+        prelude = raw_prelude.strip()
+        if not prelude:
+            raise AssertionError("CSS structure has a block without a prelude")
+        blocks.append((prelude, css[opening + 1 : closing]))
+        cursor = closing + 1
+    trailing_data = "".join(
+        css[position] if data_positions[position] else " "
+        for position in range(cursor, len(css))
+    )
+    if trailing_data.strip():
+        raise AssertionError("CSS structure has trailing data outside a block")
+    return tuple(blocks)
+
+
+def _normalize_css_prelude(prelude: str) -> str:
+    return " ".join(prelude.split())
+
+
+def _css_block(css: str, prelude: str) -> str:
+    expected = _normalize_css_prelude(prelude)
+    matches = tuple(
+        body
+        for candidate, body in _top_level_css_blocks(css)
+        if _normalize_css_prelude(candidate) == expected
+    )
+    if len(matches) != 1:
+        raise AssertionError(
+            f"CSS structure expected one {prelude!r} block, found {len(matches)}"
+        )
+    return matches[0]
+
+
+def _assert_connector_hidden_in_media(css: str, media_prelude: str) -> None:
+    try:
+        media_body = _css_block(css, media_prelude)
+        connector = _css_block(
+            media_body,
+            ".learning-stage:not(:last-child)::after",
+        )
+    except AssertionError:
+        raise AssertionError("connector must be hidden in its media block") from None
+    if re.search(r"(?m)^\s*display\s*:\s*none\s*;", connector) is None:
+        raise AssertionError("connector must be hidden in its media block")
 
 
 def _relative_luminance(channel: int) -> float:
@@ -117,29 +275,35 @@ class StyleContractTests(unittest.TestCase):
             'image-set("https://evil.example/a.png" 1x)',
             '-webkit-image-set("https://evil.example/a.png" 1x)',
             'image("https://evil.example/a.png")',
+            'src("https://evil.example/a.png")',
+            "src(var(--remote))",
+            r'@\69mport "https://evil.example/a.css";',
+            r'a { background: u\72l("https://evil.example/a.png"); }',
+            r'a { background: i\6d age-set("https://evil.example/a.png" 1x); }',
         ):
             with self.subTest(resource_function=resource_function):
                 with self.assertRaisesRegex(
                     AssertionError,
-                    "resource-bearing image function",
+                    "local-only CSS",
                 ):
                     _assert_local_only_css(
                         f"{self.css}\na {{ background-image: {resource_function}; }}"
                     )
 
     def test_has_balanced_comments_and_braces(self) -> None:
-        self.assertEqual(self.css.count("/*"), self.css.count("*/"))
-        without_comments = re.sub(r"/\*.*?\*/", "", self.css, flags=re.DOTALL)
-        self.assertNotIn("/*", without_comments)
-        self.assertNotIn("*/", without_comments)
-        depth = 0
-        for character in without_comments:
-            if character == "{":
-                depth += 1
-            elif character == "}":
-                depth -= 1
-                self.assertGreaterEqual(depth, 0)
-        self.assertEqual(depth, 0)
+        _scan_css_structure(self.css)
+        for malformed in (
+            "/* unclosed",
+            '.a { content: "unclosed; }',
+            "}",
+            '.a { content: "}";',
+        ):
+            with self.subTest(malformed=malformed):
+                with self.assertRaisesRegex(AssertionError, "CSS structure"):
+                    _scan_css_structure(malformed)
+        # Structural scanning recognizes escaped string characters even though
+        # the production local-only policy rejects every backslash.
+        _scan_css_structure(r'.a { content: "\}"; }')
 
     def test_defines_each_required_design_token_once(self) -> None:
         required_tokens = {
@@ -220,6 +384,7 @@ class StyleContractTests(unittest.TestCase):
             "h1",
             "h2",
             "h3",
+            "h4",
             "a",
             "nav",
             "main",
@@ -295,6 +460,17 @@ class StyleContractTests(unittest.TestCase):
             task_9_plan,
         )
         self.assertIn('node["prerequisites"]', task_9_plan)
+        for class_name in (
+            "catalog-card",
+            "catalog-card__title",
+            "catalog-card__list",
+        ):
+            self.assertIn(f'class="{class_name}"', task_9_plan)
+        self.assertIn(
+            "catalog_html.count('<section class=\"catalog-card\">'),\n"
+            "                38,",
+            task_9_plan,
+        )
         for title, prerequisite in (
             ("Think", "なし"),
             ("Build", "Think"),
@@ -324,35 +500,45 @@ class StyleContractTests(unittest.TestCase):
         self.assertIn(".learning-stage::before", self.css)
         self.assertIn("counter-increment: learning-stage", self.css)
         self.assertIn('content: counter(learning-stage)', self.css)
-        connector = re.search(
-            r"\.learning-stage:not\(:last-child\)::after\s*\{(?P<body>[^}]*)\}",
+        connector_body = _css_block(
             self.css,
+            ".learning-stage:not(:last-child)::after",
         )
-        self.assertIsNotNone(connector)
-        connector_body = connector.group("body") if connector is not None else ""
         self.assertRegex(connector_body, r'content:\s*""')
         self.assertRegex(connector_body, r"pointer-events:\s*none")
         self.assertRegex(connector_body, r"clip-path:\s*polygon\(")
         self.assertRegex(connector_body, r"background:\s*var\(--color-warm\)")
-        forced_colors = self.css.split("@media (forced-colors: active)", 1)[1]
-        self.assertRegex(
-            forced_colors,
-            r"\.learning-stage:not\(:last-child\)::after[^{]*\{[^}]*"
-            r"background:\s*CanvasText",
+        forced_colors = _css_block(
+            self.css,
+            "@media (forced-colors: active)",
         )
+        forced_connector = _css_block(
+            forced_colors,
+            ".learning-stage:not(:last-child)::after",
+        )
+        self.assertRegex(forced_connector, r"background:\s*CanvasText")
         self.assertNotRegex(self.css, r"(?i)@keyframes\b|animation\s*:|transition\s*:")
 
     def test_mobile_layout_is_single_column_and_hides_graph_connector(self) -> None:
-        self.assertIn("@media (max-width: 48rem)", self.css)
-        mobile = self.css.split("@media (max-width: 48rem)", 1)[1]
+        mobile = _css_block(self.css, "@media (max-width: 48rem)")
         self.assertRegex(
             mobile,
             r"\.learning-path\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)",
         )
-        self.assertRegex(
-            mobile,
-            r"\.learning-stage:not\(:last-child\)::after\s*\{[^}]*display:\s*none",
+        _assert_connector_hidden_in_media(self.css, "@media (max-width: 48rem)")
+        mobile_without_hidden_connector = self.css.replace(
+            """  .learning-stage:not(:last-child)::after {
+    display: none;
+  }
+""",
+            "",
+            1,
         )
+        with self.assertRaisesRegex(AssertionError, "connector must be hidden"):
+            _assert_connector_hidden_in_media(
+                mobile_without_hidden_connector,
+                "@media (max-width: 48rem)",
+            )
         self.assertRegex(
             self.css,
             r"\.catalog-grid\s*\{[^}]*"
@@ -368,9 +554,7 @@ class StyleContractTests(unittest.TestCase):
         self.assertIn("text-decoration-line: underline", self.css)
         self.assertIn("min-block-size: 2.75rem", self.css)
         self.assertIn("border", self.css)
-        brand = re.search(r"(?m)^\.brand\s*\{(?P<body>[^}]*)\}", self.css)
-        self.assertIsNotNone(brand)
-        brand_body = brand.group("body") if brand is not None else ""
+        brand_body = _css_block(self.css, ".brand")
         self.assertRegex(brand_body, r"display:\s*inline-flex")
         self.assertRegex(brand_body, r"align-items:\s*center")
         self.assertRegex(brand_body, r"min-block-size:\s*2\.75rem")
@@ -378,7 +562,10 @@ class StyleContractTests(unittest.TestCase):
     def test_supports_forced_colors_and_reduced_motion_preferences(self) -> None:
         self.assertIn("@media (forced-colors: active)", self.css)
         self.assertIn("@media (prefers-reduced-motion: reduce)", self.css)
-        forced_colors = self.css.split("@media (forced-colors: active)", 1)[1]
+        forced_colors = _css_block(
+            self.css,
+            "@media (forced-colors: active)",
+        )
         self.assertIn("CanvasText", forced_colors)
         self.assertIn("LinkText", forced_colors)
         self.assertNotIn("!important", self.css)
@@ -393,8 +580,7 @@ class StyleContractTests(unittest.TestCase):
         self.assertIn("word-break: break-word", self.css)
 
     def test_print_keeps_reading_order_and_expands_https_urls(self) -> None:
-        self.assertIn("@media print", self.css)
-        print_rules = self.css.split("@media print", 1)[1]
+        print_rules = _css_block(self.css, "@media print")
         self.assertIn('a[href^="https://"]::after', print_rules)
         self.assertIn('content: " (" attr(href) ")"', print_rules)
         self.assertIn("break-inside: avoid", print_rules)
@@ -403,6 +589,43 @@ class StyleContractTests(unittest.TestCase):
             r"\.learning-path\s*\{[^}]*grid-template-columns:\s*1fr",
         )
         self.assertIn(".prerequisite-text", print_rules)
+        print_blocks = _top_level_css_blocks(print_rules)
+        break_inside_avoid = {
+            selector
+            for prelude, body in print_blocks
+            if re.search(r"break-inside\s*:\s*avoid", body)
+            for selector in (part.strip() for part in prelude.split(","))
+        }
+        self.assertTrue(
+            {"li", "tr", ".learning-stage", ".prerequisite-text"}
+            <= break_inside_avoid
+        )
+        self.assertTrue(
+            {
+                "article",
+                "section",
+                "table",
+                ".catalog-card",
+                "details",
+                "pre",
+                "blockquote",
+            }.isdisjoint(break_inside_avoid)
+        )
+        break_after_avoid = {
+            selector
+            for prelude, body in print_blocks
+            if re.search(r"break-after\s*:\s*avoid", body)
+            for selector in (part.strip() for part in prelude.split(","))
+        }
+        self.assertTrue(
+            {"h1", "h2", "h3", "h4", ".catalog-card__title"}
+            <= break_after_avoid
+        )
+        table_body = _css_block(print_rules, "table")
+        self.assertRegex(table_body, r"display:\s*table")
+        self.assertRegex(table_body, r"overflow:\s*visible")
+        thead_body = _css_block(print_rules, "thead")
+        self.assertRegex(thead_body, r"display:\s*table-header-group")
 
     def test_uses_logical_properties_for_core_layout(self) -> None:
         for property_name in (
