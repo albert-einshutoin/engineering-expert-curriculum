@@ -1,0 +1,227 @@
+<section id="why">
+  <h2>なぜ重要か</h2>
+  <p>secure by designは、出荷前に脆弱性名を列挙する作業ではない。顧客が守りたい資産と現実のdata flowを起点に、設計decision、default、実装control、検証、回復へ責任を接続する継続的なengineeringである。</p>
+  <p>内部者脅威も「悪意ある従業員」に限定できない。正規権限の誤操作、委託先credentialの盗用、過剰権限、手順の曖昧さが同じ資産へ到達する。人の意図を推測するより、行為と境界を制約し、privacyを守りながら検証可能な証拠を残す。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> SSDF、ASVS、threat modeling、penetration testの実施は安全保証ではない。適用範囲、modelの欠落、controlの迂回、検証時点以後の変更、残余riskを明示する。</p>
+  </aside>
+</section>
+<section id="mental-model">
+  <h2>メンタルモデル</h2>
+  <p>assetから逆向きに考える。誰がどのentry pointから、どのtrust boundaryとdata flowを通ってassetへ作用できるかを記述し、その経路を短くする、権限を狭める、検知する、回復するcontrolを配置する。</p>
+  <figure>
+    <figcaption>assetから攻撃経路、control、verification、残余riskを結ぶtrace</figcaption>
+    <ol>
+      <li><strong>asset:</strong> customer data、deployment credential、audit logの価値と安全性目標を定義する。</li>
+      <li><strong>actorとboundary:</strong> external customer、operations contractor、platform adminの権限と越境点を分ける。</li>
+      <li><strong>threat:</strong> 意図ではなく、credential再利用、誤ったbulk export、audit停止など観測可能な行為で表す。</li>
+      <li><strong>control:</strong> 予防、検知、回復を一つのcontrolだけに依存せず重ねる。</li>
+      <li><strong>verification:</strong> 具体的なtest IDと結果をthreatへ接続する。</li>
+      <li><strong>residual risk:</strong> owner、期限、再review条件を付け、未解決を隠さない。</li>
+    </ol>
+  </figure>
+  <table>
+    <caption>運用portalのcontrolを選ぶdecision table</caption>
+    <thead>
+      <tr><th scope="col">脅威経路</th><th scope="col">予防</th><th scope="col">検知・回復</th><th scope="col">privacy境界</th></tr>
+    </thead>
+    <tbody>
+      <tr><th scope="row">外部credential悪用</th><td>短命token・rate limit</td><td>異常検知・即時revoke</td><td>必要最小限の認証event</td></tr>
+      <tr><th scope="row">委託者の誤bulk export</th><td>purpose別権限・二者承認</td><td>件数上限・取消可能なjob</td><td>内容でなく操作metadataを監査</td></tr>
+      <tr><th scope="row">管理credentialの盗用</th><td>workload identity・step-up</td><td>署名audit・credential rotation</td><td>個人追跡はincident目的へ限定</td></tr>
+    </tbody>
+  </table>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>固定された運用portalモデルのtraceabilityを検証する</h3>
+  <dl>
+    <dt>前提</dt>
+    <dd>三資産、三actor、internet・operations zone・production境界を持つ。実system、credential、利用者data、攻撃payloadは使わない。</dd>
+    <dt>入力</dt>
+    <dd>外部credential悪用、委託者の誤bulk export、委託credential悪用の3脅威をharmlessなIDと関係だけで表す。</dd>
+    <dt>操作</dt>
+    <dd>各脅威からasset、flow、control、verificationへIDを接続し、欠落参照、未検証result、ownerなし残余riskを検査する。</dd>
+    <dt>観測</dt>
+    <dd>外部・内部者の両actor typeが存在し、全脅威にcontrolとpassed verificationが一つ以上、残余riskにownerとreview dateがある。</dd>
+    <dt>結論</dt>
+    <dd>modelは安全の証明ではなく、現在の仮説と検証範囲を可視化する。変更、incident、test失敗ごとに再評価する。</dd>
+  </dl>
+  <p>次のPython 3.13 harnessは固定JSON相当の関係だけを検査し、攻撃codeを実行せず、networkや秘密情報へアクセスしない。</p>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+import json
+
+HARNESS = "threat_model_lab_v1"
+assets = [
+    {"id": "customer-data", "goal": "confidentiality-and-integrity"},
+    {"id": "deployment-credential", "goal": "confidentiality-and-limited-use"},
+    {"id": "audit-log", "goal": "integrity-and-availability"},
+]
+actors = [
+    "external-customer",
+    "operations-contractor",
+    "platform-admin",
+]
+trust_boundaries = [
+    {"id": "internet-edge", "from": "internet", "to": "operations-zone"},
+    {"id": "production-edge", "from": "operations-zone", "to": "production"},
+]
+cross_boundary_flows = [
+    {
+        "id": "flow-login",
+        "from": "external-customer",
+        "to": "operations-zone",
+        "crosses": ["internet-edge"],
+    },
+    {
+        "id": "flow-export",
+        "from": "operations-contractor",
+        "to": "production",
+        "crosses": ["production-edge"],
+    },
+    {
+        "id": "flow-deploy",
+        "from": "platform-admin",
+        "to": "production",
+        "crosses": ["production-edge"],
+    },
+]
+threats = [
+    {
+        "id": "T-EXT-CREDENTIAL",
+        "actor_type": "external",
+        "asset_id": "customer-data",
+        "flow_id": "flow-login",
+        "scenario": "reused credential reaches customer records",
+    },
+    {
+        "id": "T-IN-BULK-ERROR",
+        "actor_type": "insider",
+        "asset_id": "customer-data",
+        "flow_id": "flow-export",
+        "scenario": "authorized operator selects an excessive export scope",
+    },
+    {
+        "id": "T-IN-CREDENTIAL",
+        "actor_type": "insider",
+        "asset_id": "deployment-credential",
+        "flow_id": "flow-deploy",
+        "scenario": "contractor credential is used outside an approved window",
+    },
+]
+control_links = [
+    {
+        "threat_id": "T-EXT-CREDENTIAL",
+        "control_ids": ["short-lived-token", "rate-limit", "revoke"],
+    },
+    {
+        "threat_id": "T-IN-BULK-ERROR",
+        "control_ids": ["purpose-scope", "dual-approval", "cancelable-job"],
+    },
+    {
+        "threat_id": "T-IN-CREDENTIAL",
+        "control_ids": ["step-up", "approved-window", "signed-audit"],
+    },
+]
+verification_links = [
+    {
+        "threat_id": "T-EXT-CREDENTIAL",
+        "verification_id": "V-AUTH-01",
+        "result": "passed",
+    },
+    {
+        "threat_id": "T-IN-BULK-ERROR",
+        "verification_id": "V-EXPORT-02",
+        "result": "passed",
+    },
+    {
+        "threat_id": "T-IN-CREDENTIAL",
+        "verification_id": "V-DEPLOY-03",
+        "result": "passed",
+    },
+]
+residual_risks = [
+    {
+        "id": "R-SESSION-THEFT",
+        "owner": "security-product-owner",
+        "review_date": "2026-10-30",
+        "condition": "device-bound session control becomes available",
+    },
+    {
+        "id": "R-APPROVER-COLLUSION",
+        "owner": "operations-director",
+        "review_date": "2026-09-30",
+        "condition": "quarterly access review or relevant incident",
+    },
+]
+
+# Fixed, harmless relationship data makes missing trace links observable
+# without teaching or executing an intrusion technique.
+asset_ids = {asset["id"] for asset in assets}
+flow_ids = {flow["id"] for flow in cross_boundary_flows}
+threat_ids = {threat["id"] for threat in threats}
+if any(
+    threat["asset_id"] not in asset_ids or threat["flow_id"] not in flow_ids
+    for threat in threats
+):
+    raise ValueError("threat has an unknown asset or flow")
+if {link["threat_id"] for link in control_links} != threat_ids:
+    raise ValueError("control traceability is incomplete")
+if {link["threat_id"] for link in verification_links} != threat_ids:
+    raise ValueError("verification traceability is incomplete")
+
+report = {
+    "harness": HARNESS,
+    "fixture": "operations-portal-v1",
+    "assets": assets,
+    "actors": actors,
+    "trust_boundaries": trust_boundaries,
+    "cross_boundary_flows": cross_boundary_flows,
+    "threats": threats,
+    "attack_paths": [
+        {
+            "threat_id": threat["id"],
+            "flow_id": threat["flow_id"],
+            "asset_id": threat["asset_id"],
+        }
+        for threat in threats
+    ],
+    "control_links": control_links,
+    "verification_links": verification_links,
+    "residual_risks": residual_risks,
+    "model_validation": {
+        "unknown_references": 0,
+        "uncontrolled_threats": 0,
+        "unverified_threats": 0,
+    },
+    "attack_code_executed": False,
+    "external_network_used": False,
+}
+print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+PY</code></pre>
+</section>
+<section id="tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <ul>
+    <li><strong>誤診:</strong> SSDF、ASVS、threat checklistを満たせば安全が保証される。 <strong>反証:</strong> frameworkは活動とcontrolの網羅性を助けるが、対象model、実装、verification、将来変更の正しさを自動では保証しない。</li>
+    <li><strong>誤診:</strong> 内部者脅威は悪意ある従業員だけなので、個人監視を増やせば解決する。 <strong>反証:</strong> 誤操作、盗用credential、曖昧な手順も同じ経路を作る。権限・承認・recoveryを改善し、privacyに比例した監査を選ぶ。</li>
+    <li><strong>予防偏重:</strong> 完全防止だけを目指すと、侵害を前提にした検知、revoke、復旧演習が抜ける。</li>
+    <li><strong>責任転嫁:</strong> 安全機能を有料optionや利用者設定へ寄せると、安全なdefaultと顧客成果が失われる。</li>
+    <li><strong>model陳腐化:</strong> 新しいdata flow、権限、supplierをmodelへ戻さなければ、過去のgreenは現在を表さない。</li>
+  </ul>
+</section>
+<section id="knowledge-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>assetを先に定義せず脅威名から始めると、優先順位に何が欠けるか。</li>
+    <li>正規権限の誤操作とcredential盗用に共通して効き、個人の悪意を仮定しないcontrolを二つ示せ。</li>
+    <li>controlが実装済みでもverification linkを要求する理由は何か。</li>
+    <li>予防controlを迂回された後の検知と回復を一つずつ挙げよ。</li>
+    <li>残余riskのownerとreview dateが空なら、出荷判断はなぜ再現不能になるか。</li>
+  </ol>
+</section>
+<section id="sources-next">
+  <h2>出典と次の学習</h2>
+  <p>NIST SSDFはsecure development実践を、CISAのSecure by Design guidanceは顧客のsecurity outcomeと安全なdefaultへの製造者責任を整理する。OWASP Threat Modeling Cheat SheetとASVS 5.0.0はmodel作成とverification要求を結ぶ。CISA Insider Threat Mitigation Guideは内部者を悪意だけへ限定しない多面的な低減を扱う。</p>
+  <p>次はdataとscaleのtrackで、保存する資産、transaction境界、分散failureをmodelへ追加する。設計・権限・data flowが変わるたびに脅威modelとverificationを同じ変更で更新する。</p>
+</section>
