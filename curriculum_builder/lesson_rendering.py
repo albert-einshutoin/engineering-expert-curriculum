@@ -554,7 +554,10 @@ def _render_capabilities(lesson: Lesson) -> SafeHtml:
 
 
 def _render_lab(lesson: Lesson) -> SafeHtml:
-    assert lesson.lab is not None
+    if lesson.lab is None:
+        raise CurriculumValidationError(
+            "complete lesson is missing its lab"
+        )
     steps = "".join(
         f"<li>{escape(step, quote=False)}</li>"
         for step in lesson.lab.steps
@@ -581,12 +584,18 @@ def _render_assessment(lesson: Lesson) -> SafeHtml:
 
 
 def _paragraph(value: str | None) -> SafeHtml:
-    assert value is not None
+    if value is None:
+        raise CurriculumValidationError(
+            "complete lesson is missing required text"
+        )
     return validate_fragment(f"<p>{escape(value, quote=False)}</p>")
 
 
 def _render_review(lesson: Lesson) -> SafeHtml:
-    assert lesson.review is not None
+    if lesson.review is None:
+        raise CurriculumValidationError(
+            "complete lesson is missing its review schedule"
+        )
     entries = "".join(
         "<li>"
         f"<strong>{interval}日後</strong>"
