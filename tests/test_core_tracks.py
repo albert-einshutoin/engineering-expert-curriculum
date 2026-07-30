@@ -801,6 +801,16 @@ class CoreTrackTests(unittest.TestCase):
             self.assertGreater(condition["query_count"], 0)
             self.assertTrue(condition["query_digest"])
             self.assertGreaterEqual(condition["crossover_queries"], 0)
+            facts = condition["distribution_facts"]
+            if condition["distribution"] == "unique":
+                self.assertEqual(facts["unique_fraction"], 1.0)
+            elif condition["distribution"] == "duplicate_90":
+                self.assertEqual(facts["dominant_value_fraction"], 0.9)
+            else:
+                self.assertGreaterEqual(
+                    facts["front_query_fraction"],
+                    0.9,
+                )
         self.assertTrue(report["growth_rates"])
         self.assertEqual(len(report["hypotheses"]), 2)
         self.assertTrue(report["additional_measurement"]["falsified"])
