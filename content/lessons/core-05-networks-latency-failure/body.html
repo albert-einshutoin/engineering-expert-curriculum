@@ -136,11 +136,20 @@ class LocalFixture:
         self.stopped = threading.Event()
         self.terminated = threading.Event()
         self.listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.listener.bind(("127.0.0.1", 0))
-        self.listener.listen()
-        self.listener.settimeout(0.05)
+        try:
+            self.listener.setsockopt(
+                socket.SOL_SOCKET,
+                socket.SO_REUSEADDR,
+                1,
+            )
+            self.listener.bind(("127.0.0.1", 0))
+            self.listener.listen()
+            self.listener.settimeout(0.05)
+        except Exception:
+            self.listener.close()
+            raise
         self.port = self.listener.getsockname()[1]
+        self.started = False
         # A non-daemon thread makes cleanup failures visible instead of hiding
         # a leaked server at interpreter shutdown.
         self.server = threading.Thread(
@@ -150,7 +159,12 @@ class LocalFixture:
         )
 
     def start(self):
-        self.server.start()
+        try:
+            self.server.start()
+            self.started = True
+        except Exception:
+            self.listener.close()
+            raise
 
     def handle(self, connection, command):
         if command[0] == "APPLY":
@@ -208,10 +222,11 @@ class LocalFixture:
         try:
             self.listener.close()
         finally:
-            self.server.join(timeout=1)
-        if self.server.is_alive():
+            if self.started:
+                self.server.join(timeout=1)
+        if self.started and self.server.is_alive():
             raise RuntimeError("localhost fixture did not stop")
-        if not self.terminated.is_set():
+        if self.started and not self.terminated.is_set():
             raise RuntimeError("localhost fixture termination not observed")
 
 def open_connection(port, connector=socket.create_connection):
@@ -269,170 +284,180 @@ def request(port, request_id, resolver_mode, delay_ms=0, drop=False,
         ) / 1_000_000,
     }
 
-fixture = LocalFixture(injected_failure_id="inject-error")
-fixture.start()
-baseline = {"cold": [], "warm": []}
-protocol_rejections = {}
-connection_failure = "not_injected"
-real_connector_calls = [0]
-real_connector_calls_at_refusal = None
-injector_calls = [0]
-ambiguous = None
-lookup_result = None
-delayed = None
-try:
-    for mode in baseline:
-        for repeat in range(7):
-            baseline[mode].append(
-                request(fixture.port, f"{mode}-{repeat}", mode)
-            )
-    baseline_values = [
-        sample["duration_ms"]
-        for samples in baseline.values()
-        for sample in samples
-    ]
-    baseline_median_ms = statistics.median(baseline_values)
-
-    delayed = request(
-        fixture.port,
-        "delay-fixture",
-        "warm",
-        delay_ms=25,
-    )
-    protocol_rejections = {
-        "unterminated": rejection_code(
-            fixture.port,
-            b"LOOKUP never-finished",
-            shutdown_write=True,
-        ),
-        "oversized": rejection_code(
-            fixture.port,
-            b"X" * (MAX_LINE_BYTES + 1) + b"\n",
-        ),
-        "timeout": rejection_code(fixture.port, send=False),
-        "invalid_id": rejection_code(
-            fixture.port,
-            b"LOOKUP bad/id\n",
-        ),
-        "excessive_delay": rejection_code(
-            fixture.port,
-            b"APPLY too-slow 1001 reply\n",
-        ),
-        "invalid_arity": rejection_code(
-            fixture.port,
-            b"APPLY missing-mode 0\n",
-        ),
-        "invalid_mode": rejection_code(
-            fixture.port,
-            b"APPLY wrong-mode 0 maybe\n",
-        ),
-    }
-    assert send_line(
-        fixture.port,
-        b"APPLY inject-error 0 reply\n",
-    ) == "ERROR internal"
-
-    # The fault injector raises before the real connector can create a socket.
-    def real_connector(address, timeout):
-        real_connector_calls[0] += 1
-        return socket.create_connection(address, timeout=timeout)
-
-    def refused_connector(address, timeout):
-        del address, timeout
-        injector_calls[0] += 1
-        raise ConnectionRefusedError(
-            "controlled refusal before socket creation"
-        )
+def main():
+    fixture = LocalFixture(injected_failure_id="inject-error")
+    baseline = {"cold": [], "warm": []}
+    protocol_rejections = {}
+    connection_failure = "not_injected"
+    real_connector_calls = [0]
+    real_connector_calls_at_refusal = None
+    injector_calls = [0]
+    ambiguous = None
+    lookup_result = None
+    delayed = None
+    baseline_median_ms = None
     try:
-        request(
+        fixture.start()
+        for mode in baseline:
+            for repeat in range(7):
+                baseline[mode].append(
+                    request(fixture.port, f"{mode}-{repeat}", mode)
+                )
+        baseline_values = [
+            sample["duration_ms"]
+            for samples in baseline.values()
+            for sample in samples
+        ]
+        baseline_median_ms = statistics.median(baseline_values)
+
+        delayed = request(
             fixture.port,
-            "refused-fixture",
+            "delay-fixture",
             "warm",
-            connector=refused_connector,
+            delay_ms=25,
         )
-    except ConnectionRefusedError:
-        connection_failure = "injected_before_socket_creation"
-    real_connector_calls_at_refusal = real_connector_calls[0]
-    assert real_connector_calls_at_refusal == 0
-    assert injector_calls[0] == 1
+        protocol_rejections = {
+            "unterminated": rejection_code(
+                fixture.port,
+                b"LOOKUP never-finished",
+                shutdown_write=True,
+            ),
+            "oversized": rejection_code(
+                fixture.port,
+                b"X" * (MAX_LINE_BYTES + 1) + b"\n",
+            ),
+            "timeout": rejection_code(fixture.port, send=False),
+            "invalid_id": rejection_code(
+                fixture.port,
+                b"LOOKUP bad/id\n",
+            ),
+            "excessive_delay": rejection_code(
+                fixture.port,
+                b"APPLY too-slow 1001 reply\n",
+            ),
+            "invalid_arity": rejection_code(
+                fixture.port,
+                b"APPLY missing-mode 0\n",
+            ),
+            "invalid_mode": rejection_code(
+                fixture.port,
+                b"APPLY wrong-mode 0 maybe\n",
+            ),
+        }
+        assert send_line(
+            fixture.port,
+            b"APPLY inject-error 0 reply\n",
+        ) == "ERROR internal"
 
-    ambiguous = request(
-        fixture.port,
-        "order-001",
-        "warm",
-        drop=True,
-        connector=real_connector,
+        # The fault injector raises before the real connector can create a
+        # socket. The counters prove the refusal did not call the real path.
+        def real_connector(address, timeout):
+            real_connector_calls[0] += 1
+            return socket.create_connection(address, timeout=timeout)
+
+        def refused_connector(address, timeout):
+            del address, timeout
+            injector_calls[0] += 1
+            raise ConnectionRefusedError(
+                "controlled refusal before socket creation"
+            )
+
+        try:
+            request(
+                fixture.port,
+                "refused-fixture",
+                "warm",
+                connector=refused_connector,
+            )
+        except ConnectionRefusedError:
+            connection_failure = "injected_before_socket_creation"
+        real_connector_calls_at_refusal = real_connector_calls[0]
+        assert real_connector_calls_at_refusal == 0
+        assert injector_calls[0] == 1
+
+        ambiguous = request(
+            fixture.port,
+            "order-001",
+            "warm",
+            drop=True,
+            connector=real_connector,
+        )
+        lookup_result = send_line(
+            fixture.port,
+            b"LOOKUP order-001\n",
+        ).split()[-1]
+        assert send_line(fixture.port, b"STOP\n") == "STOPPED"
+    finally:
+        fixture.close()
+
+    budget = {
+        "deadline_ms": 2000,
+        "first_attempt_ms": 800,
+        "backoff_ms": 100,
+        "second_attempt_ms": 700,
+        "post_processing_ms": 200,
+        "cancel_propagation_ms": 100,
+    }
+    budget["worst_case_ms"] = sum(
+        value
+        for name, value in budget.items()
+        if name != "deadline_ms"
     )
-    lookup_result = send_line(
-        fixture.port,
-        b"LOOKUP order-001\n",
-    ).split()[-1]
-    assert send_line(fixture.port, b"STOP\n") == "STOPPED"
-finally:
-    fixture.close()
+    assert budget["worst_case_ms"] &lt;= budget["deadline_ms"]
+    assert ambiguous is not None
+    assert delayed is not None
+    assert baseline_median_ms is not None
 
-budget = {
-    "deadline_ms": 2000,
-    "first_attempt_ms": 800,
-    "backoff_ms": 100,
-    "second_attempt_ms": 700,
-    "post_processing_ms": 200,
-    "cancel_propagation_ms": 100,
-}
-budget["worst_case_ms"] = sum(
-    value
-    for name, value in budget.items()
-    if name != "deadline_ms"
-)
-assert budget["worst_case_ms"] &lt;= budget["deadline_ms"]
-assert ambiguous is not None
-assert delayed is not None
+    return {
+        "harness": HARNESS,
+        "fixture": "trace-fixture.csv",
+        "bind_address": "127.0.0.1",
+        "external_network_used": False,
+        "tls_simulated": True,
+        "dns_cache_simulated": True,
+        "baseline": baseline,
+        "baseline_median_ms": baseline_median_ms,
+        "budget": budget,
+        "retry_stop_conditions": [
+            "remaining deadline is below 100ms",
+            "non-idempotent APPLY has an unknown result",
+        ],
+        "faults": {
+            "dependency_delay_ms": delayed["duration_ms"],
+            "connection_failure": connection_failure,
+            "real_connector_calls": real_connector_calls_at_refusal,
+            "injector_calls": injector_calls[0],
+        },
+        "non_idempotent": {
+            "request_id": "order-001",
+            "first_response": ambiguous["body"] or "response-lost",
+            "automatic_retry": "stopped",
+            "lookup_result": lookup_result,
+        },
+        "protocol_security": {
+            "max_line_bytes": MAX_LINE_BYTES,
+            "socket_deadline_ms": int(
+                SOCKET_DEADLINE_SECONDS * 1000
+            ),
+            "request_id_ascii_allowlist": REQUEST_ID_PATTERN.pattern,
+            "max_request_id_bytes": MAX_REQUEST_ID_BYTES,
+            "max_delay_ms": MAX_DELAY_MS,
+            "rejections": protocol_rejections,
+        },
+        "cleanup": {
+            "injected_exception": (
+                "observed"
+                if fixture.injected_exceptions == ["RuntimeError"]
+                else "not_observed"
+            ),
+            "server_stopped": fixture.terminated.is_set(),
+            "thread_alive": fixture.server.is_alive(),
+            "listener_closed": fixture.listener.fileno() == -1,
+        },
+    }
 
-print(json.dumps({
-    "harness": HARNESS,
-    "fixture": "trace-fixture.csv",
-    "bind_address": "127.0.0.1",
-    "external_network_used": False,
-    "tls_simulated": True,
-    "dns_cache_simulated": True,
-    "baseline": baseline,
-    "baseline_median_ms": baseline_median_ms,
-    "budget": budget,
-    "retry_stop_conditions": [
-        "remaining deadline is below 100ms",
-        "non-idempotent APPLY has an unknown result",
-    ],
-    "faults": {
-        "dependency_delay_ms": delayed["duration_ms"],
-        "connection_failure": connection_failure,
-        "real_connector_calls": real_connector_calls_at_refusal,
-        "injector_calls": injector_calls[0],
-    },
-    "non_idempotent": {
-        "request_id": "order-001",
-        "first_response": ambiguous["body"] or "response-lost",
-        "automatic_retry": "stopped",
-        "lookup_result": lookup_result,
-    },
-    "protocol_security": {
-        "max_line_bytes": MAX_LINE_BYTES,
-        "socket_deadline_ms": int(SOCKET_DEADLINE_SECONDS * 1000),
-        "request_id_ascii_allowlist": REQUEST_ID_PATTERN.pattern,
-        "max_request_id_bytes": MAX_REQUEST_ID_BYTES,
-        "max_delay_ms": MAX_DELAY_MS,
-        "rejections": protocol_rejections,
-    },
-    "cleanup": {
-        "injected_exception": (
-            "observed"
-            if fixture.injected_exceptions == ["RuntimeError"]
-            else "not_observed"
-        ),
-        "server_stopped": fixture.terminated.is_set(),
-        "thread_alive": fixture.server.is_alive(),
-        "listener_closed": fixture.listener.fileno() == -1,
-    },
-}, ensure_ascii=False, indent=2))
+if __name__ == "__main__":
+    print(json.dumps(main(), ensure_ascii=False, indent=2))
 PY</code></pre>
   <p>cold/warmは各7回だが、このfixtureのcoldは注入delay、warmは短い注入delayであり、OS resolver cacheのflushを証明しない。TLS区間も暗号処理のsimulationである。実環境へ移すときだけ管理下の検証先とcurl等を用い、同じrequest IDでclient/serverを相関する。</p>
   <p>同じrequest IDでclientとserverを相関する。clientのconnect区間と再送が増え、serverにrequestが届いていなければ損失説を支持する。connectは平常でserver内部のDB spanだけが伸びれば依存遅延説を支持する。どちらも観測できなければ原因確定ではなく観測不足である。</p>
