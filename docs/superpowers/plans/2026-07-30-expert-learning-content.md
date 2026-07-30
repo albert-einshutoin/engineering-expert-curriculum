@@ -597,10 +597,26 @@ harness is statically checked for deterministic barriers, termination, output,
 and its safety warning. The independent inventory oracle enumerates canonical
 directories and parses standard JSON without the production loader. All four
 embedded Python harnesses also ran successfully at their documented defaults.
-The final 81-test focused bundle and all 344 tests passed.
+The final security follow-up first committed failing executable contracts as
+`c7b3b13`. The networking harness now bounds lines to 256 bytes, requires a
+newline, applies accepted-socket deadlines, validates exact command shapes and
+values, deterministically injects connection refusal before socket creation,
+and proves server cleanup after malformed input and a controlled handler
+exception (`0dc4bc7`). The Java lab tracks the actual intermediate minimum and
+all 200 elapsed samples for each thread mode. Its `process-message` mode
+implements an owner child, request-ID deduplication, bounded IPC and exit, and a
+separate forced-cleanup failure-radius probe without mixing process startup
+cost into the 200 thread trials (`a389c7a`). The optional execution gate
+extracted the authored source and passed `javac --release 21` plus all four
+public modes using the official OpenJDK Archive macOS/AArch64 build 21.0.2+13-58
+from `https://jdk.java.net/archive/`. The downloaded archive matched the
+published SHA-256
+`b3d588e16ec1e0ef9805d8a696591bd518a5cea62567da8f53b5ce32d11d22e4`
+and was used only from a temporary directory. The final 82-test focused bundle
+and all 345 tests passed.
 Two repository-external builds each emitted 10 regular artifacts, including
 five lesson pages and 1,140 catalog items. Both produced aggregate SHA-256
-`8157322399c04de4702263692ea4dc801c85681630cdfa8bda0f9f757ba66bbc`:
+`ceda2a9a0c33c956fd14f62e3da4a22a031560e9ebc8371a2daac429ded8645c`:
 sort every artifact's UTF-8 relative POSIX path bytewise, then feed
 `path + NUL + decimal byte length + NUL + file bytes` to SHA-256. The verifier
 included all artifacts and rejected symlinks and non-regular entries.
