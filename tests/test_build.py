@@ -790,6 +790,49 @@ class BuildInputValidationTests(unittest.TestCase):
             ):
                 build_site(content, templates, static_root, output)
 
+    def test_render_time_output_parent_rebinding_stops_before_staging(
+        self,
+    ) -> None:
+        with _fixture() as (root, content, templates, static_root):
+            output_parent = root / "output-parent"
+            output_parent.mkdir()
+            output = output_parent / "site"
+            moved_parent = content / "moved-output-parent"
+            original_render = build_module._render_artifacts
+            rebound = False
+
+            def render_then_rebind(*args: object, **kwargs: object):
+                nonlocal rebound
+                artifacts = original_render(*args, **kwargs)  # type: ignore[arg-type]
+                os.rename(output_parent, moved_parent)
+                output_parent.mkdir()
+                rebound = True
+                return artifacts
+
+            captured: BaseException | None = None
+            with patch(
+                "curriculum_builder.build._render_artifacts",
+                side_effect=render_then_rebind,
+            ):
+                try:
+                    build_site(
+                        content,
+                        templates,
+                        static_root,
+                        output,
+                    )
+                except BaseException as error:
+                    captured = error
+
+            self.assertTrue(rebound)
+            self.assertIsInstance(captured, CurriculumValidationError)
+            self.assertFalse(output.exists())
+            self.assertFalse((moved_parent / "site").exists())
+            self.assertEqual(
+                list(moved_parent.glob(".site.staging-*")),
+                [],
+            )
+
 
 class BuildPublicationTests(unittest.TestCase):
     def test_each_root_close_failure_after_publish_is_postcommit(self) -> None:
@@ -1270,6 +1313,64 @@ class BuildPublicationTests(unittest.TestCase):
                             (recovery[0] / "sentinel.txt").read_text(),
                             "old",
                         )
+
+    def test_output_parent_rebinding_around_native_publish_is_postcommit(
+        self,
+    ) -> None:
+        for timing in ("before-native", "after-native"):
+            with self.subTest(timing=timing), _fixture() as (
+                root,
+                content,
+                templates,
+                static_root,
+            ):
+                output_parent = root / f"publish-parent-{timing}"
+                output_parent.mkdir()
+                output = output_parent / "site"
+                moved_parent = content / f"moved-parent-{timing}"
+                original_publish = _publish_directory
+
+                def publish_while_rebinding(
+                    parent_fd: int,
+                    source_name: str,
+                    target_name: str,
+                    *,
+                    replace_existing: bool,
+                ) -> None:
+                    if timing == "before-native":
+                        os.rename(output_parent, moved_parent)
+                        output_parent.mkdir()
+                    original_publish(
+                        parent_fd,
+                        source_name,
+                        target_name,
+                        replace_existing=replace_existing,
+                    )
+                    if timing == "after-native":
+                        os.rename(output_parent, moved_parent)
+                        output_parent.mkdir()
+
+                captured: BaseException | None = None
+                with patch(
+                    "curriculum_builder.build._publish_directory",
+                    side_effect=publish_while_rebinding,
+                ):
+                    try:
+                        build_site(
+                            content,
+                            templates,
+                            static_root,
+                            output,
+                        )
+                    except BaseException as error:
+                        captured = error
+
+                self.assertIsInstance(
+                    captured,
+                    BuildPublicationStateError,
+                )
+                self.assertFalse(output.exists())
+                _assert_static_site(self, moved_parent / "site")
 
     def test_ambiguous_publisher_failure_never_runs_precommit_cleanup(
         self,
