@@ -57,7 +57,7 @@ _EVIDENCE_ID_PATTERN = re.compile(
     r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
 )
 _ENCODED_CONTROL_PATTERN = re.compile(
-    r"%(?:0[0-9a-f]|1[0-9a-f]|7f)", re.IGNORECASE
+    r"%(?:[01][0-9a-f]|7f|[89][0-9a-f])", re.IGNORECASE
 )
 _DNS_LABEL_PATTERN = re.compile(
     r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
@@ -907,6 +907,8 @@ def _require_https_url(
         raise CurriculumValidationError("source URL host is invalid") from None
     if hostname is None:
         raise CurriculumValidationError("source URL must have a host")
+    if parsed.netloc.endswith(":"):
+        raise CurriculumValidationError("source URL port is invalid")
     try:
         port = parsed.port
     except ValueError:

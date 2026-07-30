@@ -508,6 +508,50 @@ class LessonQualityTests(unittest.TestCase):
                     load_lesson(path)
             self.assertTrue(swapped)
 
+    def test_transient_ancestor_rebinding_is_rejected_after_restore(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            ancestor = root / "ancestor"
+            nested = ancestor / "nested"
+            nested.mkdir(parents=True)
+            path = nested / "lesson.json"
+            path.write_bytes(COMPLETE.read_bytes())
+            replacement = root / "replacement"
+            replacement_nested = replacement / "nested"
+            replacement_nested.mkdir(parents=True)
+            os.link(path, replacement_nested / "lesson.json")
+            retired = root / "retired"
+            real_open = os.open
+            swapped = False
+
+            def swap_and_restore_after_file_open(
+                target: object,
+                flags: int,
+                *args: object,
+                **kwargs: object,
+            ) -> int:
+                nonlocal swapped
+                descriptor = real_open(target, flags, *args, **kwargs)
+                if not swapped and Path(target).name == "lesson.json":
+                    swapped = True
+                    ancestor.rename(retired)
+                    replacement.rename(ancestor)
+                    ancestor.rename(replacement)
+                    retired.rename(ancestor)
+                return descriptor
+
+            with patch(
+                "curriculum_builder.lesson_io.os.open",
+                side_effect=swap_and_restore_after_file_open,
+            ):
+                with self.assertRaisesRegex(
+                    CurriculumValidationError, r"ancestor changed during read"
+                ):
+                    load_lesson(path)
+            self.assertTrue(swapped)
+
     def test_post_read_metadata_change_is_rejected(self) -> None:
         real_fstat = os.fstat
         regular_call_count = 0
@@ -825,6 +869,12 @@ class LessonQualityTests(unittest.TestCase):
                     "url", "https://example.com/reference%0a-hidden"
                 ),
             ),
+            (
+                "source URL encoded controls",
+                lambda raw: raw["sources"][0].__setitem__(
+                    "url", "https://example.com/reference%C2%80hidden"
+                ),
+            ),
         )
         for message, mutate in mutations:
             with self.subTest(message=message):
@@ -902,7 +952,7 @@ class LessonQualityTests(unittest.TestCase):
                 raw["sources"][0]["url"] = f"https://{host}/reference"
                 self.assert_invalid(raw, r"source URL host")
 
-        for port in ("0", "65536", "invalid"):
+        for port in ("", "0", "65536", "invalid"):
             with self.subTest(port=port):
                 raw = self.complete_document()
                 raw["sources"][0]["url"] = (
