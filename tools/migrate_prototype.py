@@ -46,50 +46,76 @@ def _lexists(path: Path) -> bool:
     return os.path.lexists(path)
 
 
-def _validate_path_node(path: Path, label: str, *, directory: bool = False) -> None:
-    """Inspect an existing node with lstat, never following a final symlink."""
-    if not _lexists(path):
-        return
-    mode = os.lstat(path).st_mode
-    if stat.S_ISLNK(mode):
-        raise ValueError(f"{label} contains a symbolic link: {path}")
-    if directory and not stat.S_ISDIR(mode):
-        raise ValueError(f"{label} is not a directory: {path}")
-
-
-def _validate_descendant_components(root: Path, path: Path, label: str) -> None:
-    """Reject symlinks below a trusted source root before resolving an archive path."""
-    try:
-        relative = path.relative_to(root)
-    except ValueError:
-        return
-    current = root
-    for part in relative.parts:
-        current /= part
-        _validate_path_node(current, label, directory=current != path)
-
-
-def _source_directory(source: Path) -> Path:
-    candidate = source.absolute()
-    _validate_path_node(candidate, "source", directory=True)
-    if not _lexists(candidate):
-        raise FileNotFoundError(f"source does not exist: {candidate}")
+def _raw_absolute(path: Path, label: str) -> Path:
+    """Make a lexical absolute path without normalizing parent traversal."""
+    candidate = path if path.is_absolute() else Path.cwd() / path
+    if ".." in candidate.parts:
+        raise ValueError(f"{label} path contains parent traversal: {path}")
     return candidate
 
 
-def _archive_path(source: Path, archive: Path) -> Path:
-    candidate = archive.absolute()
-    if _lexists(candidate):
-        # lstat is intentionally used before rejection so dangling symlinks count as existing.
-        os.lstat(candidate)
-        raise FileExistsError(f"archive already exists: {candidate}")
+def _validate_existing_components(
+    path: Path, label: str, *, permit_final_symlink: bool = False
+) -> None:
+    """lstat every extant lexical component so no resolution can cross a symlink."""
+    current = Path(path.anchor)
+    parts = path.parts[1:]
+    for index, part in enumerate(parts):
+        current /= part
+        if not _lexists(current):
+            return
+        mode = os.lstat(current).st_mode
+        is_final = index == len(parts) - 1
+        if stat.S_ISLNK(mode) and not (is_final and permit_final_symlink):
+            raise ValueError(f"{label} contains a symbolic link: {current}")
+        if not is_final and not stat.S_ISDIR(mode):
+            raise ValueError(f"{label} parent is not a directory: {current}")
 
+
+def _canonical_archive_parent(raw_parent: Path) -> Path:
+    """Create missing archive parents from an already lstat-validated ancestor."""
+    missing: list[str] = []
+    current = raw_parent
+    while not _lexists(current):
+        missing.append(current.name)
+        current = current.parent
+    _validate_existing_components(current, "archive")
+    canonical = current.resolve(strict=True)
+    if not canonical.is_dir():
+        raise ValueError(f"archive parent is not a directory: {canonical}")
+    for name in reversed(missing):
+        next_parent = canonical / name
+        next_parent.mkdir(mode=0o700, exist_ok=False)
+        _validate_existing_components(next_parent, "archive")
+        canonical = next_parent.resolve(strict=True)
+    return canonical
+
+
+def _source_directory(source: Path) -> Path:
+    raw_source = _raw_absolute(source, "source")
+    _validate_existing_components(raw_source, "source")
+    if not _lexists(raw_source):
+        raise FileNotFoundError(f"source does not exist: {raw_source}")
+    canonical = raw_source.resolve(strict=True)
+    if not canonical.is_dir():
+        raise ValueError(f"source is not a directory: {canonical}")
+    return canonical
+
+
+def _archive_path(source: Path, archive: Path) -> Path:
+    raw_archive = _raw_absolute(archive, "archive")
+    _validate_existing_components(raw_archive, "archive", permit_final_symlink=True)
+    if _lexists(raw_archive):
+        # lstat is intentionally used before rejection so dangling symlinks count as existing.
+        os.lstat(raw_archive)
+        raise FileExistsError(f"archive already exists: {raw_archive}")
+
+    canonical_parent = _canonical_archive_parent(raw_archive.parent)
+    candidate = canonical_parent / raw_archive.name
     try:
         relative_to_source = candidate.relative_to(source)
     except ValueError:
-        _validate_path_node(candidate.parent, "archive", directory=True)
         return candidate
-    _validate_descendant_components(source, candidate, "archive")
     if relative_to_source.parts and relative_to_source.parts[0] in LEGACY_PATHS:
         raise ValueError(f"archive is inside an allowlisted subtree: {candidate}")
     return candidate
@@ -216,8 +242,6 @@ def preserve_prototype(source: Path, archive: Path) -> PrototypeManifest:
     if not initial:
         raise FileNotFoundError("no allowlisted prototype files found")
 
-    archive_path.parent.mkdir(parents=True, exist_ok=True)
-    _validate_path_node(archive_path.parent, "archive", directory=True)
     _reserve_archive(archive_path)
     try:
         staging = Path(tempfile.mkdtemp(prefix=".staging-", dir=archive_path))

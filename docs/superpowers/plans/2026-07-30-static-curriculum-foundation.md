@@ -128,6 +128,7 @@ git commit -m "build: establish dependency-free curriculum package"
 **Files:**
 - Create: `tools/migrate_prototype.py`
 - Create: `tests/test_migrate_prototype.py`
+- Modify: `docs/superpowers/plans/2026-07-30-static-curriculum-foundation.md`
 
 - [ ] **Step 1: Write fail-safe preservation tests first**
 
@@ -138,6 +139,8 @@ symlinks, special files such as FIFOs when available, and an archive path inside
 an allowlisted subtree. Add a reservation-race test that creates a sentinel
 archive immediately before the exclusive reservation and proves it remains
 untouched. Every owned-failure path must retain the source and leave no manifest.
+Reject lexical `..` input, source/archive intermediate symlinks, and symlink
+routes into allowlisted archive subtrees before any copy or reservation.
 
 - [ ] **Step 2: Verify RED**
 
@@ -152,6 +155,12 @@ uses only `LEGACY_PATHS`. Before resolving paths, use `lexists` and `lstat` to
 reject a symlink source, existing archive (including dangling symlink), and
 unsafe descendant components. Reject archive locations under a legacy subtree;
 an allowlist-external location such as `.archive/prototype-v1` is permitted.
+First reject raw `..` parts even for relative inputs. Inspect every existing raw
+component from filesystem root to final node with `lstat`, then canonicalize the
+source strictly. Create missing archive parents from a validated existing
+ancestor and canonicalize them before deriving the final archive boundary.
+Compare those canonical paths so no symlink or traversal route can place an
+archive under an allowlisted source subtree.
 
 Walk all existing allowlisted trees before copying and fail closed for symlinks,
 FIFOs, sockets, devices, or other non-regular/non-directory nodes. Build a

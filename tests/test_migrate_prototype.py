@@ -21,7 +21,7 @@ class PrototypeMigrationTests(unittest.TestCase):
 
     def test_preserves_only_allowlisted_files_and_writes_verified_manifest(self) -> None:
         with TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             self._write_fixture(root)
             (root / ".git").mkdir()
             archive = root / ".archive" / "prototype-v1"
@@ -53,7 +53,7 @@ class PrototypeMigrationTests(unittest.TestCase):
 
     def test_refuses_to_overwrite_an_existing_archive(self) -> None:
         with TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             archive = root / ".archive" / "prototype-v1"
             archive.mkdir(parents=True)
 
@@ -62,13 +62,13 @@ class PrototypeMigrationTests(unittest.TestCase):
 
     def test_refuses_an_empty_allowlisted_source(self) -> None:
         with TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             with self.assertRaisesRegex(FileNotFoundError, "no allowlisted prototype files found"):
                 preserve_prototype(root, root / ".archive" / "prototype-v1")
 
     def test_copy_failure_leaves_source_and_archive_untouched(self) -> None:
         with TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             self._write_fixture(root)
             archive = root / ".archive" / "prototype-v1"
 
@@ -81,16 +81,16 @@ class PrototypeMigrationTests(unittest.TestCase):
 
     def test_checksum_failure_leaves_source_and_archive_untouched(self) -> None:
         with TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             self._write_fixture(root)
             archive = root / ".archive" / "prototype-v1"
 
             with patch(
                 "tools.migrate_prototype._snapshot",
                 side_effect=[
-                    {"index.html": ("a", 1)},
-                    {"index.html": ("a", 1)},
-                    {"index.html": ("different", 1)},
+                    {"index.html": {"sha256": "a", "byteCount": 1}},
+                    {"index.html": {"sha256": "a", "byteCount": 1}},
+                    {"index.html": {"sha256": "different", "byteCount": 1}},
                 ],
             ):
                 with self.assertRaisesRegex(RuntimeError, "prototype checksum verification failed"):
@@ -101,7 +101,7 @@ class PrototypeMigrationTests(unittest.TestCase):
 
     def test_reservation_refuses_a_competing_archive_without_overwriting_it(self) -> None:
         with TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             self._write_fixture(root)
             archive = root / ".archive" / "prototype-v1"
 
@@ -120,7 +120,7 @@ class PrototypeMigrationTests(unittest.TestCase):
 
     def test_manifest_failure_cleans_reserved_archive_and_retains_source(self) -> None:
         with TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             self._write_fixture(root)
             archive = root / ".archive" / "prototype-v1"
 
@@ -133,7 +133,7 @@ class PrototypeMigrationTests(unittest.TestCase):
 
     def test_pre_commit_directory_fsync_failure_never_renames_manifest(self) -> None:
         with TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             self._write_fixture(root)
             archive = root / ".archive" / "prototype-v1"
             real_replace = os.replace
@@ -151,7 +151,7 @@ class PrototypeMigrationTests(unittest.TestCase):
 
     def test_rejects_a_symlinked_source(self) -> None:
         with TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             actual = root / "actual"
             actual.mkdir()
             source_link = root / "source-link"
@@ -162,7 +162,7 @@ class PrototypeMigrationTests(unittest.TestCase):
 
     def test_rejects_a_dangling_archive_symlink(self) -> None:
         with TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             self._write_fixture(root)
             archive = root / "archive"
             archive.symlink_to(root / "missing")
@@ -172,7 +172,7 @@ class PrototypeMigrationTests(unittest.TestCase):
 
     def test_rejects_a_nested_symlink(self) -> None:
         with TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             (root / "assets").mkdir()
             (root / "outside").write_text("outside", encoding="utf-8")
             (root / "assets" / "link").symlink_to(root / "outside")
@@ -184,7 +184,7 @@ class PrototypeMigrationTests(unittest.TestCase):
         if not hasattr(os, "mkfifo"):
             self.skipTest("FIFO is not supported on this platform")
         with TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             (root / "assets").mkdir()
             os.mkfifo(root / "assets" / "stream")
 
@@ -193,11 +193,54 @@ class PrototypeMigrationTests(unittest.TestCase):
 
     def test_rejects_archive_inside_an_allowlisted_subtree(self) -> None:
         with TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             self._write_fixture(root)
 
             with self.assertRaisesRegex(ValueError, "archive.*allowlisted"):
                 preserve_prototype(root, root / "assets" / "archive")
+
+    def test_rejects_archive_path_with_parent_traversal_before_reservation(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            self._write_fixture(root)
+            archive = root / ".archive" / ".." / "assets" / "archive"
+
+            with self.assertRaisesRegex(ValueError, "parent traversal"):
+                preserve_prototype(root, archive)
+
+            self.assertTrue((root / "index.html").exists())
+            self.assertFalse((root / "assets" / "archive").exists())
+
+    def test_rejects_source_with_an_intermediate_symlink(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            actual = root / "actual"
+            actual.mkdir()
+            nested = actual / "nested"
+            nested.mkdir()
+            (nested / "index.html").write_text("legacy", encoding="utf-8")
+            (root / "source-link").symlink_to(actual, target_is_directory=True)
+
+            with self.assertRaisesRegex(ValueError, "source contains a symbolic link"):
+                preserve_prototype(root / "source-link" / "nested", root / "archive")
+
+    def test_rejects_archive_with_an_intermediate_symlink(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            self._write_fixture(root)
+            (root / "archive-link").symlink_to(root / ".archive", target_is_directory=True)
+
+            with self.assertRaisesRegex(ValueError, "archive contains a symbolic link"):
+                preserve_prototype(root, root / "archive-link" / "prototype-v1")
+
+    def test_rejects_archive_reaching_allowlist_through_a_symlink(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            self._write_fixture(root)
+            (root / "to-assets").symlink_to(root / "assets", target_is_directory=True)
+
+            with self.assertRaisesRegex(ValueError, "archive contains a symbolic link"):
+                preserve_prototype(root, root / "to-assets" / "archive")
 
     def test_cli_requires_paths_and_prints_success_json(self) -> None:
         with patch.object(sys, "argv", ["migrate_prototype.py"]):
@@ -206,7 +249,7 @@ class PrototypeMigrationTests(unittest.TestCase):
         self.assertEqual(missing_arguments.exception.code, 2)
 
         with TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             self._write_fixture(root)
             archive = root / ".archive" / "prototype-v1"
             output = io.StringIO()
