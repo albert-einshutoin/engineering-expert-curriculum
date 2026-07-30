@@ -11,6 +11,7 @@ import stat
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -318,6 +319,37 @@ def _assert_static_site(
 
 
 class BuildAcceptanceTests(unittest.TestCase):
+    def test_repository_lesson_oracle_is_independent_of_production_loader(
+        self,
+    ) -> None:
+        forged = SimpleNamespace(
+            lessons=(
+                SimpleNamespace(
+                    lesson=SimpleNamespace(
+                        id="core-01-systems-tradeoffs",
+                        sources=(),
+                    )
+                ),
+            )
+        )
+        with patch(
+            f"{__name__}.load_lessons_from_root",
+            return_value=forged,
+            create=True,
+        ):
+            counts = _repository_lesson_source_counts()
+
+        self.assertEqual(
+            counts,
+            {
+                "core-01-systems-tradeoffs": 3,
+                "core-02-algorithms-measurement": 4,
+                "core-03-architecture-memory-caches": 3,
+                "core-04-os-processes-concurrency": 5,
+                "core-05-networks-latency-failure": 5,
+            },
+        )
+
     def test_build_is_complete_static_file_relative_and_keeps_all_items(self) -> None:
         with TemporaryDirectory() as directory:
             output = Path(directory).resolve(strict=True) / "site"
