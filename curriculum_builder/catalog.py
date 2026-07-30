@@ -29,12 +29,28 @@ def _pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
+def _reject_non_finite_number(_value: str) -> object:
+    raise CurriculumValidationError("non-finite JSON number")
+
+
 def strict_json_loads(raw: bytes, path: str | Path) -> object:
     """Decode UTF-8 JSON while rejecting duplicate keys at every object depth."""
     try:
-        return json.loads(raw.decode("utf-8"), object_pairs_hook=_pairs)
+        return json.loads(
+            raw.decode("utf-8"),
+            object_pairs_hook=_pairs,
+            parse_constant=_reject_non_finite_number,
+        )
     except (UnicodeDecodeError, json.JSONDecodeError, CurriculumValidationError) as error:
         raise CurriculumValidationError(f"{path}: {error}") from error
+    except RecursionError as error:
+        raise CurriculumValidationError(
+            f"{path}: JSON nesting is too deep"
+        ) from error
+    except ValueError as error:
+        raise CurriculumValidationError(
+            f"{path}: invalid JSON numeric value"
+        ) from error
 
 
 def _item_dict(item: CatalogItem) -> dict[str, object]:
