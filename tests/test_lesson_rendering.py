@@ -567,21 +567,66 @@ class LessonRenderingTests(unittest.TestCase):
 
     def test_generated_lesson_artifact_byte_limit_is_aggregate(self) -> None:
         with _site_fixture() as (root, content, templates, static_root):
-            _add_lesson(content, _complete_document())
+            lesson_id = "core-01-systems-tradeoffs"
+            _add_lesson(
+                content,
+                _complete_document(title="PRIVATE-ARTIFACT-TITLE"),
+                body="<p>PRIVATE-ARTIFACT-BODY</p>",
+            )
             baseline = root / "baseline"
             build_site(content, templates, static_root, baseline)
-            lesson_artifact_bytes = sum(
+            artifact_sizes = {
+                PurePosixPath(path.relative_to(baseline).as_posix()):
                 path.stat().st_size
                 for path in (baseline / "lessons").rglob("*")
                 if path.is_file()
+            }
+            lesson_path = PurePosixPath(
+                f"lessons/{lesson_id}/index.html"
             )
-            largest_lesson_artifact = max(
-                path.stat().st_size
-                for path in (baseline / "lessons").rglob("*")
-                if path.is_file()
+            self.assertEqual(
+                frozenset(artifact_sizes),
+                frozenset(
+                    {
+                        PurePosixPath("lessons/index.html"),
+                        lesson_path,
+                    }
+                ),
             )
-            aggregate_limit = lesson_artifact_bytes - 1
-            self.assertGreater(aggregate_limit, largest_lesson_artifact)
+            aggregate_bytes = sum(artifact_sizes.values())
+            one_byte_short = aggregate_bytes - 1
+            self.assertTrue(
+                all(size <= one_byte_short for size in artifact_sizes.values())
+            )
+
+            exact_output = root / "exact-site"
+            with patch.object(
+                lesson_rendering,
+                "MAX_LESSON_ARTIFACT_BYTES",
+                aggregate_bytes,
+            ):
+                try:
+                    build_site(
+                        content,
+                        templates,
+                        static_root,
+                        exact_output,
+                    )
+                except CurriculumValidationError:
+                    self.fail(
+                        "exact aggregate lesson artifact limit must succeed"
+                    )
+            self.assertTrue(
+                (exact_output / Path(lesson_path.as_posix())).is_file()
+            )
+            self.assertEqual(
+                sum(
+                    path.stat().st_size
+                    for path in (exact_output / "lessons").rglob("*")
+                    if path.is_file()
+                ),
+                aggregate_bytes,
+            )
 
             output = root / "site"
             output.mkdir()
@@ -589,15 +634,16 @@ class LessonRenderingTests(unittest.TestCase):
             with patch.object(
                 lesson_rendering,
                 "MAX_LESSON_ARTIFACT_BYTES",
-                aggregate_limit,
-                create=True,
+                one_byte_short,
             ):
                 with self.assertRaisesRegex(
                     CurriculumValidationError,
                     "lesson artifacts exceed maximum byte count",
-                ):
+                ) as caught:
                     build_site(content, templates, static_root, output)
 
+            self.assertNotIn("PRIVATE-", str(caught.exception))
+            self.assertIsNone(caught.exception.__cause__)
             self.assertEqual((output / "sentinel.txt").read_text(), "old")
             self.assertEqual(list(root.glob(".site.staging-*")), [])
 
