@@ -511,6 +511,23 @@ def _write_manifest(archive_fd: int, snapshot: dict[str, FileSnapshot]) -> Proto
     return manifest
 
 
+def _build_verified_archive(
+    source_path: Path,
+    destination_fd: int,
+    initial: dict[str, FileSnapshot],
+) -> PrototypeManifest:
+    """Populate an already-pinned empty destination and verify it before manifest commit."""
+    _copy_allowlisted_tree(source_path, destination_fd)
+    staged = _snapshot_fd(destination_fd)
+    current = _snapshot(source_path)
+    if initial != staged or initial != current:
+        raise RuntimeError("prototype checksum verification failed")
+    manifest = _write_manifest(destination_fd, initial)
+    if _snapshot_fd(destination_fd) != initial:
+        raise RuntimeError("prototype checksum verification failed")
+    return manifest
+
+
 def preserve_prototype(source: Path, archive: Path) -> PrototypeManifest:
     """Copy, verify, and atomically publish the approved legacy prototype files."""
     source_path = _source_directory(source)
