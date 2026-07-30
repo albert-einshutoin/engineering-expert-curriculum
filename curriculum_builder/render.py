@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from html import escape
 from html.parser import HTMLParser
 import os
@@ -78,6 +78,49 @@ _REQUIRED_CSP = MappingProxyType(
         "frame-ancestors": ("'none'",),
     }
 )
+_BASE_CHILDREN = MappingProxyType(
+    {
+        "html": ("head", "body"),
+        "head": (
+            "meta:charset",
+            "meta:viewport",
+            "meta:description",
+            "meta:csp",
+            "title",
+            "link:stylesheet",
+        ),
+        "body": ("a:skip", "header", "main", "footer"),
+        "header": ("a:brand", "nav"),
+        "nav": ("a:roadmap", "a:lessons", "a:catalog"),
+        "footer": ("p:footer",),
+        "a": (),
+        "main": (),
+        "p": (),
+        "title": (),
+    }
+)
+_BASE_LEAF_TEXT = MappingProxyType(
+    {
+        "a:skip": "本文へ移動",
+        "a:brand": "Engineering Atlas",
+        "a:roadmap": "ロードマップ",
+        "a:lessons": "コアレッスン",
+        "a:catalog": "全カタログ",
+        "main": "$content",
+        "p:footer": "Learn · Practice · Explain · Prove",
+        "title": "$title · Engineering Expert Curriculum",
+    }
+)
+_REQUIRED_BASE_HREFS = MappingProxyType(
+    {
+        "#main": 1,
+        "${root}styles.css": 1,
+        "${root}index.html": 1,
+        "${root}roadmap/index.html": 1,
+        "${root}lessons/index.html": 1,
+        "${root}catalog/index.html": 1,
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +128,14 @@ class _Placeholder:
     name: str
     position: int
     context: str
+
+
+@dataclass(slots=True)
+class _BaseFrame:
+    tag: str
+    role: str
+    child_index: int = 0
+    text_parts: list[str] = field(default_factory=list)
 
 
 def _template_identifiers(source: str) -> tuple[tuple[str, int], ...]:
@@ -446,10 +497,8 @@ class _BasePolicyParser(HTMLParser):
         self.nav_count = 0
         self.csp_values: list[str] = []
         self.ids: set[str] = set()
-        self.open_tags: list[str] = []
-        self.head_count = 0
-        self.body_count = 0
-        self.head_closed = False
+        self.open_frames: list[_BaseFrame] = []
+        self.document_child_index = 0
         self.description_placeholder_count = 0
         self.title_placeholder_count = 0
         self.hrefs: Counter[str] = Counter()
@@ -457,7 +506,12 @@ class _BasePolicyParser(HTMLParser):
         self.meta_counts: Counter[str] = Counter()
 
     def handle_decl(self, decl: str) -> None:
-        if decl.strip().casefold() != "doctype html":
+        if (
+            decl.strip().casefold() != "doctype html"
+            or self.doctype_count
+            or self.document_child_index
+            or self.open_frames
+        ):
             raise CurriculumValidationError("base template markup is invalid")
         self.doctype_count += 1
 
@@ -481,35 +535,6 @@ class _BasePolicyParser(HTMLParser):
         normalized_tag = tag.casefold()
         if normalized_tag not in _BASE_ATTRIBUTES:
             raise CurriculumValidationError("base template markup is invalid")
-        if normalized_tag == "html":
-            if self.open_tags or self.doctype_count != 1:
-                raise CurriculumValidationError("base template markup is invalid")
-        elif normalized_tag == "head":
-            if self.open_tags != ["html"] or self.head_count:
-                raise CurriculumValidationError("base template markup is invalid")
-            self.head_count += 1
-        elif normalized_tag == "body":
-            if (
-                self.open_tags != ["html"]
-                or not self.head_closed
-                or self.body_count
-            ):
-                raise CurriculumValidationError("base template markup is invalid")
-            self.body_count += 1
-        elif not self.open_tags:
-            raise CurriculumValidationError("base template markup is invalid")
-        if (
-            normalized_tag in {"link", "meta", "title"}
-            and self.open_tags != ["html", "head"]
-        ):
-            raise CurriculumValidationError("base template markup is invalid")
-        if (
-            normalized_tag
-            in {"a", "footer", "header", "main", "nav"}
-            and "body" not in self.open_tags
-        ):
-            raise CurriculumValidationError("base template markup is invalid")
-
         names = tuple(name.casefold() for name, _ in attrs)
         if len(names) != len(set(names)):
             raise CurriculumValidationError("base template markup is invalid")
@@ -524,80 +549,9 @@ class _BasePolicyParser(HTMLParser):
             for name, value in attrs
             if value is not None
         }
-        if normalized_tag == "meta":
-            if attributes == {"charset": "utf-8"}:
-                meta_kind = "charset"
-            elif attributes == {
-                "name": "viewport",
-                "content": "width=device-width, initial-scale=1",
-            }:
-                meta_kind = "viewport"
-            elif attributes == {
-                "name": "description",
-                "content": "$description",
-            }:
-                meta_kind = "description"
-            elif (
-                frozenset(attributes) == {"http-equiv", "content"}
-                and attributes["http-equiv"] == "Content-Security-Policy"
-            ):
-                meta_kind = "csp"
-            else:
-                raise CurriculumValidationError(
-                    "base template markup is invalid"
-                )
-            self.meta_counts[meta_kind] += 1
-            if self.meta_counts[meta_kind] > 1:
-                raise CurriculumValidationError(
-                    "base template markup is invalid"
-                )
-
-        if normalized_tag == "html" and attributes.get("lang") == "ja":
-            self.html_ja_count += 1
-        if normalized_tag == "main" and attributes.get("id") == "main":
-            self.main_count += 1
-        if normalized_tag == "nav" and attributes.get("aria-label"):
-            self.nav_count += 1
-        if (
-            normalized_tag == "a"
-            and "skip-link" in attributes.get("class", "").split()
-            and attributes.get("href") == "#main"
-        ):
-            self.skip_link_count += 1
-
-        identifier = attributes.get("id")
-        if identifier is not None:
-            if identifier in self.ids:
-                raise CurriculumValidationError("base template markup is invalid")
-            self.ids.add(identifier)
-
-        if (
-            normalized_tag == "meta"
-            and attributes.get("http-equiv", "").casefold()
-            == "content-security-policy"
-        ):
-            content = attributes.get("content")
-            if content is None:
-                raise CurriculumValidationError("base template CSP is incomplete")
-            self.csp_values.append(content)
-        if (
-            normalized_tag == "meta"
-            and attributes.get("name", "").casefold() == "description"
-            and attributes.get("content") == "$description"
-        ):
-            self.description_placeholder_count += 1
-        if (
-            normalized_tag == "link"
-            and attributes.get("rel") == "stylesheet"
-            and attributes.get("href") == "${root}styles.css"
-        ):
-            self.stylesheet_count += 1
-
         for attribute_name in ("href", "src"):
             target = attributes.get(attribute_name)
             if target is None or target.startswith("#"):
-                if attribute_name == "href" and target is not None:
-                    self.hrefs[target] += 1
                 continue
             lowered = target.casefold()
             if (
@@ -609,33 +563,196 @@ class _BasePolicyParser(HTMLParser):
                 raise CurriculumValidationError(
                     "base template contains an external or absolute asset URL"
                 )
-            if attribute_name == "href":
+        role = self._classify_role(normalized_tag, attributes)
+        self._accept_direct_child(role)
+
+        if role == "html":
+            self.html_ja_count += 1
+        if role == "main":
+            self.main_count += 1
+        if role == "nav":
+            self.nav_count += 1
+        if role == "a:skip":
+            self.skip_link_count += 1
+
+        identifier = attributes.get("id")
+        if identifier is not None:
+            if identifier in self.ids:
+                raise CurriculumValidationError("base template markup is invalid")
+            self.ids.add(identifier)
+
+        if role == "meta:csp":
+            content = attributes.get("content")
+            if content is None:
+                raise CurriculumValidationError("base template CSP is incomplete")
+            self.csp_values.append(content)
+        if role == "meta:description":
+            self.description_placeholder_count += 1
+        if role == "link:stylesheet":
+            self.stylesheet_count += 1
+
+        for attribute_name in ("href", "src"):
+            target = attributes.get(attribute_name)
+            if attribute_name == "href" and target is not None:
                 self.hrefs[target] += 1
         if normalized_tag not in _VOID_ELEMENTS:
-            self.open_tags.append(normalized_tag)
+            self.open_frames.append(
+                _BaseFrame(tag=normalized_tag, role=role)
+            )
 
     def handle_startendtag(
         self,
         tag: str,
         attrs: list[tuple[str, str | None]],
     ) -> None:
-        if tag.casefold() not in _VOID_ELEMENTS:
-            raise CurriculumValidationError("base template markup is invalid")
-        self.handle_starttag(tag, attrs)
+        del tag, attrs
+        raise CurriculumValidationError("base template markup is invalid")
 
     def handle_endtag(self, tag: str) -> None:
         normalized_tag = tag.casefold()
-        if not self.open_tags or self.open_tags[-1] != normalized_tag:
+        if (
+            not self.open_frames
+            or self.open_frames[-1].tag != normalized_tag
+        ):
             raise CurriculumValidationError("base template markup is invalid")
-        self.open_tags.pop()
-        if normalized_tag == "head":
-            self.head_closed = True
+        frame = self.open_frames.pop()
+        self._finish_frame(frame)
 
     def handle_data(self, data: str) -> None:
-        if not self.open_tags and data.strip():
+        if not self.open_frames:
+            if data.strip():
+                raise CurriculumValidationError(
+                    "base template markup is invalid"
+                )
+            return
+        self.open_frames[-1].text_parts.append(data)
+
+    def finish(self) -> None:
+        if (
+            self.open_frames
+            or self.document_child_index != 1
+            or self.doctype_count != 1
+        ):
             raise CurriculumValidationError("base template markup is invalid")
-        if self.open_tags and self.open_tags[-1] == "title":
-            self.title_placeholder_count += data.count("$title")
+
+    def _accept_direct_child(self, role: str) -> None:
+        if not self.open_frames:
+            if (
+                self.doctype_count != 1
+                or self.document_child_index != 0
+                or role != "html"
+            ):
+                raise CurriculumValidationError(
+                    "base template markup is invalid"
+                )
+            self.document_child_index = 1
+            return
+
+        parent = self.open_frames[-1]
+        expected = _BASE_CHILDREN[parent.tag]
+        if (
+            parent.child_index >= len(expected)
+            or expected[parent.child_index] != role
+        ):
+            raise CurriculumValidationError("base template markup is invalid")
+        parent.child_index += 1
+
+    def _finish_frame(self, frame: _BaseFrame) -> None:
+        expected_children = _BASE_CHILDREN[frame.tag]
+        if frame.child_index != len(expected_children):
+            raise CurriculumValidationError("base template markup is invalid")
+        text = "".join(frame.text_parts)
+        expected_text = _BASE_LEAF_TEXT.get(frame.role)
+        if expected_text is None:
+            if text.strip():
+                raise CurriculumValidationError(
+                    "base template markup is invalid"
+                )
+            return
+        if text != expected_text:
+            raise CurriculumValidationError("base template markup is invalid")
+        if frame.role == "title":
+            self.title_placeholder_count += text.count("$title")
+
+    def _classify_role(
+        self,
+        tag: str,
+        attributes: dict[str, str],
+    ) -> str:
+        if tag == "meta":
+            return self._classify_meta(attributes)
+        if tag == "link":
+            if attributes != {
+                "rel": "stylesheet",
+                "href": "${root}styles.css",
+            }:
+                raise CurriculumValidationError(
+                    "base template markup is invalid"
+                )
+            return "link:stylesheet"
+        if tag == "a":
+            roles = {
+                (("class", "skip-link"), ("href", "#main")): "a:skip",
+                (
+                    ("class", "brand"),
+                    ("href", "${root}index.html"),
+                ): "a:brand",
+                (
+                    ("href", "${root}roadmap/index.html"),
+                ): "a:roadmap",
+                (
+                    ("href", "${root}lessons/index.html"),
+                ): "a:lessons",
+                (
+                    ("href", "${root}catalog/index.html"),
+                ): "a:catalog",
+            }
+            role = roles.get(tuple(sorted(attributes.items())))
+            if role is None:
+                raise CurriculumValidationError(
+                    "base template markup is invalid"
+                )
+            return role
+
+        required_attributes = {
+            "html": {"lang": "ja"},
+            "head": {},
+            "title": {},
+            "body": {},
+            "header": {"class": "site-header"},
+            "nav": {"aria-label": "主要ナビゲーション"},
+            "main": {"id": "main"},
+            "footer": {},
+            "p": {},
+        }
+        if attributes != required_attributes[tag]:
+            raise CurriculumValidationError("base template markup is invalid")
+        return "p:footer" if tag == "p" else tag
+
+    def _classify_meta(self, attributes: dict[str, str]) -> str:
+        if attributes == {"charset": "utf-8"}:
+            meta_kind = "charset"
+        elif attributes == {
+            "name": "viewport",
+            "content": "width=device-width, initial-scale=1",
+        }:
+            meta_kind = "viewport"
+        elif attributes == {
+            "name": "description",
+            "content": "$description",
+        }:
+            meta_kind = "description"
+        elif (
+            frozenset(attributes) == {"http-equiv", "content"}
+            and attributes["http-equiv"] == "Content-Security-Policy"
+        ):
+            meta_kind = "csp"
+        else:
+            raise CurriculumValidationError("base template markup is invalid")
+        self.meta_counts[meta_kind] += 1
+        if self.meta_counts[meta_kind] > 1:
+            raise CurriculumValidationError("base template markup is invalid")
+        return f"meta:{meta_kind}"
 
 
 def _parse_csp(value: str) -> dict[str, tuple[str, ...]]:
@@ -658,6 +775,7 @@ def _validate_base_policy(source: str) -> None:
     try:
         parser.feed(source)
         parser.close()
+        parser.finish()
     except CurriculumValidationError:
         raise
     except Exception:
@@ -671,9 +789,6 @@ def _validate_base_policy(source: str) -> None:
         or parser.main_count != 1
         or parser.skip_link_count != 1
         or parser.nav_count != 1
-        or parser.head_count != 1
-        or parser.body_count != 1
-        or parser.open_tags
         or parser.description_placeholder_count != 1
         or parser.title_placeholder_count != 1
         or parser.stylesheet_count != 1
@@ -688,17 +803,7 @@ def _validate_base_policy(source: str) -> None:
         )
     ):
         raise CurriculumValidationError("base template markup is invalid")
-    required_hrefs = Counter(
-        {
-            "#main": 1,
-            "${root}styles.css": 1,
-            "${root}index.html": 1,
-            "${root}roadmap/index.html": 1,
-            "${root}lessons/index.html": 1,
-            "${root}catalog/index.html": 1,
-        }
-    )
-    if parser.hrefs != required_hrefs:
+    if dict(parser.hrefs) != _REQUIRED_BASE_HREFS:
         raise CurriculumValidationError("base template markup is invalid")
     if len(parser.csp_values) != 1:
         raise CurriculumValidationError("base template CSP is incomplete")
