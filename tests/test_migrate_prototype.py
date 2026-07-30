@@ -103,7 +103,8 @@ class PrototypeMigrationTests(unittest.TestCase):
             root = Path(directory).resolve()
             source = root / "source"
             destination = root / "destination"
-            source.mkdir(); destination.mkdir()
+            source.mkdir()
+            destination.mkdir()
             (source / "index.html").write_text("legacy", encoding="utf-8")
             descriptor = os.open(destination, os.O_RDONLY | os.O_DIRECTORY)
             try:

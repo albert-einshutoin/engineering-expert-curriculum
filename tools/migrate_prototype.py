@@ -9,7 +9,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
 import stat
 import sys
 from typing import TypedDict
@@ -197,58 +196,6 @@ def _archive_path(source: Path, archive: Path) -> Path:
     return raw_archive
 
 
-def _reserve_archive(archive: Path) -> None:
-    """Atomically reserve the archive name without replacing any existing entry."""
-    try:
-        archive.mkdir(mode=0o700, exist_ok=False)
-    except FileExistsError as error:
-        raise FileExistsError(f"archive already exists: {archive}") from error
-
-
-def _reserve_archive_at(parent_fd: int, name: str) -> tuple[int, tuple[int, int]]:
-    try:
-        os.mkdir(name, mode=0o700, dir_fd=parent_fd)
-    except FileExistsError as error:
-        raise FileExistsError(f"archive already exists: {name}") from error
-    try:
-        reserved = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
-    except BaseException as identity_error:
-        try:
-            os.rmdir(name, dir_fd=parent_fd)
-        except OSError as rollback_error:
-            raise RuntimeError(
-                f"archive reservation rollback failed for {name}: {rollback_error}"
-            ) from identity_error
-        raise
-    identity = (reserved.st_dev, reserved.st_ino)
-    descriptor: int | None = None
-    try:
-        descriptor = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd)
-        node = os.fstat(descriptor)
-        if (node.st_dev, node.st_ino) != identity:
-            raise RuntimeError("reserved archive changed before opening")
-        with os.scandir(descriptor) as entries:
-            if next(entries, None) is not None:
-                raise RuntimeError("reserved archive is not empty")
-        return descriptor, identity
-    except BaseException as identity_error:
-        failures = _close_all((descriptor,))
-        try:
-            current = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
-            if (current.st_dev, current.st_ino) == identity:
-                os.rmdir(name, dir_fd=parent_fd)
-        except OSError as rollback_error:
-            raise RuntimeError(
-                f"archive reservation rollback failed for {name}: {rollback_error}"
-            ) from identity_error
-        if failures:
-            raise RuntimeError(
-                f"archive reservation descriptor close failed: {failures[0]}"
-            ) from identity_error
-        raise
-    # Ownership transfers to the caller; it pins the reservation through commit/rollback.
-
-
 def _create_private_staging(parent_fd: int) -> tuple[str, int, tuple[int, int]]:
     """Create a private, pinned empty staging directory without trusting its pathname."""
     name = f".prototype-staging-{uuid.uuid4().hex}"
@@ -319,13 +266,13 @@ def _clear_directory_fd(descriptor: int) -> None:
             os.unlink(entry.name, dir_fd=descriptor)
 
 
-def _remove_owned_archive(parent_fd: int, name: str, archive_fd: int) -> None:
-    """Remove only the directory whose inode is still the reservation we created."""
-    expected = os.fstat(archive_fd)
+def _remove_owned_directory(parent_fd: int, name: str, directory_fd: int) -> None:
+    """Remove only the directory whose inode is still the one created by this process."""
+    expected = os.fstat(directory_fd)
     current = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
     if (current.st_dev, current.st_ino) != (expected.st_dev, expected.st_ino):
-        raise RuntimeError("reserved archive entry was replaced; refusing cleanup")
-    _clear_directory_fd(archive_fd)
+        raise RuntimeError("owned directory entry was replaced; refusing cleanup")
+    _clear_directory_fd(directory_fd)
     os.rmdir(name, dir_fd=parent_fd)
 
 
@@ -430,6 +377,19 @@ def _copy_allowlisted_tree(source: Path, staging_fd: int) -> None:
             copy_node(origin, staging_fd, relative_path, relative_path)
 
 
+def _snapshot_regular_file_at(directory_fd: int, name: str) -> FileSnapshot:
+    descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_fd)
+    try:
+        digest = hashlib.sha256()
+        byte_count = 0
+        while chunk := os.read(descriptor, _CHUNK_SIZE):
+            digest.update(chunk)
+            byte_count += len(chunk)
+    finally:
+        os.close(descriptor)
+    return {"sha256": digest.hexdigest(), "byteCount": byte_count}
+
+
 def _snapshot_fd(root_fd: int) -> dict[str, FileSnapshot]:
     result: dict[str, FileSnapshot] = {}
 
@@ -438,16 +398,7 @@ def _snapshot_fd(root_fd: int) -> dict[str, FileSnapshot]:
             relative = f"{prefix}/{entry.name}" if prefix else entry.name
             mode = entry.stat(follow_symlinks=False).st_mode
             if stat.S_ISREG(mode):
-                descriptor = os.open(entry.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_fd)
-                try:
-                    digest = hashlib.sha256()
-                    count = 0
-                    while chunk := os.read(descriptor, _CHUNK_SIZE):
-                        digest.update(chunk)
-                        count += len(chunk)
-                finally:
-                    os.close(descriptor)
-                result[relative] = {"sha256": digest.hexdigest(), "byteCount": count}
+                result[relative] = _snapshot_regular_file_at(directory_fd, entry.name)
             elif stat.S_ISDIR(mode):
                 child = os.open(entry.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory_fd)
                 try:
@@ -463,14 +414,7 @@ def _snapshot_fd(root_fd: int) -> dict[str, FileSnapshot]:
         except FileNotFoundError:
             continue
         if stat.S_ISREG(node.st_mode):
-            descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=root_fd)
-            try:
-                digest = hashlib.sha256(); count = 0
-                while chunk := os.read(descriptor, _CHUNK_SIZE):
-                    digest.update(chunk); count += len(chunk)
-            finally:
-                os.close(descriptor)
-            result[name] = {"sha256": digest.hexdigest(), "byteCount": count}
+            result[name] = _snapshot_regular_file_at(root_fd, name)
         elif stat.S_ISDIR(node.st_mode):
             child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root_fd)
             try:
@@ -552,7 +496,7 @@ def _publish_verified_archive(
                 current = os.stat(staging_name, dir_fd=parent_fd, follow_symlinks=False)
                 opened = os.fstat(staging_fd)
                 if (current.st_dev, current.st_ino) == identity == (opened.st_dev, opened.st_ino):
-                    _remove_owned_archive(parent_fd, staging_name, staging_fd)
+                    _remove_owned_directory(parent_fd, staging_name, staging_fd)
             except (OSError, RuntimeError) as cleanup_error:
                 raise RuntimeError(f"private staging cleanup failed: {cleanup_error}") from operation_error
         raise
