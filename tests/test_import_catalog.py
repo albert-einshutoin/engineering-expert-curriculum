@@ -183,9 +183,28 @@ class CatalogImportTests(unittest.TestCase):
             self.assertEqual(replace.call_count, 0)
             self.assertEqual(output.read_bytes(), b"old")
             self.assertEqual(len(closed), len(set(closed)))
-            self.assertIsNotNone(raised.exception.__cause__)
-            self.assertIn("catalog temporary close failed", str(raised.exception.__cause__))
-            self.assertEqual(str(raised.exception.__cause__.__cause__), "write failed")
+
+    def test_read_source_preserves_duplicate_json_validation_cause_through_close_failures(self) -> None:
+        with TemporaryDirectory(dir=Path.cwd()) as directory:
+            source = Path(directory) / "source.json"; source.write_text('{"version":1,"version":1}', encoding="utf-8")
+            real_close = __import__("os").close; closed: list[int] = []
+            def close(fd: int) -> None:
+                closed.append(fd); real_close(fd); raise OSError(f"close {fd}")
+            with patch("tools.import_catalog.os.close", side_effect=close):
+                with self.assertRaisesRegex(RuntimeError, "source descriptor close failed") as raised:
+                    _read_source(source)
+            self.assertIsInstance(raised.exception.__cause__, CurriculumValidationError)
+            self.assertIn("duplicate JSON key: version", str(raised.exception.__cause__))
+            self.assertGreaterEqual(len(closed), 2)
+            self.assertEqual(len(closed), len(set(closed)))
+
+    def test_canonical_fixture_records_its_own_bytes_digest_not_official_digest(self) -> None:
+        source = legacy_source([lesson()])
+        raw = json.dumps(source, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        digest = hashlib.sha256(raw).hexdigest()
+        result = canonicalize(source, "fixture", source_sha256=digest)
+        self.assertEqual(result["sourceSha256"], digest)
+        self.assertNotEqual(result["sourceSha256"], "a55a0d0b1cfa3773031e787c2ce7ca0df34534e16a70b65ed1baa91975c82da8")
 
     def test_writer_keeps_success_after_published_parent_close_failures(self) -> None:
         document = {"version": 1, "generatedFrom": "source", "sourceSha256": "a55a0d0b1cfa3773031e787c2ce7ca0df34534e16a70b65ed1baa91975c82da8", "items": [{**lesson(), "coreLessonId": None}]}
