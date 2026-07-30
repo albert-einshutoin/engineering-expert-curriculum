@@ -1422,10 +1422,8 @@ try:
         descriptors.append(current_fd)
     repository_fd = current_fd
 
-    created = False
     try:
         os.mkdir(".archive", mode=0o700, dir_fd=repository_fd)
-        created = True
     except FileExistsError:
         pass
 
@@ -1443,10 +1441,9 @@ try:
         raise RuntimeError("archive parent must be owned by the current user")
     if actual.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
         raise RuntimeError("archive parent must not be group/world writable")
-    if created:
-        # Persist the directory itself before the parent that holds its name.
-        os.fsync(archive_fd)
-        os.fsync(repository_fd)
+    # Repair a prior parent-fsync failure on retry: directory before its name holder.
+    os.fsync(archive_fd)
+    os.fsync(repository_fd)
 except BaseException as error:
     operation_error = error
     raise
@@ -1469,13 +1466,13 @@ Expected: the parent is a real directory owned by the current user, with no
 group/world write permission. The traversal opens every repository component
 from `/` with `O_DIRECTORY|O_NOFOLLOW`, so intermediate and final symlinks are
 rejected before use. A new parent is created with `0o700` (or a more restrictive
-umask result) and, after validation, its directory then repository parent are
-`fsync`ed to persist the new `.archive` entry. An existing unsafe parent is
-rejected without any `chmod` or other mutation; an existing valid parent needs
-no extra preparation `fsync` because publication performs its archive-FD
-durability step. Any preparation `fsync` failure aborts before migration. Every
-opened descriptor is closed even after an error; close failures are reported
-rather than retried through a pathname.
+umask result). After validation, every new or existing parent is `fsync`ed
+before the repository FD that holds its name. This completes the durability
+boundary and repairs a prior repository-`fsync` failure on retry. An existing
+unsafe parent is rejected without any `chmod` or other mutation. Any preparation
+`fsync` failure aborts before migration. Every opened descriptor is closed even
+after an error; close failures are reported rather than retried through a
+pathname.
 
 - [ ] **Step 2: Run the complete suite before touching the prototype**
 

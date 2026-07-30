@@ -425,9 +425,10 @@ identity, open it with the same flags, and compare `fstat` identity before
 validating its directory type, owner, and permissions. This rejects intermediate
 or final symlinks and existing non-directories, foreign owners, or
 group/world-writable directories without changing them. If this creates a new
-parent, `fsync` its pinned FD and then the pinned repository FD to persist the
-directory before the parent that holds its name; an existing valid parent needs
-no preparation `fsync` because archive publication later syncs its FD. Every
+parent, it is `0o700` (subject to umask). After validation, `fsync` the pinned
+archive FD and then the pinned repository FD that holds its name. This sequence
+is required for every valid parent, new or existing, so a retry can repair a
+prior repository `fsync` failure and complete the durability boundary. Every
 preparation `fsync` failure stops the migration before it begins. Every opened
 FD is closed, and close failures are reported rather than retried through a
 pathname.
