@@ -10,10 +10,45 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from tools.migrate_prototype import LEGACY_PATHS, _create_private_staging, _rename_directory_noreplace, main, preserve_prototype
+from tools.migrate_prototype import LEGACY_PATHS, _build_verified_archive, _create_private_staging, _rename_directory_noreplace, _snapshot, main, preserve_prototype
 
 
 class PrototypeMigrationTests(unittest.TestCase):
+    def test_build_verified_archive_copies_and_manifests_without_changing_source(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            source = root / "source"
+            destination = root / "destination"
+            (source / "assets").mkdir(parents=True)
+            (source / "assets" / "style.css").write_text("body{}", encoding="utf-8")
+            (source / "index.html").write_text("legacy", encoding="utf-8")
+            destination.mkdir()
+            initial = _snapshot(source)
+            descriptor = os.open(destination, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                manifest = _build_verified_archive(source, descriptor, initial)
+            finally:
+                os.close(descriptor)
+            self.assertEqual(_snapshot(destination), initial)
+            self.assertTrue((source / "index.html").exists())
+            self.assertEqual(json.loads((destination / "manifest.json").read_text(encoding="utf-8")), manifest)
+
+    def test_build_verified_archive_propagates_manifest_failure_without_completion_marker(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            source = root / "source"
+            destination = root / "destination"
+            source.mkdir(); destination.mkdir()
+            (source / "index.html").write_text("legacy", encoding="utf-8")
+            descriptor = os.open(destination, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                with patch("tools.migrate_prototype._write_manifest", side_effect=OSError("manifest failed")):
+                    with self.assertRaisesRegex(OSError, "manifest failed"):
+                        _build_verified_archive(source, descriptor, _snapshot(source))
+            finally:
+                os.close(descriptor)
+            self.assertFalse((destination / "manifest.json").exists())
+            self.assertTrue((source / "index.html").exists())
     def test_create_private_staging_returns_a_pinned_empty_directory(self) -> None:
         with TemporaryDirectory() as directory:
             parent = Path(directory).resolve()
