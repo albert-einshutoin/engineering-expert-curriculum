@@ -213,15 +213,27 @@ def _create_private_staging(parent_fd: int) -> tuple[str, int, tuple[int, int]]:
             if next(entries, None) is not None:
                 raise RuntimeError("private staging is not empty")
         return name, descriptor, recorded
-    except BaseException as error:
-        _close_all((descriptor,))
+    except BaseException as operation_error:
+        close_failures = _close_all((descriptor,))
+        rollback_failure: OSError | None = None
         if recorded is not None:
             try:
                 current = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
                 if (current.st_dev, current.st_ino) == recorded:
                     os.rmdir(name, dir_fd=parent_fd)
-            except OSError as rollback_error:
-                raise RuntimeError(f"private staging rollback failed: {rollback_error}") from error
+            except OSError as error:
+                rollback_failure = error
+        if close_failures and rollback_failure:
+            raise RuntimeError(
+                "private staging cleanup failed: "
+                f"descriptor close failed: {close_failures[0]}; rollback failed: {rollback_failure}"
+            ) from operation_error
+        if close_failures:
+            raise RuntimeError(
+                f"private staging descriptor close failed: {close_failures[0]}"
+            ) from operation_error
+        if rollback_failure:
+            raise RuntimeError(f"private staging rollback failed: {rollback_failure}") from operation_error
         raise
 
 
@@ -242,8 +254,13 @@ def _open_directory_fd(path: Path) -> int:
             ) from operation_error
         raise
     if (expected.st_dev, expected.st_ino) != (actual.st_dev, actual.st_ino):
-        os.close(descriptor)
-        raise RuntimeError(f"archive parent changed while opening: {path}")
+        mismatch_error = RuntimeError(f"archive parent changed while opening: {path}")
+        close_failures = _close_all((descriptor,))
+        if close_failures:
+            raise RuntimeError(
+                f"directory descriptor cleanup failed after identity mismatch: {close_failures[0]}"
+            ) from mismatch_error
+        raise mismatch_error
     return descriptor
 
 

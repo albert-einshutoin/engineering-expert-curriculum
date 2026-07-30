@@ -10,7 +10,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from tools.migrate_prototype import LEGACY_PATHS, _build_verified_archive, _create_private_staging, _publish_verified_archive, _rename_directory_noreplace, _snapshot, main, preserve_prototype
+from tools.migrate_prototype import LEGACY_PATHS, _build_verified_archive, _create_private_staging, _open_directory_fd, _publish_verified_archive, _rename_directory_noreplace, _snapshot, main, preserve_prototype
 
 
 class PrototypeMigrationTests(unittest.TestCase):
@@ -172,6 +172,77 @@ class PrototypeMigrationTests(unittest.TestCase):
                     os.close(foreign_fd)
                 clear.assert_not_called()
             finally:
+                os.close(parent_fd)
+
+    def test_private_staging_nonempty_failure_reports_close_failure_and_preserves_foreign_sentinel(self) -> None:
+        with TemporaryDirectory() as directory:
+            parent = Path(directory).resolve()
+            parent_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
+            real_fstat = os.fstat
+            created_descriptor: int | None = None
+            staging_name = ""
+            foreign_sentinel: Path | None = None
+
+            def replace_and_fill_staging(descriptor: int) -> os.stat_result:
+                nonlocal created_descriptor, staging_name, foreign_sentinel
+                node = real_fstat(descriptor)
+                if created_descriptor is None:
+                    created_descriptor = descriptor
+                    staging_name = next(parent.glob(".prototype-staging-*")).name
+                    os.rename(staging_name, "owned", src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+                    os.mkdir(staging_name, dir_fd=parent_fd)
+                    foreign_sentinel = parent / staging_name / "sentinel.txt"
+                    foreign_sentinel.write_text("foreign", encoding="utf-8")
+                    file_fd = os.open("unexpected.txt", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=descriptor)
+                    os.close(file_fd)
+                return node
+
+            try:
+                with patch("tools.migrate_prototype.os.fstat", side_effect=replace_and_fill_staging):
+                    with patch("tools.migrate_prototype._close_all", return_value=[OSError("close failed")]) as close_all:
+                        with self.assertRaisesRegex(RuntimeError, "close failed") as error:
+                            _create_private_staging(parent_fd)
+                self.assertIsInstance(error.exception.__cause__, RuntimeError)
+                self.assertEqual(str(error.exception.__cause__), "private staging is not empty")
+                close_all.assert_called_once_with((created_descriptor,))
+                self.assertIsNotNone(foreign_sentinel)
+                self.assertEqual(foreign_sentinel.read_text(encoding="utf-8"), "foreign")
+            finally:
+                if created_descriptor is not None:
+                    os.close(created_descriptor)
+                if staging_name:
+                    owned = parent / "owned"
+                    if owned.exists():
+                        for child in owned.iterdir():
+                            child.unlink()
+                        owned.rmdir()
+                os.close(parent_fd)
+
+    def test_private_staging_fstat_failure_reports_descriptor_close_failure(self) -> None:
+        with TemporaryDirectory() as directory:
+            parent = Path(directory).resolve()
+            parent_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
+            opened: list[int] = []
+            real_open = os.open
+
+            def record_open(*args: object, **kwargs: object) -> int:
+                descriptor = real_open(*args, **kwargs)
+                opened.append(descriptor)
+                return descriptor
+
+            try:
+                with patch("tools.migrate_prototype.os.open", side_effect=record_open):
+                    with patch("tools.migrate_prototype.os.fstat", side_effect=OSError("fstat failed")):
+                        with patch("tools.migrate_prototype._close_all", return_value=[OSError("close failed")]) as close_all:
+                            with self.assertRaisesRegex(RuntimeError, "close failed") as error:
+                                _create_private_staging(parent_fd)
+                self.assertIsInstance(error.exception.__cause__, OSError)
+                self.assertEqual(str(error.exception.__cause__), "fstat failed")
+                close_all.assert_called_once_with((opened[0],))
+                self.assertEqual(list(parent.glob(".prototype-staging-*")), [])
+            finally:
+                if opened:
+                    os.close(opened[0])
                 os.close(parent_fd)
     def test_native_noreplace_rename_publishes_a_missing_target(self) -> None:
         with TemporaryDirectory() as directory:
@@ -609,6 +680,32 @@ class PrototypeMigrationTests(unittest.TestCase):
             self.assertEqual(len(opened), 1)
             with self.assertRaises(OSError):
                 os.fstat(opened[0])
+
+    def test_directory_fd_identity_mismatch_reports_close_failure_with_mismatch_cause(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory).resolve()
+            real_fstat = os.fstat
+            opened: list[int] = []
+
+            def mismatched_fstat(descriptor: int) -> os.stat_result:
+                node = real_fstat(descriptor)
+                values = list(node)
+                values[1] += 1
+                return os.stat_result(values)
+
+            def report_close_failure(descriptors: tuple[int | None, ...]) -> list[OSError]:
+                opened.extend(descriptor for descriptor in descriptors if descriptor is not None)
+                return [OSError("close failed")]
+
+            with patch("tools.migrate_prototype.os.fstat", side_effect=mismatched_fstat):
+                with patch("tools.migrate_prototype._close_all", side_effect=report_close_failure):
+                    with self.assertRaisesRegex(RuntimeError, "close failed") as error:
+                        _open_directory_fd(path)
+
+            self.assertIsInstance(error.exception.__cause__, RuntimeError)
+            self.assertIn("archive parent changed while opening", str(error.exception.__cause__))
+            self.assertEqual(len(opened), 1)
+            os.close(opened[0])
 
     def test_parent_fd_open_failure_preserves_open_error_when_cleanup_fails(self) -> None:
         with TemporaryDirectory() as directory:
