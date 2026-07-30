@@ -43,8 +43,9 @@ QUERY_COUNT = 8
 
 def make_data(distribution, size):
     if distribution == "duplicate_90":
-        tail = list(range(size - size // 10))
-        data = [7] * (size - len(tail)) + tail
+        duplicate_count = size * 9 // 10
+        tail = list(range(size, size + size - duplicate_count))
+        data = [7] * duplicate_count + tail
         random.Random(SEED + size).shuffle(data)
         return data
     return list(range(size))
@@ -140,6 +141,24 @@ for distribution in DISTRIBUTIONS:
                 for name, values in summaries.items()
             },
             "crossover_queries": max(0, round(crossover, 2)),
+            "distribution_facts": (
+                {
+                    "dominant_value_fraction": (
+                        data.count(7) / len(data)
+                    ),
+                }
+                if distribution == "duplicate_90"
+                else {
+                    "front_query_fraction": sum(
+                        query in range(max(1, size // 100))
+                        for query in queries
+                    ) / len(queries),
+                }
+                if distribution == "front_biased"
+                else {
+                    "unique_fraction": len(set(data)) / len(data),
+                }
+            ),
         })
 
 growth_rates = []
