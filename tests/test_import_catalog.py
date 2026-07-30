@@ -82,6 +82,10 @@ class CatalogImportTests(unittest.TestCase):
     def test_repository_catalog_has_complete_sorted_model_consistent_import(self) -> None:
         source = Path("$REPO_ROOT/data/curriculum.json")
         before = hashlib.sha256(source.read_bytes()).hexdigest()
+        self.assertEqual(
+            before,
+            "a55a0d0b1cfa3773031e787c2ce7ca0df34534e16a70b65ed1baa91975c82da8",
+        )
         items = load_catalog(Path("content/catalog.json"))
         self.assertEqual(len(items), 1140)
         self.assertEqual(len({item.id for item in items}), 1140)
