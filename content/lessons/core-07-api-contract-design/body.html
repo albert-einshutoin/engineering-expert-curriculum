@@ -1,0 +1,221 @@
+<section id="why">
+  <h2>なぜ重要か</h2>
+  <p>APIはfieldとendpointの一覧ではない。consumerはHTTP methodとstatus、表現の形、fieldの意味、認可、状態遷移、失敗後の次の操作へ依存する。生成したOpenAPI文書やJSON Schemaが妥当でも、別tenantの操作を許したり、同じ再送で副作用を二重化したりすれば契約は壊れている。</p>
+  <p>長時間オフラインになる端末では、providerが新versionを公開しても旧clientが数週間残る。応答を受け取れなかったclientは、requestが未到達なのか、処理済みで応答だけ失われたのかを区別できない。互換性、冪等性、構造化した失敗を一つの進化方針として設計する必要がある。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> HTTPでidempotentと定義されたmethodや冪等keyは、同じresponse、配送一回、処理一回を自動では保証しない。意図した効果を複数の同一requestで同じにする性質と、観測されるresponseを分ける。schema validityも業務意味、資源の存在、認証、認可の正しさを保証しない。</p>
+  </aside>
+</section>
+<section id="mental-model">
+  <h2>メンタルモデル</h2>
+  <p>API契約を六つの面へ分ける。transportはHTTP methodとstatus、structureはJSON Schema、semanticsはfieldと状態遷移の意味、identityは認証主体、authorityはその主体が対象へ行える操作、failureは失敗の分類と回復操作である。一面の検証結果を別の面の保証へ拡張しない。</p>
+  <figure>
+    <figcaption>オフライン操作を副作用と観測へ分ける契約経路</figcaption>
+    <ol>
+      <li><strong>作成:</strong> clientは操作ID、冪等key、対象version、tenantを永続化する。</li>
+      <li><strong>送信:</strong> serverはschema、意味、認証、認可を順に検査する。</li>
+      <li><strong>適用:</strong> keyと操作結果を同じ耐久境界で記録し、状態を一度だけ進める。</li>
+      <li><strong>応答:</strong> 現在時刻やtrace IDを含むresponseは試行ごとに違ってよい。</li>
+      <li><strong>喪失:</strong> responseが届かなくても、clientは同じkeyで安全に再送する。</li>
+      <li><strong>照会:</strong> 保存済み効果を返し、同じ配送や同じresponseを保証したとは主張しない。</li>
+      <li><strong>進化:</strong> 旧versionの利用状況を観測し、source、wire、意味の互換性を別々に判定する。</li>
+    </ol>
+  </figure>
+  <p>RFC 9110のmethod意味論は共通の土台だが、業務操作の副作用境界はapplicationが定義する。RFC 9457のProblem Detailsは機械可読な失敗の基本形を揃えるが、retry可否、field単位の違反、業務状態の回復方法はAPI契約で補う。type URIを識別子として使う場合も、本文取得に成功しなければ処理できない設計にはしない。</p>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>現場端末の作業完了を同じkeyで再送する</h3>
+  <dl>
+    <dt>前提</dt>
+    <dd>field-7の端末は最大14日offlineになる。v1とv2は同じCompleteWorkコマンドを受け、tenant-aの主体だけがtenant-aの作業を完了できる。</dd>
+    <dt>入力</dt>
+    <dd>operation-42をkey-42で初回送信し、response喪失後に同じkeyで再送する。任意field追加、必須field削除、enum拡張の3変更と、schema上正しい別tenant requestも与える。</dd>
+    <dt>操作</dt>
+    <dd>serverはkeyごとに業務効果を一度保存する。再送時は保存済み効果を再利用するが、responseのreceipt番号は更新する。構造検査と認可判定を独立に記録する。</dd>
+    <dt>観測</dt>
+    <dd>初回と再送のeffect countはともに1、responseは異なる。v1とv2を維持し、3状態遷移、5 memberのProblem Details、互換性3分類、schema validだがunauthorizedの反例をJSONへ出力する。</dd>
+    <dt>結論</dt>
+    <dd>同じ効果を再現できても同じresponseやexactly-once配送を証明したことにはならない。旧clientが未知enumを拒否するなら、schema上の追加でも意味的riskである。</dd>
+  </dl>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+import json
+
+HARNESS = "api_contract_lab_v1"
+SUPPORTED_VERSIONS = ["v1", "v2"]
+
+def structurally_valid(request):
+    required = {"version", "operation_id", "idempotency_key", "tenant"}
+    return (
+        required.issubset(request)
+        and request["version"] in SUPPORTED_VERSIONS
+        and all(isinstance(request[name], str) and request[name] for name in required)
+    )
+
+def authorized(request, principal):
+    return request["tenant"] == principal["tenant"]
+
+class WorkService:
+    def __init__(self):
+        self.results = {}
+        self.effect_count = 0
+        self.receipt_sequence = 0
+        self.transitions = []
+
+    def complete(self, request):
+        key = request["idempotency_key"]
+        self.receipt_sequence += 1
+        if key not in self.results:
+            self.transitions.extend(
+                [
+                    {"from": "assigned", "to": "in-progress"},
+                    {"from": "in-progress", "to": "completed"},
+                    {"from": "completed", "to": "synced"},
+                ]
+            )
+            self.effect_count += 1
+            self.results[key] = {
+                "operation_id": request["operation_id"],
+                "state": "completed",
+            }
+        # receiptは配送試行の観測なので、業務効果と分離して更新する。
+        return {
+            "effect": dict(self.results[key]),
+            "effect_count": self.effect_count,
+            "receipt": self.receipt_sequence,
+        }
+
+def classify_change(change):
+    # 互換性の種類を潰さず、旧clientの意味解釈まで判断へ残す。
+    outcomes = {
+        "add_optional_field": "compatible",
+        "remove_required_field": "breaking",
+        "expand_enum": "semantic-risk",
+    }
+    return outcomes[change]
+
+def main():
+    request = {
+        "version": "v1",
+        "operation_id": "operation-42",
+        "idempotency_key": "key-42",
+        "tenant": "tenant-a",
+    }
+    principal = {"subject": "field-7", "tenant": "tenant-a"}
+    assert structurally_valid(request)
+    assert authorized(request, principal)
+
+    service = WorkService()
+    initial = service.complete(request)
+    replay = service.complete(request)
+    same_effect = initial["effect"] == replay["effect"]
+    same_response = initial == replay
+    assert initial["effect_count"] == replay["effect_count"] == 1
+    assert same_effect and not same_response
+
+    cross_tenant = dict(request)
+    cross_tenant["tenant"] = "tenant-b"
+    boundary = {
+        "schema_valid": structurally_valid(cross_tenant),
+        "authorized": authorized(cross_tenant, principal),
+        "reason": "principal-tenant-mismatch",
+    }
+    assert boundary["schema_valid"] and not boundary["authorized"]
+
+    compatibility = {
+        change: classify_change(change)
+        for change in (
+            "add_optional_field",
+            "remove_required_field",
+            "expand_enum",
+        )
+    }
+    problem_details = {
+        "type": "urn:problem:work-state-conflict",
+        "title": "Work state conflict",
+        "status": 409,
+        "detail": "completed work cannot return to assigned",
+        "instance": "urn:operation:operation-42",
+    }
+    return {
+        "harness": HARNESS,
+        "fixture": "offline-field-client-v1",
+        "supported_versions": SUPPORTED_VERSIONS,
+        "idempotency_evidence": {
+            "initial": initial,
+            "replay": replay,
+            "same_effect": same_effect,
+            "same_response": same_response,
+            "exactly_once_claimed": False,
+        },
+        "compatibility_cases": compatibility,
+        "problem_details": problem_details,
+        "authorization_boundary": boundary,
+        "state_transitions": service.transitions,
+        "offline_window_days": 14,
+        "external_network_used": False,
+    }
+
+print(json.dumps(main(), ensure_ascii=False, indent=2))
+PY</code></pre>
+</section>
+<section id="tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <table>
+    <caption>API進化と再送方針の decision table</caption>
+    <thead>
+      <tr>
+        <th scope="col">条件</th>
+        <th scope="col">契約上の選択</th>
+        <th scope="col">守れること</th>
+        <th scope="col">残るrisk</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row">応答喪失後に状態変更を再送する</th>
+        <td>client生成keyと結果照会を必須にする</td>
+        <td>同じ業務効果の重複を防ぐ</td>
+        <td>key期限後、並行中、外部副作用の整合</td>
+      </tr>
+      <tr>
+        <th scope="row">旧clientが長期間offlineになる</th>
+        <td>v1とv2を併存し利用versionを観測する</td>
+        <td>強制更新できない期間の継続利用</td>
+        <td>互換層の費用と意味的負債</td>
+      </tr>
+      <tr>
+        <th scope="row">任意fieldを追加する</th>
+        <td>未知fieldを無視するconsumer契約を検証する</td>
+        <td>wire上の後方互換性</td>
+        <td>fieldが状態解釈を変える意味的非互換</td>
+      </tr>
+      <tr>
+        <th scope="row">失敗後にclientの操作が必要</th>
+        <td>Problem Detailsへ安定typeと回復情報を置く</td>
+        <td>statusだけより一貫した分岐</td>
+        <td>detail文面への誤った機械依存</td>
+      </tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><strong>誤診:</strong> 初回と再送でresponseが違うので冪等ではない。<strong>反証:</strong> 冪等性が比較するのは意図した効果である。時刻やtrace IDを含む表現は変わり得る。副作用回数と対象状態を観測し、同じresponseやexactly-onceを別の保証として扱う。</li>
+    <li><strong>誤診:</strong> OpenAPIとJSON Schemaに通ったrequestなので正しく認可され、業務上も実行可能だ。<strong>反証:</strong> schemaは主に表現の構造を検証する。主体が別tenantなら認可で拒否し、状態遷移が不変条件を破るなら意味検証で拒否する。</li>
+    <li><strong>失敗モード:</strong> idempotency keyだけ保存し、業務更新と別transactionにすると、crash境界で効果とkeyが不一致になる。</li>
+    <li><strong>失敗モード:</strong> enum追加を常に安全とみなすと、未知値を網羅switchで拒否する旧clientや、既定値へ誤変換するclientを壊す。</li>
+  </ul>
+</section>
+<section id="knowledge-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>同じ冪等keyの二回目に、初回と異なるstatusまたはresponseを返してよい条件は何か。</li>
+    <li>schema validだが意味的にinvalidなrequestと、意味的にvalidだがunauthorizedなrequestを一つずつ示せ。</li>
+    <li>任意field追加、必須field削除、enum拡張をsource、wire、意味の三面で評価せよ。</li>
+    <li>Problem Detailsのtype、title、status、detail、instanceをconsumerはどう使い分けるか。</li>
+  </ol>
+</section>
+<section id="sources-next">
+  <h2>出典と次の学習</h2>
+  <p>HTTP method、status、表現の意味はRFC 9110を基準にする。interface記述はOpenAPI Specification v3.2.0、構造検証はJSON Schema Draft 2020-12のvalidation vocabulary、後方互換の変更分類はAIP-180、共通の失敗表現はRFC 9457へ照合する。いずれも業務意味と認可の設計を自動化するものではない。</p>
+  <p>次はcore-08で、契約を実現するmoduleの依存方向を変更理由から決め、代替案と撤回条件をADRへ残す。API versionを増やす前に、変更を局所化できるarchitectureかを検査する。</p>
+</section>
