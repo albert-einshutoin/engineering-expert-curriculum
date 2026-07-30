@@ -602,7 +602,10 @@ The final security follow-up first committed failing executable contracts as
 newline, applies accepted-socket deadlines, validates exact command shapes and
 values, deterministically injects connection refusal before socket creation,
 and proves server cleanup after malformed input and a controlled handler
-exception (`0dc4bc7`). The Java lab tracks the actual intermediate minimum and
+exception (`0dc4bc7`). A self-review contract then required an explicit
+`main()` lifetime (`2a61e51`); the harness now starts inside `try`, closes in
+`finally`, and verifies the non-daemon thread after join (`b6ea86f`). The Java
+lab tracks the actual intermediate minimum and
 all 200 elapsed samples for each thread mode. Its `process-message` mode
 implements an owner child, request-ID deduplication, bounded IPC and exit, and a
 separate forced-cleanup failure-radius probe without mixing process startup
@@ -616,7 +619,7 @@ and was used only from a temporary directory. The final 82-test focused bundle
 and all 345 tests passed.
 Two repository-external builds each emitted 10 regular artifacts, including
 five lesson pages and 1,140 catalog items. Both produced aggregate SHA-256
-`ceda2a9a0c33c956fd14f62e3da4a22a031560e9ebc8371a2daac429ded8645c`:
+`1c5d384abf74b2192316acf9ae16877d98aaf4fe9af61a797233647646a4b791`:
 sort every artifact's UTF-8 relative POSIX path bytewise, then feed
 `path + NUL + decimal byte length + NUL + file bytes` to SHA-256. The verifier
 included all artifacts and rejected symlinks and non-regular entries.
