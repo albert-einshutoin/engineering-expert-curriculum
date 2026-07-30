@@ -952,6 +952,11 @@ class LessonQualityTests(unittest.TestCase):
                 "https://example.com/second",
             ),
             (
+                "trailing slash",
+                "https://example.com/doc",
+                "https://example.com/doc/",
+            ),
+            (
                 "query",
                 "https://example.com/reference?version=1",
                 "https://example.com/reference?version=2",
