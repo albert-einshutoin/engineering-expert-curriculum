@@ -85,7 +85,7 @@ class CatalogImportTests(unittest.TestCase):
             canonicalize(legacy_source([lesson()]), "  ")
 
     def test_cli_is_deterministic_and_leaves_old_output_on_replace_failure(self) -> None:
-        with TemporaryDirectory() as directory:
+        with TemporaryDirectory(dir=Path.cwd()) as directory:
             root = Path(directory)
             source, output = root / "input.json", root / "catalog.json"
             source.write_text('{"version":1,"version":1}', encoding="utf-8")
