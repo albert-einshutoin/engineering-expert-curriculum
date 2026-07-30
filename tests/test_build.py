@@ -40,6 +40,21 @@ from curriculum_builder.lesson_rendering import load_lessons_from_root
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
+def _repository_lesson_source_counts() -> dict[str, int]:
+    # Derive the output oracle from the independently validated authoring
+    # collection so adding a lesson cannot silently leave this test's manually
+    # duplicated inventory stale.
+    with _open_trusted_directory(
+        REPOSITORY_ROOT / "content",
+        "repository test content",
+    ) as content:
+        collection = load_lessons_from_root(content.descriptor)
+    return {
+        item.lesson.id: len(item.lesson.sources)
+        for item in collection.lessons
+    }
+
+
 @contextmanager
 def _fail_root_close(target: Path):
     original_open = os.open
