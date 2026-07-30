@@ -581,15 +581,20 @@ mutations of the first H2 and Big-O definition also failed the canonical
 tests. A second review corrected the SPEC reference to the official H1
 `SPEC CPU®2017 Run and Reporting Rules`; the old title failed the source
 oracle before the lesson metadata was changed. The final full suite passed 334
-tests, and two repository-external builds each emitted 10 regular artifacts,
-including five lesson pages and 1,140 catalog items. Both produced aggregate
-SHA-256
-`65c901065d64860f4b899a979bff10e52a868f01d316ff310cd1f9598e84014e`:
+tests. A quality-review follow-up then added mutation-tested structural
+contracts for non-empty captions, scoped table headers, paired diagnosis and
+rebuttal items, and executable or numeric worked examples. The old content
+failed new contracts for complete experiment fixtures, machine-specific cache
+topology, Java memory-model scope, and independently derived build inventory.
+After correction, the 76-test focused bundle and all 338 tests passed.
+Two repository-external builds each emitted 10 regular artifacts, including
+five lesson pages and 1,140 catalog items. Both produced aggregate SHA-256
+`e6ae8270d904debf142a4670c2f007bd0a87a004b3287de16e90ab747565a11b`:
 sort every artifact's UTF-8 relative POSIX path bytewise, then feed
 `path + NUL + decimal byte length + NUL + file bytes` to SHA-256. The verifier
 included all artifacts and rejected symlinks and non-regular entries.
 The initial content was committed as `b385baf`; the review fixes and regression
-contracts were committed as `a1e5a94`.
+contracts were committed as `a1e5a94`, `06bad7a`, `2638bec`, and `90e44d3`.
 
 - [x] **Step 5: Commit the Foundations track**
 
