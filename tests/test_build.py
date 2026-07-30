@@ -382,11 +382,12 @@ class BuildAcceptanceTests(unittest.TestCase):
     def test_repository_lesson_oracle_is_independent_of_production_loader(
         self,
     ) -> None:
+        forged_id = "core-30-forged-production-loader"
         forged = SimpleNamespace(
             lessons=(
                 SimpleNamespace(
                     lesson=SimpleNamespace(
-                        id="core-01-systems-tradeoffs",
+                        id=forged_id,
                         sources=(),
                     )
                 ),
@@ -399,16 +400,16 @@ class BuildAcceptanceTests(unittest.TestCase):
         ):
             counts = _repository_lesson_source_counts()
 
-        self.assertEqual(
-            counts,
-            {
-                "core-01-systems-tradeoffs": 3,
-                "core-02-algorithms-measurement": 4,
-                "core-03-architecture-memory-caches": 3,
-                "core-04-os-processes-concurrency": 5,
-                "core-05-networks-latency-failure": 5,
-            },
-        )
+        lessons_root = REPOSITORY_ROOT / "content" / "lessons"
+        with os.scandir(lessons_root) as entries:
+            raw_directory_ids = {
+                entry.name
+                for entry in entries
+                if entry.is_dir(follow_symlinks=False)
+            }
+        self.assertEqual(set(counts), raw_directory_ids)
+        self.assertNotIn(forged_id, counts)
+        self.assertEqual(counts["core-01-systems-tradeoffs"], 3)
 
     def test_build_is_complete_static_file_relative_and_keeps_all_items(self) -> None:
         with TemporaryDirectory() as directory:
