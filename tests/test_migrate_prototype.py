@@ -30,6 +30,55 @@ class PrototypeMigrationTests(unittest.TestCase):
             self.assertEqual(json.loads((final / "manifest.json").read_text(encoding="utf-8")), manifest)
             self.assertTrue((source / "index.html").exists())
             self.assertEqual(list(root.glob(".prototype-staging-*")), [])
+
+    def test_publish_verified_archive_preserves_competing_target(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            source = root / "source"
+            source.mkdir()
+            (source / "index.html").write_text("legacy", encoding="utf-8")
+            target = root / "published"
+            sentinel = target / "sentinel.txt"
+
+            def create_target_before_publish(parent_fd: int, staging_name: str, target_name: str) -> None:
+                target.mkdir()
+                sentinel.write_text("keep", encoding="utf-8")
+                _rename_directory_noreplace(parent_fd, staging_name, target_name)
+
+            parent_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                with patch(
+                    "tools.migrate_prototype._rename_directory_noreplace",
+                    side_effect=create_target_before_publish,
+                ):
+                    with self.assertRaises(FileExistsError):
+                        _publish_verified_archive(source, parent_fd, "published", _snapshot(source))
+            finally:
+                os.close(parent_fd)
+
+            self.assertEqual(sentinel.read_text(encoding="utf-8"), "keep")
+            self.assertFalse((target / "manifest.json").exists())
+            self.assertEqual(list(root.glob(".prototype-staging-*")), [])
+            self.assertTrue((source / "index.html").exists())
+
+    def test_publish_verified_archive_cleans_staging_after_builder_failure(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            source = root / "source"
+            source.mkdir()
+            (source / "index.html").write_text("legacy", encoding="utf-8")
+            parent_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                with patch("tools.migrate_prototype._build_verified_archive", side_effect=OSError("build failed")):
+                    with self.assertRaisesRegex(OSError, "build failed"):
+                        _publish_verified_archive(source, parent_fd, "published", _snapshot(source))
+            finally:
+                os.close(parent_fd)
+
+            self.assertFalse((root / "published").exists())
+            self.assertEqual(list(root.glob(".prototype-staging-*")), [])
+            self.assertTrue((source / "index.html").exists())
+
     def test_build_verified_archive_copies_and_manifests_without_changing_source(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory).resolve()
