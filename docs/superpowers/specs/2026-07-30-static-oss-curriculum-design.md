@@ -417,13 +417,33 @@ repository receives the canonical catalog data and new authored content, not
 the 1,140 duplicated generated HTML pages. The migration tool is one-shot and
 rerun-safe: it never clobbers an existing archive.
 
+Before running the tool, the operator prepares the archive parent, for example:
+
+```bash
+install -d -m 700 .archive
+```
+
+The tool requires that parent to already exist as a canonical directory owned by
+the current effective user and not group/world writable. It never creates or
+deletes the parent: this removes `mkdir`/`stat` ownership races and lets the tool
+pin the operator-prepared trusted boundary by file descriptor.
+
 It builds the copy, checksum verification, and manifest in a randomly named
 private staging directory below the archive parent. Regular data files, nested
 directories, the staging root, and the manifest are `fsync`ed before publication;
 the staging root is also `fsync`ed after its internal manifest rename. The only
 publication commit point is a no-overwrite native directory rename:
 `renameatx_np(RENAME_EXCL)` on macOS or `renameat2(RENAME_NOREPLACE)` on Linux.
-Unsupported platforms or unavailable native primitives fail closed.
+The parent file descriptor is `fsync`ed immediately after that rename so the
+final name is durable. If this final fsync fails, the tool raises
+`PrototypePublicationDurabilityError`: the archive and manifest are already
+published, no rollback occurs, power-loss durability is unknown, and operator
+inspection is required.
+
+Native source and target names must be nonempty basenames, not `.`, `..`, slash,
+or NUL-containing strings. The wrapper resets `errno` before its native call and
+fails closed for an unsupported platform, unavailable primitive, or failure with
+no errno.
 
 ## 13. Accessibility, security, and privacy
 

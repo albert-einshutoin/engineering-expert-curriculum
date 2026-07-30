@@ -143,8 +143,13 @@ races, a native target collision immediately before publish, and foreign
 sentinels: no foreign entry may be written or deleted. Cover parent-FD identity,
 FD close failures with the original operation as the cause, and a full durability
 order for regular files, nested directories, staging root, manifest temp, and
-manifest rename. Every owned-failure path retains the source and publishes no
-final archive. Test only temporary fixtures, never repository prototype files.
+manifest rename, native publish, and parent fsync. Cover missing/insecure archive
+parents, NUL source/target basenames, unsupported native publish, and the
+post-publish parent-fsync durability error. Parent `mkdir`/`stat` foreign races
+are no longer reachable through the main flow because the parent is
+operator-prepared. Every pre-publish owned-failure path retains the source and
+publishes no final archive. Test only temporary fixtures, never repository
+prototype files.
 
 - [ ] **Step 2: Verify RED**
 
@@ -162,27 +167,22 @@ unsafe descendant components. Reject archive locations under a legacy subtree;
 an allowlist-external location such as `.archive/prototype-v1` is permitted.
 First reject raw `..` parts even for relative inputs. Inspect every existing raw
 component from filesystem root to final node with `lstat`, then canonicalize the
-source strictly. Create missing archive parents from a validated existing
-ancestor and canonicalize them before deriving the final archive boundary.
-Compare those canonical paths so no symlink or traversal route can place an
-archive under an allowlisted source subtree.
+source strictly. Compare canonical paths so no symlink or traversal route can
+place an archive under an allowlisted source subtree.
 
 The ordering is deliberately read-only until safety is established: validate the
 source, take its initial snapshot (and reject empty input), then perform archive
-lexical/canonical boundary validation. Only then create missing archive parents
-and open the validated parent. On every later failure, remove only empty parent
-directories created by this invocation in reverse order; never remove a
-pre-existing or foreign-populated parent.
-The parent-creation helper is transactional itself: if a later `mkdir` or its
-post-create validation fails, it rolls back every earlier newly created parent
-before re-raising. If rollback fails, report that concrete cleanup failure while
-retaining the original creation error as the cause.
+lexical/canonical boundary validation. The operator must pre-create the archive
+parent (for example, `install -d -m 700 .archive`; document this command but do
+not run it as part of tests). The tool requires an existing canonical directory
+owned by the current effective user and not group/world writable, then pins it
+with `O_DIRECTORY|O_NOFOLLOW`. It never creates or deletes this parent, avoiding
+`mkdir`/`stat` ownership races at the trusted boundary.
 
-Open the canonical archive parent with `O_DIRECTORY|O_NOFOLLOW` and verify its
-inode with `fstat`. Create a random `0o700` private staging directory below that
-pinned parent using `dir_fd` operations; verify its identity and emptiness before
-use. This pins cleanup to owned inodes rather than replaceable pathnames. Fail
-closed where required descriptor operations are unavailable.
+Verify the pinned parent inode with `fstat`. Create a random `0o700` private
+staging directory below it using `dir_fd` operations; verify staging identity and
+emptiness before use. This pins cleanup to owned inodes rather than replaceable
+pathnames. Fail closed where required descriptor operations are unavailable.
 
 Walk all existing allowlisted trees before copying and fail closed for symlinks,
 FIFOs, sockets, devices, or other non-regular/non-directory nodes. Build a
@@ -196,12 +196,18 @@ created temp file, `fsync` it, `fsync` staging before its internal
 The sole external commit point is a native no-overwrite directory rename of the
 verified private staging directory to the final archive name:
 `renameatx_np(RENAME_EXCL)` on macOS or `renameat2(RENAME_NOREPLACE)` on Linux.
-An existing target always fails without replacement, and an unsupported native
-primitive fails closed. Any failure before this publish removes only the still
-owned private staging directory; foreign sentinels and nonempty foreign parents
-are retained. Source files are retained after publication, and the migration is
-never run against real repository prototype files during tests. The Python 3.13
-suite exercises the same contract on macOS and Linux.
+Native names must be nonempty basenames and reject `.`, `..`, slash, and NUL;
+the wrapper resets `errno` and fails closed for an unsupported platform, missing
+native primitive, or failure without errno. An existing target always fails
+without replacement. Immediately after native publish, `fsync` the prepared
+parent FD so the final name is durable. If that fsync fails, raise
+`PrototypePublicationDurabilityError`: the archive and manifest are already
+published, no rollback occurs, power-loss durability is unknown, and the
+operator must inspect it. Any failure before publish removes only the still-owned
+private staging directory; foreign sentinels and the prepared parent are retained.
+Source files are retained after publication, and the migration is never run
+against real repository prototype files during tests. The Python 3.13 suite
+exercises the same contract on macOS and Linux.
 
 - [ ] **Step 4: Verify GREEN without running on repository files**
 
