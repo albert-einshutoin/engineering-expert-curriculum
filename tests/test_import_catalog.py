@@ -71,6 +71,23 @@ class CatalogImportTests(unittest.TestCase):
             self.assertEqual(str(raised.exception.__cause__), "read failed")
             self.assertGreaterEqual(len(closed), 2)
             self.assertEqual(len(closed), len(set(closed)))
+
+    def test_writer_keeps_write_cause_through_temp_and_parent_close_failures(self) -> None:
+        document = {"version": 1, "generatedFrom": "source", "sourceSha256": "a55a0d0b1cfa3773031e787c2ce7ca0df34534e16a70b65ed1baa91975c82da8", "items": [{**lesson(), "coreLessonId": None}]}
+        document["items"][0].pop("path")
+        with TemporaryDirectory(dir=Path.cwd()) as directory:
+            output = Path(directory) / "catalog.json"; output.write_bytes(b"old")
+            real_close = __import__("os").close; closed: list[int] = []
+            def close(fd: int) -> None:
+                closed.append(fd); real_close(fd); raise OSError(f"close {fd}")
+            with patch("tools.import_catalog._write_all", side_effect=OSError("write failed")), patch("tools.import_catalog.os.close", side_effect=close), patch("tools.import_catalog.os.replace") as replace:
+                with self.assertRaisesRegex(RuntimeError, "output parent close failed") as raised: _write_atomic(output, document)
+            self.assertEqual(replace.call_count, 0)
+            self.assertEqual(output.read_bytes(), b"old")
+            self.assertEqual(len(closed), len(set(closed)))
+            self.assertIsNotNone(raised.exception.__cause__)
+            self.assertIn("catalog temporary close failed", str(raised.exception.__cause__))
+            self.assertEqual(str(raised.exception.__cause__.__cause__), "write failed")
     def test_writer_rejects_missing_parent_symlink_and_non_regular_target(self) -> None:
         document = {"version": 1, "generatedFrom": "source", "sourceSha256": "a55a0d0b1cfa3773031e787c2ce7ca0df34534e16a70b65ed1baa91975c82da8", "items": [{**lesson(), "coreLessonId": None}]}
         # The writer receives canonical rows, so remove only the legacy path here.
