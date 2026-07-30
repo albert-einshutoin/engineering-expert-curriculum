@@ -166,17 +166,40 @@ def _reserve_archive_at(parent_fd: int, name: str) -> tuple[int, tuple[int, int]
         os.mkdir(name, mode=0o700, dir_fd=parent_fd)
     except FileExistsError as error:
         raise FileExistsError(f"archive already exists: {name}") from error
-    descriptor: int | None = None
     try:
-        descriptor = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd)
-        node = os.fstat(descriptor)
-        return descriptor, (node.st_dev, node.st_ino)
+        reserved = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
     except BaseException as identity_error:
         try:
             os.rmdir(name, dir_fd=parent_fd)
         except OSError as rollback_error:
             raise RuntimeError(
                 f"archive reservation rollback failed for {name}: {rollback_error}"
+            ) from identity_error
+        raise
+    identity = (reserved.st_dev, reserved.st_ino)
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd)
+        node = os.fstat(descriptor)
+        if (node.st_dev, node.st_ino) != identity:
+            raise RuntimeError("reserved archive changed before opening")
+        with os.scandir(descriptor) as entries:
+            if next(entries, None) is not None:
+                raise RuntimeError("reserved archive is not empty")
+        return descriptor, identity
+    except BaseException as identity_error:
+        failures = _close_all((descriptor,))
+        try:
+            current = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+            if (current.st_dev, current.st_ino) == identity:
+                os.rmdir(name, dir_fd=parent_fd)
+        except OSError as rollback_error:
+            raise RuntimeError(
+                f"archive reservation rollback failed for {name}: {rollback_error}"
+            ) from identity_error
+        if failures:
+            raise RuntimeError(
+                f"archive reservation descriptor close failed: {failures[0]}"
             ) from identity_error
         raise
     # Ownership transfers to the caller; it pins the reservation through commit/rollback.
