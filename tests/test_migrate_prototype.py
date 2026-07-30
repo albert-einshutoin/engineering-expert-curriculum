@@ -99,22 +99,37 @@ class PrototypeMigrationTests(unittest.TestCase):
             self.assertTrue((root / "index.html").exists())
             self.assertFalse(os.path.lexists(archive))
 
-    def test_refuses_archive_created_while_staging(self) -> None:
+    def test_reservation_refuses_a_competing_archive_without_overwriting_it(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
             self._write_fixture(root)
             archive = root / ".archive" / "prototype-v1"
 
-            def create_competing_archive(staging: Path, snapshot: object) -> object:
+            def create_competing_archive(path: Path) -> None:
                 archive.mkdir()
-                return {"algorithm": "sha256", "fileCount": 2, "byteCount": 0, "files": {}}
+                (archive / "sentinel.txt").write_text("keep", encoding="utf-8")
+                path.mkdir(mode=0o700, exist_ok=False)
 
-            with patch("tools.migrate_prototype._write_manifest", side_effect=create_competing_archive):
-                with self.assertRaisesRegex(FileExistsError, "archive already exists"):
+            with patch("tools.migrate_prototype._reserve_archive", side_effect=create_competing_archive):
+                with self.assertRaises(FileExistsError):
                     preserve_prototype(root, archive)
 
             self.assertTrue((root / "index.html").exists())
-            self.assertFalse((archive / "index.html").exists())
+            self.assertEqual((archive / "sentinel.txt").read_text(encoding="utf-8"), "keep")
+            self.assertFalse((archive / "manifest.json").exists())
+
+    def test_manifest_failure_cleans_reserved_archive_and_retains_source(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_fixture(root)
+            archive = root / ".archive" / "prototype-v1"
+
+            with patch("tools.migrate_prototype._write_manifest", side_effect=OSError("manifest failed")):
+                with self.assertRaisesRegex(OSError, "manifest failed"):
+                    preserve_prototype(root, archive)
+
+            self.assertTrue((root / "index.html").exists())
+            self.assertFalse(os.path.lexists(archive))
 
     def test_rejects_a_symlinked_source(self) -> None:
         with TemporaryDirectory() as directory:

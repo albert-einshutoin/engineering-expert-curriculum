@@ -95,6 +95,14 @@ def _archive_path(source: Path, archive: Path) -> Path:
     return candidate
 
 
+def _reserve_archive(archive: Path) -> None:
+    """Atomically reserve the archive name without replacing any existing entry."""
+    try:
+        archive.mkdir(mode=0o700, exist_ok=False)
+    except FileExistsError as error:
+        raise FileExistsError(f"archive already exists: {archive}") from error
+
+
 def _unsupported(path: Path, mode: int) -> ValueError:
     if stat.S_ISLNK(mode):
         return ValueError(f"symbolic links are not supported: {path}")
@@ -162,7 +170,7 @@ def _copy_allowlisted_tree(source: Path, staging: Path) -> None:
             copy_node(origin, staging / relative_path)
 
 
-def _write_manifest(staging: Path, snapshot: dict[str, FileSnapshot]) -> PrototypeManifest:
+def _write_manifest(archive: Path, snapshot: dict[str, FileSnapshot]) -> PrototypeManifest:
     checksums = {path: record["sha256"] for path, record in snapshot.items()}
     manifest: PrototypeManifest = {
         "algorithm": "sha256",
@@ -170,7 +178,7 @@ def _write_manifest(staging: Path, snapshot: dict[str, FileSnapshot]) -> Prototy
         "byteCount": sum(record["byteCount"] for record in snapshot.values()),
         "files": checksums,
     }
-    temporary_manifest = staging / ".manifest.json.tmp"
+    temporary_manifest = archive / ".manifest.json.tmp"
     descriptor = os.open(
         temporary_manifest,
         os.O_WRONLY | os.O_CREAT | os.O_EXCL,
@@ -189,7 +197,12 @@ def _write_manifest(staging: Path, snapshot: dict[str, FileSnapshot]) -> Prototy
             pass
         raise
     # Publish the manifest only after its complete durable temp-file write succeeds.
-    os.replace(temporary_manifest, staging / "manifest.json")
+    os.replace(temporary_manifest, archive / "manifest.json")
+    directory_descriptor = os.open(archive, os.O_RDONLY)
+    try:
+        os.fsync(directory_descriptor)
+    finally:
+        os.close(directory_descriptor)
     return manifest
 
 
@@ -204,20 +217,30 @@ def preserve_prototype(source: Path, archive: Path) -> PrototypeManifest:
 
     archive_path.parent.mkdir(parents=True, exist_ok=True)
     _validate_path_node(archive_path.parent, "archive", directory=True)
-    staging = Path(tempfile.mkdtemp(prefix=f".{archive_path.name}.staging-", dir=archive_path.parent))
+    _reserve_archive(archive_path)
     try:
+        staging = Path(tempfile.mkdtemp(prefix=".staging-", dir=archive_path))
         _copy_allowlisted_tree(source_path, staging)
         staged = _snapshot(staging)
         current = _snapshot(source_path)
         if initial != staged or initial != current:
             raise RuntimeError("prototype checksum verification failed")
-        manifest = _write_manifest(staging, initial)
-        # Recheck immediately before rename so a concurrently created archive is never overwritten.
-        if _lexists(archive_path):
-            raise FileExistsError(f"archive already exists: {archive_path}")
-        os.replace(staging, archive_path)
+        for relative_path in LEGACY_PATHS:
+            staged_path = staging / relative_path
+            if _lexists(staged_path):
+                os.replace(staged_path, archive_path / relative_path)
+        staging.rmdir()
+        archived = _snapshot(archive_path)
+        if initial != archived:
+            raise RuntimeError("prototype checksum verification failed")
+        manifest = _write_manifest(archive_path, initial)
     except BaseException:
-        shutil.rmtree(staging, ignore_errors=True)
+        try:
+            shutil.rmtree(archive_path)
+        except OSError as cleanup_error:
+            raise RuntimeError(
+                f"incomplete archive without manifest: cleanup failed for {archive_path}"
+            ) from cleanup_error
         raise
 
     # The original is deliberately retained: a later, separately reviewed retirement task can clean it safely.

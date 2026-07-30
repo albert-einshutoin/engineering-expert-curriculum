@@ -135,8 +135,9 @@ Cover the exact eleven-element `LEGACY_PATHS`, an empty source, independent
 manifest SHA-256/byte-count checks, and the CLI. Use `TemporaryDirectory` only.
 Also cover injected copy and checksum failures, source/dangling-archive/nested
 symlinks, special files such as FIFOs when available, and an archive path inside
-an allowlisted subtree. Every failure must retain the source and leave the
-archive target absent.
+an allowlisted subtree. Add a reservation-race test that creates a sentinel
+archive immediately before the exclusive reservation and proves it remains
+untouched. Every owned-failure path must retain the source and leave no manifest.
 
 - [ ] **Step 2: Verify RED**
 
@@ -155,16 +156,22 @@ an allowlist-external location such as `.archive/prototype-v1` is permitted.
 Walk all existing allowlisted trees before copying and fail closed for symlinks,
 FIFOs, sockets, devices, or other non-regular/non-directory nodes. Build a
 source snapshot from streaming reads that produce each file's SHA-256 and byte
-count together. Copy only approved entries into a hidden staging directory on
-the archive filesystem. Snapshot staging and source again; publish nothing
-unless all three snapshots match.
+count together. Safely create the archive parent, then reserve the archive path
+with `mkdir(mode=0o700, exist_ok=False)`. This is the no-clobber point: an
+existing directory, file, or symlink always fails without replacement. Copy only
+approved entries into a hidden staging directory inside that reservation.
+Snapshot staging and source again; publish nothing unless all three snapshots
+match.
 
-Write the typed manifest to an exclusively created staging temp file, flush and
-`fsync` it, then atomically replace `manifest.json`. Atomically rename the
-complete staging directory to the archive target. On any failure before that
-rename, remove staging while leaving source untouched and the archive target
-absent. Do not delete or rename source after publication: source retirement is a
-separate reviewed task, prioritizing preservation over cleanup.
+Move the verified staging top-level entries into the reserved archive, then
+re-snapshot the archive. Write the typed manifest to an exclusively created
+temporary file in the archive, flush and `fsync` it, and atomically replace
+`manifest.json`; this file is the sole completion marker. On any failure before
+the manifest exists, remove the owned reservation while leaving source intact.
+If cleanup fails, report the incomplete archive explicitly; its missing manifest
+still marks it as incomplete. Do not delete or rename source after publication:
+source retirement is a separate reviewed task, prioritizing preservation over
+cleanup.
 
 - [ ] **Step 4: Verify GREEN without running on repository files**
 
@@ -174,11 +181,11 @@ python3.13 -m unittest discover -s tests -v
 git diff --check
 ```
 
-- [ ] **Step 5: Commit the transactional tool**
+- [ ] **Step 5: Commit the reservation-safe tool**
 
 ```bash
 git add tools/migrate_prototype.py tests/test_migrate_prototype.py docs/superpowers/plans/2026-07-30-static-curriculum-foundation.md
-git commit -m "fix: make prototype preservation transactional"
+git commit -m "fix: reserve archive without overwrite races"
 ```
 
 ### Task 3: Define immutable catalog models
