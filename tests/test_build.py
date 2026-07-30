@@ -1197,6 +1197,155 @@ class BuildPublicationTests(unittest.TestCase):
                 "original",
             )
 
+    def test_publisher_failure_after_native_rename_is_postcommit(
+        self,
+    ) -> None:
+        for replace_existing in (False, True):
+            for failure_type in (KeyboardInterrupt, OSError):
+                with self.subTest(
+                    replace_existing=replace_existing,
+                    failure_type=failure_type.__name__,
+                ), _fixture() as (
+                    root,
+                    content,
+                    templates,
+                    static_root,
+                ):
+                    output = root / "site"
+                    if replace_existing:
+                        output.mkdir()
+                        (output / "sentinel.txt").write_text(
+                            "old",
+                            encoding="utf-8",
+                        )
+                    original_publish = _publish_directory
+                    failure = failure_type(
+                        "publisher failed after native rename"
+                    )
+
+                    def publish_then_fail(
+                        parent_fd: int,
+                        source_name: str,
+                        target_name: str,
+                        *,
+                        replace_existing: bool,
+                    ) -> None:
+                        original_publish(
+                            parent_fd,
+                            source_name,
+                            target_name,
+                            replace_existing=replace_existing,
+                        )
+                        raise failure
+
+                    captured: BaseException | None = None
+                    with patch(
+                        "curriculum_builder.build._publish_directory",
+                        side_effect=publish_then_fail,
+                    ):
+                        try:
+                            build_site(
+                                content,
+                                templates,
+                                static_root,
+                                output,
+                            )
+                        except BaseException as error:
+                            captured = error
+
+                    self.assertIsInstance(
+                        captured,
+                        BuildPublicationStateError,
+                    )
+                    assert captured is not None
+                    self.assertIs(captured.__cause__, failure)
+                    _assert_static_site(self, output)
+                    recovery = list(root.glob(".site.staging-*"))
+                    self.assertEqual(
+                        len(recovery),
+                        int(replace_existing),
+                    )
+                    if replace_existing:
+                        self.assertEqual(
+                            (recovery[0] / "sentinel.txt").read_text(),
+                            "old",
+                        )
+
+    def test_ambiguous_publisher_failure_never_runs_precommit_cleanup(
+        self,
+    ) -> None:
+        with _fixture() as (root, content, templates, static_root):
+            output = root / "site"
+            output.mkdir()
+            (output / "sentinel.txt").write_text("old", encoding="utf-8")
+            original_publish = _publish_directory
+            original_stat = os.stat
+            failure = KeyboardInterrupt(
+                "publisher interrupted after native rename"
+            )
+            published = False
+
+            def publish_then_fail(
+                parent_fd: int,
+                source_name: str,
+                target_name: str,
+                *,
+                replace_existing: bool,
+            ) -> None:
+                nonlocal published
+                original_publish(
+                    parent_fd,
+                    source_name,
+                    target_name,
+                    replace_existing=replace_existing,
+                )
+                published = True
+                raise failure
+
+            def fail_reconciliation(
+                path: object,
+                *args: object,
+                **kwargs: object,
+            ) -> os.stat_result:
+                if published and path == "site":
+                    raise OSError("publication reconciliation failed")
+                return original_stat(path, *args, **kwargs)  # type: ignore[arg-type]
+
+            captured: BaseException | None = None
+            with patch(
+                "curriculum_builder.build._publish_directory",
+                side_effect=publish_then_fail,
+            ), patch(
+                "curriculum_builder.build.os.stat",
+                side_effect=fail_reconciliation,
+            ):
+                try:
+                    build_site(
+                        content,
+                        templates,
+                        static_root,
+                        output,
+                    )
+                except BaseException as error:
+                    captured = error
+
+            self.assertIsInstance(captured, BuildPublicationStateError)
+            assert captured is not None
+            self.assertIs(captured.__cause__, failure)
+            self.assertTrue(
+                any(
+                    "publication reconciliation failed" in note
+                    for note in captured.__notes__
+                )
+            )
+            _assert_static_site(self, output)
+            recovery = list(root.glob(".site.staging-*"))
+            self.assertEqual(len(recovery), 1)
+            self.assertEqual(
+                (recovery[0] / "sentinel.txt").read_text(),
+                "old",
+            )
+
     def test_file_and_directory_fsync_fail_before_publish(self) -> None:
         for fail_directory in (False, True):
             with self.subTest(
