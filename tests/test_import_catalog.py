@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from curriculum_builder.catalog import canonicalize
 from curriculum_builder.errors import CurriculumValidationError
-from tools.import_catalog import _read_source, main
+from tools.import_catalog import _read_source, _write_atomic, main
 
 
 def lesson(**overrides: object) -> dict[str, object]:
@@ -34,6 +34,31 @@ def legacy_source(lessons: list[dict[str, object]]) -> dict[str, object]:
 
 
 class CatalogImportTests(unittest.TestCase):
+    def test_writer_rejects_missing_parent_symlink_and_non_regular_target(self) -> None:
+        document = {"version": 1, "generatedFrom": "source", "items": [{**lesson(), "coreLessonId": None}]}
+        # The writer receives canonical rows, so remove only the legacy path here.
+        document["items"][0].pop("path")
+        with TemporaryDirectory(dir=Path.cwd()) as directory:
+            root = Path(directory)
+            with self.assertRaises(FileNotFoundError):
+                _write_atomic(root / "missing" / "catalog.json", document)
+            target = root / "target"; target.mkdir(mode=0o700)
+            link = root / "link"; link.symlink_to(target, target_is_directory=True)
+            with self.assertRaises(OSError): _write_atomic(link / "catalog.json", document)
+            with self.assertRaises(ValueError): _write_atomic(target, document)
+
+    def test_writer_publishes_mode_and_keeps_old_output_when_replace_fails(self) -> None:
+        document = {"version": 1, "generatedFrom": "source", "items": [{**lesson(), "coreLessonId": None}]}
+        document["items"][0].pop("path")
+        with TemporaryDirectory(dir=Path.cwd()) as directory:
+            output = Path(directory) / "catalog.json"
+            _write_atomic(output, document)
+            self.assertEqual(output.stat().st_mode & 0o777, 0o644)
+            before = output.read_bytes()
+            with patch("tools.import_catalog.os.replace", side_effect=OSError("replace failed")):
+                with self.assertRaisesRegex(OSError, "replace failed"): _write_atomic(output, document)
+            self.assertEqual(output.read_bytes(), before)
+            self.assertEqual(list(output.parent.glob(".catalog-*.tmp")), [])
     def test_canonicalize_removes_only_path_adds_core_link_and_sorts(self) -> None:
         second = lesson(id="D01-M01-L2", level=2, title="Second")
         result = canonicalize(legacy_source([second, lesson()]), " prototype-v1 ")
