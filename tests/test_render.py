@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 import os
 import shutil
+import stat
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 import unittest
@@ -567,6 +569,51 @@ class RendererTests(unittest.TestCase):
     ) -> None:
         self.assertEqual(render_module.MAX_OUTPUT_DEPTH, 32)
         self.assertEqual(render_module.MAX_OUTPUT_PATH_CHARS, 1_024)
+
+        def path_with_exact_length(total: int) -> Path:
+            depth = 8
+            filename = "index.html"
+            remaining = total - len(filename) - depth
+            directories: list[str] = []
+            for slots in range(depth, 0, -1):
+                part_length = min(128, remaining - (slots - 1))
+                self.assertGreaterEqual(part_length, 1)
+                directories.append("a" * part_length)
+                remaining -= part_length
+            self.assertEqual(remaining, 0)
+            result = Path(*(directories + [filename]))
+            self.assertEqual(len(str(result)), total)
+            self.assertTrue(all(len(part) <= 128 for part in result.parts))
+            return result
+
+        exact_depth = Path(
+            *(
+                ["level"] * render_module.MAX_OUTPUT_DEPTH
+                + ["index.html"]
+            )
+        )
+        exact_depth_html = self.renderer.page(
+            output_path=exact_depth,
+            title="例",
+            description="説明",
+            content=validate_fragment("<p>x</p>"),
+        )
+        exact_root = "../" * render_module.MAX_OUTPUT_DEPTH
+        self.assertEqual(len(exact_root), 96)
+        self.assertIn(f'href="{exact_root}styles.css"', exact_depth_html)
+
+        exact_length = path_with_exact_length(
+            render_module.MAX_OUTPUT_PATH_CHARS
+        )
+        self.renderer.page(
+            output_path=exact_length,
+            title="例",
+            description="説明",
+            content=validate_fragment("<p>x</p>"),
+        )
+        over_length = path_with_exact_length(
+            render_module.MAX_OUTPUT_PATH_CHARS + 1
+        )
         cases = (
             Path("/tmp/index.html"),
             Path("."),
@@ -590,6 +637,7 @@ class RendererTests(unittest.TestCase):
                 )
             ),
             Path("/".join(["a"] * 10_000 + ["index.html"])),
+            over_length,
         )
         for output_path in cases:
             with self.subTest(output_path=output_path):
@@ -706,35 +754,56 @@ class RendererTests(unittest.TestCase):
         self.assertEqual(template_path.read_bytes(), source)
 
         real_fstat = os.fstat
-        call_count = 0
-
-        def changing_fstat(descriptor: int) -> object:
-            nonlocal call_count
-            call_count += 1
-            result = real_fstat(descriptor)
-            if call_count != 3:
-                return result
-
-            class ChangedMetadata:
-                def __getattr__(self, name: str) -> object:
-                    if name == "st_mtime_ns":
-                        return result.st_mtime_ns + 1
-                    return getattr(result, name)
-
-            return ChangedMetadata()
-
-        with patch(
-            "curriculum_builder.render.os.fstat",
-            side_effect=changing_fstat,
+        fields = (
+            "st_dev",
+            "st_ino",
+            "st_mode",
+            "st_size",
+            "st_mtime_ns",
+            "st_ctime_ns",
+        )
+        for transition, changed_call in (
+            ("before-to-opened", 2),
+            ("opened-to-after", 3),
         ):
-            self.assert_validation_error(
-                "template changed during read",
-                renderer.fragment,
-                "changing.html",
-                text_values={},
-                html_values={},
-            )
-        self.assertEqual(template_path.read_bytes(), source)
+            for changed_field in fields:
+                with self.subTest(
+                    transition=transition,
+                    changed_field=changed_field,
+                ):
+                    call_count = 0
+
+                    def changing_fstat(descriptor: int) -> object:
+                        nonlocal call_count
+                        call_count += 1
+                        result = real_fstat(descriptor)
+                        if call_count != changed_call:
+                            return result
+
+                        class ChangedMetadata:
+                            def __getattr__(self, name: str) -> object:
+                                original = getattr(result, name)
+                                if name != changed_field:
+                                    return original
+                                if name == "st_mode":
+                                    return original ^ stat.S_IXUSR
+                                return original + 1
+
+                        return ChangedMetadata()
+
+                    with patch(
+                        "curriculum_builder.render.os.fstat",
+                        side_effect=changing_fstat,
+                    ):
+                        self.assert_validation_error(
+                            "template changed during read",
+                            renderer.fragment,
+                            "changing.html",
+                            text_values={},
+                            html_values={},
+                        )
+                    self.assertEqual(call_count, changed_call)
+                    self.assertEqual(template_path.read_bytes(), source)
 
     def test_wraps_template_os_errors_without_leaking_paths(self) -> None:
         with patch(
@@ -791,32 +860,69 @@ class RendererTests(unittest.TestCase):
     def test_closes_template_descriptors_in_reverse_ownership_order(
         self,
     ) -> None:
-        opened: list[int] = []
-        closed: list[int] = []
         real_open = os.open
         real_close = os.close
+        for failed_owner in (None, "file", "root"):
+            with self.subTest(failed_owner=failed_owner):
+                opened: list[int] = []
+                closed: list[int] = []
 
-        def recording_open(*args: object, **kwargs: object) -> int:
-            descriptor = real_open(*args, **kwargs)  # type: ignore[arg-type]
-            opened.append(descriptor)
-            return descriptor
+                def recording_open(
+                    *args: object,
+                    **kwargs: object,
+                ) -> int:
+                    descriptor = real_open(  # type: ignore[arg-type]
+                        *args,
+                        **kwargs,
+                    )
+                    opened.append(descriptor)
+                    return descriptor
 
-        def recording_close(descriptor: int) -> None:
-            closed.append(descriptor)
-            real_close(descriptor)
+                def recording_close(descriptor: int) -> None:
+                    closed.append(descriptor)
+                    real_close(descriptor)
+                    failed_descriptor = (
+                        opened[1]
+                        if failed_owner == "file"
+                        else opened[0]
+                    )
+                    if (
+                        failed_owner is not None
+                        and descriptor == failed_descriptor
+                    ):
+                        raise OSError("injected close failure")
 
-        with (
-            patch("curriculum_builder.render.os.open", side_effect=recording_open),
-            patch("curriculum_builder.render.os.close", side_effect=recording_close),
-        ):
-            self.renderer.fragment(
-                "index.html",
-                text_values={},
-                html_values={},
-            )
+                with (
+                    patch(
+                        "curriculum_builder.render.os.open",
+                        side_effect=recording_open,
+                    ),
+                    patch(
+                        "curriculum_builder.render.os.close",
+                        side_effect=recording_close,
+                    ),
+                ):
+                    if failed_owner is None:
+                        self.renderer.fragment(
+                            "index.html",
+                            text_values={},
+                            html_values={},
+                        )
+                    else:
+                        self.assert_validation_error(
+                            "could not read template",
+                            self.renderer.fragment,
+                            "index.html",
+                            text_values={},
+                            html_values={},
+                        )
 
-        self.assertEqual(len(opened), 2)
-        self.assertEqual(closed, list(reversed(opened)))
+                self.assertEqual(len(opened), 2)
+                self.assertEqual(closed, list(reversed(opened)))
+                self.assertEqual(
+                    Counter(closed),
+                    Counter(opened),
+                )
 
     def test_rejects_invalid_template_roots(self) -> None:
         with TemporaryDirectory() as temporary:
@@ -842,7 +948,52 @@ class RendererTests(unittest.TestCase):
 
     def test_rejects_base_placeholder_and_security_policy_regressions(self) -> None:
         base = (TEMPLATE_ROOT / "base.html").read_text(encoding="utf-8")
-        cases = (
+        charset = '  <meta charset="utf-8">\n'
+        viewport = (
+            '  <meta name="viewport" '
+            'content="width=device-width, initial-scale=1">\n'
+        )
+        title = (
+            "  <title>$title · Engineering Expert Curriculum</title>\n"
+        )
+        stylesheet = (
+            '  <link rel="stylesheet" href="${root}styles.css">\n'
+        )
+        skip = '  <a class="skip-link" href="#main">本文へ移動</a>\n'
+        brand = (
+            '    <a class="brand" href="${root}index.html">'
+            "Engineering Atlas</a>\n"
+        )
+        nav_open = '    <nav aria-label="主要ナビゲーション">\n'
+        roadmap_link = (
+            '      <a href="${root}roadmap/index.html">'
+            "ロードマップ</a>\n"
+        )
+        lessons_link = (
+            '      <a href="${root}lessons/index.html">'
+            "コアレッスン</a>\n"
+        )
+        catalog_link = (
+            '      <a href="${root}catalog/index.html">'
+            "全カタログ</a>\n"
+        )
+        nav = (
+            nav_open
+            + roadmap_link
+            + lessons_link
+            + catalog_link
+            + "    </nav>\n"
+        )
+        header_open = '  <header class="site-header">\n'
+        header = header_open + brand + nav + "  </header>\n"
+        main = '  <main id="main">$content</main>\n'
+        footer = (
+            "  <footer><p>Learn · Practice · Explain · Prove</p>"
+            "</footer>\n"
+        )
+        body_sequence = skip + header + main + footer
+
+        security_cases = (
             (
                 base.replace(
                     '<main id="main">$content</main>',
@@ -931,8 +1082,151 @@ class RendererTests(unittest.TestCase):
                 "base template contains an external or absolute asset URL",
             ),
         )
-        for source, message in cases:
-            with self.subTest(message=message):
+        structural_cases = (
+            (
+                base.replace(charset + viewport, viewport + charset, 1),
+                "base template markup is invalid",
+            ),
+            (
+                base.replace(title + stylesheet, stylesheet + title, 1),
+                "base template markup is invalid",
+            ),
+            (
+                base.replace(charset, "", 1),
+                "base template markup is invalid",
+            ),
+            (
+                base.replace(
+                    title,
+                    "  <p>$title · Engineering Expert Curriculum</p>\n",
+                    1,
+                ),
+                "base template markup is invalid",
+            ),
+            (
+                base.replace(stylesheet, brand, 1),
+                "base template markup is invalid",
+            ),
+            (
+                base.replace(
+                    body_sequence,
+                    header + skip + main + footer,
+                    1,
+                ),
+                "base template markup is invalid",
+            ),
+            (
+                base.replace(skip, "", 1),
+                "base template markup is invalid",
+            ),
+            (
+                base.replace(header, brand + nav, 1),
+                "base template markup is invalid",
+            ),
+            (
+                base.replace(
+                    main,
+                    "  <footer>$content</footer>\n",
+                    1,
+                ),
+                "base template markup is invalid",
+            ),
+            (
+                base.replace(footer, "", 1),
+                "base template markup is invalid",
+            ),
+            (
+                base.replace(
+                    header,
+                    header_open + nav + brand + "  </header>\n",
+                    1,
+                ),
+                "base template markup is invalid",
+            ),
+            (
+                base.replace(
+                    header,
+                    header_open + roadmap_link + nav + "  </header>\n",
+                    1,
+                ),
+                "base template markup is invalid",
+            ),
+            (
+                base.replace(
+                    header,
+                    header_open
+                    + brand
+                    + roadmap_link
+                    + lessons_link
+                    + catalog_link
+                    + "  </header>\n",
+                    1,
+                ),
+                "base template markup is invalid",
+            ),
+            (
+                base.replace(
+                    roadmap_link + lessons_link,
+                    lessons_link + roadmap_link,
+                    1,
+                ),
+                "base template markup is invalid",
+            ),
+            (
+                base.replace(roadmap_link, lessons_link, 1),
+                "base template markup is invalid",
+            ),
+            (
+                base.replace(
+                    footer,
+                    "  <footer></footer>\n",
+                    1,
+                ),
+                "base template markup is invalid",
+            ),
+            (
+                base.replace(
+                    footer,
+                    "  <footer></footer>"
+                    "<p>Learn · Practice · Explain · Prove</p>\n",
+                    1,
+                ),
+                "base template markup is invalid",
+            ),
+            *(
+                (
+                    base.replace(
+                        opening,
+                        opening + "DIRECT-TEXT",
+                        1,
+                    ),
+                    "base template markup is invalid",
+                )
+                for opening in (
+                    "<head>\n",
+                    "<body>\n",
+                    header_open,
+                    nav_open,
+                    "  <footer>",
+                )
+            ),
+            (
+                base.replace(
+                    charset,
+                    charset.rstrip("\n") + "</meta>\n",
+                    1,
+                ),
+                "template markup is invalid",
+            ),
+        )
+        cases = security_cases + structural_cases
+        for index, (source, message) in enumerate(cases):
+            self.assertNotEqual(
+                source,
+                base,
+                f"base mutation {index} must change the fixture",
+            )
+            with self.subTest(index=index, message=message):
                 with TemporaryDirectory() as temporary:
                     root = Path(temporary)
                     (root / "base.html").write_text(source, encoding="utf-8")
