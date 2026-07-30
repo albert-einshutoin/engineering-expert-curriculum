@@ -720,7 +720,9 @@ mismatched, unclosed, comment, quote, script, or style states fail before
 substitution. A deep-open/repeated-mismatch regression proves processing stops
 at the first mismatch without a depth scan. Output paths are capped at 32
 directories and 1,024 total characters so relative-root expansion is bounded,
-including adversarial 10,000-level paths.
+including adversarial 10,000-level paths. Boundary subtests accept depth 32
+and length 1,024, reject 33 and 1,025, and verify the 32-level relative-link
+prefix.
 
 - [ ] **Step 2: Run renderer tests and verify RED**
 
@@ -758,6 +760,16 @@ parents, browser-auto-closing patterns, closing void elements, missing
 children, and reordered or duplicate nodes fail closed. The completed page
 receives one additional parse solely to reject decoded duplicate IDs across
 the trusted base and validated content.
+
+The 30 test methods include subtest matrices rather than inflating the method
+count: head/body/header/nav/footer reorder and missing-child mutations, direct
+non-whitespace text in each container, and a closing tag for a void meta
+element. Every mutation asserts that it changed the canonical fixture before
+initializing `Renderer`. Snapshot tests independently alter `st_dev`, `st_ino`,
+`st_mode`, `st_size`, `st_mtime_ns`, and `st_ctime_ns` on both the
+before-to-opened and opened-to-after transitions. File- and root-close failure
+subtests perform the real close first, then prove both descriptors were handled
+once in reverse ownership order while returning a controlled error.
 
 The base accepts exactly four meta records: UTF-8 charset, the fixed viewport,
 the structured description placeholder, and one CSP. Unknown, duplicate, or
