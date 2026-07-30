@@ -52,7 +52,11 @@ def _read_source(path: Path) -> tuple[object, str, tuple[int, int]]:
             if not chunk: break
             chunks.append(chunk)
         raw = b"".join(chunks)
-        return strict_json_loads(raw, path), hashlib.sha256(raw).hexdigest(), (info.st_dev, info.st_ino)
+        parsed = strict_json_loads(raw, path)
+        return parsed, hashlib.sha256(raw).hexdigest(), (info.st_dev, info.st_ino)
+    except CurriculumValidationError as error:
+        operation_error = error
+        raise
     except OSError as error:
         operation_error = error
         raise CurriculumValidationError(f"{path}: cannot read source: {error}") from error
@@ -140,7 +144,7 @@ def _write_atomic(path: Path, document: dict[str, object], *, forbidden_identity
     operation_error: BaseException | None = None
     try:
         _target_is_regular_or_missing(parent_fd, final_name, forbidden_identity)
-        payload = serialize_catalog_document(document["items"], str(document["generatedFrom"]), str(document["sourceSha256"]))
+        payload = serialize_catalog_document(document["items"], str(document["generatedFrom"]), source_sha256=str(document["sourceSha256"]))
         temporary_name = f".catalog-{uuid.uuid4().hex}.tmp"
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
         temporary_fd = os.open(temporary_name, flags, 0o600, dir_fd=parent_fd)

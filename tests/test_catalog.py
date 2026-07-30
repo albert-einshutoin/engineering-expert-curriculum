@@ -31,6 +31,10 @@ class CatalogLoaderTests(unittest.TestCase):
         self.assertEqual(read.call_count, 1)
         self.assertEqual(len(items), 1140)
 
+    def test_provenance_is_required_for_canonicalization_and_serialization(self) -> None:
+        with self.assertRaises(TypeError):
+            serialize_catalog_document([item()], "source")
+
     def test_repository_loader_rejects_tampered_first_read(self) -> None:
         raw = Path("content/catalog.json").read_bytes().replace(b'"title": "', b'"title": "Changed ', 1)
         with patch("curriculum_builder.catalog.Path.read_bytes", return_value=raw):
@@ -38,7 +42,7 @@ class CatalogLoaderTests(unittest.TestCase):
                 load_repository_catalog(Path("content/catalog.json"))
 
     def test_repository_loader_rejects_source_provenance_even_with_matching_artifact_hash(self) -> None:
-        raw = serialize_catalog_document([item()], "source", "0" * 64)
+        raw = serialize_catalog_document([item()], "source", source_sha256="0" * 64)
         with patch("curriculum_builder.catalog.Path.read_bytes", return_value=raw), patch("curriculum_builder.catalog.CANONICAL_CATALOG_SHA256", hashlib.sha256(raw).hexdigest()):
             with self.assertRaisesRegex(CurriculumValidationError, "source SHA-256 mismatch"):
                 load_repository_catalog(Path("content/catalog.json"))
@@ -67,7 +71,7 @@ class CatalogLoaderTests(unittest.TestCase):
                 load_catalog(duplicate)
 
             canonical = root / "canonical.json"
-            canonical.write_bytes(serialize_catalog_document([item()], "source"))
+            canonical.write_bytes(serialize_catalog_document([item()], "source", source_sha256="0" * 64))
             self.assertEqual(load_catalog(canonical)[0].id, "D01-M01-L1")
             canonical.write_text(canonical.read_text(encoding="utf-8").replace('"source"', '" source "'), encoding="utf-8")
             with self.assertRaisesRegex(CurriculumValidationError, "canonical"):
@@ -96,6 +100,7 @@ class CatalogLoaderTests(unittest.TestCase):
                     for entry in items
                 ],
                 "prototype-v1",
+                source_sha256=LEGACY_SOURCE_SHA256,
             ),
         )
 

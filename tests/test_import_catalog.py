@@ -245,7 +245,7 @@ class CatalogImportTests(unittest.TestCase):
             self.assertEqual(output.read_bytes(), b"foreign")
     def test_canonicalize_removes_only_path_adds_core_link_and_sorts(self) -> None:
         second = lesson(id="D01-M01-L2", level=2, title="Second")
-        result = canonicalize(legacy_source([second, lesson()]), " prototype-v1 ")
+        result = canonicalize(legacy_source([second, lesson()]), " prototype-v1 ", source_sha256="0" * 64)
 
         self.assertEqual(result["version"], 1)
         self.assertEqual(result["generatedFrom"], "prototype-v1")
@@ -256,17 +256,17 @@ class CatalogImportTests(unittest.TestCase):
 
     def test_canonicalize_rejects_unknown_legacy_field_and_duplicate_ids(self) -> None:
         with self.assertRaisesRegex(CurriculumValidationError, "unknown fields: extra"):
-            canonicalize(legacy_source([lesson(extra=True)]), "source")
+            canonicalize(legacy_source([lesson(extra=True)]), "source", source_sha256="0" * 64)
         with self.assertRaisesRegex(CurriculumValidationError, "duplicate item id"):
-            canonicalize(legacy_source([lesson(), lesson()]), "source")
+            canonicalize(legacy_source([lesson(), lesson()]), "source", source_sha256="0" * 64)
 
     def test_canonicalize_rejects_invalid_root_and_types(self) -> None:
         for source in ({"version": 2, "lessons": []}, {"version": 1, "lessons": {}}, {"version": 1, "lessons": ["no"]}):
             with self.subTest(source=source):
                 with self.assertRaises(CurriculumValidationError):
-                    canonicalize(source, "source")
+                    canonicalize(source, "source", source_sha256="0" * 64)
         with self.assertRaises(CurriculumValidationError):
-            canonicalize(legacy_source([lesson()]), "  ")
+            canonicalize(legacy_source([lesson()]), "  ", source_sha256="0" * 64)
 
     def test_cli_is_deterministic_and_leaves_old_output_on_replace_failure(self) -> None:
         with TemporaryDirectory(dir=Path.cwd()) as directory:

@@ -118,7 +118,7 @@ def _validate_legacy(source: Mapping[object, object], expected_lesson_count: int
     return items
 
 
-def canonicalize(source: Mapping[object, object], generated_from: str, *, source_sha256: str = LEGACY_SOURCE_SHA256, expected_lesson_count: int | None = None, expected_domain_count: int | None = None, expected_module_count: int | None = None) -> dict[str, object]:
+def canonicalize(source: Mapping[object, object], generated_from: str, *, source_sha256: str, expected_lesson_count: int | None = None, expected_domain_count: int | None = None, expected_module_count: int | None = None) -> dict[str, object]:
     if not isinstance(source, Mapping): raise CurriculumValidationError("legacy root must be an object")
     return _catalog_document(_validate_legacy(source, expected_lesson_count, expected_domain_count, expected_module_count), _require_text(generated_from, "generatedFrom"), _require_sha(source_sha256), require_nonempty=False)
 
@@ -133,7 +133,7 @@ def _catalog_document(items: Sequence[CatalogItem], generated_from: str, source_
     return {"version": 1, "generatedFrom": generated_from, "sourceSha256": source_sha256, "items": [_item_dict(item) for item in sorted(items, key=lambda item: item.id)]}
 
 
-def serialize_catalog_document(items: Sequence[CatalogItem | Mapping[str, object]], generated_from: str, source_sha256: str = LEGACY_SOURCE_SHA256) -> bytes:
+def serialize_catalog_document(items: Sequence[CatalogItem | Mapping[str, object]], generated_from: str, *, source_sha256: str) -> bytes:
     normalized = [item if isinstance(item, CatalogItem) else CatalogItem.from_dict(item) for item in items]
     document = _catalog_document(normalized, _require_text(generated_from, "generatedFrom"), _require_sha(source_sha256), require_nonempty=False)
     return (json.dumps(document, ensure_ascii=False, indent=2, sort_keys=False) + "\n").encode("utf-8")
@@ -161,7 +161,7 @@ def _load_catalog_bytes(raw: bytes, catalog_path: Path) -> tuple[tuple[CatalogIt
     except CurriculumValidationError as error:
         raise CurriculumValidationError(f"{catalog_path}: {error}") from error
     if tuple(item.id for item in items) != tuple(sorted(item.id for item in items)): raise CurriculumValidationError(f"{catalog_path}: items must be sorted by id")
-    if raw != serialize_catalog_document(items, generated_from, source_sha256): raise CurriculumValidationError(f"{catalog_path}: catalog bytes are not canonical")
+    if raw != serialize_catalog_document(items, generated_from, source_sha256=source_sha256): raise CurriculumValidationError(f"{catalog_path}: catalog bytes are not canonical")
     return items, source_sha256
 
 
