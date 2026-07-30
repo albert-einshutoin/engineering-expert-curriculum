@@ -8,6 +8,7 @@ from contextlib import contextmanager
 import ctypes
 from dataclasses import dataclass
 import errno
+from enum import Enum, auto
 from html import escape
 from html.parser import HTMLParser
 import os
@@ -82,6 +83,25 @@ class BuildStagingCleanupError(RuntimeError):
     """Publication did not commit and private staging could not be removed."""
 
 
+class _BuildPhase(Enum):
+    PREPARING = auto()
+    PUBLISHED = auto()
+
+
+@dataclass(slots=True)
+class _BuildTransaction:
+    """Share the native publication commit state through root-FD teardown."""
+
+    phase: _BuildPhase = _BuildPhase.PREPARING
+
+    @property
+    def committed(self) -> bool:
+        return self.phase is _BuildPhase.PUBLISHED
+
+    def mark_published(self) -> None:
+        self.phase = _BuildPhase.PUBLISHED
+
+
 @dataclass(frozen=True, slots=True)
 class _DirectoryHandle:
     path: Path
@@ -95,6 +115,14 @@ class _RoadmapNode:
     id: str
     title: str
     prerequisites: tuple[str, ...]
+
+
+@dataclass(slots=True)
+class _StagingReservation:
+    name: str
+    descriptor: int | None = None
+    identity: tuple[int, int] | None = None
+    descriptor_verified: bool = False
 
 
 def _validation(message: str) -> CurriculumValidationError:
@@ -168,6 +196,7 @@ def _require_owned_safe_node(
 def _open_trusted_directory(
     path: Path,
     label: str,
+    transaction: _BuildTransaction | None = None,
 ) -> Iterator[_DirectoryHandle]:
     raw = _path_argument(path, label)
     _validate_existing_components(raw, label)
@@ -192,7 +221,6 @@ def _open_trusted_directory(
         descriptor = os.open(canonical, flags)
     except OSError:
         raise _validation(f"{label} cannot be opened safely") from None
-    operation_error: BaseException | None = None
     try:
         opened = os.fstat(descriptor)
         _require_owned_safe_node(opened, label, directory=True)
@@ -204,20 +232,37 @@ def _open_trusted_directory(
             identity=_identity(opened),
             label=label,
         )
-    except BaseException as error:
-        operation_error = error
-        raise
-    finally:
+    except BaseException as operation_error:
         try:
             os.close(descriptor)
         except OSError as close_error:
-            if operation_error is None:
-                raise RuntimeError(
-                    f"{label} descriptor close failed: {close_error}"
+            operation_error.add_note(
+                f"{label} descriptor also failed to close: {close_error}"
+            )
+        if (
+            transaction is not None
+            and transaction.committed
+            and not isinstance(operation_error, BuildPostCommitError)
+        ):
+            normalized = BuildPublicationStateError(
+                "site is visible but build root teardown failed"
+            )
+            for note in getattr(operation_error, "__notes__", ()):
+                normalized.add_note(note)
+            raise normalized from operation_error
+        raise
+    else:
+        try:
+            os.close(descriptor)
+        except OSError as close_error:
+            if transaction is not None and transaction.committed:
+                raise BuildPublicationStateError(
+                    "site is visible but "
+                    f"{label} descriptor close failed"
                 ) from close_error
             raise RuntimeError(
                 f"{label} descriptor close failed: {close_error}"
-            ) from operation_error
+            ) from close_error
 
 
 def _verify_directory_identity(handle: _DirectoryHandle) -> None:
@@ -758,7 +803,7 @@ def _open_directory_at(parent_fd: int, name: str) -> int:
 def _create_private_staging(
     parent: _DirectoryHandle,
     output_name: str,
-) -> tuple[str, int, tuple[int, int]]:
+) -> _StagingReservation:
     for _ in range(_STAGING_ATTEMPTS):
         name = f".{output_name}.staging-{uuid.uuid4().hex}"
         try:
@@ -767,33 +812,111 @@ def _create_private_staging(
             continue
         except OSError:
             raise _validation("private staging cannot be created") from None
-        descriptor: int | None = None
-        try:
-            recorded = os.stat(
-                name,
-                dir_fd=parent.descriptor,
-                follow_symlinks=False,
-            )
-            descriptor = _open_directory_at(parent.descriptor, name)
-            opened = os.fstat(descriptor)
-            if (
-                not stat.S_ISDIR(opened.st_mode)
-                or _identity(recorded) != _identity(opened)
-            ):
-                raise RuntimeError("private staging changed while opening")
-            with os.scandir(descriptor) as entries:
-                if next(entries, None) is not None:
-                    raise RuntimeError("private staging is not empty")
-            return name, descriptor, _identity(opened)
-        except BaseException:
-            if descriptor is not None:
-                os.close(descriptor)
-            try:
-                os.rmdir(name, dir_fd=parent.descriptor)
-            except OSError:
-                pass
-            raise
+        return _StagingReservation(name=name)
     raise _validation("private staging name collisions exceeded retry limit")
+
+
+def _initialize_private_staging(
+    parent: _DirectoryHandle,
+    reservation: _StagingReservation,
+) -> None:
+    recorded = os.stat(
+        reservation.name,
+        dir_fd=parent.descriptor,
+        follow_symlinks=False,
+    )
+    reservation.identity = _identity(recorded)
+    reservation.descriptor = _open_directory_at(
+        parent.descriptor,
+        reservation.name,
+    )
+    opened = os.fstat(reservation.descriptor)
+    if (
+        not stat.S_ISDIR(opened.st_mode)
+        or _identity(opened) != reservation.identity
+    ):
+        raise RuntimeError("private staging changed while opening")
+    reservation.descriptor_verified = True
+    with os.scandir(reservation.descriptor) as entries:
+        if next(entries, None) is not None:
+            raise RuntimeError("private staging is not empty")
+
+
+def _cleanup_staging_before_publish(
+    parent: _DirectoryHandle,
+    reservation: _StagingReservation,
+    primary_error: BaseException,
+) -> BuildStagingCleanupError | None:
+    """Try removal and close independently; never follow an unverified entry."""
+    cleanup_failures: list[str] = []
+    removal_failure: BaseException | None = None
+    try:
+        if reservation.identity is None:
+            raise RuntimeError("private staging identity was not recorded")
+        current = os.stat(
+            reservation.name,
+            dir_fd=parent.descriptor,
+            follow_symlinks=False,
+        )
+        if (
+            not stat.S_ISDIR(current.st_mode)
+            or _identity(current) != reservation.identity
+        ):
+            raise RuntimeError(
+                "private staging entry was replaced; refusing cleanup"
+            )
+        if (
+            reservation.descriptor is not None
+            and reservation.descriptor_verified
+        ):
+            _clear_directory_fd(reservation.descriptor)
+        os.rmdir(reservation.name, dir_fd=parent.descriptor)
+    except BaseException as error:
+        removal_failure = error
+        cleanup_failures.append(f"staging removal failed: {error}")
+
+    descriptor = reservation.descriptor
+    reservation.descriptor = None
+    if descriptor is not None:
+        try:
+            os.close(descriptor)
+        except OSError as error:
+            cleanup_failures.append(f"staging close failed: {error}")
+
+    residual = True
+    try:
+        current = os.stat(
+            reservation.name,
+            dir_fd=parent.descriptor,
+            follow_symlinks=False,
+        )
+    except FileNotFoundError:
+        residual = False
+    except OSError as error:
+        cleanup_failures.append(
+            f"staging residual inspection failed: {error}"
+        )
+    else:
+        if (
+            reservation.identity is not None
+            and _identity(current) != reservation.identity
+        ):
+            cleanup_failures.append(
+                "staging residual has an unexpected identity"
+            )
+
+    for failure in cleanup_failures:
+        primary_error.add_note(failure)
+    if not residual:
+        return None
+    cleanup_error = BuildStagingCleanupError(
+        "private staging remains after failed initialization or build"
+    )
+    for failure in cleanup_failures:
+        cleanup_error.add_note(failure)
+    if removal_failure is None:
+        cleanup_error.add_note("private staging could not be proven absent")
+    return cleanup_error
 
 
 def _write_all(descriptor: int, raw: bytes) -> None:
@@ -1091,6 +1214,7 @@ def _publish_staged_site(
     staging_fd: int,
     staging_identity: tuple[int, int],
     previous: os.stat_result | None,
+    transaction: _BuildTransaction,
 ) -> None:
     replace_existing = previous is not None
     previous_fd: int | None = None
@@ -1118,6 +1242,7 @@ def _publish_staged_site(
             output_name,
             replace_existing=replace_existing,
         )
+        transaction.mark_published()
     except BaseException as operation_error:
         if previous_fd is not None:
             descriptor = previous_fd
@@ -1156,6 +1281,9 @@ def _publish_staged_site(
                 follow_symlinks=False,
             )
             if _identity(recovery) != previous_identity:
+                # Native exchange is atomic but not an inode-conditional CAS.
+                # If a same-owner competitor replaces the target after pinning,
+                # its directory is preserved at the recovery name for audit.
                 raise BuildPublicationStateError(
                     "site is visible but replaced output recovery "
                     "identity is unknown"
@@ -1241,66 +1369,67 @@ def _stage_and_publish(
     parent: _DirectoryHandle,
     output_name: str,
     artifacts: Mapping[PurePosixPath, bytes],
+    transaction: _BuildTransaction,
 ) -> None:
     previous = _output_state(parent, output_name)
     _reject_stale_backup(parent, output_name)
-    staging_name, staging_fd, staging_identity = _create_private_staging(
-        parent,
-        output_name,
-    )
-    committed = False
+    reservation: _StagingReservation | None = None
     operation_error: BaseException | None = None
     try:
+        reservation = _create_private_staging(parent, output_name)
+        _initialize_private_staging(parent, reservation)
+        assert reservation.descriptor is not None
+        assert reservation.identity is not None
+        staging_fd = reservation.descriptor
         _populate_staging(staging_fd, artifacts)
         _verify_staging(staging_fd, artifacts)
         current = os.stat(
-            staging_name,
+            reservation.name,
             dir_fd=parent.descriptor,
             follow_symlinks=False,
         )
-        if _identity(current) != staging_identity:
+        if _identity(current) != reservation.identity:
             raise RuntimeError("private staging changed before publication")
         _publish_staged_site(
             parent,
             output_name,
-            staging_name,
+            reservation.name,
             staging_fd,
-            staging_identity,
+            reservation.identity,
             previous,
+            transaction,
         )
-        committed = True
     except BuildPostCommitError as error:
-        committed = True
         operation_error = error
         raise
     except BaseException as error:
         operation_error = error
-        try:
-            _remove_owned_directory(
-                parent.descriptor,
-                staging_name,
-                staging_fd,
+        if reservation is not None:
+            cleanup_error = _cleanup_staging_before_publish(
+                parent,
+                reservation,
+                error,
             )
-        except (OSError, RuntimeError) as cleanup_error:
-            staging_error = BuildStagingCleanupError(
-                "private staging cleanup failed before publication"
-            )
-            staging_error.add_note(
-                f"staging cleanup also failed: {cleanup_error}"
-            )
-            operation_error = staging_error
-            raise staging_error from error
+            if cleanup_error is not None:
+                operation_error = cleanup_error
+                raise cleanup_error from error
         raise
     finally:
+        descriptor = (
+            None if reservation is None else reservation.descriptor
+        )
+        if descriptor is not None:
+            reservation.descriptor = None
         try:
-            os.close(staging_fd)
+            if descriptor is not None:
+                os.close(descriptor)
         except OSError as close_error:
             if operation_error is not None:
                 operation_error.add_note(
                     "private staging descriptor also failed to close: "
                     f"{close_error}"
                 )
-            elif committed:
+            elif transaction.committed:
                 raise BuildPublicationStateError(
                     "site is visible but private staging descriptor "
                     "close failed"
@@ -1319,13 +1448,27 @@ def build_site(
 ) -> None:
     """Validate, stage, durably publish, and atomically replace the static site."""
     output_parent_path, output_name = _output_basename(output_root)
+    transaction = _BuildTransaction()
     with (
-        _open_trusted_directory(content_root, "content_root") as content,
-        _open_trusted_directory(template_root, "template_root") as templates,
-        _open_trusted_directory(static_root, "static_root") as static_files,
+        _open_trusted_directory(
+            content_root,
+            "content_root",
+            transaction,
+        ) as content,
+        _open_trusted_directory(
+            template_root,
+            "template_root",
+            transaction,
+        ) as templates,
+        _open_trusted_directory(
+            static_root,
+            "static_root",
+            transaction,
+        ) as static_files,
         _open_trusted_directory(
             output_parent_path,
             "output_root parent",
+            transaction,
         ) as output_parent,
     ):
         _validate_no_source_overlap(
@@ -1371,4 +1514,9 @@ def build_site(
             raise _validation("styles.css changed during build")
         for handle in (content, templates, static_files, output_parent):
             _verify_directory_identity(handle)
-        _stage_and_publish(output_parent, output_name, artifacts)
+        _stage_and_publish(
+            output_parent,
+            output_name,
+            artifacts,
+            transaction,
+        )
