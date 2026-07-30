@@ -311,14 +311,16 @@ Expected: the complete lesson-quality contract passes and the commit succeeds.
 ### Task 2: Render textbook lessons and printable review schedules
 
 **Files:**
+- Create: `curriculum_builder/lesson_rendering.py`
 - Create: `templates/lesson.html`
 - Create: `templates/lessons-index.html`
 - Create: `tests/test_lesson_rendering.py`
-- Modify: `curriculum_builder/render.py`
 - Modify: `curriculum_builder/build.py`
+- Modify: `curriculum_builder/html_safety.py`
+- Modify: `curriculum_builder/lessons.py`
 - Modify: `static/styles.css`
 
-- [ ] **Step 1: Write the lesson rendering test**
+- [x] **Step 1: Write the lesson rendering test**
 
 ```python
 # tests/test_lesson_rendering.py
@@ -347,7 +349,13 @@ class LessonRenderingTests(unittest.TestCase):
             self.assertIn("90日後", html)
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+The test fixture creates complete lessons under a temporary `content_root`;
+the canonical content tree intentionally remains empty until Task 3. The
+contract also covers empty, one-, and multi-lesson builds, topological links,
+hostile metadata escaping, rejected authored markup, source-link policy, input
+races, and nested staging failures.
+
+- [x] **Step 2: Run the test and verify RED**
 
 Run:
 
@@ -357,38 +365,52 @@ python3 -m unittest tests.test_lesson_rendering -v
 
 Expected: `FileNotFoundError` for the generated lesson page.
 
-- [ ] **Step 3: Add semantic lesson templates and render helpers**
+- [x] **Step 3: Add semantic lesson templates and render helpers**
 
 ```html
 <article class="lesson reading">
-  <p class="eyebrow">$track · Stage $stage</p>
-  <h1>$title</h1>
-  <p class="lede">$summary</p>
-  <dl class="lesson-meta">
-    <div><dt>学習時間</dt><dd>$estimated_minutes分</dd></div>
-    <div><dt>到達証拠</dt><dd>成果物・説明・判断根拠・転用</dd></div>
-  </dl>
+  <header>
+    <p class="eyebrow">$track · Stage $stage</p>
+    <h1>$title</h1>
+    <p class="lede">$summary</p>
+    <dl class="lesson-meta">
+      <dt>学習時間</dt><dd>$estimated_minutes分</dd>
+      <dt>難易度</dt><dd>$difficulty</dd>
+    </dl>
+  </header>
   <section id="learning-objectives">
-    <h2>到達目標</h2>
-    <ol>$objectives</ol>
+    <h2>到達目標</h2>$objectives
   </section>
+  <section id="capability-progression"><h2>能力の進行</h2>$capabilities</section>
   $body
   <section id="practice-lab"><h2>実践ラボ</h2>$lab</section>
-  <section id="teach-back"><h2>説明して理解を確かめる</h2><p>$teach_back</p></section>
-  <section id="transfer-task"><h2>別問題へ転用する</h2><p>$transfer_task</p></section>
+  <section id="teach-back"><h2>説明して理解を確かめる</h2>$teach_back</section>
+  <section id="assessment"><h2>アセスメント</h2>$assessment</section>
+  <section id="transfer-task"><h2>別問題へ転用する</h2>$transfer_task</section>
   <section id="review-schedule"><h2>復習スケジュール</h2>$review_schedule</section>
-  <section id="rubric"><h2>評価ルーブリック</h2>$rubric</section>
+  <section id="rubric"><h2>評価ルーブリック</h2>$rubric_table</section>
+  <section id="sources"><h2>出典</h2>$sources</section>
 </article>
 ```
 
-Use the foundation plan's `Renderer.fragment()` method. Extend `build_site()`
-with a `render_lessons()` helper that discovers sorted
-`content/lessons/*/lesson.json` paths, validates the adjacent `body.html` with
-`validate_fragment()`, renders one nested page per lesson, and renders
-`lessons/index.html`. The helper returns the tuple of rendered lesson IDs so the
-caller can compare it with roadmap and competency references.
+Use the foundation plan's `Renderer.fragment()` method.
+`curriculum_builder.lesson_rendering` owns sorted descriptor-relative
+discovery, the shared `lesson.json`/`body.html` directory snapshot, bounded
+exact-byte reads, complete-only graph validation, semantic rendering, and
+topological index rendering. `load_lesson_bytes()` parses pinned metadata bytes
+without reopening a pathname. Builds require exclusive control of the workspace
+namespace; descriptor pinning and before/after signatures detect ordinary and
+persistent TOCTOU changes, while exclusivity closes the portable same-writer
+ABA gap.
 
-- [ ] **Step 4: Add the editorial lesson styles**
+Migrate `templates/lessons.html` to the plan's
+`templates/lessons-index.html` name so there is one authoritative index
+template. The generated artifact validator permits external navigation only
+when the exact lesson source URL appears as an HTTPS
+`<a rel="noreferrer">`; all resource dependencies remain local and
+JavaScript-free.
+
+- [x] **Step 4: Add the editorial lesson styles**
 
 ```css
 .lesson { padding-block: var(--space-5); }
@@ -403,7 +425,11 @@ caller can compare it with roadmap and competency references.
 .lesson h2 { margin-top: var(--space-5); border-bottom: 1px solid var(--color-border); }
 ```
 
-- [ ] **Step 5: Run and commit the textbook renderer**
+Add 320px reflow, visible focus, forced-colors, and print rules. Print CSS may
+keep short list and table rows together, but must not mark whole `article`,
+`section`, large tables, code blocks, or textbook bodies as unbreakable.
+
+- [x] **Step 5: Run and commit the textbook renderer**
 
 Run:
 
