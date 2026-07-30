@@ -387,6 +387,7 @@ def _copy_allowlisted_tree(source: Path, staging_fd: int) -> None:
             with os.scandir(origin) as entries:
                 for entry in entries:
                     copy_node(Path(entry.path), child_fd, entry.name)
+            _fsync_fd(child_fd, "destination directory")
         finally:
             os.close(child_fd)
 
@@ -528,6 +529,7 @@ def preserve_prototype(source: Path, archive: Path) -> PrototypeManifest:
         os.mkdir(staging_name, mode=0o700, dir_fd=archive_fd)
         staging_fd = os.open(staging_name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=archive_fd)
         _copy_allowlisted_tree(source_path, staging_fd)
+        _fsync_fd(staging_fd, "staging root")
         staged = _snapshot_fd(staging_fd)
         current = _snapshot(source_path)
         if initial != staged or initial != current:

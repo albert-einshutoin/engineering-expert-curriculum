@@ -141,6 +141,23 @@ class PrototypeMigrationTests(unittest.TestCase):
             self.assertFalse(archive.exists())
             self.assertFalse((root / ".archive").exists())
 
+    def test_directory_fsync_failure_rolls_back_archive(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            self._write_fixture(root)
+            archive = root / ".archive" / "prototype-v1"
+
+            def fail_directory_fsync(fd: int, purpose: str) -> None:
+                if purpose == "destination directory":
+                    raise OSError("directory fsync failed")
+
+            with patch("tools.migrate_prototype._fsync_fd", side_effect=fail_directory_fsync):
+                with self.assertRaisesRegex(OSError, "directory fsync failed"):
+                    preserve_prototype(root, archive)
+            self.assertTrue((root / "index.html").exists())
+            self.assertFalse(archive.exists())
+            self.assertFalse((root / ".archive").exists())
+
     def test_checksum_failure_leaves_source_and_archive_untouched(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory).resolve()
