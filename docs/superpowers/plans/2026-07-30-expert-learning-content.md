@@ -586,15 +586,27 @@ contracts for non-empty captions, scoped table headers, paired diagnosis and
 rebuttal items, and executable or numeric worked examples. The old content
 failed new contracts for complete experiment fixtures, machine-specific cache
 topology, Java memory-model scope, and independently derived build inventory.
-After correction, the 76-test focused bundle and all 338 tests passed.
+After correction, the 76-test focused bundle and all 338 tests passed. A final
+quality and security review exposed six more regressions: incomplete lab-step
+coverage in five lessons and a build oracle coupled to the production lesson
+loader. The old bodies failed executable output contracts, including deletion
+of the Java unsafe-code warning, and the forged production-loader result broke
+the old inventory oracle. The corrected lessons now execute complete local
+harnesses for decisions, algorithms, memory, and networking; the concurrency
+harness is statically checked for deterministic barriers, termination, output,
+and its safety warning. The independent inventory oracle enumerates canonical
+directories and parses standard JSON without the production loader. All four
+embedded Python harnesses also ran successfully at their documented defaults.
+The final 81-test focused bundle and all 344 tests passed.
 Two repository-external builds each emitted 10 regular artifacts, including
 five lesson pages and 1,140 catalog items. Both produced aggregate SHA-256
-`e6ae8270d904debf142a4670c2f007bd0a87a004b3287de16e90ab747565a11b`:
+`e982c5aec9add535e49c7ed82252e62ef6c0bca9eaa1d2f4f70abfccd389d662`:
 sort every artifact's UTF-8 relative POSIX path bytewise, then feed
 `path + NUL + decimal byte length + NUL + file bytes` to SHA-256. The verifier
 included all artifacts and rejected symlinks and non-regular entries.
 The initial content was committed as `b385baf`; the review fixes and regression
-contracts were committed as `a1e5a94`, `06bad7a`, `2638bec`, and `90e44d3`.
+contracts were committed as `a1e5a94`, `06bad7a`, `2638bec`, `90e44d3`,
+`7f0b090`, and `fa5de10`.
 
 - [x] **Step 5: Commit the Foundations track**
 
