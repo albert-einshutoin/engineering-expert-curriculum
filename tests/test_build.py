@@ -20,6 +20,7 @@ from curriculum_builder.build import (
     MAX_ROADMAP_BYTES,
     MAX_STYLESHEET_BYTES,
     _open_trusted_directory,
+    _publish_directory,
     _read_stable_regular_file,
     build_site,
 )
@@ -90,7 +91,7 @@ def _fixture(
     roadmap: object | None = None,
 ):
     with TemporaryDirectory() as directory:
-        root = Path(directory)
+        root = Path(directory).resolve(strict=True)
         content = root / "content"
         templates = root / "templates"
         static_root = root / "static"
@@ -214,7 +215,7 @@ def _assert_static_site(
 class BuildAcceptanceTests(unittest.TestCase):
     def test_build_is_complete_static_file_relative_and_keeps_all_items(self) -> None:
         with TemporaryDirectory() as directory:
-            output = Path(directory) / "site"
+            output = Path(directory).resolve(strict=True) / "site"
             build_site(
                 content_root=REPOSITORY_ROOT / "content",
                 template_root=REPOSITORY_ROOT / "templates",
@@ -264,7 +265,7 @@ class BuildAcceptanceTests(unittest.TestCase):
 
     def test_build_is_byte_mode_and_mtime_deterministic(self) -> None:
         with TemporaryDirectory() as directory:
-            output = Path(directory) / "site"
+            output = Path(directory).resolve(strict=True) / "site"
             arguments = (
                 REPOSITORY_ROOT / "content",
                 REPOSITORY_ROOT / "templates",
@@ -327,9 +328,10 @@ class BuildAcceptanceTests(unittest.TestCase):
 
     def test_cli_builds_from_an_unrelated_working_directory(self) -> None:
         with TemporaryDirectory() as directory:
-            unrelated = Path(directory) / "cwd"
+            root = Path(directory).resolve(strict=True)
+            unrelated = root / "cwd"
             unrelated.mkdir()
-            output = Path(directory) / "published"
+            output = root / "published"
             result = subprocess.run(
                 [
                     sys.executable,
@@ -353,7 +355,9 @@ class BuildInputValidationTests(unittest.TestCase):
         self,
     ) -> None:
         with TemporaryDirectory() as directory:
-            official_output = Path(directory) / "official"
+            official_output = (
+                Path(directory).resolve(strict=True) / "official"
+            )
             with patch(
                 "curriculum_builder.build.load_repository_catalog",
                 wraps=load_repository_catalog,
@@ -390,6 +394,7 @@ class BuildInputValidationTests(unittest.TestCase):
             "curriculum_builder.build.load_catalog",
             wraps=load_catalog,
         ) as generic_loader:
+            output = Path(directory).resolve(strict=True) / "site"
             with self.assertRaisesRegex(
                 CurriculumValidationError,
                 "ambiguous parent traversal",
@@ -398,7 +403,7 @@ class BuildInputValidationTests(unittest.TestCase):
                     ambiguous,
                     REPOSITORY_ROOT / "templates",
                     REPOSITORY_ROOT / "static",
-                    Path(directory) / "site",
+                    output,
                 )
         generic_loader.assert_not_called()
 
@@ -544,12 +549,55 @@ class BuildInputValidationTests(unittest.TestCase):
                 build_site(content, templates, linked, root / "site")
 
         with _fixture() as (root, content, templates, static_root):
+            actual_parent = root / "actual-parent"
+            actual_parent.mkdir()
+            linked_parent = root / "linked-parent"
+            linked_parent.symlink_to(
+                actual_parent,
+                target_is_directory=True,
+            )
+            with self.assertRaisesRegex(
+                CurriculumValidationError,
+                "symbolic link",
+            ):
+                build_site(
+                    content,
+                    templates,
+                    static_root,
+                    linked_parent / "site",
+                )
+
+        with _fixture() as (root, content, templates, static_root):
+            linked_parent = root / "linked-source-parent"
+            linked_parent.symlink_to(root, target_is_directory=True)
+            with self.assertRaisesRegex(
+                CurriculumValidationError,
+                "symbolic link",
+            ):
+                build_site(
+                    linked_parent / "content",
+                    templates,
+                    static_root,
+                    root / "site",
+                )
+
+        with _fixture() as (root, content, templates, static_root):
             os.chmod(static_root, 0o777)
             with self.assertRaisesRegex(
                 CurriculumValidationError,
                 "group/world writable",
             ):
                 build_site(content, templates, static_root, root / "site")
+
+        with _fixture() as (root, content, templates, static_root):
+            output = root / "site"
+            output.mkdir(mode=0o755)
+            os.chmod(output, 0o777)
+            with self.assertRaisesRegex(
+                CurriculumValidationError,
+                "group/world writable",
+            ):
+                build_site(content, templates, static_root, output)
 
         with _fixture() as (root, content, templates, static_root):
             for output in (
@@ -599,6 +647,119 @@ class BuildPublicationTests(unittest.TestCase):
                 list(root.glob(".site.staging-*")),
                 [],
             )
+
+    def test_native_publish_unavailable_fails_closed(self) -> None:
+        with _fixture() as (root, content, templates, static_root):
+            output = root / "site"
+            output.mkdir()
+            (output / "sentinel.txt").write_text("old", encoding="utf-8")
+            with patch(
+                "curriculum_builder.build._native_rename_function",
+                side_effect=RuntimeError("unsupported"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "unsupported"):
+                    build_site(content, templates, static_root, output)
+
+            self.assertEqual((output / "sentinel.txt").read_text(), "old")
+            self.assertEqual(list(root.glob(".site.staging-*")), [])
+
+    def test_racing_publish_target_is_never_overwritten_or_deleted(
+        self,
+    ) -> None:
+        with _fixture() as (root, content, templates, static_root):
+            output = root / "site"
+
+            def competing_publish(
+                parent_fd: int,
+                source_name: str,
+                target_name: str,
+                *,
+                replace_existing: bool,
+            ) -> None:
+                self.assertFalse(replace_existing)
+                os.mkdir(target_name, mode=0o700, dir_fd=parent_fd)
+                target_fd = os.open(
+                    target_name,
+                    os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                    dir_fd=parent_fd,
+                )
+                try:
+                    competitor_fd = os.open(
+                        "foreign.txt",
+                        os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                        0o600,
+                        dir_fd=target_fd,
+                    )
+                    try:
+                        os.write(competitor_fd, b"foreign")
+                    finally:
+                        os.close(competitor_fd)
+                finally:
+                    os.close(target_fd)
+                _publish_directory(
+                    parent_fd,
+                    source_name,
+                    target_name,
+                    replace_existing=replace_existing,
+                )
+
+            with patch(
+                "curriculum_builder.build._publish_directory",
+                side_effect=competing_publish,
+            ):
+                with self.assertRaises(FileExistsError):
+                    build_site(content, templates, static_root, output)
+
+            self.assertEqual(
+                (output / "foreign.txt").read_bytes(),
+                b"foreign",
+            )
+            self.assertEqual(list(root.glob(".site.staging-*")), [])
+
+    def test_file_and_directory_fsync_fail_before_publish(self) -> None:
+        for fail_directory in (False, True):
+            with self.subTest(
+                fail_directory=fail_directory
+            ), _fixture() as (root, content, templates, static_root):
+                output = root / "site"
+                output.mkdir()
+                (output / "sentinel.txt").write_text(
+                    "old",
+                    encoding="utf-8",
+                )
+                original_fsync = os.fsync
+                failed = False
+
+                def failing_fsync(descriptor: int) -> None:
+                    nonlocal failed
+                    is_directory = stat.S_ISDIR(
+                        os.fstat(descriptor).st_mode
+                    )
+                    if not failed and is_directory == fail_directory:
+                        failed = True
+                        raise OSError("fsync failed")
+                    original_fsync(descriptor)
+
+                with patch(
+                    "curriculum_builder.build.os.fsync",
+                    side_effect=failing_fsync,
+                ):
+                    with self.assertRaisesRegex(OSError, "fsync failed"):
+                        build_site(
+                            content,
+                            templates,
+                            static_root,
+                            output,
+                        )
+                self.assertTrue(failed)
+                self.assertEqual(
+                    (output / "sentinel.txt").read_text(),
+                    "old",
+                )
+                self.assertEqual(
+                    list(root.glob(".site.staging-*")),
+                    [],
+                )
 
     def test_stale_legacy_backup_fails_without_mutating_any_output(self) -> None:
         with _fixture() as (root, content, templates, static_root):
@@ -697,7 +858,7 @@ class BuildPublicationTests(unittest.TestCase):
             )
         )
         with TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve(strict=True)
             output = root / "site"
             output.mkdir()
             (output / "sentinel.txt").write_text("previous", encoding="utf-8")

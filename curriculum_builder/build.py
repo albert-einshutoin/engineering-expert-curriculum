@@ -103,14 +103,20 @@ def _path_argument(path: object, label: str) -> Path:
 
 
 def _validate_existing_components(path: Path, label: str) -> None:
-    try:
-        node = os.lstat(path)
-    except FileNotFoundError:
-        raise _validation(f"{label} does not exist") from None
-    except OSError:
-        raise _validation(f"{label} cannot be inspected") from None
-    if stat.S_ISLNK(node.st_mode):
-        raise _validation(f"{label} contains a symbolic link")
+    current = Path(path.anchor)
+    parts = path.parts[1:]
+    for index, part in enumerate(parts):
+        current /= part
+        try:
+            node = os.lstat(current)
+        except FileNotFoundError:
+            raise _validation(f"{label} does not exist") from None
+        except OSError:
+            raise _validation(f"{label} cannot be inspected") from None
+        if stat.S_ISLNK(node.st_mode):
+            raise _validation(f"{label} contains a symbolic link")
+        if index != len(parts) - 1 and not stat.S_ISDIR(node.st_mode):
+            raise _validation(f"{label} parent is not a directory")
 
 
 def _identity(value: os.stat_result) -> tuple[int, int]:
