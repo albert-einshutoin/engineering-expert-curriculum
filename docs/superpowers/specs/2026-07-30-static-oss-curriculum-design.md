@@ -466,6 +466,10 @@ as an exclusive operation with no concurrent same-euid writer; post-rename inode
 verification detects a boundary race and fails without rolling back or deleting a
 foreign entry. This is detection, not a privilege boundary or rollback guarantee.
 
+The catalog contract is schema version 1 with 1,140 items. It records the source
+SHA-256 `a55a0d0b1cfa3773031e787c2ce7ca0df34534e16a70b65ed1baa91975c82da8` and
+checked-in artifact SHA-256 `4f38b5f63931a7f06e13f90f5d9ef90a0a435f30dae5d4fe70720d730a057473`.
+
 Every generated page must meet [WCAG 2.2][wcag22] Level AA and include:
 
 - Japanese document language, unique title, viewport metadata, and one `main`

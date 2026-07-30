@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import hmac
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -158,3 +160,13 @@ def load_catalog(path: str | Path) -> tuple[CatalogItem, ...]:
     if tuple(item.id for item in items) != tuple(sorted(item.id for item in items)): raise CurriculumValidationError(f"{catalog_path}: items must be sorted by id")
     if raw != serialize_catalog_document(items, generated_from, source_sha256): raise CurriculumValidationError(f"{catalog_path}: catalog bytes are not canonical")
     return items
+
+
+def load_repository_catalog(path: str | Path = Path("content/catalog.json")) -> tuple[CatalogItem, ...]:
+    """Load the checked-in artifact only when its fixed provenance pair matches."""
+    catalog_path = Path(path)
+    try: actual = hashlib.sha256(catalog_path.read_bytes()).hexdigest()
+    except OSError as error: raise CurriculumValidationError(f"{catalog_path}: cannot read catalog: {error}") from error
+    if not hmac.compare_digest(actual, CANONICAL_CATALOG_SHA256):
+        raise CurriculumValidationError(f"{catalog_path}: catalog SHA-256 mismatch: expected {CANONICAL_CATALOG_SHA256}, actual {actual}")
+    return load_catalog(catalog_path)

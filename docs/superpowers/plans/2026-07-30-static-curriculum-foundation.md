@@ -1536,6 +1536,10 @@ Expected: all tests pass; only gitignored `site/` is generated; the feature
 branch has no uncommitted tracked changes.
 # Task 4 import publication security note
 
+Canonical root order is `version`, `generatedFrom`, `sourceSha256`, `items`.
+The repository verifier accepts only source `a55a0d0b1cfa3773031e787c2ce7ca0df34534e16a70b65ed1baa91975c82da8`
+and artifact `4f38b5f63931a7f06e13f90f5d9ef90a0a435f30dae5d4fe70720d730a057473`.
+
 The importer must use a pinned trusted output directory and verify the published
 inode after rename. A same-euid writer at the exact POSIX rename boundary is out
 of scope: run imports exclusively; report integrity failure and never rollback a

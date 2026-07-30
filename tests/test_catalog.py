@@ -5,7 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from curriculum_builder.catalog import LEGACY_SOURCE_SHA256, load_catalog, serialize_catalog_document
+from curriculum_builder.catalog import CANONICAL_CATALOG_SHA256, LEGACY_SOURCE_SHA256, load_catalog, load_repository_catalog, serialize_catalog_document
 from curriculum_builder.errors import CurriculumValidationError
 
 
@@ -53,12 +53,13 @@ class CatalogLoaderTests(unittest.TestCase):
                 load_catalog(canonical)
 
     def test_repository_catalog_has_complete_sorted_model_consistent_import(self) -> None:
-        items = load_catalog(Path("content/catalog.json"))
+        items = load_repository_catalog(Path("content/catalog.json"))
         self.assertEqual(len(items), 1140)
         self.assertEqual(len({item.id for item in items}), 1140)
         self.assertEqual(len({item.domain_id for item in items}), 38)
         self.assertEqual(tuple(item.id for item in items), tuple(sorted(item.id for item in items)))
         self.assertEqual(LEGACY_SOURCE_SHA256, "a55a0d0b1cfa3773031e787c2ce7ca0df34534e16a70b65ed1baa91975c82da8")
+        self.assertEqual(CANONICAL_CATALOG_SHA256, "4f38b5f63931a7f06e13f90f5d9ef90a0a435f30dae5d4fe70720d730a057473")
         self.assertEqual(
             Path("content/catalog.json").read_bytes(),
             serialize_catalog_document(
