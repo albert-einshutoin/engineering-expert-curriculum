@@ -189,6 +189,20 @@ def _assert_connector_hidden_in_media(css: str, media_prelude: str) -> None:
         raise AssertionError("connector must be hidden in its media block")
 
 
+def _bounded_plan_section(text: str, start: str, end: str) -> str:
+    if text.count(start) != 1 or text.count(end) != 1:
+        raise AssertionError(
+            f"plan section markers must occur once: {start!r}, {end!r}"
+        )
+    before, remainder = text.split(start, 1)
+    del before
+    section, after = remainder.split(end, 1)
+    del after
+    if not section.strip():
+        raise AssertionError(f"plan section is empty: {start!r}")
+    return section
+
+
 def _relative_luminance(channel: int) -> float:
     normalized = channel / 255
     if normalized <= 0.04045:
@@ -411,6 +425,16 @@ class StyleContractTests(unittest.TestCase):
                 rf"(?m)(?:^|,)\s*{re.escape(selector)}(?:\s|,|\{{|:)",
                 selector,
             )
+        h4_body = _css_block(self.css, "h4")
+        self.assertRegex(
+            h4_body,
+            r"(?m)^\s*margin-block:\s*1\.25em\s+0\.45em\s*;",
+        )
+        self.assertRegex(
+            h4_body,
+            r"(?m)^\s*font-size:\s*clamp\("
+            r"1\.05rem,\s*1rem\s*\+\s*0\.25vw,\s*1\.25rem\)\s*;",
+        )
 
     def test_covers_every_class_and_id_in_current_templates(self) -> None:
         parser = _TemplateContractParser()
@@ -452,25 +476,48 @@ class StyleContractTests(unittest.TestCase):
             self.css,
             r"\.prerequisite-text::before\s*\{[^}]*content:\s*[\"']前提",
         )
-        task_9_plan = FOUNDATION_PLAN_PATH.read_text(encoding="utf-8").split(
-            "### Task 9:", 1
-        )[1].split("### Task 10:", 1)[0]
+        full_plan = FOUNDATION_PLAN_PATH.read_text(encoding="utf-8")
+        task_9_plan = _bounded_plan_section(
+            full_plan,
+            "### Task 9:",
+            "### Task 10:",
+        )
+        step_1_test_contract = _bounded_plan_section(
+            task_9_plan,
+            "- [ ] **Step 1:",
+            "- [ ] **Step 2:",
+        )
+        step_3_implementation = _bounded_plan_section(
+            task_9_plan,
+            "- [ ] **Step 3:",
+            "- [ ] **Step 4:",
+        )
         self.assertIn(
             '<p class="prerequisite-text"><strong>前提:</strong> ',
-            task_9_plan,
+            step_3_implementation,
         )
-        self.assertIn('node["prerequisites"]', task_9_plan)
         for class_name in (
             "catalog-card",
             "catalog-card__title",
             "catalog-card__list",
         ):
-            self.assertIn(f'class="{class_name}"', task_9_plan)
-        self.assertIn(
-            "catalog_html.count('<section class=\"catalog-card\">'),\n"
-            "                38,",
-            task_9_plan,
+            self.assertIn(f'class="{class_name}"', step_3_implementation)
+        for counted_markup in (
+            '<section class="catalog-card">',
+            '<h2 class="catalog-card__title">',
+            '<ol class="catalog-card__list">',
+        ):
+            self.assertRegex(
+                step_1_test_contract,
+                rf"catalog_html\.count\({re.escape(repr(counted_markup))}\)"
+                rf"\s*,\s*38",
+            )
+        self.assertRegex(
+            step_1_test_contract,
+            r"catalog_html\.count\([\"']<li id=[\"']\)\s*,\s*1_140",
         )
+        self.assertIn("roadmap_html", step_1_test_contract)
+        self.assertIn("<strong>前提:</strong>", step_1_test_contract)
         for title, prerequisite in (
             ("Think", "なし"),
             ("Build", "Think"),
@@ -479,8 +526,18 @@ class StyleContractTests(unittest.TestCase):
         ):
             self.assertIn(
                 f'("{title}", "{prerequisite}"),',
-                task_9_plan,
+                step_1_test_contract,
             )
+        self.assertIn("title_by_id", step_3_implementation)
+        self.assertIn('node["prerequisites"]', step_3_implementation)
+        self.assertIn(
+            '<li class="learning-stage">',
+            step_3_implementation,
+        )
+        self.assertIn(
+            '<p class="prerequisite-text"><strong>前提:</strong> ',
+            step_3_implementation,
+        )
         self.assertIn("max-inline-size: var(--measure-reading)", self.css)
         self.assertIn("overflow-wrap: anywhere", self.css)
         self.assertRegex(self.css, r"font-size:\s*clamp\(")
