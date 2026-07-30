@@ -190,7 +190,7 @@ def _path_argument(path: object, label: str) -> Path:
     if "\0" in spelling:
         raise _validation(f"{label} contains a NUL byte")
     if any(
-        unicodedata.category(character) in {"Cc", "Cf"}
+        unicodedata.category(character) in {"Cc", "Cf", "Zl", "Zp"}
         for character in spelling
     ):
         # Paths are later reported by CLI tools, so rejecting controls at the

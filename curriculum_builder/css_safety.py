@@ -11,6 +11,7 @@ from .errors import CurriculumValidationError
 
 MAX_STYLESHEET_BYTES: Final = 1024 * 1024
 _ALLOWED_CONTROL_CHARACTERS: Final = frozenset("\t\n\r")
+_CSS_COMMENT: Final = re.compile(r"/\*.*?\*/", re.DOTALL)
 _FORBIDDEN_RESOURCE_SYNTAX: Final = (
     re.compile(r"(?i)@import(?:[^a-z0-9_-]|\Z)", re.ASCII),
     re.compile(r"(?i)(?<![a-z0-9_-])url\s*\(", re.ASCII),
@@ -51,8 +52,13 @@ def validate_stylesheet_bytes(source: object) -> str:
         # Rejecting all escapes keeps the raw-byte policy reviewable and makes
         # comments and quoted strings unable to hide a future active mutation.
         raise _validation("styles.css contains a forbidden escape")
+    scan_candidates = (
+        stylesheet,
+        _CSS_COMMENT.sub("", stylesheet),
+    )
     if any(
-        pattern.search(stylesheet) is not None
+        pattern.search(candidate) is not None
+        for candidate in scan_candidates
         for pattern in _FORBIDDEN_RESOURCE_SYNTAX
     ):
         # Scan the complete source, including inert comments and strings. This
