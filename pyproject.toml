@@ -3,7 +3,4 @@ name = "engineering-expert-curriculum"
 version = "0.1.0"
 description = "A dependency-free static textbook for engineering expertise"
 requires-python = ">=3.12"
-license = { text = "MIT" }
-
-[tool.unittest]
-start-directory = "tests"
+license = "MIT"

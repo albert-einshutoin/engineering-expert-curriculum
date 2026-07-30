@@ -46,6 +46,8 @@
 from __future__ import annotations
 
 import importlib
+from pathlib import Path
+import tomllib
 import unittest
 
 
@@ -53,6 +55,15 @@ class ProjectContractTests(unittest.TestCase):
     def test_package_exposes_version(self) -> None:
         package = importlib.import_module("curriculum_builder")
         self.assertEqual(package.__version__, "0.1.0")
+
+    def test_project_metadata_matches_package_contract(self) -> None:
+        package = importlib.import_module("curriculum_builder")
+        pyproject_path = Path(__file__).resolve().parents[1] / "pyproject.toml"
+        with pyproject_path.open("rb") as pyproject_file:
+            project = tomllib.load(pyproject_file)["project"]
+
+        self.assertEqual(project["version"], package.__version__)
+        self.assertEqual(project["license"], "MIT")
 
 
 if __name__ == "__main__":
@@ -64,7 +75,7 @@ if __name__ == "__main__":
 Run:
 
 ```bash
-python3 -m unittest tests.test_project_contract -v
+python3.13 -m unittest tests.test_project_contract -v
 ```
 
 Expected: `ERROR` with `ModuleNotFoundError: No module named 'curriculum_builder'`.
@@ -78,10 +89,7 @@ name = "engineering-expert-curriculum"
 version = "0.1.0"
 description = "A dependency-free static textbook for engineering expertise"
 requires-python = ">=3.12"
-license = { text = "MIT" }
-
-[tool.unittest]
-start-directory = "tests"
+license = "MIT"
 ```
 
 ```python
@@ -102,8 +110,8 @@ class CurriculumValidationError(ValueError):
 Run:
 
 ```bash
-python3 -m unittest tests.test_project_contract -v
-python3 -m unittest discover -s tests -v
+python3.13 -m unittest tests.test_project_contract -v
+python3.13 -m unittest discover -s tests -v
 ```
 
 Expected: both commands report `OK`.
