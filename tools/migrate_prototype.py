@@ -290,14 +290,21 @@ def preserve_prototype(source: Path, archive: Path) -> PrototypeManifest:
         if initial != archived:
             raise RuntimeError("prototype checksum verification failed")
         manifest = _write_manifest(archive_path, initial)
-    except BaseException:
+    except BaseException as operation_error:
         try:
             shutil.rmtree(archive_path)
         except OSError as cleanup_error:
             raise RuntimeError(
-                f"incomplete archive without manifest: cleanup failed for {archive_path}"
-            ) from cleanup_error
-        _cleanup_created_parents(created_parents)
+                f"incomplete archive without manifest: cleanup failed for {archive_path}: "
+                f"{cleanup_error}"
+            ) from operation_error
+        try:
+            _cleanup_created_parents(created_parents)
+        except RuntimeError as cleanup_error:
+            raise RuntimeError(
+                f"incomplete archive without manifest: parent cleanup failed for "
+                f"{archive_path}: {cleanup_error}"
+            ) from operation_error
         raise
 
     # The original is deliberately retained: a later, separately reviewed retirement task can clean it safely.

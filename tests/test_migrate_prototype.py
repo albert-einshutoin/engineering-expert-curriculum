@@ -228,6 +228,29 @@ class PrototypeMigrationTests(unittest.TestCase):
 
             self.assertFalse(archive_parent.exists())
 
+    def test_copy_failure_remains_the_cause_when_parent_cleanup_fails(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            self._write_fixture(root)
+            archive_parent = root / ".archive"
+            archive = archive_parent / "prototype-v1"
+            real_rmdir = Path.rmdir
+
+            def fail_parent_cleanup(path: Path) -> None:
+                if path == archive_parent:
+                    raise OSError("parent cleanup failed")
+                real_rmdir(path)
+
+            with patch("tools.migrate_prototype.shutil.copy2", side_effect=OSError("copy failed")):
+                with patch.object(Path, "rmdir", autospec=True, side_effect=fail_parent_cleanup):
+                    with self.assertRaisesRegex(RuntimeError, "parent cleanup failed") as error:
+                        preserve_prototype(root, archive)
+
+            self.assertIsInstance(error.exception.__cause__, OSError)
+            self.assertEqual(str(error.exception.__cause__), "copy failed")
+            self.assertTrue((root / "index.html").exists())
+            self.assertFalse(archive.exists())
+
     def test_parent_creation_rolls_back_when_a_later_mkdir_fails(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory).resolve()
