@@ -25,7 +25,9 @@ CATALOG_FIELDS = (
 )
 
 _REQUIRED_CATALOG_FIELDS = frozenset(CATALOG_FIELDS) - {"coreLessonId"}
-_CATALOG_ID_PATTERN = re.compile(r"^D[0-9]{2}-M[0-9]{2}-L[1-3]$")
+_CATALOG_ID_PATTERN = re.compile(
+    r"^D(?P<domain_id>[0-9]{2})-M(?P<module_index>[0-9]{2})-L(?P<level>[1-3])$"
+)
 _DOMAIN_SLUG_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
@@ -47,8 +49,15 @@ class CatalogItem:
     core_lesson_id: str | None
 
     @classmethod
-    def from_dict(cls, raw: Mapping[str, object]) -> CatalogItem:
+    def from_dict(cls, raw: Mapping[object, object]) -> CatalogItem:
         """Build a catalog item only when every canonical value is well-formed."""
+        non_string_keys = sorted(
+            (key for key in raw if not isinstance(key, str)), key=repr
+        )
+        if non_string_keys:
+            names = ", ".join(repr(key) for key in non_string_keys)
+            raise CurriculumValidationError(f"field names must be strings: {names}")
+
         unknown_fields = sorted(set(raw) - set(CATALOG_FIELDS))
         if unknown_fields:
             raise CurriculumValidationError(f"unknown fields: {', '.join(unknown_fields)}")
@@ -60,21 +69,29 @@ class CatalogItem:
             )
 
         item_id = _require_text(raw["id"], "id")
-        if not _CATALOG_ID_PATTERN.fullmatch(item_id):
+        id_match = _CATALOG_ID_PATTERN.fullmatch(item_id)
+        if id_match is None:
             raise CurriculumValidationError("id must match DNN-MNN-LN")
 
         domain_slug = _require_text(raw["domainSlug"], "domainSlug")
         if not _DOMAIN_SLUG_PATTERN.fullmatch(domain_slug):
             raise CurriculumValidationError("domainSlug must be lowercase ASCII kebab-case")
 
+        domain_id = _require_positive_int(raw["domainId"], "domainId")
+        module_index = _require_positive_int(raw["moduleIndex"], "moduleIndex")
         level = _require_level(raw["level"])
+        _require_id_consistency(item_id, id_match, "domainId", domain_id, "domain_id")
+        _require_id_consistency(
+            item_id, id_match, "moduleIndex", module_index, "module_index"
+        )
+        _require_id_consistency(item_id, id_match, "level", level, "level")
         return cls(
             id=item_id,
             title=_require_text(raw["title"], "title"),
-            domain_id=_require_positive_int(raw["domainId"], "domainId"),
+            domain_id=domain_id,
             domain_title=_require_text(raw["domainTitle"], "domainTitle"),
             domain_slug=domain_slug,
-            module_index=_require_positive_int(raw["moduleIndex"], "moduleIndex"),
+            module_index=module_index,
             module_title=_require_text(raw["moduleTitle"], "moduleTitle"),
             level=level,
             level_label=_require_text(raw["levelLabel"], "levelLabel"),
@@ -87,7 +104,7 @@ class CatalogItem:
 def _require_text(value: object, field: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise CurriculumValidationError(f"{field} must be a non-empty string")
-    return value
+    return value.strip()
 
 
 def _require_optional_text(value: object, field: str) -> str | None:
@@ -116,3 +133,17 @@ def _require_concepts(value: object) -> tuple[str, ...]:
     if len(set(concepts)) != len(concepts):
         raise CurriculumValidationError("concepts must not contain duplicates")
     return concepts
+
+
+def _require_id_consistency(
+    item_id: str,
+    id_match: re.Match[str],
+    field: str,
+    actual: int,
+    group: str,
+) -> None:
+    expected = int(id_match[group])
+    if actual != expected:
+        raise CurriculumValidationError(
+            f"id {item_id} does not match {field}: expected {expected}, actual {actual}"
+        )

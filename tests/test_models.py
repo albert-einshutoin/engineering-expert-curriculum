@@ -86,6 +86,64 @@ class CatalogItemTests(unittest.TestCase):
                 with self.assertRaises(CurriculumValidationError):
                     CatalogItem.from_dict(valid_raw(coreLessonId=core_lesson_id))
 
+    def test_canonicalizes_whitespace_and_detaches_concepts_from_input_list(self) -> None:
+        concepts = [" retry ", " idempotency "]
+        item = CatalogItem.from_dict(
+            valid_raw(
+                id=" D01-M02-L3 ",
+                title=" Design reliable systems ",
+                domainTitle=" Architecture ",
+                domainSlug=" architecture ",
+                moduleTitle=" Reliability ",
+                levelLabel=" Advanced ",
+                concepts=concepts,
+                outcome=" Design a resilient service. ",
+                coreLessonId=" lesson-001 ",
+            )
+        )
+        concepts.append("mutation")
+
+        self.assertEqual(item.id, "D01-M02-L3")
+        self.assertEqual(item.title, "Design reliable systems")
+        self.assertEqual(item.domain_title, "Architecture")
+        self.assertEqual(item.domain_slug, "architecture")
+        self.assertEqual(item.module_title, "Reliability")
+        self.assertEqual(item.level_label, "Advanced")
+        self.assertEqual(item.concepts, ("retry", "idempotency"))
+        self.assertEqual(item.outcome, "Design a resilient service.")
+        self.assertEqual(item.core_lesson_id, "lesson-001")
+
+    def test_rejects_concepts_duplicated_after_whitespace_canonicalization(self) -> None:
+        with self.assertRaisesRegex(
+            CurriculumValidationError, r"^concepts must not contain duplicates$"
+        ):
+            CatalogItem.from_dict(valid_raw(concepts=["retry", " retry "]))
+
+    def test_rejects_non_string_mapping_keys_deterministically(self) -> None:
+        raw: dict[object, object] = valid_raw()
+        raw[None] = "invalid"
+        raw[1] = "also-invalid"
+
+        with self.assertRaisesRegex(
+            CurriculumValidationError, r"^field names must be strings: 1, None$"
+        ):
+            CatalogItem.from_dict(raw)
+
+    def test_unknown_fields_take_precedence_over_missing_fields(self) -> None:
+        with self.assertRaisesRegex(CurriculumValidationError, r"^unknown fields: path$"):
+            CatalogItem.from_dict({"path": "legacy/path"})
+
+    def test_rejects_id_components_that_do_not_match_structured_fields(self) -> None:
+        cases = (
+            ("domainId", 2, "id D01-M02-L3 does not match domainId: expected 1, actual 2"),
+            ("moduleIndex", 3, "id D01-M02-L3 does not match moduleIndex: expected 2, actual 3"),
+            ("level", 2, "id D01-M02-L3 does not match level: expected 3, actual 2"),
+        )
+        for field, value, message in cases:
+            with self.subTest(field=field):
+                with self.assertRaisesRegex(CurriculumValidationError, f"^{message}$"):
+                    CatalogItem.from_dict(valid_raw(**{field: value}))
+
 
 if __name__ == "__main__":
     unittest.main()
