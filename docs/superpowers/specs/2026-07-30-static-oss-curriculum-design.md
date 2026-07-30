@@ -417,11 +417,10 @@ repository receives the canonical catalog data and new authored content, not
 the 1,140 duplicated generated HTML pages. The migration tool is one-shot and
 rerun-safe: it never clobbers an existing archive.
 
-Before running the tool, the operator prepares the archive parent, for example:
-
-```bash
-install -d -m 700 .archive
-```
+Before running the tool, the operator prepares the archive parent with a
+no-follow create-and-verify step: create it with mode `0o700` only when absent,
+then reject an existing symlink, non-directory, foreign owner, or
+group/world-writable directory without changing it.
 
 The tool requires that parent to already exist as a canonical directory owned by
 the current effective user and not group/world writable. It never creates or

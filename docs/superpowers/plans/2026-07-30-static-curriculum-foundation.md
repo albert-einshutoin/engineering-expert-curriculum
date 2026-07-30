@@ -172,14 +172,16 @@ place an archive under an allowlisted source subtree.
 
 The ordering is deliberately read-only until safety is established: validate the
 source, take its initial snapshot (and reject empty input), then perform archive
-lexical/canonical boundary validation. The operator must pre-create the archive
-parent (for example, `install -d -m 700 .archive`; document this command but do
-not run it as part of tests). The tool requires an existing canonical directory
-owned by the current effective user and not group/world writable. The validation
-helper opens it with `O_DIRECTORY|O_NOFOLLOW`, verifies the same inode with
-`fstat`, and transfers that pinned FD to publication; the caller never reopens
-the pathname. It never creates or deletes this parent, avoiding `mkdir`/`stat`
-ownership races at the trusted boundary.
+lexical/canonical boundary validation. The operator prepares the archive parent
+with the no-follow creation-and-validation sequence in Task 10: it creates only
+an absent directory and rejects an existing symlink, non-directory, foreign
+owner, or group/world-writable directory without changing it. The tool requires
+an existing canonical directory owned by the current effective user and not
+group/world writable. The validation helper opens it with
+`O_DIRECTORY|O_NOFOLLOW`, verifies the same inode with `fstat`, and transfers
+that pinned FD to publication; the caller never reopens the pathname. It never
+creates or deletes this parent, avoiding `mkdir`/`stat` ownership races at the
+trusted boundary.
 
 Verify the pinned parent inode with `fstat`. Create a random `0o700` private
 staging directory below it using `dir_fd` operations; verify staging identity and
@@ -1398,25 +1400,31 @@ git commit -m "feat: build static curriculum atlas atomically"
 Run:
 
 ```bash
-install -d -m 700 $REPO_ROOT/.archive
 python3.13 - <<'PY'
 import os
 import stat
 from pathlib import Path
 
 parent = Path("$REPO_ROOT/.archive")
+try:
+    parent.mkdir(mode=0o700)
+except FileExistsError:
+    pass
+
 metadata = parent.lstat()
-assert parent.is_dir(), "archive parent must be a directory"
-assert not stat.S_ISLNK(metadata.st_mode), "archive parent must not be a symlink"
-assert metadata.st_uid == os.geteuid(), "archive parent must be owned by the current user"
-assert not stat.S_IMODE(metadata.st_mode) & (stat.S_IWGRP | stat.S_IWOTH), (
-    "archive parent must not be group/world writable"
-)
+if not stat.S_ISDIR(metadata.st_mode):
+    raise RuntimeError("archive parent must be a real directory, not a symlink or non-directory")
+if metadata.st_uid != os.geteuid():
+    raise RuntimeError("archive parent must be owned by the current user")
+if stat.S_IMODE(metadata.st_mode) & (stat.S_IWGRP | stat.S_IWOTH):
+    raise RuntimeError("archive parent must not be group/world writable")
 PY
 ```
 
-Expected: the parent exists as a non-symlink directory owned by the current
-user, with no group/world write permission.
+Expected: the parent is a real directory owned by the current user, with no
+group/world write permission. A new parent is created with `0o700` (or a more
+restrictive umask result); an existing unsafe parent is rejected without any
+`chmod` or other mutation.
 
 - [ ] **Step 2: Run the complete suite before touching the prototype**
 
