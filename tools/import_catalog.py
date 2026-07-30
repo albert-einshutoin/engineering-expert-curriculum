@@ -21,6 +21,10 @@ class CatalogPublicationDurabilityError(RuntimeError):
     """The catalog was published, but the parent-directory fsync did not complete."""
 
 
+class CatalogPublicationIntegrityError(RuntimeError):
+    """A same-UID rename race made the published catalog entry untrustworthy."""
+
+
 def _read_source(path: Path) -> tuple[object, str, tuple[int, int]]:
     raw_path = _absolute_lexical(path, "input")
     parent_path, name, parent_fd = _open_parent(raw_path)
@@ -105,7 +109,13 @@ def _cleanup_temp(parent_fd: int, name: str, owned: tuple[int, int]) -> None:
 
 
 def _write_atomic(path: Path, document: dict[str, object], *, forbidden_identity: tuple[int, int] | None = None) -> None:
-    """Publish bytes through a pinned private parent; never follow a replaceable path."""
+    """Publish through a pinned, current-euid-owned private parent.
+
+    This rejects symlinked/untrusted parents and pathname replacement outside the
+    pinned directory. POSIX rename cannot predicate on a source inode: a malicious
+    same-euid writer racing the final syscall is out of scope; callers run alone.
+    Post-replace verification detects that race but intentionally never rolls back.
+    """
     parent_path, final_name, parent_fd = _open_parent(path)
     temporary_name: str | None = None
     temporary_identity: tuple[int, int] | None = None
@@ -130,6 +140,9 @@ def _write_atomic(path: Path, document: dict[str, object], *, forbidden_identity
             raise RuntimeError("catalog temporary changed before publish")
         os.replace(temporary_name, final_name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
         temporary_name = None; published = True
+        final_info = os.stat(final_name, dir_fd=parent_fd, follow_symlinks=False)
+        if not stat.S_ISREG(final_info.st_mode) or (final_info.st_dev, final_info.st_ino) != temporary_identity:
+            raise CatalogPublicationIntegrityError("catalog published entry integrity is unknown or compromised")
         try: os.fsync(parent_fd)
         except OSError as error: raise CatalogPublicationDurabilityError("catalog published but parent durability is unknown") from error
     except BaseException as error:

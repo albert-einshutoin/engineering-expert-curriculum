@@ -1534,3 +1534,9 @@ git status --short --branch
 
 Expected: all tests pass; only gitignored `site/` is generated; the feature
 branch has no uncommitted tracked changes.
+# Task 4 import publication security note
+
+The importer must use a pinned trusted output directory and verify the published
+inode after rename. A same-euid writer at the exact POSIX rename boundary is out
+of scope: run imports exclusively; report integrity failure and never rollback a
+possibly foreign published entry.

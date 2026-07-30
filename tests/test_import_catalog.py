@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from curriculum_builder.catalog import canonicalize
 from curriculum_builder.errors import CurriculumValidationError
-from tools.import_catalog import _read_source, _write_atomic, main
+from tools.import_catalog import CatalogPublicationIntegrityError, _read_source, _write_atomic, main
 
 
 def lesson(**overrides: object) -> dict[str, object]:
@@ -59,6 +59,20 @@ class CatalogImportTests(unittest.TestCase):
                 with self.assertRaisesRegex(OSError, "replace failed"): _write_atomic(output, document)
             self.assertEqual(output.read_bytes(), before)
             self.assertEqual(list(output.parent.glob(".catalog-*.tmp")), [])
+
+    def test_writer_reports_post_replace_same_uid_substitution_without_rollback(self) -> None:
+        document = {"version": 1, "generatedFrom": "source", "items": [{**lesson(), "coreLessonId": None}]}
+        document["items"][0].pop("path")
+        with TemporaryDirectory(dir=Path.cwd()) as directory:
+            output = Path(directory) / "catalog.json"; output.write_bytes(b"old")
+            real_replace = __import__("os").replace
+            def substitute(source: str, target: str, **kwargs: object) -> None:
+                real_replace(source, target, **kwargs)
+                Path(directory, "foreign").write_bytes(b"foreign")
+                real_replace("foreign", target, **kwargs)
+            with patch("tools.import_catalog.os.replace", side_effect=substitute):
+                with self.assertRaises(CatalogPublicationIntegrityError): _write_atomic(output, document)
+            self.assertEqual(output.read_bytes(), b"foreign")
     def test_canonicalize_removes_only_path_adds_core_link_and_sorts(self) -> None:
         second = lesson(id="D01-M01-L2", level=2, title="Second")
         result = canonicalize(legacy_source([second, lesson()]), " prototype-v1 ")

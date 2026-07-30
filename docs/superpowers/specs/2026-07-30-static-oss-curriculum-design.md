@@ -458,6 +458,14 @@ no errno.
 
 ## 13. Accessibility, security, and privacy
 
+Catalog import pins a current-euid-owned, non-group/world-writable output parent
+by file descriptor and rejects intermediate/final symlinks, untrusted checkout
+parents, and pathname replacement outside that descriptor. POSIX rename cannot
+atomically predicate publication on the source inode. Therefore imports must run
+as an exclusive operation with no concurrent same-euid writer; post-rename inode
+verification detects a boundary race and fails without rolling back or deleting a
+foreign entry. This is detection, not a privilege boundary or rollback guarantee.
+
 Every generated page must meet [WCAG 2.2][wcag22] Level AA and include:
 
 - Japanese document language, unique title, viewport metadata, and one `main`
