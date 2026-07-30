@@ -389,39 +389,12 @@ git commit -m "feat: validate immutable catalog items"
 
 - [ ] **Step 1: Write importer and catalog contract tests**
 
-```python
-# tests/test_import_catalog.py
-from __future__ import annotations
-
-import unittest
-
-from tools.import_catalog import canonicalize
-
-
-class ImportCatalogTests(unittest.TestCase):
-    def test_removes_generated_path_and_adds_core_link(self) -> None:
-        source = {
-            "version": 1,
-            "lessons": [{
-                "id": "D01-M01-L1",
-                "title": "離散数学と論理 — 基礎",
-                "domainId": 1,
-                "domainTitle": "数学・統計",
-                "domainSlug": "math-statistics",
-                "moduleIndex": 1,
-                "moduleTitle": "離散数学と論理",
-                "level": 1,
-                "levelLabel": "基礎",
-                "concepts": ["集合"],
-                "outcome": "形式化できる",
-                "path": "domains/legacy.html",
-            }],
-        }
-        result = canonicalize(source, generated_from="prototype-v1")
-        self.assertNotIn("path", result["items"][0])
-        self.assertIsNone(result["items"][0]["coreLessonId"])
-        self.assertEqual(result["generatedFrom"], "prototype-v1")
-```
+The importer fixture must build the full legacy shape: root fields `version`,
+`title`, `generated`, `domainCount`, `moduleCount`, `lessonCount`, `tracks`,
+`domains`, and `lessons`; each domain contains its exact declaration and modules,
+and each lesson includes the required legacy `path`. Assert that `canonicalize`
+removes only `path`, supplies `coreLessonId=None`, sorts IDs, normalizes
+`generatedFrom`, and records the supplied `sourceSha256`.
 
 ```python
 # tests/test_catalog.py
