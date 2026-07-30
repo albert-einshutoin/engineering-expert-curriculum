@@ -1016,6 +1016,13 @@ git commit -m "content: develop collaborative technical leadership"
 - Modify: `curriculum_builder/build.py`
 - Create: `tests/test_roadmap_acceptance.py`
 
+Tasks 2–8 intentionally accept an absent, empty, or partial `content/lessons`
+tree as an authoring state. Task 9 is the release/roadmap gate: its acceptance
+tests must require exactly 30 complete lessons with the unique ordinals 1–30,
+and must reject a roadmap or release build that omits or duplicates any one of
+them. Keep this exact-count release requirement out of the Task 2 loader so
+incremental authoring and the meaningful empty state remain available.
+
 - [ ] **Step 1: Write the complete roadmap acceptance test**
 
 ```python
