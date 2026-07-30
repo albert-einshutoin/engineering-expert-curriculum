@@ -20,8 +20,8 @@ from typing import Final
 import uuid
 
 from .catalog import (
-    load_catalog,
-    load_repository_catalog,
+    load_catalog_bytes,
+    load_repository_catalog_bytes,
     strict_json_loads,
 )
 from .errors import CurriculumValidationError
@@ -62,12 +62,24 @@ _EXPECTED_ARTIFACTS = frozenset(
 )
 
 
-class BuildPublicationDurabilityError(RuntimeError):
+class BuildPostCommitError(RuntimeError):
+    """A native rename committed the new site before a later operation failed."""
+
+
+class BuildPublicationDurabilityError(BuildPostCommitError):
     """The new site is visible, but its parent-directory fsync failed."""
 
 
-class BuildCleanupError(RuntimeError):
+class BuildCleanupError(BuildPostCommitError):
     """The new site is visible, but the replaced output could not be removed."""
+
+
+class BuildPublicationStateError(BuildPostCommitError):
+    """The new site is visible, but post-commit state could not be verified."""
+
+
+class BuildStagingCleanupError(RuntimeError):
+    """Publication did not commit and private staging could not be removed."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -311,9 +323,9 @@ def _load_catalog_from_root(
     )
     catalog_path = content.path / "catalog.json"
     if content.path == _REPOSITORY_CONTENT_ROOT:
-        items = load_repository_catalog(catalog_path)
+        items = load_repository_catalog_bytes(before, catalog_path)
     else:
-        items = load_catalog(catalog_path)
+        items = load_catalog_bytes(before, catalog_path)
     after = _read_stable_regular_file(
         content,
         "catalog.json",
@@ -1079,26 +1091,49 @@ def _publish_staged_site(
 ) -> None:
     replace_existing = previous is not None
     previous_fd: int | None = None
-    if replace_existing:
-        previous_fd = _open_directory_at(parent.descriptor, output_name)
-        pinned = os.fstat(previous_fd)
-        current = os.stat(
+    try:
+        if replace_existing:
+            previous_fd = _open_directory_at(
+                parent.descriptor,
+                output_name,
+            )
+            pinned = os.fstat(previous_fd)
+            current = os.stat(
+                output_name,
+                dir_fd=parent.descriptor,
+                follow_symlinks=False,
+            )
+            if _identity(pinned) != _identity(previous) or _identity(
+                current
+            ) != _identity(previous):
+                raise _validation(
+                    "output_root changed before publication"
+                )
+        _publish_directory(
+            parent.descriptor,
+            staging_name,
             output_name,
-            dir_fd=parent.descriptor,
-            follow_symlinks=False,
+            replace_existing=replace_existing,
         )
-        if _identity(pinned) != _identity(previous) or _identity(
-            current
-        ) != _identity(previous):
-            os.close(previous_fd)
-            raise _validation("output_root changed before publication")
+    except BaseException as operation_error:
+        if previous_fd is not None:
+            descriptor = previous_fd
+            previous_fd = None
+            try:
+                os.close(descriptor)
+            except OSError as close_error:
+                operation_error.add_note(
+                    "previous output descriptor also failed to close "
+                    f"before publication: {close_error}"
+                )
+        raise
 
-    _publish_directory(
-        parent.descriptor,
-        staging_name,
-        output_name,
-        replace_existing=replace_existing,
-    )
+    # Returning from the native rename is the sole commit point. Every later
+    # failure is normalized below so callers never attempt pre-publish cleanup
+    # against a staging descriptor that now points at the visible new output.
+    post_error: BuildPostCommitError | None = None
+    post_cause: BaseException | None = None
+    recovery_fd: int | None = None
     try:
         published = os.stat(
             output_name,
@@ -1106,18 +1141,21 @@ def _publish_staged_site(
             follow_symlinks=False,
         )
         if _identity(published) != staging_identity:
-            raise BuildPublicationDurabilityError(
-                "new site publication identity is unknown"
+            raise BuildPublicationStateError(
+                "site is visible but publication identity is unknown"
             )
+        previous_identity: tuple[int, int] | None = None
         if previous_fd is not None:
+            previous_identity = _identity(os.fstat(previous_fd))
             recovery = os.stat(
                 staging_name,
                 dir_fd=parent.descriptor,
                 follow_symlinks=False,
             )
-            if _identity(recovery) != _identity(os.fstat(previous_fd)):
-                raise BuildPublicationDurabilityError(
-                    "replaced output recovery identity is unknown"
+            if _identity(recovery) != previous_identity:
+                raise BuildPublicationStateError(
+                    "site is visible but replaced output recovery "
+                    "identity is unknown"
                 )
         try:
             _fsync_parent_after_publish(parent.descriptor)
@@ -1127,13 +1165,26 @@ def _publish_staged_site(
             ) from error
 
         if previous_fd is not None:
+            descriptor = previous_fd
+            previous_fd = None
+            # Close the pre-rename pin before deleting recovery. If this close
+            # fails, the old output remains inspectable at the staging name.
+            os.close(descriptor)
+            recovery_fd = _open_directory_at(
+                parent.descriptor,
+                staging_name,
+            )
+            assert previous_identity is not None
+            if _identity(os.fstat(recovery_fd)) != previous_identity:
+                raise BuildPublicationStateError(
+                    "site is visible but recovery changed before cleanup"
+                )
             try:
                 _remove_owned_directory(
                     parent.descriptor,
                     staging_name,
-                    previous_fd,
+                    recovery_fd,
                 )
-                os.fsync(parent.descriptor)
             except OSError as error:
                 raise BuildCleanupError(
                     "site published but replaced output cleanup failed"
@@ -1142,9 +1193,45 @@ def _publish_staged_site(
                 raise BuildCleanupError(
                     "site published but replaced output cleanup was unsafe"
                 ) from error
-    finally:
-        if previous_fd is not None:
-            os.close(previous_fd)
+            descriptor = recovery_fd
+            recovery_fd = None
+            os.close(descriptor)
+            try:
+                os.fsync(parent.descriptor)
+            except OSError as error:
+                raise BuildPublicationDurabilityError(
+                    "site published but cleanup durability is unknown"
+                ) from error
+    except BuildPostCommitError as error:
+        post_error = error
+    except BaseException as error:
+        post_error = BuildPublicationStateError(
+            "site is visible but post-commit verification failed"
+        )
+        post_cause = error
+
+    for descriptor, label in (
+        (recovery_fd, "recovery"),
+        (previous_fd, "previous output"),
+    ):
+        if descriptor is None:
+            continue
+        try:
+            os.close(descriptor)
+        except OSError as close_error:
+            if post_error is None:
+                post_error = BuildPublicationStateError(
+                    f"site is visible but {label} descriptor close failed"
+                )
+                post_cause = close_error
+            else:
+                post_error.add_note(
+                    f"{label} descriptor also failed to close: {close_error}"
+                )
+    if post_error is not None:
+        if post_cause is not None:
+            raise post_error from post_cause
+        raise post_error
 
 
 def _stage_and_publish(
@@ -1158,7 +1245,7 @@ def _stage_and_publish(
         parent,
         output_name,
     )
-    published = False
+    committed = False
     operation_error: BaseException | None = None
     try:
         _populate_staging(staging_fd, artifacts)
@@ -1178,11 +1265,9 @@ def _stage_and_publish(
             staging_identity,
             previous,
         )
-        published = True
-    except (BuildCleanupError, BuildPublicationDurabilityError) as error:
-        # Both signal that the new site crossed the publication commit point;
-        # retaining the recovery entry is safer than guessing at rollback.
-        published = True
+        committed = True
+    except BuildPostCommitError as error:
+        committed = True
         operation_error = error
         raise
     except BaseException as error:
@@ -1194,22 +1279,33 @@ def _stage_and_publish(
                 staging_fd,
             )
         except (OSError, RuntimeError) as cleanup_error:
-            raise BuildCleanupError(
+            staging_error = BuildStagingCleanupError(
                 "private staging cleanup failed before publication"
-            ) from cleanup_error
+            )
+            staging_error.add_note(
+                f"staging cleanup also failed: {cleanup_error}"
+            )
+            operation_error = staging_error
+            raise staging_error from error
         raise
     finally:
         try:
             os.close(staging_fd)
         except OSError as close_error:
-            if operation_error is None and not published:
+            if operation_error is not None:
+                operation_error.add_note(
+                    "private staging descriptor also failed to close: "
+                    f"{close_error}"
+                )
+            elif committed:
+                raise BuildPublicationStateError(
+                    "site is visible but private staging descriptor "
+                    "close failed"
+                ) from close_error
+            else:
                 raise RuntimeError(
                     f"private staging close failed: {close_error}"
                 ) from close_error
-            if not published:
-                raise RuntimeError(
-                    f"private staging close failed: {close_error}"
-                ) from operation_error
 
 
 def build_site(

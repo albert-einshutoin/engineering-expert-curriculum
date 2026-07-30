@@ -143,7 +143,19 @@ def load_catalog(path: str | Path) -> tuple[CatalogItem, ...]:
     catalog_path = Path(path)
     try: raw = catalog_path.read_bytes()
     except OSError as error: raise CurriculumValidationError(f"{catalog_path}: cannot read catalog: {error}") from error
-    return _load_catalog_bytes(raw, catalog_path)[0]
+    return load_catalog_bytes(raw, catalog_path)
+
+
+def load_catalog_bytes(
+    raw: bytes,
+    path: str | Path,
+) -> tuple[CatalogItem, ...]:
+    """Load one already-pinned canonical catalog byte snapshot."""
+    if type(raw) is not bytes:
+        raise CurriculumValidationError(
+            f"{path}: catalog snapshot must be exact bytes"
+        )
+    return _load_catalog_bytes(raw, Path(path))[0]
 
 
 def _load_catalog_bytes(raw: bytes, catalog_path: Path) -> tuple[tuple[CatalogItem, ...], str]:
@@ -168,8 +180,22 @@ def _load_catalog_bytes(raw: bytes, catalog_path: Path) -> tuple[tuple[CatalogIt
 def load_repository_catalog(path: str | Path = Path("content/catalog.json")) -> tuple[CatalogItem, ...]:
     """Load the checked-in artifact only when its fixed provenance pair matches."""
     catalog_path = Path(path)
-    try: raw = catalog_path.read_bytes(); actual = hashlib.sha256(raw).hexdigest()
+    try: raw = catalog_path.read_bytes()
     except OSError as error: raise CurriculumValidationError(f"{catalog_path}: cannot read catalog: {error}") from error
+    return load_repository_catalog_bytes(raw, catalog_path)
+
+
+def load_repository_catalog_bytes(
+    raw: bytes,
+    path: str | Path = Path("content/catalog.json"),
+) -> tuple[CatalogItem, ...]:
+    """Validate fixed artifact and source provenance on the supplied snapshot."""
+    if type(raw) is not bytes:
+        raise CurriculumValidationError(
+            f"{path}: catalog snapshot must be exact bytes"
+        )
+    catalog_path = Path(path)
+    actual = hashlib.sha256(raw).hexdigest()
     if not hmac.compare_digest(actual, CANONICAL_CATALOG_SHA256):
         raise CurriculumValidationError(f"{catalog_path}: catalog SHA-256 mismatch: expected {CANONICAL_CATALOG_SHA256}, actual {actual}")
     items, source_sha256 = _load_catalog_bytes(raw, catalog_path)

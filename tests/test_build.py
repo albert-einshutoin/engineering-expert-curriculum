@@ -26,9 +26,7 @@ from curriculum_builder.build import (
     build_site,
 )
 from curriculum_builder.catalog import (
-    load_catalog,
     load_catalog_bytes,
-    load_repository_catalog,
     load_repository_catalog_bytes,
     serialize_catalog_document,
 )
@@ -362,11 +360,11 @@ class BuildInputValidationTests(unittest.TestCase):
                 Path(directory).resolve(strict=True) / "official"
             )
             with patch(
-                "curriculum_builder.build.load_repository_catalog",
-                wraps=load_repository_catalog,
+                "curriculum_builder.build.load_repository_catalog_bytes",
+                wraps=load_repository_catalog_bytes,
             ) as repository_loader, patch(
-                "curriculum_builder.build.load_catalog",
-                wraps=load_catalog,
+                "curriculum_builder.build.load_catalog_bytes",
+                wraps=load_catalog_bytes,
             ) as generic_loader:
                 build_site(
                     REPOSITORY_ROOT / "content",
@@ -379,11 +377,11 @@ class BuildInputValidationTests(unittest.TestCase):
 
         with _fixture() as (root, content, templates, static_root):
             with patch(
-                "curriculum_builder.build.load_repository_catalog",
-                wraps=load_repository_catalog,
+                "curriculum_builder.build.load_repository_catalog_bytes",
+                wraps=load_repository_catalog_bytes,
             ) as repository_loader, patch(
-                "curriculum_builder.build.load_catalog",
-                wraps=load_catalog,
+                "curriculum_builder.build.load_catalog_bytes",
+                wraps=load_catalog_bytes,
             ) as generic_loader:
                 build_site(content, templates, static_root, root / "site")
             repository_loader.assert_not_called()
@@ -451,8 +449,8 @@ class BuildInputValidationTests(unittest.TestCase):
     ) -> None:
         ambiguous = REPOSITORY_ROOT / "content" / ".." / "content"
         with TemporaryDirectory() as directory, patch(
-            "curriculum_builder.build.load_catalog",
-            wraps=load_catalog,
+            "curriculum_builder.build.load_catalog_bytes",
+            wraps=load_catalog_bytes,
         ) as generic_loader:
             output = Path(directory).resolve(strict=True) / "site"
             with self.assertRaisesRegex(
