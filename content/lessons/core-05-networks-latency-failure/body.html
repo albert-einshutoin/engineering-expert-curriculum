@@ -42,67 +42,197 @@
   <p>次の<code>trace-fixture.csv</code>相当のlocalhost simulatorは、外部network、秘密情報、curlを必要としない。DNS cacheとTLS handshakeは制御可能な待ち時間として模擬し、実protocol測定ではないことを出力へ明記する。</p>
   <pre><code>python3.13 - &lt;&lt;'PY'
 import json
+import re
 import socket
 import statistics
 import threading
 import time
 
 HARNESS = "network_lab_v2"
-results = {}
-stopped = threading.Event()
-listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-listener.bind(("127.0.0.1", 0))
-listener.listen()
-listener.settimeout(0.1)
-port = listener.getsockname()[1]
+MAX_LINE_BYTES = 256
+SOCKET_DEADLINE_SECONDS = 0.25
+MAX_REQUEST_ID_BYTES = 64
+MAX_DELAY_MS = 1000
+REQUEST_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 
-def receive_line(connection):
-    chunks = []
+class ProtocolError(Exception):
+    def __init__(self, code):
+        super().__init__(code)
+        self.code = code
+
+def receive_line(
+    connection,
+    timeline=None,
+    deadline_seconds=SOCKET_DEADLINE_SECONDS,
+):
+    connection.settimeout(deadline_seconds)
+    payload = bytearray()
     while True:
-        part = connection.recv(4096)
-        if not part:
-            break
-        chunks.append(part)
-        if b"\n" in part:
-            break
-    return b"".join(chunks).decode("utf-8").strip()
-
-def serve():
-    while not stopped.is_set():
         try:
-            connection, _ = listener.accept()
-        except TimeoutError:
-            continue
-        with connection:
-            fields = receive_line(connection).split()
-            if not fields:
-                continue
-            command = fields[0]
-            if command == "APPLY":
-                request_id = fields[1]
-                delay_ms = int(fields[2])
-                drop_after_apply = fields[3] == "drop"
-                results.setdefault(request_id, "applied")
-                time.sleep(delay_ms / 1000)
-                if not drop_after_apply:
-                    connection.sendall(
-                        f"RESULT {request_id} applied\n".encode("utf-8")
-                    )
-            elif command == "LOOKUP":
-                request_id = fields[1]
-                value = results.get(request_id, "missing")
+            part = connection.recv(min(64, MAX_LINE_BYTES + 1))
+        except TimeoutError as error:
+            raise ProtocolError("receive_timeout") from error
+        if not part:
+            raise ProtocolError("newline_required")
+        newline = part.find(b"\n")
+        fragment = part if newline == -1 else part[:newline]
+        payload.extend(fragment)
+        if len(payload) &gt; MAX_LINE_BYTES:
+            raise ProtocolError("line_too_long")
+        if timeline is not None and "first_byte" not in timeline:
+            timeline["first_byte"] = time.monotonic_ns()
+        if newline != -1:
+            if part[newline + 1:]:
+                raise ProtocolError("multiple_lines")
+            break
+    if timeline is not None:
+        timeline["body_finish"] = time.monotonic_ns()
+    try:
+        return payload.decode("ascii")
+    except UnicodeDecodeError as error:
+        raise ProtocolError("non_ascii_line") from error
+
+def validate_request_id(request_id):
+    if (
+        len(request_id.encode("ascii", errors="ignore"))
+        &gt; MAX_REQUEST_ID_BYTES
+        or REQUEST_ID_PATTERN.fullmatch(request_id) is None
+    ):
+        raise ProtocolError("invalid_request_id")
+    return request_id
+
+def parse_command(line):
+    fields = line.split()
+    if not fields:
+        raise ProtocolError("empty_command")
+    command = fields[0]
+    if command == "APPLY":
+        if len(fields) != 4:
+            raise ProtocolError("invalid_arity")
+        request_id = validate_request_id(fields[1])
+        if not fields[2].isascii() or not fields[2].isdecimal():
+            raise ProtocolError("invalid_delay_ms")
+        delay_ms = int(fields[2])
+        if not 0 &lt;= delay_ms &lt;= MAX_DELAY_MS:
+            raise ProtocolError("invalid_delay_ms")
+        if fields[3] not in {"reply", "drop"}:
+            raise ProtocolError("invalid_mode")
+        return command, request_id, delay_ms, fields[3]
+    if command == "LOOKUP":
+        if len(fields) != 2:
+            raise ProtocolError("invalid_arity")
+        return command, validate_request_id(fields[1])
+    if command == "STOP":
+        if len(fields) != 1:
+            raise ProtocolError("invalid_arity")
+        return (command,)
+    raise ProtocolError("unknown_command")
+
+class LocalFixture:
+    def __init__(self, injected_failure_id):
+        self.results = {}
+        self.injected_failure_id = injected_failure_id
+        self.injected_exceptions = []
+        self.stopped = threading.Event()
+        self.terminated = threading.Event()
+        self.listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.listener.bind(("127.0.0.1", 0))
+        self.listener.listen()
+        self.listener.settimeout(0.05)
+        self.port = self.listener.getsockname()[1]
+        # A non-daemon thread makes cleanup failures visible instead of hiding
+        # a leaked server at interpreter shutdown.
+        self.server = threading.Thread(
+            target=self.serve,
+            name="localhost-fixture",
+            daemon=False,
+        )
+
+    def start(self):
+        self.server.start()
+
+    def handle(self, connection, command):
+        if command[0] == "APPLY":
+            _, request_id, delay_ms, mode = command
+            if request_id == self.injected_failure_id:
+                raise RuntimeError("controlled handler failure")
+            self.results.setdefault(request_id, "applied")
+            time.sleep(delay_ms / 1000)
+            if mode == "reply":
                 connection.sendall(
-                    f"RESULT {request_id} {value}\n".encode("utf-8")
+                    f"RESULT {request_id} applied\n".encode("ascii")
                 )
-            elif command == "STOP":
-                stopped.set()
-                connection.sendall(b"STOPPED\n")
+        elif command[0] == "LOOKUP":
+            _, request_id = command
+            value = self.results.get(request_id, "missing")
+            connection.sendall(
+                f"RESULT {request_id} {value}\n".encode("ascii")
+            )
+        else:
+            self.stopped.set()
+            connection.sendall(b"STOPPED\n")
 
-server = threading.Thread(target=serve, name="localhost-fixture")
-server.start()
+    def serve(self):
+        try:
+            while not self.stopped.is_set():
+                try:
+                    connection, _ = self.listener.accept()
+                except TimeoutError:
+                    continue
+                except OSError:
+                    if self.stopped.is_set():
+                        break
+                    raise
+                # The accepted socket receives its own deadline immediately;
+                # a slow client therefore cannot retain the sole worker.
+                connection.settimeout(SOCKET_DEADLINE_SECONDS)
+                with connection:
+                    try:
+                        self.handle(
+                            connection,
+                            parse_command(receive_line(connection)),
+                        )
+                    except ProtocolError as error:
+                        connection.sendall(
+                            f"ERROR {error.code}\n".encode("ascii")
+                        )
+                    except Exception as error:
+                        self.injected_exceptions.append(type(error).__name__)
+                        connection.sendall(b"ERROR internal\n")
+        finally:
+            self.terminated.set()
 
-def request(request_id, resolver_mode, delay_ms=0, drop=False):
+    def close(self):
+        self.stopped.set()
+        try:
+            self.listener.close()
+        finally:
+            self.server.join(timeout=1)
+        if self.server.is_alive():
+            raise RuntimeError("localhost fixture did not stop")
+        if not self.terminated.is_set():
+            raise RuntimeError("localhost fixture termination not observed")
+
+def open_connection(port, connector=socket.create_connection):
+    return connector(("127.0.0.1", port), timeout=1)
+
+def send_line(port, payload, *, shutdown_write=False, send=True):
+    with open_connection(port) as connection:
+        if send:
+            connection.sendall(payload)
+        if shutdown_write:
+            connection.shutdown(socket.SHUT_WR)
+        return receive_line(connection, deadline_seconds=1)
+
+def rejection_code(port, payload=b"", **options):
+    response = send_line(port, payload, **options)
+    prefix, separator, code = response.partition(" ")
+    assert prefix == "ERROR" and separator
+    return code
+
+def request(port, request_id, resolver_mode, delay_ms=0, drop=False,
+            connector=socket.create_connection):
     timeline = {}
     timeline["dns_start"] = time.monotonic_ns()
     socket.getaddrinfo("localhost", port, type=socket.SOCK_STREAM)
@@ -111,65 +241,135 @@ def request(request_id, resolver_mode, delay_ms=0, drop=False):
     time.sleep(0.002 if resolver_mode == "cold" else 0.0001)
     timeline["dns_end"] = time.monotonic_ns()
     timeline["connect_start"] = time.monotonic_ns()
-    connection = socket.create_connection(("127.0.0.1", port), timeout=1)
-    timeline["connect_end"] = time.monotonic_ns()
-    timeline["tls_start"] = time.monotonic_ns()
-    time.sleep(0.0002)
-    timeline["tls_end"] = time.monotonic_ns()
-    mode = "drop" if drop else "reply"
-    connection.sendall(
-        f"APPLY {request_id} {delay_ms} {mode}\n".encode("utf-8")
-    )
-    first = connection.recv(1)
-    timeline["first_byte"] = time.monotonic_ns()
-    body = bytearray(first)
-    while first:
-        first = connection.recv(4096)
-        body.extend(first)
-    timeline["body_finish"] = time.monotonic_ns()
-    connection.close()
+    with open_connection(port, connector) as connection:
+        timeline["connect_end"] = time.monotonic_ns()
+        timeline["tls_start"] = time.monotonic_ns()
+        time.sleep(0.0002)
+        timeline["tls_end"] = time.monotonic_ns()
+        mode = "drop" if drop else "reply"
+        connection.sendall(
+            f"APPLY {request_id} {delay_ms} {mode}\n".encode("ascii")
+        )
+        try:
+            body = receive_line(connection, timeline)
+        except ProtocolError as error:
+            if not drop or error.code != "newline_required":
+                raise
+            now = time.monotonic_ns()
+            timeline.setdefault("first_byte", now)
+            timeline["body_finish"] = now
+            body = ""
     return {
         "request_id": request_id,
         "resolver_mode": resolver_mode,
         "monotonic_ns": timeline,
-        "body": body.decode("utf-8").strip(),
+        "body": body,
         "duration_ms": (
             timeline["body_finish"] - timeline["dns_start"]
         ) / 1_000_000,
     }
 
+fixture = LocalFixture(injected_failure_id="inject-error")
+fixture.start()
 baseline = {"cold": [], "warm": []}
-for mode in baseline:
-    for repeat in range(7):
-        baseline[mode].append(
-            request(f"{mode}-{repeat}", mode)
-        )
-baseline_values = [
-    sample["duration_ms"]
-    for samples in baseline.values()
-    for sample in samples
-]
-baseline_median_ms = statistics.median(baseline_values)
-
-delayed = request("delay-fixture", "warm", delay_ms=25)
-probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-probe.bind(("127.0.0.1", 0))
-closed_port = probe.getsockname()[1]
-probe.close()
-connection_failure = "not-observed"
+protocol_rejections = {}
+connection_failure = "not_injected"
+real_connector_calls = [0]
+real_connector_calls_at_refusal = None
+injector_calls = [0]
+ambiguous = None
+lookup_result = None
+delayed = None
 try:
-    socket.create_connection(("127.0.0.1", closed_port), timeout=0.2)
-except OSError:
-    connection_failure = "observed"
+    for mode in baseline:
+        for repeat in range(7):
+            baseline[mode].append(
+                request(fixture.port, f"{mode}-{repeat}", mode)
+            )
+    baseline_values = [
+        sample["duration_ms"]
+        for samples in baseline.values()
+        for sample in samples
+    ]
+    baseline_median_ms = statistics.median(baseline_values)
 
-ambiguous = request(
-    "order-001",
-    "warm",
-    drop=True,
-)
-with socket.create_connection(("127.0.0.1", port), timeout=1) as lookup:
-    lookup.sendall(b"LOOKUP order-001\n")
-    lookup_result = receive_line(lookup).split()[-1]
+    delayed = request(
+        fixture.port,
+        "delay-fixture",
+        "warm",
+        delay_ms=25,
+    )
+    protocol_rejections = {
+        "unterminated": rejection_code(
+            fixture.port,
+            b"LOOKUP never-finished",
+            shutdown_write=True,
+        ),
+        "oversized": rejection_code(
+            fixture.port,
+            b"X" * (MAX_LINE_BYTES + 1) + b"\n",
+        ),
+        "timeout": rejection_code(fixture.port, send=False),
+        "invalid_id": rejection_code(
+            fixture.port,
+            b"LOOKUP bad/id\n",
+        ),
+        "excessive_delay": rejection_code(
+            fixture.port,
+            b"APPLY too-slow 1001 reply\n",
+        ),
+        "invalid_arity": rejection_code(
+            fixture.port,
+            b"APPLY missing-mode 0\n",
+        ),
+        "invalid_mode": rejection_code(
+            fixture.port,
+            b"APPLY wrong-mode 0 maybe\n",
+        ),
+    }
+    assert send_line(
+        fixture.port,
+        b"APPLY inject-error 0 reply\n",
+    ) == "ERROR internal"
+
+    # The fault injector raises before the real connector can create a socket.
+    def real_connector(address, timeout):
+        real_connector_calls[0] += 1
+        return socket.create_connection(address, timeout=timeout)
+
+    def refused_connector(address, timeout):
+        del address, timeout
+        injector_calls[0] += 1
+        raise ConnectionRefusedError(
+            "controlled refusal before socket creation"
+        )
+    try:
+        request(
+            fixture.port,
+            "refused-fixture",
+            "warm",
+            connector=refused_connector,
+        )
+    except ConnectionRefusedError:
+        connection_failure = "injected_before_socket_creation"
+    real_connector_calls_at_refusal = real_connector_calls[0]
+    assert real_connector_calls_at_refusal == 0
+    assert injector_calls[0] == 1
+
+    ambiguous = request(
+        fixture.port,
+        "order-001",
+        "warm",
+        drop=True,
+        connector=real_connector,
+    )
+    lookup_result = send_line(
+        fixture.port,
+        b"LOOKUP order-001\n",
+    ).split()[-1]
+    assert send_line(fixture.port, b"STOP\n") == "STOPPED"
+finally:
+    fixture.close()
 
 budget = {
     "deadline_ms": 2000,
@@ -185,12 +385,8 @@ budget["worst_case_ms"] = sum(
     if name != "deadline_ms"
 )
 assert budget["worst_case_ms"] &lt;= budget["deadline_ms"]
-
-with socket.create_connection(("127.0.0.1", port), timeout=1) as control:
-    control.sendall(b"STOP\n")
-    receive_line(control)
-server.join(timeout=1)
-listener.close()
+assert ambiguous is not None
+assert delayed is not None
 
 print(json.dumps({
     "harness": HARNESS,
@@ -209,12 +405,32 @@ print(json.dumps({
     "faults": {
         "dependency_delay_ms": delayed["duration_ms"],
         "connection_failure": connection_failure,
+        "real_connector_calls": real_connector_calls_at_refusal,
+        "injector_calls": injector_calls[0],
     },
     "non_idempotent": {
         "request_id": "order-001",
         "first_response": ambiguous["body"] or "response-lost",
         "automatic_retry": "stopped",
         "lookup_result": lookup_result,
+    },
+    "protocol_security": {
+        "max_line_bytes": MAX_LINE_BYTES,
+        "socket_deadline_ms": int(SOCKET_DEADLINE_SECONDS * 1000),
+        "request_id_ascii_allowlist": REQUEST_ID_PATTERN.pattern,
+        "max_request_id_bytes": MAX_REQUEST_ID_BYTES,
+        "max_delay_ms": MAX_DELAY_MS,
+        "rejections": protocol_rejections,
+    },
+    "cleanup": {
+        "injected_exception": (
+            "observed"
+            if fixture.injected_exceptions == ["RuntimeError"]
+            else "not_observed"
+        ),
+        "server_stopped": fixture.terminated.is_set(),
+        "thread_alive": fixture.server.is_alive(),
+        "listener_closed": fixture.listener.fileno() == -1,
     },
 }, ensure_ascii=False, indent=2))
 PY</code></pre>
