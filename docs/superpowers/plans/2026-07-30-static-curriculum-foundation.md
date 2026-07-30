@@ -596,41 +596,29 @@ git commit -m "feat: validate deterministic learning roadmaps"
 
 - [ ] **Step 1: Write safety boundary tests**
 
-```python
-# tests/test_html_safety.py
-from __future__ import annotations
+Write `tests/test_html_safety.py` against the public API
+`validate_fragment(fragment) -> SafeHtml`. The contract must prove all of the
+following before implementation:
 
-import unittest
-
-from curriculum_builder.errors import CurriculumValidationError
-from curriculum_builder.html_safety import SafeHtml, validate_fragment
-
-
-class HtmlSafetyTests(unittest.TestCase):
-    def test_accepts_semantic_textbook_fragment(self) -> None:
-        fragment = "<section><h2>判断基準</h2><p>証拠を比較する。</p></section>"
-        self.assertEqual(validate_fragment(fragment), SafeHtml(fragment))
-
-    def test_rejects_scriptable_elements(self) -> None:
-        for fragment in (
-            "<script>alert(1)</script>",
-            "<iframe src='https://example.com'></iframe>",
-            "<form><input></form>",
-        ):
-            with self.subTest(fragment=fragment):
-                with self.assertRaises(CurriculumValidationError):
-                    validate_fragment(fragment)
-
-    def test_rejects_event_handlers_and_unsafe_urls(self) -> None:
-        for fragment in (
-            "<a onclick='run()'>x</a>",
-            "<a href='javascript:run()'>x</a>",
-            "<img src='https://tracker.example/x.png'>",
-        ):
-            with self.subTest(fragment=fragment):
-                with self.assertRaises(CurriculumValidationError):
-                    validate_fragment(fragment)
-```
+- `SafeHtml` is a frozen, slotted, comparable value object whose normal
+  constructor always fails; only `validate_fragment()` can issue one.
+- The input is an exact, non-empty `str`, preserves the accepted source
+  verbatim, allows only tab/LF/CR among C0 controls, and is bounded by both
+  character and UTF-8 byte counts.
+- Tags and attributes use immutable allowlists. Scriptable/remote-asset
+  elements, event handlers, `style`, unknown/duplicate/valueless attributes,
+  unsafe class/id tokens, duplicate IDs, invalid table values, and unsupported
+  self-closing syntax fail closed.
+- The fragment parser rejects comments, declarations, processing instructions,
+  malformed markup, stray/mismatched/unclosed tags, excessive nesting,
+  excessive attributes, and long attribute values with deterministic errors.
+- `href` is checked after character-reference decoding. Only safe relative or
+  fragment references and HTTPS URLs with a valid host are accepted;
+  non-HTTPS schemes, scheme-relative paths, backslashes, whitespace/control
+  obfuscation, credentials, invalid hosts, and invalid ports are rejected.
+- Mixed-case markup and encoded schemes are covered. Parser/Unicode failures
+  become `CurriculumValidationError`, and error strings never echo the complete
+  authored fragment.
 
 - [ ] **Step 2: Run safety tests and verify RED**
 
@@ -642,57 +630,17 @@ python3.13 -m unittest tests.test_html_safety -v
 
 Expected: import fails because `curriculum_builder.html_safety` does not exist.
 
-- [ ] **Step 3: Implement an allowlist parser**
+- [ ] **Step 3: Implement the bounded fail-closed allowlist parser**
 
-```python
-# curriculum_builder/html_safety.py
-from __future__ import annotations
-
-from dataclasses import dataclass
-from html.parser import HTMLParser
-from urllib.parse import urlparse
-
-from curriculum_builder.errors import CurriculumValidationError
-
-ALLOWED_TAGS = {
-    "a", "aside", "blockquote", "code", "dd", "details", "dfn", "div", "dl",
-    "dt", "em", "figcaption", "figure", "h2", "h3", "h4", "kbd", "li", "mark",
-    "ol", "p", "pre", "section", "small", "strong", "summary", "table", "tbody",
-    "td", "th", "thead", "tr", "ul",
-}
-GLOBAL_ATTRIBUTES = {"class", "id"}
-TAG_ATTRIBUTES = {
-    "a": {"href", "rel"},
-    "th": {"scope"},
-    "td": {"colspan", "rowspan"},
-}
-
-
-@dataclass(frozen=True, slots=True)
-class SafeHtml:
-    value: str
-
-
-class _FragmentParser(HTMLParser):
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag not in ALLOWED_TAGS:
-            raise CurriculumValidationError(f"disallowed HTML element: {tag}")
-        allowed = GLOBAL_ATTRIBUTES | TAG_ATTRIBUTES.get(tag, set())
-        for name, value in attrs:
-            if name.lower().startswith("on") or name not in allowed:
-                raise CurriculumValidationError(f"disallowed attribute: {tag}.{name}")
-            if name == "href":
-                parsed = urlparse(value or "")
-                if parsed.scheme and parsed.scheme != "https":
-                    raise CurriculumValidationError(f"unsafe URL scheme: {parsed.scheme}")
-
-
-def validate_fragment(fragment: str) -> SafeHtml:
-    parser = _FragmentParser(convert_charrefs=True)
-    parser.feed(fragment)
-    parser.close()
-    return SafeHtml(fragment)
-```
+Keep the implementation in `curriculum_builder/html_safety.py` and use only
+the Python standard library. Make all public allowlists immutable. Perform
+cheap type/empty/size/control checks before parsing, lexically restrict start
+and end tag syntax, then use `HTMLParser(convert_charrefs=True)` with an
+explicit open-tag stack and duplicate-ID set. Catch unexpected parser or
+Unicode exceptions at the trust boundary without including input content in
+the error. Construct `SafeHtml` only through a private issuer after every
+validation step succeeds; future renderers must call `validate_fragment()`
+instead of directly constructing trusted HTML.
 
 - [ ] **Step 4: Run the safety tests**
 
@@ -702,7 +650,7 @@ Run:
 python3.13 -m unittest tests.test_html_safety -v
 ```
 
-Expected: three tests pass.
+Expected at Task 6 completion: all 24 HTML trust-boundary tests pass.
 
 - [ ] **Step 5: Commit the authored-content trust boundary**
 
@@ -730,7 +678,7 @@ from __future__ import annotations
 from pathlib import Path
 import unittest
 
-from curriculum_builder.html_safety import SafeHtml
+from curriculum_builder.html_safety import validate_fragment
 from curriculum_builder.render import Renderer
 
 
@@ -743,7 +691,7 @@ class RendererTests(unittest.TestCase):
             output_path=Path("lessons/example/index.html"),
             title="<判断>",
             description="比較 & 選択",
-            content=SafeHtml("<section><h2>本文</h2></section>"),
+            content=validate_fragment("<section><h2>本文</h2></section>"),
         )
         self.assertIn("&lt;判断&gt;", html)
         self.assertIn("比較 &amp; 選択", html)
@@ -754,7 +702,7 @@ class RendererTests(unittest.TestCase):
             output_path=Path("lessons/example/index.html"),
             title="例",
             description="説明",
-            content=SafeHtml("<p>本文</p>"),
+            content=validate_fragment("<p>本文</p>"),
         )
         self.assertIn('href="../../styles.css"', html)
         self.assertIn('href="../../index.html"', html)
@@ -764,7 +712,7 @@ class RendererTests(unittest.TestCase):
         fragment = self.renderer.fragment(
             "catalog.html",
             text_values={"count": "<1140>"},
-            html_values={"sections": SafeHtml("<section>安全</section>")},
+            html_values={"sections": validate_fragment("<section>安全</section>")},
         )
         self.assertIn("&lt;1140&gt;", fragment.value)
         self.assertIn("<section>安全</section>", fragment.value)
@@ -790,7 +738,7 @@ from html import escape
 from pathlib import Path
 from string import Template
 
-from curriculum_builder.html_safety import SafeHtml
+from curriculum_builder.html_safety import SafeHtml, validate_fragment
 
 
 class Renderer:
@@ -827,7 +775,7 @@ class Renderer:
         )
         values = {key: escape(value) for key, value in text_values.items()}
         values.update({key: value.value for key, value in html_values.items()})
-        return SafeHtml(template.substitute(values))
+        return validate_fragment(template.substitute(values))
 ```
 
 ```html
@@ -1149,7 +1097,7 @@ import shutil
 from tempfile import TemporaryDirectory
 
 from curriculum_builder.catalog import load_catalog, load_repository_catalog
-from curriculum_builder.html_safety import SafeHtml
+from curriculum_builder.html_safety import SafeHtml, validate_fragment
 from curriculum_builder.render import Renderer
 
 
@@ -1165,7 +1113,7 @@ def _catalog_content(items: tuple[object, ...]) -> SafeHtml:
             for item in groups[domain]
         )
         sections.append(f"<section><h2>{escape(domain)}</h2><ol>{entries}</ol></section>")
-    return SafeHtml("".join(sections))
+    return validate_fragment("".join(sections))
 
 
 def build_site(
@@ -1217,7 +1165,7 @@ def build_site(
         roadmap_content = renderer.fragment(
             "roadmap.html",
             text_values={},
-            html_values={"stages": SafeHtml(nodes)},
+            html_values={"stages": validate_fragment(nodes)},
         )
         (stage / "roadmap" / "index.html").write_text(
             renderer.page(
