@@ -34,6 +34,23 @@ def legacy_source(lessons: list[dict[str, object]]) -> dict[str, object]:
 
 
 class CatalogImportTests(unittest.TestCase):
+    def test_writer_fchmod_and_file_fsync_fail_before_publish(self) -> None:
+        document = {"version": 1, "generatedFrom": "source", "sourceSha256": "a55a0d0b1cfa3773031e787c2ce7ca0df34534e16a70b65ed1baa91975c82da8", "items": [{**lesson(), "coreLessonId": None}]}; document["items"][0].pop("path")
+        for target in ("fchmod", "fsync"):
+            with self.subTest(target=target), TemporaryDirectory(dir=Path.cwd()) as directory:
+                output = Path(directory) / "catalog.json"; output.write_bytes(b"old")
+                patch_target = f"tools.import_catalog.os.{target}"
+                with patch(patch_target, side_effect=OSError(f"{target} failed")), patch("tools.import_catalog.os.replace") as replace:
+                    with self.assertRaisesRegex(OSError, f"{target} failed"): _write_atomic(output, document)
+                self.assertEqual(replace.call_count, 0); self.assertEqual(output.read_bytes(), b"old"); self.assertEqual(list(output.parent.glob(".catalog-*.tmp")), [])
+
+    def test_writer_reports_cleanup_failure_with_write_failure_as_cause(self) -> None:
+        document = {"version": 1, "generatedFrom": "source", "sourceSha256": "a55a0d0b1cfa3773031e787c2ce7ca0df34534e16a70b65ed1baa91975c82da8", "items": [{**lesson(), "coreLessonId": None}]}; document["items"][0].pop("path")
+        with TemporaryDirectory(dir=Path.cwd()) as directory:
+            output = Path(directory) / "catalog.json"; output.write_bytes(b"old")
+            with patch("tools.import_catalog._write_all", side_effect=OSError("write failed")), patch("tools.import_catalog._cleanup_temp", side_effect=OSError("cleanup failed")):
+                with self.assertRaisesRegex(RuntimeError, "catalog temporary cleanup failed") as raised: _write_atomic(output, document)
+            self.assertEqual(str(raised.exception.__cause__), "write failed"); self.assertEqual(output.read_bytes(), b"old")
     def test_writer_durability_events_are_ordered_before_publish(self) -> None:
         document = {"version": 1, "generatedFrom": "source", "sourceSha256": "a55a0d0b1cfa3773031e787c2ce7ca0df34534e16a70b65ed1baa91975c82da8", "items": [{**lesson(), "coreLessonId": None}]}; document["items"][0].pop("path")
         with TemporaryDirectory(dir=Path.cwd()) as directory:
