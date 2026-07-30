@@ -9,11 +9,26 @@ import unittest
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 STYLESHEET_PATH = REPOSITORY_ROOT / "static" / "styles.css"
 TEMPLATE_ROOT = REPOSITORY_ROOT / "templates"
+FOUNDATION_PLAN_PATH = (
+    REPOSITORY_ROOT
+    / "docs"
+    / "superpowers"
+    / "plans"
+    / "2026-07-30-static-curriculum-foundation.md"
+)
 
 _HEX_COLOR = re.compile(r"#[0-9a-fA-F]{6}\Z")
 _CUSTOM_PROPERTY = re.compile(
     r"(?m)^\s*(--[a-z0-9-]+)\s*:\s*([^;]+);"
 )
+_RESOURCE_IMAGE_FUNCTION = re.compile(
+    r"(?i)(?<![a-z0-9_-])(?:-webkit-)?image(?:-set)?\s*\("
+)
+
+
+def _assert_local_only_css(css: str) -> None:
+    if _RESOURCE_IMAGE_FUNCTION.search(css) is not None:
+        raise AssertionError("resource-bearing image function is not allowed")
 
 
 def _relative_luminance(channel: int) -> float:
@@ -97,6 +112,20 @@ class StyleContractTests(unittest.TestCase):
         # dependency-bearing imports and url() values are rejected above.
         self.assertNotRegex(self.css, r"(?i)javascript:")
         self.assertLess(len(self.raw_css), 32_768)
+        _assert_local_only_css(self.css)
+        for resource_function in (
+            'image-set("https://evil.example/a.png" 1x)',
+            '-webkit-image-set("https://evil.example/a.png" 1x)',
+            'image("https://evil.example/a.png")',
+        ):
+            with self.subTest(resource_function=resource_function):
+                with self.assertRaisesRegex(
+                    AssertionError,
+                    "resource-bearing image function",
+                ):
+                    _assert_local_only_css(
+                        f"{self.css}\na {{ background-image: {resource_function}; }}"
+                    )
 
     def test_has_balanced_comments_and_braces(self) -> None:
         self.assertEqual(self.css.count("/*"), self.css.count("*/"))
@@ -250,9 +279,32 @@ class StyleContractTests(unittest.TestCase):
             ".catalog-card__title",
             ".catalog-card__list",
             ".prerequisite-text",
+            ".prerequisite-text > strong",
             "footer",
         ):
             self.assertIn(selector, self.css)
+        self.assertNotRegex(
+            self.css,
+            r"\.prerequisite-text::before\s*\{[^}]*content:\s*[\"']前提",
+        )
+        task_9_plan = FOUNDATION_PLAN_PATH.read_text(encoding="utf-8").split(
+            "### Task 9:", 1
+        )[1].split("### Task 10:", 1)[0]
+        self.assertIn(
+            '<p class="prerequisite-text"><strong>前提:</strong> ',
+            task_9_plan,
+        )
+        self.assertIn('node["prerequisites"]', task_9_plan)
+        for title, prerequisite in (
+            ("Think", "なし"),
+            ("Build", "Think"),
+            ("Run", "Build"),
+            ("Lead", "Run"),
+        ):
+            self.assertIn(
+                f'("{title}", "{prerequisite}"),',
+                task_9_plan,
+            )
         self.assertIn("max-inline-size: var(--measure-reading)", self.css)
         self.assertIn("overflow-wrap: anywhere", self.css)
         self.assertRegex(self.css, r"font-size:\s*clamp\(")
@@ -280,8 +332,14 @@ class StyleContractTests(unittest.TestCase):
         connector_body = connector.group("body") if connector is not None else ""
         self.assertRegex(connector_body, r'content:\s*""')
         self.assertRegex(connector_body, r"pointer-events:\s*none")
-        self.assertRegex(connector_body, r"border(?:-block-start|-top):")
-        self.assertIn("linear-gradient(", self.css)
+        self.assertRegex(connector_body, r"clip-path:\s*polygon\(")
+        self.assertRegex(connector_body, r"background:\s*var\(--color-warm\)")
+        forced_colors = self.css.split("@media (forced-colors: active)", 1)[1]
+        self.assertRegex(
+            forced_colors,
+            r"\.learning-stage:not\(:last-child\)::after[^{]*\{[^}]*"
+            r"background:\s*CanvasText",
+        )
         self.assertNotRegex(self.css, r"(?i)@keyframes\b|animation\s*:|transition\s*:")
 
     def test_mobile_layout_is_single_column_and_hides_graph_connector(self) -> None:
@@ -310,6 +368,12 @@ class StyleContractTests(unittest.TestCase):
         self.assertIn("text-decoration-line: underline", self.css)
         self.assertIn("min-block-size: 2.75rem", self.css)
         self.assertIn("border", self.css)
+        brand = re.search(r"(?m)^\.brand\s*\{(?P<body>[^}]*)\}", self.css)
+        self.assertIsNotNone(brand)
+        brand_body = brand.group("body") if brand is not None else ""
+        self.assertRegex(brand_body, r"display:\s*inline-flex")
+        self.assertRegex(brand_body, r"align-items:\s*center")
+        self.assertRegex(brand_body, r"min-block-size:\s*2\.75rem")
 
     def test_supports_forced_colors_and_reduced_motion_preferences(self) -> None:
         self.assertIn("@media (forced-colors: active)", self.css)

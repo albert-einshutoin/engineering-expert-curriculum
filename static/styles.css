@@ -200,6 +200,9 @@ a:hover {
 }
 
 .brand {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 2.75rem;
   color: var(--color-ink);
   font-size: clamp(1.05rem, 0.95rem + 0.5vw, 1.35rem);
   font-weight: 850;
@@ -447,16 +450,17 @@ mark {
   inset-block-start: 2.35rem;
   inset-inline-end: calc(var(--space-4) * -1);
   inline-size: var(--space-4);
-  block-size: 0.6rem;
-  border-block-start: 0.2rem solid var(--color-warm);
-  border-inline-end: 0.3rem solid var(--color-warm);
-  background-image: linear-gradient(
-    90deg,
-    var(--color-warm) 0 32%,
-    transparent 32% 62%
+  block-size: 0.8rem;
+  background: var(--color-warm);
+  clip-path: polygon(
+    0 35%,
+    70% 35%,
+    70% 0,
+    100% 50%,
+    70% 100%,
+    70% 65%,
+    0 65%
   );
-  background-size: 0.55rem 0.18rem;
-  background-repeat: repeat-x;
   pointer-events: none;
 }
 
@@ -476,8 +480,7 @@ mark {
   font-weight: 650;
 }
 
-.prerequisite-text::before {
-  content: "前提: ";
+.prerequisite-text > strong {
   color: var(--color-ink);
   font-weight: 850;
 }
@@ -553,9 +556,12 @@ footer p {
   }
 
   .learning-stage::before,
-  .learning-stage:not(:last-child)::after,
   :where(a, summary, [tabindex]):focus-visible {
     border-color: CanvasText;
+  }
+
+  .learning-stage:not(:last-child)::after {
+    background: CanvasText;
   }
 }
 
