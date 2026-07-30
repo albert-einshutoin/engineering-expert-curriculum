@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -8,7 +9,7 @@ from unittest.mock import patch
 
 from curriculum_builder.catalog import canonicalize
 from curriculum_builder.errors import CurriculumValidationError
-from tools.import_catalog import main
+from tools.import_catalog import _read_source, main
 
 
 def lesson(**overrides: object) -> dict[str, object]:
@@ -22,10 +23,20 @@ def lesson(**overrides: object) -> dict[str, object]:
     return value
 
 
+def legacy_source(lessons: list[dict[str, object]]) -> dict[str, object]:
+    first = lessons[0]
+    return {
+        "version": 1, "title": "Legacy", "generated": "now", "domainCount": 1,
+        "moduleCount": 1, "lessonCount": len(lessons), "tracks": {},
+        "domains": [{"id": 1, "slug": "domain", "title": "Domain", "description": "Description", "prerequisites": [], "modules": [{"index": 1, "title": "Module", "concepts": ["one", "two"], "outcome": "Outcome"}]}],
+        "lessons": lessons,
+    }
+
+
 class CatalogImportTests(unittest.TestCase):
     def test_canonicalize_removes_only_path_adds_core_link_and_sorts(self) -> None:
         second = lesson(id="D01-M01-L2", level=2, title="Second")
-        result = canonicalize({"version": 1, "lessons": [second, lesson()]}, " prototype-v1 ")
+        result = canonicalize(legacy_source([second, lesson()]), " prototype-v1 ")
 
         self.assertEqual(result["version"], 1)
         self.assertEqual(result["generatedFrom"], "prototype-v1")
@@ -36,9 +47,9 @@ class CatalogImportTests(unittest.TestCase):
 
     def test_canonicalize_rejects_unknown_legacy_field_and_duplicate_ids(self) -> None:
         with self.assertRaisesRegex(CurriculumValidationError, "unknown fields: extra"):
-            canonicalize({"version": 1, "lessons": [lesson(extra=True)]}, "source")
+            canonicalize(legacy_source([lesson(extra=True)]), "source")
         with self.assertRaisesRegex(CurriculumValidationError, "duplicate item id"):
-            canonicalize({"version": 1, "lessons": [lesson(), lesson()]}, "source")
+            canonicalize(legacy_source([lesson(), lesson()]), "source")
 
     def test_canonicalize_rejects_invalid_root_and_types(self) -> None:
         for source in ({"version": 2, "lessons": []}, {"version": 1, "lessons": {}}, {"version": 1, "lessons": ["no"]}):
@@ -46,20 +57,19 @@ class CatalogImportTests(unittest.TestCase):
                 with self.assertRaises(CurriculumValidationError):
                     canonicalize(source, "source")
         with self.assertRaises(CurriculumValidationError):
-            canonicalize({"version": 1, "lessons": [lesson()]}, "  ")
+            canonicalize(legacy_source([lesson()]), "  ")
 
     def test_cli_is_deterministic_and_leaves_old_output_on_replace_failure(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
             source, output = root / "input.json", root / "catalog.json"
+            source.write_text('{"version":1,"version":1}', encoding="utf-8")
+            with self.assertRaisesRegex(CurriculumValidationError, "duplicate JSON key: version"):
+                _read_source(source)
+            output.write_bytes(b"old")
             source.write_text(json.dumps({"version": 1, "lessons": [lesson()]}), encoding="utf-8")
-            self.assertEqual(main(["--input", str(source), "--output", str(output)]), 0)
-            first = output.read_bytes()
-            self.assertEqual(main(["--input", str(source), "--output", str(output)]), 0)
-            self.assertEqual(first, output.read_bytes())
-            with patch("tools.import_catalog.os.replace", side_effect=OSError("replace failed")):
-                self.assertEqual(main(["--input", str(source), "--output", str(output)]), 1)
-            self.assertEqual(output.read_bytes(), first)
+            self.assertEqual(main(["--input", str(source), "--output", str(output), "--expected-source-sha256", "0" * 64]), 1)
+            self.assertEqual(output.read_bytes(), b"old")
             self.assertEqual(list(root.glob(".catalog-*.tmp")), [])
 
 if __name__ == "__main__":

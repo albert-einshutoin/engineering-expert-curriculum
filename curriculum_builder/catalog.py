@@ -1,115 +1,150 @@
-"""Canonical catalog conversion and strict on-disk catalog loading."""
+"""Strict conversion and loading for the version-controlled curriculum catalog."""
 
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import cast
+from typing import Any
 
 from .errors import CurriculumValidationError
 from .models import CatalogItem
 
+LEGACY_SOURCE_SHA256 = "a55a0d0b1cfa3773031e787c2ce7ca0df34534e16a70b65ed1baa91975c82da8"
+_LEGACY_ROOT_FIELDS = {"version", "title", "generated", "domainCount", "moduleCount", "lessonCount", "tracks", "domains", "lessons"}
+_DOMAIN_FIELDS = {"id", "slug", "title", "description", "prerequisites", "modules"}
+_MODULE_FIELDS = {"index", "title", "concepts", "outcome"}
+_LEGACY_LESSON_FIELDS = set(("id", "title", "domainId", "domainTitle", "domainSlug", "moduleIndex", "moduleTitle", "level", "levelLabel", "concepts", "outcome", "path"))
+
+
+def _pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise CurriculumValidationError(f"duplicate JSON key: {key}")
+        result[key] = value
+    return result
+
+
+def strict_json_loads(raw: bytes, path: str | Path) -> object:
+    """Decode UTF-8 JSON while rejecting duplicate keys at every object depth."""
+    try:
+        return json.loads(raw.decode("utf-8"), object_pairs_hook=_pairs)
+    except (UnicodeDecodeError, json.JSONDecodeError, CurriculumValidationError) as error:
+        raise CurriculumValidationError(f"{path}: {error}") from error
+
 
 def _item_dict(item: CatalogItem) -> dict[str, object]:
-    return {
-        "id": item.id,
-        "title": item.title,
-        "domainId": item.domain_id,
-        "domainTitle": item.domain_title,
-        "domainSlug": item.domain_slug,
-        "moduleIndex": item.module_index,
-        "moduleTitle": item.module_title,
-        "level": item.level,
-        "levelLabel": item.level_label,
-        "concepts": list(item.concepts),
-        "outcome": item.outcome,
-        "coreLessonId": item.core_lesson_id,
-    }
+    return {"id": item.id, "title": item.title, "domainId": item.domain_id, "domainTitle": item.domain_title, "domainSlug": item.domain_slug, "moduleIndex": item.module_index, "moduleTitle": item.module_title, "level": item.level, "levelLabel": item.level_label, "concepts": list(item.concepts), "outcome": item.outcome, "coreLessonId": item.core_lesson_id}
 
 
-def _require_generated_from(value: object) -> str:
+def _require_text(value: object, label: str) -> str:
     if not isinstance(value, str) or not value.strip():
-        raise CurriculumValidationError("generatedFrom must be a non-empty string")
+        raise CurriculumValidationError(f"{label} must be a non-empty string")
     return value.strip()
 
 
-def canonicalize(source: Mapping[object, object], generated_from: str) -> dict[str, object]:
-    """Convert legacy version-one lessons into normalized, sorted catalog rows."""
-    if not isinstance(source, Mapping):
-        raise CurriculumValidationError("legacy root must be an object")
-    if source.get("version") != 1 or isinstance(source.get("version"), bool):
+def _require_int(value: object, label: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise CurriculumValidationError(f"{label} must be an integer")
+    return value
+
+
+def _exact(value: Mapping[object, object], expected: set[str], label: str) -> None:
+    if set(value) != expected:
+        unknown = sorted(set(value) - expected)
+        if unknown:
+            raise CurriculumValidationError(f"unknown fields: {', '.join(unknown)}")
+        raise CurriculumValidationError(f"{label} fields are invalid")
+
+
+def _validate_legacy(source: Mapping[object, object], expected_lesson_count: int | None, expected_domain_count: int | None, expected_module_count: int | None) -> list[CatalogItem]:
+    _exact(source, _LEGACY_ROOT_FIELDS, "legacy root")
+    if source["version"] != 1 or isinstance(source["version"], bool):
         raise CurriculumValidationError("legacy version must be 1")
-    lessons = source.get("lessons")
-    if not isinstance(lessons, list):
-        raise CurriculumValidationError("legacy lessons must be a list")
-
+    _require_text(source["title"], "legacy title")
+    _require_text(source["generated"], "legacy generated")
+    domains, lessons, tracks = source["domains"], source["lessons"], source["tracks"]
+    if not isinstance(domains, list) or not isinstance(lessons, list) or not isinstance(tracks, Mapping):
+        raise CurriculumValidationError("legacy domains, lessons, and tracks have invalid types")
+    domain_count, module_count, lesson_count = (_require_int(source[k], k) for k in ("domainCount", "moduleCount", "lessonCount"))
+    if domain_count != len(domains) or lesson_count != len(lessons):
+        raise CurriculumValidationError("legacy declared counts do not match data")
+    if expected_lesson_count is not None and lesson_count != expected_lesson_count:
+        raise CurriculumValidationError(f"legacy lessonCount must be {expected_lesson_count}")
+    if expected_domain_count is not None and domain_count != expected_domain_count:
+        raise CurriculumValidationError(f"legacy domainCount must be {expected_domain_count}")
+    declarations: dict[tuple[int, int], Mapping[object, object]] = {}
+    for domain in domains:
+        if not isinstance(domain, Mapping):
+            raise CurriculumValidationError("legacy domain must be an object")
+        _exact(domain, _DOMAIN_FIELDS, "legacy domain")
+        domain_id = _require_int(domain["id"], "domain id")
+        _require_text(domain["slug"], "domain slug"); _require_text(domain["title"], "domain title")
+        _require_text(domain["description"], "domain description")
+        if not isinstance(domain["prerequisites"], list) or not isinstance(domain["modules"], list):
+            raise CurriculumValidationError("legacy domain declarations have invalid types")
+        for module in domain["modules"]:
+            if not isinstance(module, Mapping): raise CurriculumValidationError("legacy module must be an object")
+            _exact(module, _MODULE_FIELDS, "legacy module")
+            module_index = _require_int(module["index"], "module index")
+            if (domain_id, module_index) in declarations: raise CurriculumValidationError("duplicate legacy module declaration")
+            _require_text(module["title"], "module title"); _require_text(module["outcome"], "module outcome")
+            if not isinstance(module["concepts"], list): raise CurriculumValidationError("module concepts must be a list")
+            declarations[(domain_id, module_index)] = module
+    if module_count != len(declarations): raise CurriculumValidationError("legacy moduleCount does not match modules")
+    if expected_module_count is not None and module_count != expected_module_count:
+        raise CurriculumValidationError(f"legacy moduleCount must be {expected_module_count}")
+    if not all(isinstance(key, str) and isinstance(value, list) for key, value in tracks.items()):
+        raise CurriculumValidationError("legacy tracks must map names to lists")
     items: list[CatalogItem] = []
-    for index, raw_lesson in enumerate(lessons):
-        if not isinstance(raw_lesson, Mapping):
-            raise CurriculumValidationError(f"legacy lesson {index} must be an object")
-        raw = dict(raw_lesson)
-        raw.pop("path", None)
-        raw.setdefault("coreLessonId", None)
-        try:
-            items.append(CatalogItem.from_dict(raw))
-        except CurriculumValidationError as error:
-            raise CurriculumValidationError(f"legacy lesson {index}: {error}") from error
-    return _catalog_document(items, _require_generated_from(generated_from), require_nonempty=False)
+    for index, lesson in enumerate(lessons):
+        if not isinstance(lesson, Mapping): raise CurriculumValidationError(f"legacy lesson {index} must be an object")
+        _exact(lesson, _LEGACY_LESSON_FIELDS, "legacy lesson")
+        _require_text(lesson["path"], "legacy path")
+        raw = dict(lesson); raw.pop("path")
+        try: item = CatalogItem.from_dict({**raw, "coreLessonId": None})
+        except CurriculumValidationError as error: raise CurriculumValidationError(f"legacy lesson {index}: {error}") from error
+        module = declarations.get((item.domain_id, item.module_index))
+        if module is None or (item.domain_title, item.domain_slug, item.module_title, list(item.concepts), item.outcome) != (next(d for d in domains if d["id"] == item.domain_id)["title"], next(d for d in domains if d["id"] == item.domain_id)["slug"], module["title"], module["concepts"], module["outcome"]):
+            raise CurriculumValidationError(f"legacy lesson {index} does not match declarations")
+        items.append(item)
+    return items
 
 
-def _catalog_document(
-    items: list[CatalogItem], generated_from: str, *, require_nonempty: bool
-) -> dict[str, object]:
-    if require_nonempty and not items:
-        raise CurriculumValidationError("items must not be empty")
-    ids = [item.id for item in items]
-    if len(set(ids)) != len(ids):
-        raise CurriculumValidationError("duplicate item id")
-    return {
-        "version": 1,
-        "generatedFrom": generated_from,
-        "items": [_item_dict(item) for item in sorted(items, key=lambda item: item.id)],
-    }
+def canonicalize(source: Mapping[object, object], generated_from: str, *, expected_lesson_count: int | None = None, expected_domain_count: int | None = None, expected_module_count: int | None = None) -> dict[str, object]:
+    if not isinstance(source, Mapping): raise CurriculumValidationError("legacy root must be an object")
+    return _catalog_document(_validate_legacy(source, expected_lesson_count, expected_domain_count, expected_module_count), _require_text(generated_from, "generatedFrom"), require_nonempty=False)
+
+
+def _catalog_document(items: Sequence[CatalogItem], generated_from: str, *, require_nonempty: bool) -> dict[str, object]:
+    if require_nonempty and not items: raise CurriculumValidationError("items must not be empty")
+    if len({item.id for item in items}) != len(items): raise CurriculumValidationError("duplicate item id")
+    return {"version": 1, "generatedFrom": generated_from, "items": [_item_dict(item) for item in sorted(items, key=lambda item: item.id)]}
+
+
+def serialize_catalog_document(items: Sequence[CatalogItem | Mapping[str, object]], generated_from: str) -> bytes:
+    normalized = [item if isinstance(item, CatalogItem) else CatalogItem.from_dict(item) for item in items]
+    document = _catalog_document(normalized, _require_text(generated_from, "generatedFrom"), require_nonempty=False)
+    return (json.dumps(document, ensure_ascii=False, indent=2, sort_keys=False) + "\n").encode("utf-8")
 
 
 def load_catalog(path: str | Path) -> tuple[CatalogItem, ...]:
-    """Load a complete canonical catalog, rejecting any malformed or drifting shape."""
     catalog_path = Path(path)
+    try: raw = catalog_path.read_bytes()
+    except OSError as error: raise CurriculumValidationError(f"{catalog_path}: cannot read catalog: {error}") from error
+    document = strict_json_loads(raw, catalog_path)
+    if not isinstance(document, Mapping): raise CurriculumValidationError(f"{catalog_path}: catalog root must be an object")
+    if set(document) != {"version", "generatedFrom", "items"}: raise CurriculumValidationError(f"{catalog_path}: catalog root fields must be exactly version, generatedFrom, items")
+    if document["version"] != 1 or isinstance(document["version"], bool): raise CurriculumValidationError(f"{catalog_path}: catalog version must be 1")
+    generated_from = _require_text(document["generatedFrom"], "generatedFrom")
+    if not isinstance(document["items"], list): raise CurriculumValidationError(f"{catalog_path}: items must be a list")
+    try: items = tuple(CatalogItem.from_dict(value) if isinstance(value, Mapping) else (_ for _ in ()).throw(CurriculumValidationError("item must be an object")) for value in document["items"])
+    except CurriculumValidationError as error: raise CurriculumValidationError(f"{catalog_path}: {error}") from error
     try:
-        with catalog_path.open(encoding="utf-8") as file:
-            document = json.load(file)
-    except (OSError, json.JSONDecodeError) as error:
-        raise CurriculumValidationError(f"{catalog_path}: cannot read catalog: {error}") from error
-    if not isinstance(document, Mapping):
-        raise CurriculumValidationError(f"{catalog_path}: catalog root must be an object")
-    expected = {"version", "generatedFrom", "items"}
-    if set(document) != expected:
-        raise CurriculumValidationError(f"{catalog_path}: catalog root fields must be exactly version, generatedFrom, items")
-    if document["version"] != 1 or isinstance(document["version"], bool):
-        raise CurriculumValidationError(f"{catalog_path}: catalog version must be 1")
-    try:
-        _require_generated_from(document["generatedFrom"])
+        _catalog_document(items, generated_from, require_nonempty=True)
     except CurriculumValidationError as error:
         raise CurriculumValidationError(f"{catalog_path}: {error}") from error
-    raw_items = document["items"]
-    if not isinstance(raw_items, list):
-        raise CurriculumValidationError(f"{catalog_path}: items must be a list")
-    items: list[CatalogItem] = []
-    for index, raw in enumerate(raw_items):
-        if not isinstance(raw, Mapping):
-            raise CurriculumValidationError(f"{catalog_path}: item {index} must be an object")
-        try:
-            items.append(CatalogItem.from_dict(cast(Mapping[object, object], raw)))
-        except CurriculumValidationError as error:
-            raise CurriculumValidationError(f"{catalog_path}: item {index}: {error}") from error
-    try:
-        _catalog_document(
-            items, _require_generated_from(document["generatedFrom"]), require_nonempty=True
-        )
-    except CurriculumValidationError as error:
-        raise CurriculumValidationError(f"{catalog_path}: {error}") from error
-    ids = [item.id for item in items]
-    if ids != sorted(ids):
-        raise CurriculumValidationError(f"{catalog_path}: items must be sorted by id")
-    return tuple(items)
+    if tuple(item.id for item in items) != tuple(sorted(item.id for item in items)): raise CurriculumValidationError(f"{catalog_path}: items must be sorted by id")
+    if raw != serialize_catalog_document(items, generated_from): raise CurriculumValidationError(f"{catalog_path}: catalog bytes are not canonical")
+    return items
