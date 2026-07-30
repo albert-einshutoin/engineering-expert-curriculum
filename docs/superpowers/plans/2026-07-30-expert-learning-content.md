@@ -581,9 +581,13 @@ mutations of the first H2 and Big-O definition also failed the canonical
 tests. A second review corrected the SPEC reference to the official H1
 `SPEC CPU®2017 Run and Reporting Rules`; the old title failed the source
 oracle before the lesson metadata was changed. The final full suite passed 334
-tests, and two repository-external builds emitted the five lesson pages,
-index, and 1,140 catalog items with the same aggregate SHA-256
-`fbde24b2f31d3e9247db85aced9a1207b92820c7e6863081b3c3ca52eeb55252`.
+tests, and two repository-external builds each emitted 10 regular artifacts,
+including five lesson pages and 1,140 catalog items. Both produced aggregate
+SHA-256
+`65c901065d64860f4b899a979bff10e52a868f01d316ff310cd1f9598e84014e`:
+sort every artifact's UTF-8 relative POSIX path bytewise, then feed
+`path + NUL + decimal byte length + NUL + file bytes` to SHA-256. The verifier
+included all artifacts and rejected symlinks and non-regular entries.
 The initial content was committed as `b385baf`; the review fixes and regression
 contracts were committed as `a1e5a94`.
 
