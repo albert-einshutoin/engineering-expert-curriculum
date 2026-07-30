@@ -145,6 +145,151 @@ FOUNDATION_SOURCES = {
         ),
     ),
 }
+BUILD_SOURCES = {
+    "core-06-requirements-domain-modeling": (
+        (
+            "ISO/IEC/IEEE 29148:2018 - Systems and software engineering — "
+            "Life cycle processes — Requirements engineering",
+            "https://www.iso.org/standard/72089.html",
+            "standard",
+        ),
+        (
+            "NASA Systems Engineering Handbook: Appendix C — "
+            "How to Write a Good Requirement",
+            "https://www.nasa.gov/reference/"
+            "system-engineering-handbook-appendix/",
+            "primary",
+        ),
+        (
+            "Domain-Driven Design Reference: Definitions and Pattern "
+            "Summaries",
+            "https://www.domainlanguage.com/wp-content/uploads/2016/05/"
+            "DDD_Reference_2015-03.pdf",
+            "primary",
+        ),
+    ),
+    "core-07-api-contracts-evolution": (
+        (
+            "RFC 9110: HTTP Semantics",
+            "https://www.rfc-editor.org/rfc/rfc9110.html",
+            "standard",
+        ),
+        (
+            "OpenAPI Specification v3.2.0",
+            "https://spec.openapis.org/oas/v3.2.0.html",
+            "standard",
+        ),
+        (
+            "JSON Schema Validation: A Vocabulary for Structural "
+            "Validation of JSON",
+            "https://json-schema.org/draft/2020-12/"
+            "json-schema-validation",
+            "standard",
+        ),
+        (
+            "AIP-180: Backwards compatibility",
+            "https://google.aip.dev/180",
+            "primary",
+        ),
+        (
+            "RFC 9457: Problem Details for HTTP APIs",
+            "https://www.rfc-editor.org/rfc/rfc9457.html",
+            "standard",
+        ),
+    ),
+    "core-08-modularity-architecture-decisions": (
+        (
+            "On the Criteria To Be Used in Decomposing Systems into "
+            "Modules",
+            "https://doi.org/10.1145/361598.361623",
+            "primary",
+        ),
+        (
+            "ISO/IEC/IEEE 42010:2022 - Software, systems and enterprise — "
+            "Architecture description",
+            "https://www.iso.org/standard/74393.html",
+            "standard",
+        ),
+        (
+            "Documenting Software Architectures: Views and Beyond, "
+            "Second Edition",
+            "https://www.sei.cmu.edu/library/"
+            "documenting-software-architectures-views-and-beyond-"
+            "second-edition/",
+            "primary",
+        ),
+        (
+            "MADR 4.0.0 — The Markdown Architectural Decision Records",
+            "https://adr.github.io/madr/",
+            "primary",
+        ),
+    ),
+    "core-09-testing-strategy-tdd": (
+        (
+            "ISTQB Certified Tester Foundation Level Syllabus v4.0.1",
+            "https://istqb.org/wp-content/uploads/2024/11/"
+            "ISTQB_CTFL_Syllabus_v4.0.1.pdf",
+            "standard",
+        ),
+        (
+            "Test Driven Development: By Example",
+            "https://www.informit.com/store/"
+            "test-driven-development-by-example-9780321146533",
+            "primary",
+        ),
+        (
+            "An Empirical Analysis of Flaky Tests",
+            "https://doi.org/10.1145/2635868.2635920",
+            "peer-reviewed",
+        ),
+        (
+            "Metamorphic Testing: A New Approach for Generating Next "
+            "Test Cases",
+            "https://www.cse.ust.hk/~scc/publ/"
+            "CS98-01-metamorphictesting.pdf",
+            "primary",
+        ),
+        (
+            "Pact Specification",
+            "https://docs.pact.io/getting_started/specification",
+            "primary",
+        ),
+    ),
+    "core-10-secure-by-design": (
+        (
+            "Secure Software Development Framework (SSDF) Version 1.1: "
+            "Recommendations for Mitigating the Risk of Software "
+            "Vulnerabilities",
+            "https://csrc.nist.gov/pubs/sp/800/218/final",
+            "standard",
+        ),
+        (
+            "Shifting the Balance of Cybersecurity Risk: Principles and "
+            "Approaches for Secure by Design Software",
+            "https://www.cisa.gov/sites/default/files/2023-10/"
+            "Shifting-the-Balance-of-Cybersecurity-Risk-Principles-and-"
+            "Approaches-for-Secure-by-Design-Software.pdf",
+            "primary",
+        ),
+        (
+            "Threat Modeling Cheat Sheet",
+            "https://cheatsheetseries.owasp.org/cheatsheets/"
+            "Threat_Modeling_Cheat_Sheet.html",
+            "primary",
+        ),
+        (
+            "OWASP Application Security Verification Standard 5.0.0",
+            "https://github.com/OWASP/ASVS/releases/tag/v5.0.0_release",
+            "standard",
+        ),
+        (
+            "Insider Threat Mitigation Guide",
+            "https://www.cisa.gov/sites/default/files/2022-11/"
+            "Insider%20Threat%20Mitigation%20Guide_Final_508.pdf",
+            "primary",
+        ),
+    ),
+}
 FOUNDATIONS = {
     "core-01-systems-tradeoffs": {
         "prerequisites": (),
@@ -622,11 +767,17 @@ class CoreTrackTests(unittest.TestCase):
         self.assert_track(
             BUILD,
             expected_track="build",
-            source_contract=None,
+            source_contract=BUILD_SOURCES,
         )
 
     def test_foundation_bodies_follow_semantic_contract(self) -> None:
         for lesson_id in FOUNDATIONS:
+            with self.subTest(lesson_id=lesson_id):
+                body = self.body_path(lesson_id).read_text(encoding="utf-8")
+                self.assert_body_contract(body, lesson_id)
+
+    def test_build_bodies_follow_semantic_contract(self) -> None:
+        for lesson_id in BUILD:
             with self.subTest(lesson_id=lesson_id):
                 body = self.body_path(lesson_id).read_text(encoding="utf-8")
                 self.assert_body_contract(body, lesson_id)
@@ -1133,3 +1284,198 @@ class CoreTrackTests(unittest.TestCase):
         self.assertTrue(report["cleanup"]["server_stopped"])
         self.assertFalse(report["cleanup"]["thread_alive"])
         self.assertTrue(report["cleanup"]["listener_closed"])
+
+    def test_domain_model_harness_traces_rules_and_exceptions(self) -> None:
+        report = self.run_python_harness(
+            "core-06-requirements-domain-modeling",
+            "domain_model_lab_v1",
+        )
+
+        self.assertEqual(report["fixture"], "equipment-rental-v1")
+        self.assertEqual(
+            {entry["term"] for entry in report["glossary"]},
+            {"Asset", "Reservation", "Hold", "Checkout", "Return"},
+        )
+        self.assertEqual(
+            {context["name"] for context in report["bounded_contexts"]},
+            {"Catalog", "Rental Operations", "Billing"},
+        )
+        self.assertGreaterEqual(len(report["example_scenarios"]), 3)
+        self.assertGreaterEqual(len(report["exceptions"]), 2)
+        self.assertTrue(all(item["passed"] for item in report["invariants"]))
+        self.assertTrue(
+            all(
+                item["commands"]
+                and item["events"]
+                and item["invariants"]
+                for item in report["traceability"]
+            )
+        )
+        self.assertEqual(
+            {item["status"] for item in report["ambiguities"]},
+            {"detected", "resolved"},
+        )
+        self.assertFalse(report["external_network_used"])
+
+    def test_api_contract_harness_models_replay_and_evolution(self) -> None:
+        report = self.run_python_harness(
+            "core-07-api-contracts-evolution",
+            "api_contract_lab_v1",
+        )
+
+        self.assertEqual(report["fixture"], "offline-field-client-v1")
+        self.assertEqual(report["supported_versions"], ["v1", "v2"])
+        evidence = report["idempotency_evidence"]
+        self.assertEqual(evidence["initial"]["effect_count"], 1)
+        self.assertEqual(evidence["replay"]["effect_count"], 1)
+        self.assertTrue(evidence["same_effect"])
+        self.assertFalse(evidence["same_response"])
+        self.assertFalse(evidence["exactly_once_claimed"])
+        self.assertEqual(
+            report["compatibility_cases"],
+            {
+                "add_optional_field": "compatible",
+                "remove_required_field": "breaking",
+                "expand_enum": "semantic-risk",
+            },
+        )
+        self.assertEqual(
+            set(report["problem_details"]),
+            {"type", "title", "status", "detail", "instance"},
+        )
+        self.assertTrue(report["authorization_boundary"]["schema_valid"])
+        self.assertFalse(report["authorization_boundary"]["authorized"])
+        self.assertGreaterEqual(len(report["state_transitions"]), 3)
+        self.assertFalse(report["external_network_used"])
+
+    def test_architecture_harness_exposes_dependencies_and_decision(
+        self,
+    ) -> None:
+        report = self.run_python_harness(
+            "core-08-modularity-architecture-decisions",
+            "architecture_lab_v1",
+        )
+
+        self.assertEqual(report["fixture"], "pricing-change-hotspot-v1")
+        self.assertTrue(report["before"]["cycles"])
+        self.assertTrue(report["before"]["direction_violations"])
+        self.assertEqual(report["after"]["cycles"], [])
+        self.assertEqual(report["after"]["direction_violations"], [])
+        self.assertEqual(
+            set(report["after"]["modules"]),
+            {"pricing-domain", "pricing-application", "pricing-adapters"},
+        )
+        self.assertEqual(len(report["options"]), 3)
+        self.assertTrue(
+            all(option["criteria"] and option["risks"] for option in report["options"])
+        )
+        adr = report["adr"]
+        self.assertEqual(adr["status"], "accepted")
+        for field in (
+            "context",
+            "decision",
+            "alternatives",
+            "positive_consequences",
+            "negative_consequences",
+            "confirmation",
+        ):
+            self.assertTrue(adr[field])
+        self.assertEqual(
+            report["change_impact"]["unrelated_modules_changed"],
+            0,
+        )
+        self.assertFalse(report["external_network_used"])
+
+    def test_testing_harness_executes_red_green_refactor_and_mutation(
+        self,
+    ) -> None:
+        body = self.body_path(
+            "core-09-testing-strategy-tdd"
+        ).read_text(encoding="utf-8")
+        self.assertIn("subprocess.run", body)
+        report = self.run_python_harness(
+            "core-09-testing-strategy-tdd",
+            "test_strategy_lab_v1",
+        )
+
+        self.assertEqual(report["fixture"], "order-discount-v1")
+        phases = report["phases"]
+        self.assertEqual(
+            [phase["name"] for phase in phases],
+            ["RED", "GREEN", "REFACTOR"],
+        )
+        self.assertNotEqual(phases[0]["returncode"], 0)
+        self.assertEqual(phases[1]["returncode"], 0)
+        self.assertEqual(phases[2]["returncode"], 0)
+        self.assertNotEqual(
+            phases[0]["source_sha256"],
+            phases[1]["source_sha256"],
+        )
+        self.assertNotEqual(
+            phases[1]["source_sha256"],
+            phases[2]["source_sha256"],
+        )
+        self.assertEqual(
+            phases[1]["behavior_sha256"],
+            phases[2]["behavior_sha256"],
+        )
+        self.assertTrue(
+            all(phase["command"][-3:] == ["-m", "unittest", "-q"] for phase in phases)
+        )
+        self.assertEqual(
+            {item["kind"] for item in report["strategy_evidence"]},
+            {"unit", "integration", "contract", "property", "metamorphic"},
+        )
+        self.assertTrue(
+            all(item["passed"] for item in report["strategy_evidence"])
+        )
+        defect = report["nondeterministic_defect"]
+        self.assertEqual(defect["seed_sequence"], [11, 12, 13, 14])
+        self.assertEqual(set(defect["outcomes"]), {"pass", "fail"})
+        self.assertEqual(defect["root_cause"], "order-and-clock-coupling")
+        self.assertTrue(report["mutation"]["killed"])
+        self.assertNotEqual(report["mutation"]["returncode"], 0)
+        self.assertFalse(report["external_network_used"])
+
+    def test_threat_model_harness_links_assets_controls_and_verification(
+        self,
+    ) -> None:
+        report = self.run_python_harness(
+            "core-10-secure-by-design",
+            "threat_model_lab_v1",
+        )
+
+        self.assertEqual(report["fixture"], "operations-portal-v1")
+        self.assertEqual(
+            {asset["id"] for asset in report["assets"]},
+            {"customer-data", "deployment-credential", "audit-log"},
+        )
+        self.assertIn("operations-contractor", report["actors"])
+        self.assertGreaterEqual(len(report["trust_boundaries"]), 2)
+        self.assertTrue(
+            all(flow["crosses"] for flow in report["cross_boundary_flows"])
+        )
+        self.assertEqual(
+            {threat["actor_type"] for threat in report["threats"]},
+            {"external", "insider"},
+        )
+        threat_ids = {threat["id"] for threat in report["threats"]}
+        self.assertEqual(
+            {link["threat_id"] for link in report["control_links"]},
+            threat_ids,
+        )
+        self.assertEqual(
+            {link["threat_id"] for link in report["verification_links"]},
+            threat_ids,
+        )
+        self.assertTrue(
+            all(link["result"] == "passed" for link in report["verification_links"])
+        )
+        self.assertTrue(
+            all(
+                risk["owner"] and risk["review_date"]
+                for risk in report["residual_risks"]
+            )
+        )
+        self.assertFalse(report["attack_code_executed"])
+        self.assertFalse(report["external_network_used"])
