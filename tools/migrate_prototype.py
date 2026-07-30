@@ -1,13 +1,16 @@
-"""Preserve the legacy generated prototype with checksum verification."""
+"""Atomically preserve the legacy generated prototype without deleting its source."""
 
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
-from typing import Iterable
+import stat
+import tempfile
+from typing import TypedDict
 
 
 LEGACY_PATHS = (
@@ -27,100 +30,197 @@ LEGACY_PATHS = (
 _CHUNK_SIZE = 1024 * 1024
 
 
-def _validate_allowed_path(root: Path, allowed_path: str) -> Path:
-    candidate = Path(allowed_path)
-    if candidate.is_absolute() or ".." in candidate.parts:
-        raise ValueError(f"allowlisted path must be relative: {allowed_path}")
-
-    resolved_root = root.resolve()
-    resolved_candidate = (root / candidate).resolve(strict=False)
-    if resolved_candidate != resolved_root and resolved_root not in resolved_candidate.parents:
-        raise ValueError(f"allowlisted path escapes root: {allowed_path}")
-    return root / candidate
+class FileSnapshot(TypedDict):
+    sha256: str
+    byteCount: int
 
 
-def _iter_regular_files(root: Path, paths: Iterable[str]) -> list[Path]:
+class PrototypeManifest(TypedDict):
+    algorithm: str
+    fileCount: int
+    byteCount: int
+    files: dict[str, str]
+
+
+def _lexists(path: Path) -> bool:
+    return os.path.lexists(path)
+
+
+def _validate_path_node(path: Path, label: str, *, directory: bool = False) -> None:
+    """Inspect an existing node with lstat, never following a final symlink."""
+    if not _lexists(path):
+        return
+    mode = os.lstat(path).st_mode
+    if stat.S_ISLNK(mode):
+        raise ValueError(f"{label} contains a symbolic link: {path}")
+    if directory and not stat.S_ISDIR(mode):
+        raise ValueError(f"{label} is not a directory: {path}")
+
+
+def _validate_descendant_components(root: Path, path: Path, label: str) -> None:
+    """Reject symlinks below a trusted source root before resolving an archive path."""
+    try:
+        relative = path.relative_to(root)
+    except ValueError:
+        return
+    current = root
+    for part in relative.parts:
+        current /= part
+        _validate_path_node(current, label, directory=current != path)
+
+
+def _source_directory(source: Path) -> Path:
+    candidate = source.absolute()
+    _validate_path_node(candidate, "source", directory=True)
+    if not _lexists(candidate):
+        raise FileNotFoundError(f"source does not exist: {candidate}")
+    return candidate
+
+
+def _archive_path(source: Path, archive: Path) -> Path:
+    candidate = archive.absolute()
+    if _lexists(candidate):
+        # lstat is intentionally used before rejection so dangling symlinks count as existing.
+        os.lstat(candidate)
+        raise FileExistsError(f"archive already exists: {candidate}")
+
+    try:
+        relative_to_source = candidate.relative_to(source)
+    except ValueError:
+        _validate_path_node(candidate.parent, "archive", directory=True)
+        return candidate
+    _validate_descendant_components(source, candidate, "archive")
+    if relative_to_source.parts and relative_to_source.parts[0] in LEGACY_PATHS:
+        raise ValueError(f"archive is inside an allowlisted subtree: {candidate}")
+    return candidate
+
+
+def _unsupported(path: Path, mode: int) -> ValueError:
+    if stat.S_ISLNK(mode):
+        return ValueError(f"symbolic links are not supported: {path}")
+    return ValueError(f"unsupported file type in allowlisted prototype: {path}")
+
+
+def _allowlisted_files(root: Path) -> list[Path]:
+    """Walk every existing allowlist tree and reject non-file, non-directory nodes."""
     files: list[Path] = []
-    for allowed_path in paths:
-        candidate = _validate_allowed_path(root, allowed_path)
-        if not candidate.exists() and not candidate.is_symlink():
+
+    def walk(path: Path) -> None:
+        mode = os.lstat(path).st_mode
+        if stat.S_ISREG(mode):
+            files.append(path)
+            return
+        if not stat.S_ISDIR(mode):
+            raise _unsupported(path, mode)
+        with os.scandir(path) as entries:
+            for entry in entries:
+                walk(Path(entry.path))
+
+    for relative_path in LEGACY_PATHS:
+        candidate = root / relative_path
+        if not _lexists(candidate):
             continue
-        if candidate.is_symlink():
-            raise ValueError(f"symbolic links are not supported: {candidate}")
-        if candidate.is_file():
-            files.append(candidate)
-            continue
-        if not candidate.is_dir():
-            continue
-        for descendant in candidate.rglob("*"):
-            if descendant.is_symlink():
-                raise ValueError(f"symbolic links are not supported: {descendant}")
-            if descendant.is_file():
-                files.append(descendant)
-    return files
+        walk(candidate)
+    return sorted(files, key=lambda path: path.relative_to(root).as_posix())
 
 
-def _sha256(path: Path) -> str:
+def _file_snapshot(path: Path) -> FileSnapshot:
     digest = hashlib.sha256()
-    # Stream file data so arbitrarily large generated assets are never loaded at once.
+    byte_count = 0
+    # Chunked reads bound memory use while deriving the digest and byte count from identical data.
     with path.open("rb") as file:
         while chunk := file.read(_CHUNK_SIZE):
             digest.update(chunk)
-    return digest.hexdigest()
+            byte_count += len(chunk)
+    return {"sha256": digest.hexdigest(), "byteCount": byte_count}
 
 
-def _checksums(root: Path, paths: Iterable[str]) -> dict[str, str]:
-    """Return SHA-256 values for regular files below existing allowlisted paths."""
-    files = _iter_regular_files(root, paths)
+def _snapshot(root: Path) -> dict[str, FileSnapshot]:
     return {
-        file.relative_to(root).as_posix(): _sha256(file)
-        for file in sorted(files, key=lambda item: item.relative_to(root).as_posix())
+        path.relative_to(root).as_posix(): _file_snapshot(path)
+        for path in _allowlisted_files(root)
     }
 
 
-def preserve_prototype(
-    source: Path,
-    archive: Path,
-    allowed_paths: Iterable[str] = LEGACY_PATHS,
-) -> dict[str, object]:
-    """Move allowed legacy files to *archive* and write a verified manifest."""
-    source = source.resolve()
-    archive = archive.resolve(strict=False)
-    allowed_paths = tuple(allowed_paths)
+def _copy_allowlisted_tree(source: Path, staging: Path) -> None:
+    def copy_node(origin: Path, destination: Path) -> None:
+        mode = os.lstat(origin).st_mode
+        if stat.S_ISREG(mode):
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(origin, destination)
+            return
+        if not stat.S_ISDIR(mode):
+            raise _unsupported(origin, mode)
+        destination.mkdir()
+        with os.scandir(origin) as entries:
+            for entry in entries:
+                copy_node(Path(entry.path), destination / entry.name)
 
-    if archive.exists() or archive.is_symlink():
-        raise FileExistsError(f"archive already exists: {archive}")
+    for relative_path in LEGACY_PATHS:
+        origin = source / relative_path
+        if _lexists(origin):
+            copy_node(origin, staging / relative_path)
 
-    before = _checksums(source, allowed_paths)
-    if not before:
+
+def _write_manifest(staging: Path, snapshot: dict[str, FileSnapshot]) -> PrototypeManifest:
+    checksums = {path: record["sha256"] for path, record in snapshot.items()}
+    manifest: PrototypeManifest = {
+        "algorithm": "sha256",
+        "fileCount": len(snapshot),
+        "byteCount": sum(record["byteCount"] for record in snapshot.values()),
+        "files": checksums,
+    }
+    temporary_manifest = staging / ".manifest.json.tmp"
+    descriptor = os.open(
+        temporary_manifest,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+        0o600,
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as file:
+            json.dump(manifest, file, ensure_ascii=False, indent=2, sort_keys=True)
+            file.write("\n")
+            file.flush()
+            os.fsync(file.fileno())
+    except BaseException:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+        raise
+    # Publish the manifest only after its complete durable temp-file write succeeds.
+    os.replace(temporary_manifest, staging / "manifest.json")
+    return manifest
+
+
+def preserve_prototype(source: Path, archive: Path) -> PrototypeManifest:
+    """Copy, verify, and atomically publish the approved legacy prototype files."""
+    source_path = _source_directory(source)
+    archive_path = _archive_path(source_path, archive)
+
+    initial = _snapshot(source_path)
+    if not initial:
         raise FileNotFoundError("no allowlisted prototype files found")
 
-    archive.mkdir(parents=True)
-    for allowed_path in allowed_paths:
-        source_path = _validate_allowed_path(source, allowed_path)
-        if not source_path.exists() and not source_path.is_symlink():
-            continue
-        destination = archive / allowed_path
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(source_path), str(destination))
+    archive_path.parent.mkdir(parents=True, exist_ok=True)
+    _validate_path_node(archive_path.parent, "archive", directory=True)
+    staging = Path(tempfile.mkdtemp(prefix=f".{archive_path.name}.staging-", dir=archive_path.parent))
+    try:
+        _copy_allowlisted_tree(source_path, staging)
+        staged = _snapshot(staging)
+        current = _snapshot(source_path)
+        if initial != staged or initial != current:
+            raise RuntimeError("prototype checksum verification failed")
+        manifest = _write_manifest(staging, initial)
+        # Recheck immediately before rename so a concurrently created archive is never overwritten.
+        if _lexists(archive_path):
+            raise FileExistsError(f"archive already exists: {archive_path}")
+        os.replace(staging, archive_path)
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
 
-    after = _checksums(archive, allowed_paths)
-    if before != after:
-        raise RuntimeError("prototype checksum verification failed")
-
-    manifest: dict[str, object] = {
-        "algorithm": "sha256",
-        "fileCount": len(after),
-        "byteCount": sum(
-            (archive / relative_path).stat().st_size for relative_path in after
-        ),
-        "files": after,
-    }
-    # A manifest is evidence of a complete preservation, so only publish it after verification.
-    (archive / "manifest.json").write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    # The original is deliberately retained: a later, separately reviewed retirement task can clean it safely.
     return manifest
 
 
@@ -129,7 +229,6 @@ def main() -> int:
     parser.add_argument("--source", required=True, type=Path)
     parser.add_argument("--archive", required=True, type=Path)
     arguments = parser.parse_args()
-
     manifest = preserve_prototype(arguments.source, arguments.archive)
     print(json.dumps({"fileCount": manifest["fileCount"], "status": "preserved"}))
     return 0

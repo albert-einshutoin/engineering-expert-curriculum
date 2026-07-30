@@ -129,177 +129,56 @@ git commit -m "build: establish dependency-free curriculum package"
 - Create: `tools/migrate_prototype.py`
 - Create: `tests/test_migrate_prototype.py`
 
-- [ ] **Step 1: Write migration tests before the command exists**
+- [ ] **Step 1: Write fail-safe preservation tests first**
 
-```python
-# tests/test_migrate_prototype.py
-from __future__ import annotations
+Cover the exact eleven-element `LEGACY_PATHS`, an empty source, independent
+manifest SHA-256/byte-count checks, and the CLI. Use `TemporaryDirectory` only.
+Also cover injected copy and checksum failures, source/dangling-archive/nested
+symlinks, special files such as FIFOs when available, and an archive path inside
+an allowlisted subtree. Every failure must retain the source and leave the
+archive target absent.
 
-import json
-from pathlib import Path
-from tempfile import TemporaryDirectory
-import unittest
+- [ ] **Step 2: Verify RED**
 
-from tools.migrate_prototype import LEGACY_PATHS, preserve_prototype
+Run `python3.13 -m unittest tests.test_migrate_prototype -v` after adding each
+new failure case. Confirm the old direct-move behavior fails for the intended
+safety reason before changing production code.
 
+- [ ] **Step 3: Implement transactional copy and atomic publication**
 
-class PrototypeMigrationTests(unittest.TestCase):
-    def test_moves_only_allowlisted_files_and_verifies_manifest(self) -> None:
-        with TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / "assets").mkdir()
-            (root / "assets" / "styles.css").write_text("body{}", encoding="utf-8")
-            (root / "index.html").write_text("<main>legacy</main>", encoding="utf-8")
-            (root / ".git").mkdir()
-            archive = root / ".archive" / "prototype-v1"
+`preserve_prototype(source, archive)` accepts no caller-provided allowlist and
+uses only `LEGACY_PATHS`. Before resolving paths, use `lexists` and `lstat` to
+reject a symlink source, existing archive (including dangling symlink), and
+unsafe descendant components. Reject archive locations under a legacy subtree;
+an allowlist-external location such as `.archive/prototype-v1` is permitted.
 
-            manifest = preserve_prototype(
-                source=root,
-                archive=archive,
-                allowed_paths=("assets", "index.html"),
-            )
+Walk all existing allowlisted trees before copying and fail closed for symlinks,
+FIFOs, sockets, devices, or other non-regular/non-directory nodes. Build a
+source snapshot from streaming reads that produce each file's SHA-256 and byte
+count together. Copy only approved entries into a hidden staging directory on
+the archive filesystem. Snapshot staging and source again; publish nothing
+unless all three snapshots match.
 
-            self.assertFalse((root / "index.html").exists())
-            self.assertTrue((archive / "index.html").exists())
-            self.assertTrue((root / ".git").exists())
-            self.assertEqual(manifest["fileCount"], 2)
-            saved = json.loads((archive / "manifest.json").read_text(encoding="utf-8"))
-            self.assertEqual(saved, manifest)
+Write the typed manifest to an exclusively created staging temp file, flush and
+`fsync` it, then atomically replace `manifest.json`. Atomically rename the
+complete staging directory to the archive target. On any failure before that
+rename, remove staging while leaving source untouched and the archive target
+absent. Do not delete or rename source after publication: source retirement is a
+separate reviewed task, prioritizing preservation over cleanup.
 
-    def test_refuses_to_overwrite_an_existing_archive(self) -> None:
-        with TemporaryDirectory() as directory:
-            root = Path(directory)
-            archive = root / ".archive" / "prototype-v1"
-            archive.mkdir(parents=True)
-
-            with self.assertRaisesRegex(FileExistsError, "archive already exists"):
-                preserve_prototype(root, archive, ("index.html",))
-
-    def test_production_allowlist_does_not_include_repository_metadata(self) -> None:
-        self.assertNotIn(".git", LEGACY_PATHS)
-        self.assertNotIn("docs", LEGACY_PATHS)
-        self.assertNotIn(".superpowers", LEGACY_PATHS)
-```
-
-- [ ] **Step 2: Run the migration tests and verify RED**
-
-Run:
+- [ ] **Step 4: Verify GREEN without running on repository files**
 
 ```bash
-python3 -m unittest tests.test_migrate_prototype -v
+python3.13 -m unittest tests.test_migrate_prototype -v
+python3.13 -m unittest discover -s tests -v
+git diff --check
 ```
 
-Expected: `ERROR` because `tools.migrate_prototype` does not exist.
-
-- [ ] **Step 3: Implement the checksum-verified move**
-
-```python
-# tools/migrate_prototype.py
-from __future__ import annotations
-
-import argparse
-import hashlib
-import json
-from pathlib import Path
-import shutil
-from typing import Iterable
-
-LEGACY_PATHS = (
-    "README.txt",
-    "assets",
-    "daily.html",
-    "data",
-    "domains",
-    "guide.html",
-    "index.html",
-    "progress.html",
-    "roadmap.html",
-    "scheduled",
-    "source",
-)
-
-
-def _checksums(root: Path, paths: Iterable[str]) -> dict[str, str]:
-    result: dict[str, str] = {}
-    for relative in sorted(paths):
-        candidate = root / relative
-        if not candidate.exists():
-            continue
-        files = [candidate] if candidate.is_file() else sorted(candidate.rglob("*"))
-        for file_path in files:
-            if file_path.is_file():
-                key = file_path.relative_to(root).as_posix()
-                result[key] = hashlib.sha256(file_path.read_bytes()).hexdigest()
-    return result
-
-
-def preserve_prototype(
-    source: Path,
-    archive: Path,
-    allowed_paths: tuple[str, ...] = LEGACY_PATHS,
-) -> dict[str, object]:
-    if archive.exists():
-        raise FileExistsError(f"archive already exists: {archive}")
-
-    before = _checksums(source, allowed_paths)
-    if not before:
-        raise FileNotFoundError("no allowlisted prototype files found")
-
-    archive.mkdir(parents=True)
-    for relative in allowed_paths:
-        current = source / relative
-        if current.exists():
-            shutil.move(str(current), str(archive / relative))
-
-    after = _checksums(archive, allowed_paths)
-    if before != after:
-        raise RuntimeError("prototype checksum verification failed")
-
-    manifest: dict[str, object] = {
-        "algorithm": "sha256",
-        "fileCount": len(after),
-        "byteCount": sum((archive / path).stat().st_size for path in after),
-        "files": after,
-    }
-    # The manifest is written only after a full before/after comparison so it
-    # cannot make a partial migration look complete.
-    (archive / "manifest.json").write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    return manifest
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--source", type=Path, required=True)
-    parser.add_argument("--archive", type=Path, required=True)
-    args = parser.parse_args()
-    manifest = preserve_prototype(args.source.resolve(), args.archive.resolve())
-    print(json.dumps({"fileCount": manifest["fileCount"], "status": "preserved"}))
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
-```
-
-- [ ] **Step 4: Run migration tests and inspect the production allowlist**
-
-Run:
+- [ ] **Step 5: Commit the transactional tool**
 
 ```bash
-python3 -m unittest tests.test_migrate_prototype -v
-python3 -c "from tools.migrate_prototype import LEGACY_PATHS; print('\\n'.join(LEGACY_PATHS))"
-```
-
-Expected: three tests pass; output lists only the eleven approved legacy paths.
-
-- [ ] **Step 5: Commit the preservation tool without running it on user files**
-
-```bash
-git add tools/migrate_prototype.py tests/test_migrate_prototype.py
-git commit -m "feat: add checksum-verified prototype preservation"
+git add tools/migrate_prototype.py tests/test_migrate_prototype.py docs/superpowers/plans/2026-07-30-static-curriculum-foundation.md
+git commit -m "fix: make prototype preservation transactional"
 ```
 
 ### Task 3: Define immutable catalog models

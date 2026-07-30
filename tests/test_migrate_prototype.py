@@ -1,35 +1,55 @@
 from __future__ import annotations
 
+import hashlib
+import io
 import json
+import os
 from pathlib import Path
+import sys
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
-from tools.migrate_prototype import LEGACY_PATHS, preserve_prototype
+from tools.migrate_prototype import LEGACY_PATHS, main, preserve_prototype
 
 
 class PrototypeMigrationTests(unittest.TestCase):
-    def test_moves_only_allowlisted_files_and_verifies_manifest(self) -> None:
+    def _write_fixture(self, root: Path) -> None:
+        (root / "assets").mkdir()
+        (root / "assets" / "styles.css").write_text("body{}", encoding="utf-8")
+        (root / "index.html").write_text("<main>legacy</main>", encoding="utf-8")
+
+    def test_preserves_only_allowlisted_files_and_writes_verified_manifest(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / "assets").mkdir()
-            (root / "assets" / "styles.css").write_text("body{}", encoding="utf-8")
-            (root / "index.html").write_text("<main>legacy</main>", encoding="utf-8")
+            self._write_fixture(root)
             (root / ".git").mkdir()
             archive = root / ".archive" / "prototype-v1"
 
-            manifest = preserve_prototype(
-                source=root,
-                archive=archive,
-                allowed_paths=("assets", "index.html"),
-            )
+            manifest = preserve_prototype(root, archive)
 
-            self.assertFalse((root / "index.html").exists())
+            self.assertTrue((root / "index.html").exists())
             self.assertTrue((archive / "index.html").exists())
             self.assertTrue((root / ".git").exists())
+            expected_files = {
+                "assets/styles.css": hashlib.sha256(b"body{}").hexdigest(),
+                "index.html": hashlib.sha256(b"<main>legacy</main>").hexdigest(),
+            }
+            self.assertEqual(manifest["algorithm"], "sha256")
             self.assertEqual(manifest["fileCount"], 2)
+            self.assertEqual(manifest["byteCount"], len(b"body{}") + len(b"<main>legacy</main>"))
+            self.assertEqual(manifest["files"], expected_files)
             saved = json.loads((archive / "manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(saved, manifest)
+
+    def test_allowlist_exactly_matches_the_legacy_paths(self) -> None:
+        self.assertEqual(
+            LEGACY_PATHS,
+            (
+                "README.txt", "assets", "daily.html", "data", "domains", "guide.html",
+                "index.html", "progress.html", "roadmap.html", "scheduled", "source",
+            ),
+        )
 
     def test_refuses_to_overwrite_an_existing_archive(self) -> None:
         with TemporaryDirectory() as directory:
@@ -38,9 +58,126 @@ class PrototypeMigrationTests(unittest.TestCase):
             archive.mkdir(parents=True)
 
             with self.assertRaisesRegex(FileExistsError, "archive already exists"):
-                preserve_prototype(root, archive, ("index.html",))
+                preserve_prototype(root, archive)
 
-    def test_production_allowlist_does_not_include_repository_metadata(self) -> None:
-        self.assertNotIn(".git", LEGACY_PATHS)
-        self.assertNotIn("docs", LEGACY_PATHS)
-        self.assertNotIn(".superpowers", LEGACY_PATHS)
+    def test_refuses_an_empty_allowlisted_source(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            with self.assertRaisesRegex(FileNotFoundError, "no allowlisted prototype files found"):
+                preserve_prototype(root, root / ".archive" / "prototype-v1")
+
+    def test_copy_failure_leaves_source_and_archive_untouched(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_fixture(root)
+            archive = root / ".archive" / "prototype-v1"
+
+            with patch("tools.migrate_prototype.shutil.copy2", side_effect=OSError("copy failed")):
+                with self.assertRaisesRegex(OSError, "copy failed"):
+                    preserve_prototype(root, archive)
+
+            self.assertEqual((root / "index.html").read_text(encoding="utf-8"), "<main>legacy</main>")
+            self.assertFalse(os.path.lexists(archive))
+
+    def test_checksum_failure_leaves_source_and_archive_untouched(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_fixture(root)
+            archive = root / ".archive" / "prototype-v1"
+
+            with patch(
+                "tools.migrate_prototype._snapshot",
+                side_effect=[
+                    {"index.html": ("a", 1)},
+                    {"index.html": ("a", 1)},
+                    {"index.html": ("different", 1)},
+                ],
+            ):
+                with self.assertRaisesRegex(RuntimeError, "prototype checksum verification failed"):
+                    preserve_prototype(root, archive)
+
+            self.assertTrue((root / "index.html").exists())
+            self.assertFalse(os.path.lexists(archive))
+
+    def test_refuses_archive_created_while_staging(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_fixture(root)
+            archive = root / ".archive" / "prototype-v1"
+
+            def create_competing_archive(staging: Path, snapshot: object) -> object:
+                archive.mkdir()
+                return {"algorithm": "sha256", "fileCount": 2, "byteCount": 0, "files": {}}
+
+            with patch("tools.migrate_prototype._write_manifest", side_effect=create_competing_archive):
+                with self.assertRaisesRegex(FileExistsError, "archive already exists"):
+                    preserve_prototype(root, archive)
+
+            self.assertTrue((root / "index.html").exists())
+            self.assertFalse((archive / "index.html").exists())
+
+    def test_rejects_a_symlinked_source(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            actual = root / "actual"
+            actual.mkdir()
+            source_link = root / "source-link"
+            source_link.symlink_to(actual, target_is_directory=True)
+
+            with self.assertRaisesRegex(ValueError, "source.*symbolic link"):
+                preserve_prototype(source_link, root / "archive")
+
+    def test_rejects_a_dangling_archive_symlink(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_fixture(root)
+            archive = root / "archive"
+            archive.symlink_to(root / "missing")
+
+            with self.assertRaisesRegex(FileExistsError, "archive already exists"):
+                preserve_prototype(root, archive)
+
+    def test_rejects_a_nested_symlink(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "assets").mkdir()
+            (root / "outside").write_text("outside", encoding="utf-8")
+            (root / "assets" / "link").symlink_to(root / "outside")
+
+            with self.assertRaisesRegex(ValueError, "symbolic links are not supported"):
+                preserve_prototype(root, root / ".archive" / "prototype-v1")
+
+    def test_rejects_special_files_when_supported(self) -> None:
+        if not hasattr(os, "mkfifo"):
+            self.skipTest("FIFO is not supported on this platform")
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "assets").mkdir()
+            os.mkfifo(root / "assets" / "stream")
+
+            with self.assertRaisesRegex(ValueError, "unsupported file type"):
+                preserve_prototype(root, root / ".archive" / "prototype-v1")
+
+    def test_rejects_archive_inside_an_allowlisted_subtree(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_fixture(root)
+
+            with self.assertRaisesRegex(ValueError, "archive.*allowlisted"):
+                preserve_prototype(root, root / "assets" / "archive")
+
+    def test_cli_requires_paths_and_prints_success_json(self) -> None:
+        with patch.object(sys, "argv", ["migrate_prototype.py"]):
+            with self.assertRaises(SystemExit) as missing_arguments:
+                main()
+        self.assertEqual(missing_arguments.exception.code, 2)
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_fixture(root)
+            archive = root / ".archive" / "prototype-v1"
+            output = io.StringIO()
+            with patch.object(sys, "argv", ["migrate_prototype.py", "--source", str(root), "--archive", str(archive)]):
+                with patch("sys.stdout", output):
+                    self.assertEqual(main(), 0)
+            self.assertEqual(json.loads(output.getvalue()), {"fileCount": 2, "status": "preserved"})
