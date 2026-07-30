@@ -454,7 +454,7 @@ class CatalogTests(unittest.TestCase):
                 load_catalog(path)
 
     def test_repository_catalog_has_exact_contract(self) -> None:
-        items = load_catalog(Path("content/catalog.json"))
+        items = load_repository_catalog(Path("content/catalog.json"))
         self.assertEqual(len(items), 1140)
         self.assertEqual(len({item.id for item in items}), 1140)
         self.assertEqual(len({item.domain_id for item in items}), 38)
