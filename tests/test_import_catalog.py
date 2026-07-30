@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from curriculum_builder.catalog import canonicalize
 from curriculum_builder.errors import CurriculumValidationError
-from tools.import_catalog import CatalogPublicationIntegrityError, _read_source, _write_atomic, main
+from tools.import_catalog import CatalogPublicationIntegrityError, _close_all, _open_parent, _read_source, _write_atomic, main
 
 
 def lesson(**overrides: object) -> dict[str, object]:
@@ -34,6 +34,29 @@ def legacy_source(lessons: list[dict[str, object]]) -> dict[str, object]:
 
 
 class CatalogImportTests(unittest.TestCase):
+    def test_close_all_attempts_every_descriptor_once_in_reverse_order(self) -> None:
+        closed: list[int] = []
+        def close(descriptor: int) -> None:
+            closed.append(descriptor)
+            if descriptor == 2: raise OSError("close two")
+        owned = [1, 2, 3]
+        with patch("tools.import_catalog.os.close", side_effect=close):
+            failures = _close_all(owned)
+        self.assertEqual(closed, [3, 2, 1])
+        self.assertEqual(owned, [])
+        self.assertEqual(len(failures), 1)
+
+    def test_open_parent_closes_all_traversed_descriptors_after_failure(self) -> None:
+        opened = iter([10, 11, 12])
+        closed: list[int] = []
+        def open_fd(*args: object, **kwargs: object) -> int:
+            return next(opened)
+        def close(fd: int) -> None:
+            closed.append(fd)
+            if fd == 11: raise OSError("injected close")
+        with patch("tools.import_catalog.os.open", side_effect=open_fd), patch("tools.import_catalog.os.fstat", side_effect=OSError("fstat")), patch("tools.import_catalog.os.close", side_effect=close):
+            with self.assertRaises(RuntimeError): _open_parent(Path("/one/two/catalog.json"))
+        self.assertEqual(closed, [12, 11, 10])
     def test_writer_rejects_missing_parent_symlink_and_non_regular_target(self) -> None:
         document = {"version": 1, "generatedFrom": "source", "sourceSha256": "a55a0d0b1cfa3773031e787c2ce7ca0df34534e16a70b65ed1baa91975c82da8", "items": [{**lesson(), "coreLessonId": None}]}
         # The writer receives canonical rows, so remove only the legacy path here.
