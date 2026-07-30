@@ -18,6 +18,7 @@ import re
 import stat
 import sys
 from typing import Final
+import unicodedata
 import uuid
 
 from .catalog import (
@@ -185,8 +186,16 @@ def _validation(message: str) -> CurriculumValidationError:
 def _path_argument(path: object, label: str) -> Path:
     if not isinstance(path, Path):
         raise _validation(f"{label} must be a Path")
-    if "\0" in os.fspath(path):
+    spelling = os.fspath(path)
+    if "\0" in spelling:
         raise _validation(f"{label} contains a NUL byte")
+    if any(
+        unicodedata.category(character) in {"Cc", "Cf"}
+        for character in spelling
+    ):
+        # Paths are later reported by CLI tools, so rejecting controls at the
+        # shared API boundary prevents terminal and structured-log injection.
+        raise _validation(f"{label} contains a control character")
     if ".." in path.parts:
         # Resolving a/b/../content can cross a symlink before `..` is applied.
         # Rejecting the spelling also prevents the official catalog from being
