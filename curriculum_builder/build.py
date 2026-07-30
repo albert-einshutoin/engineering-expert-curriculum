@@ -25,6 +25,10 @@ from .catalog import (
     load_repository_catalog_bytes,
     strict_json_loads,
 )
+from .css_safety import (
+    MAX_STYLESHEET_BYTES,
+    validate_stylesheet_bytes,
+)
 from .errors import CurriculumValidationError
 from .graph import topological_stages
 from .html_safety import SafeHtml, validate_fragment
@@ -34,7 +38,6 @@ from .render import MAX_TEMPLATE_BYTES, Renderer
 
 MAX_CATALOG_BYTES: Final = 8 * 1024 * 1024
 MAX_ROADMAP_BYTES: Final = 256 * 1024
-MAX_STYLESHEET_BYTES: Final = 1024 * 1024
 MAX_ROADMAP_NODES: Final = 4096
 MAX_ROADMAP_EDGES: Final = 65_536
 MAX_ROADMAP_TEXT_CHARS: Final = 4096
@@ -1821,6 +1824,7 @@ def build_site(
             "styles.css",
             MAX_STYLESHEET_BYTES,
         )
+        validate_stylesheet_bytes(stylesheet)
         before_templates = {
             name: _read_stable_regular_file(
                 templates,

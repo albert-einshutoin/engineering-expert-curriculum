@@ -288,6 +288,7 @@ class StyleContractTests(unittest.TestCase):
             rb'a { background: i\6d age-set("evil.png" 1x); }',
             b"a { color: red; }\x00",
             b"a { color: red; }\x01",
+            b"a { color: red; }\xe2\x80\xae",
             b"\xff",
         )
         for malicious_source in malicious_sources:
