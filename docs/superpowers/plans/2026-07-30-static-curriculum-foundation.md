@@ -432,7 +432,7 @@ from tempfile import TemporaryDirectory
 import json
 import unittest
 
-from curriculum_builder.catalog import load_catalog
+from curriculum_builder.catalog import load_catalog, load_repository_catalog
 from curriculum_builder.errors import CurriculumValidationError
 
 
@@ -447,7 +447,7 @@ class CatalogTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             path = Path(directory) / "catalog.json"
             path.write_text(
-                json.dumps({"version": 1, "items": [item, item]}),
+                json.dumps({"version": 1, "generatedFrom": "test", "sourceSha256": "a" * 64, "items": [item, item]}),
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(CurriculumValidationError, "duplicate"):
@@ -472,71 +472,21 @@ Expected: imports fail because importer and catalog loader do not exist.
 
 - [ ] **Step 3: Implement deterministic import and loading**
 
-```python
-# tools/import_catalog.py
-from __future__ import annotations
-
-import argparse
-import json
-from pathlib import Path
-from typing import Any
-
-
-def canonicalize(source: dict[str, Any], generated_from: str) -> dict[str, Any]:
-    items = []
-    for legacy in sorted(source["lessons"], key=lambda value: value["id"]):
-        item = {key: value for key, value in legacy.items() if key != "path"}
-        item["coreLessonId"] = None
-        items.append(item)
-    return {"version": 1, "generatedFrom": generated_from, "items": items}
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--input", type=Path, required=True)
-    parser.add_argument("--output", type=Path, required=True)
-    args = parser.parse_args()
-    source = json.loads(args.input.read_text(encoding="utf-8"))
-    canonical = canonicalize(source, generated_from="prototype-v1")
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(
-        json.dumps(canonical, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
-```
-
-```python
-# curriculum_builder/catalog.py
-from __future__ import annotations
-
-from collections import Counter
-import json
-from pathlib import Path
-
-from curriculum_builder.errors import CurriculumValidationError
-from curriculum_builder.models import CatalogItem
-
-
-def load_catalog(path: Path) -> tuple[CatalogItem, ...]:
-    document = json.loads(path.read_text(encoding="utf-8"))
-    if document.get("version") != 1:
-        raise CurriculumValidationError("catalog version must be 1")
-    items = tuple(CatalogItem.from_dict(raw) for raw in document.get("items", ()))
-    ids = [item.id for item in items]
-    # Counting once keeps validation linear as the catalog grows beyond the
-    # initial 1,140 items.
-    duplicates = sorted(
-        item_id for item_id, count in Counter(ids).items() if count > 1
-    )
-    if duplicates:
-        raise CurriculumValidationError(f"duplicate catalog ids: {', '.join(duplicates)}")
-    return items
-```
+- `canonicalize` enforces the exact legacy root/domain/module/lesson schema,
+  counts, and declaration links; it removes only `path`, validates through
+  `CatalogItem`, and emits exactly `version`, `generatedFrom`, `sourceSha256`,
+  and sorted `items`.
+- JSON is read once as bytes, SHA-256 is recorded, and strict parsing rejects
+  duplicate keys and noncanonical serialization. `load_catalog` is generic;
+  `load_repository_catalog` additionally verifies artifact
+  `4f38b5f63931a7f06e13f90f5d9ef90a0a435f30dae5d4fe70720d730a057473` and
+  source `a55a0d0b1cfa3773031e787c2ce7ca0df34534e16a70b65ed1baa91975c82da8`.
+- The importer opens the trusted existing output parent from root with
+  `O_NOFOLLOW` directory FDs, writes an `O_EXCL` private temp using partial-write
+  handling, chmods `0644`, fsyncs the file, performs dirfd `replace`, then fsyncs
+  the parent. It reports prepublish, integrity, and durability states explicitly.
+  A malicious exact same-euid rename race is out of scope: imports run exclusively
+  and the postcheck detects rather than rolls back a foreign entry.
 
 - [ ] **Step 4: Import the real catalog and run contracts**
 
