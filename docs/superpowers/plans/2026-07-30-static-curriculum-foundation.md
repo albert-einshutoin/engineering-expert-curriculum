@@ -162,6 +162,12 @@ ancestor and canonicalize them before deriving the final archive boundary.
 Compare those canonical paths so no symlink or traversal route can place an
 archive under an allowlisted source subtree.
 
+The ordering is deliberately read-only until safety is established: validate the
+source, take its initial snapshot (and reject empty input), then perform archive
+lexical/canonical boundary validation. Only then create missing archive parents
+and reserve the archive. On every later failure, remove empty parent directories
+created by this invocation in reverse order; never remove a pre-existing parent.
+
 Walk all existing allowlisted trees before copying and fail closed for symlinks,
 FIFOs, sockets, devices, or other non-regular/non-directory nodes. Build a
 source snapshot from streaming reads that produce each file's SHA-256 and byte

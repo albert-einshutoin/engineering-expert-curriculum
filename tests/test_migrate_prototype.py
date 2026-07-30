@@ -54,6 +54,7 @@ class PrototypeMigrationTests(unittest.TestCase):
     def test_refuses_to_overwrite_an_existing_archive(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory).resolve()
+            (root / "index.html").write_text("legacy", encoding="utf-8")
             archive = root / ".archive" / "prototype-v1"
             archive.mkdir(parents=True)
 
@@ -63,8 +64,10 @@ class PrototypeMigrationTests(unittest.TestCase):
     def test_refuses_an_empty_allowlisted_source(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory).resolve()
+            archive_parent = root / ".archive"
             with self.assertRaisesRegex(FileNotFoundError, "no allowlisted prototype files found"):
-                preserve_prototype(root, root / ".archive" / "prototype-v1")
+                preserve_prototype(root, archive_parent / "prototype-v1")
+            self.assertFalse(archive_parent.exists())
 
     def test_copy_failure_leaves_source_and_archive_untouched(self) -> None:
         with TemporaryDirectory() as directory:
@@ -98,6 +101,7 @@ class PrototypeMigrationTests(unittest.TestCase):
 
             self.assertTrue((root / "index.html").exists())
             self.assertFalse(os.path.lexists(archive))
+            self.assertFalse((root / ".archive").exists())
 
     def test_reservation_refuses_a_competing_archive_without_overwriting_it(self) -> None:
         with TemporaryDirectory() as directory:
@@ -130,6 +134,7 @@ class PrototypeMigrationTests(unittest.TestCase):
 
             self.assertTrue((root / "index.html").exists())
             self.assertFalse(os.path.lexists(archive))
+            self.assertFalse((root / ".archive").exists())
 
     def test_pre_commit_directory_fsync_failure_never_renames_manifest(self) -> None:
         with TemporaryDirectory() as directory:
@@ -198,6 +203,30 @@ class PrototypeMigrationTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "archive.*allowlisted"):
                 preserve_prototype(root, root / "assets" / "archive")
+
+    def test_rejects_missing_allowlisted_archive_subtree_without_creating_it(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            (root / "index.html").write_text("legacy", encoding="utf-8")
+            assets = root / "assets"
+
+            with self.assertRaisesRegex(ValueError, "archive.*allowlisted"):
+                preserve_prototype(root, assets / "archive")
+
+            self.assertFalse(assets.exists())
+
+    def test_copy_failure_removes_new_archive_parent(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            self._write_fixture(root)
+            archive_parent = root / ".archive"
+            archive = archive_parent / "prototype-v1"
+
+            with patch("tools.migrate_prototype.shutil.copy2", side_effect=OSError("copy failed")):
+                with self.assertRaisesRegex(OSError, "copy failed"):
+                    preserve_prototype(root, archive)
+
+            self.assertFalse(archive_parent.exists())
 
     def test_rejects_archive_path_with_parent_traversal_before_reservation(self) -> None:
         with TemporaryDirectory() as directory:

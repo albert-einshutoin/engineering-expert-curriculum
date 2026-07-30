@@ -72,8 +72,8 @@ def _validate_existing_components(
             raise ValueError(f"{label} parent is not a directory: {current}")
 
 
-def _canonical_archive_parent(raw_parent: Path) -> Path:
-    """Create missing archive parents from an already lstat-validated ancestor."""
+def _create_archive_parent(raw_parent: Path) -> tuple[Path, list[Path]]:
+    """Create missing parents from a validated ancestor and report only owned directories."""
     missing: list[str] = []
     current = raw_parent
     while not _lexists(current):
@@ -83,12 +83,23 @@ def _canonical_archive_parent(raw_parent: Path) -> Path:
     canonical = current.resolve(strict=True)
     if not canonical.is_dir():
         raise ValueError(f"archive parent is not a directory: {canonical}")
+    created: list[Path] = []
     for name in reversed(missing):
         next_parent = canonical / name
         next_parent.mkdir(mode=0o700, exist_ok=False)
+        created.append(next_parent)
         _validate_existing_components(next_parent, "archive")
         canonical = next_parent.resolve(strict=True)
-    return canonical
+    return canonical, created
+
+
+def _cleanup_created_parents(created: list[Path]) -> None:
+    """Remove only empty directories created by this invocation, deepest first."""
+    for directory in reversed(created):
+        try:
+            directory.rmdir()
+        except OSError:
+            pass
 
 
 def _source_directory(source: Path) -> Path:
@@ -110,15 +121,15 @@ def _archive_path(source: Path, archive: Path) -> Path:
         os.lstat(raw_archive)
         raise FileExistsError(f"archive already exists: {raw_archive}")
 
-    canonical_parent = _canonical_archive_parent(raw_archive.parent)
-    candidate = canonical_parent / raw_archive.name
+    # strict=False is read-only: it computes the canonical boundary without creating parents.
+    candidate = raw_archive.resolve(strict=False)
     try:
         relative_to_source = candidate.relative_to(source)
     except ValueError:
         return candidate
     if relative_to_source.parts and relative_to_source.parts[0] in LEGACY_PATHS:
         raise ValueError(f"archive is inside an allowlisted subtree: {candidate}")
-    return candidate
+    return raw_archive
 
 
 def _reserve_archive(archive: Path) -> None:
@@ -236,13 +247,18 @@ def _write_manifest(archive: Path, snapshot: dict[str, FileSnapshot]) -> Prototy
 def preserve_prototype(source: Path, archive: Path) -> PrototypeManifest:
     """Copy, verify, and atomically publish the approved legacy prototype files."""
     source_path = _source_directory(source)
-    archive_path = _archive_path(source_path, archive)
-
     initial = _snapshot(source_path)
     if not initial:
         raise FileNotFoundError("no allowlisted prototype files found")
 
-    _reserve_archive(archive_path)
+    raw_archive = _archive_path(source_path, archive)
+    canonical_parent, created_parents = _create_archive_parent(raw_archive.parent)
+    archive_path = canonical_parent / raw_archive.name
+    try:
+        _reserve_archive(archive_path)
+    except BaseException:
+        _cleanup_created_parents(created_parents)
+        raise
     try:
         staging = Path(tempfile.mkdtemp(prefix=".staging-", dir=archive_path))
         _copy_allowlisted_tree(source_path, staging)
@@ -266,6 +282,7 @@ def preserve_prototype(source: Path, archive: Path) -> PrototypeManifest:
             raise RuntimeError(
                 f"incomplete archive without manifest: cleanup failed for {archive_path}"
             ) from cleanup_error
+        _cleanup_created_parents(created_parents)
         raise
 
     # The original is deliberately retained: a later, separately reviewed retirement task can clean it safely.
