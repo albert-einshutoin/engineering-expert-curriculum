@@ -21,8 +21,19 @@ _DOMAIN_FIELDS = {"id", "slug", "title", "description", "prerequisites", "module
 _MODULE_FIELDS = {"index", "title", "concepts", "outcome"}
 _LEGACY_LESSON_FIELDS = set(("id", "title", "domainId", "domainTitle", "domainSlug", "moduleIndex", "moduleTitle", "level", "levelLabel", "concepts", "outcome", "path"))
 _MAX_JSON_FLOAT_TOKEN_CHARACTERS = 1_024
-_MAX_DUPLICATE_KEY_LABEL_CHARACTERS = 128
+_MAX_KEY_LABEL_CHARACTERS = 128
+_MAX_KEY_LABELS_PER_DIAGNOSTIC = 8
 _LOG_UNSAFE_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Zl", "Zp"})
+
+
+def _safe_key_label(key: str) -> str:
+    """Preserve useful schema keys without enabling log injection or flooding."""
+    if len(key) > _MAX_KEY_LABEL_CHARACTERS or any(
+        unicodedata.category(character) in _LOG_UNSAFE_CATEGORIES
+        for character in key
+    ):
+        return "<unsafe>"
+    return key
 
 
 def _pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -31,17 +42,9 @@ def _pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
         if key in result:
             # Keep useful schema diagnostics without allowing decoded keys to
             # inject log lines, bidi controls, or unbounded output.
-            label = (
-                key
-                if len(key) <= _MAX_DUPLICATE_KEY_LABEL_CHARACTERS
-                and all(
-                    unicodedata.category(character)
-                    not in _LOG_UNSAFE_CATEGORIES
-                    for character in key
-                )
-                else "<unsafe>"
+            raise CurriculumValidationError(
+                f"duplicate JSON key: {_safe_key_label(key)}"
             )
-            raise CurriculumValidationError(f"duplicate JSON key: {label}")
         result[key] = value
     return result
 
@@ -110,7 +113,15 @@ def _exact(value: Mapping[object, object], expected: set[str], label: str) -> No
     if set(value) != expected:
         unknown = sorted(set(value) - expected)
         if unknown:
-            raise CurriculumValidationError(f"unknown fields: {', '.join(unknown)}")
+            labels = [
+                _safe_key_label(key)
+                for key in unknown[:_MAX_KEY_LABELS_PER_DIAGNOSTIC]
+            ]
+            if len(unknown) > _MAX_KEY_LABELS_PER_DIAGNOSTIC:
+                labels.append("<more>")
+            raise CurriculumValidationError(
+                f"unknown fields: {', '.join(labels)}"
+            )
         raise CurriculumValidationError(f"{label} fields are invalid")
 
 

@@ -10,6 +10,7 @@ from unittest.mock import patch
 from curriculum_builder.catalog import (
     CANONICAL_CATALOG_SHA256,
     LEGACY_SOURCE_SHA256,
+    canonicalize,
     load_catalog,
     load_catalog_bytes,
     load_repository_catalog,
@@ -35,7 +36,77 @@ def item(**overrides: object) -> dict[str, object]:
     return value
 
 
+def empty_legacy_catalog() -> dict[str, object]:
+    return {
+        "version": 1,
+        "title": "Legacy",
+        "generated": "2026-07-31",
+        "domainCount": 0,
+        "moduleCount": 0,
+        "lessonCount": 0,
+        "tracks": {},
+        "domains": [],
+        "lessons": [],
+    }
+
+
 class CatalogLoaderTests(unittest.TestCase):
+    def test_legacy_unknown_field_preserves_safe_key_detail(self) -> None:
+        source = empty_legacy_catalog()
+        source["normal-extra"] = True
+
+        with self.assertRaises(CurriculumValidationError) as caught:
+            canonicalize(source, "fixture", source_sha256="0" * 64)
+
+        self.assertEqual(
+            str(caught.exception),
+            "unknown fields: normal-extra",
+        )
+
+    def test_legacy_unknown_field_sanitizes_log_injection_keys(self) -> None:
+        unsafe_keys = (
+            "secret\nforged-log",
+            "secret\x1b[31m",
+            "secret\u202eforged-log",
+            "secret\u2028forged-log",
+            "secret\u2029forged-log",
+            "secret\ud800forged-log",
+            "x" * 300,
+        )
+        for key in unsafe_keys:
+            with self.subTest(key=repr(key)):
+                source = empty_legacy_catalog()
+                source[key] = True
+                with self.assertRaises(CurriculumValidationError) as caught:
+                    canonicalize(
+                        source,
+                        "fixture",
+                        source_sha256="0" * 64,
+                    )
+                message = str(caught.exception)
+                self.assertEqual(message, "unknown fields: <unsafe>")
+                self.assertNotIn(key, message)
+                self.assertNotIn("\n", message)
+                self.assertLessEqual(len(message), 64)
+
+    def test_legacy_unknown_field_diagnostics_are_deterministically_bounded(
+        self,
+    ) -> None:
+        source = empty_legacy_catalog()
+        for index in reversed(range(100)):
+            source[f"extra-{index:03d}"] = True
+
+        with self.assertRaises(CurriculumValidationError) as caught:
+            canonicalize(source, "fixture", source_sha256="0" * 64)
+
+        self.assertEqual(
+            str(caught.exception),
+            "unknown fields: "
+            "extra-000, extra-001, extra-002, extra-003, "
+            "extra-004, extra-005, extra-006, extra-007, <more>",
+        )
+        self.assertLessEqual(len(str(caught.exception)), 128)
+
     def test_strict_json_sanitizes_unsafe_duplicate_key_labels(self) -> None:
         unsafe_keys = (
             "secret\nforged-log",
