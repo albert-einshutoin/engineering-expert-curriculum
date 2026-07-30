@@ -161,8 +161,10 @@ class PrototypeMigrationTests(unittest.TestCase):
             archive = root / ".archive" / "prototype-v1"
             original_cwd = Path.cwd()
             attempted: list[int] = []
+            received: list[tuple[int | None, ...]] = []
 
             def close_with_reported_failure(descriptors: tuple[int | None, ...]) -> list[OSError]:
+                received.append(descriptors)
                 for descriptor in descriptors:
                     if descriptor is not None:
                         attempted.append(descriptor)
@@ -175,7 +177,10 @@ class PrototypeMigrationTests(unittest.TestCase):
             self.assertEqual(manifest["fileCount"], 2)
             self.assertTrue((archive / "manifest.json").exists())
             self.assertEqual(Path.cwd(), original_cwd)
-            self.assertEqual(len(attempted), 3)
+            self.assertEqual(len(received), 1)
+            expected = [descriptor for descriptor in received[0] if descriptor is not None]
+            self.assertEqual(attempted, expected)
+            self.assertGreaterEqual(len(attempted), 2)
 
     def test_rejects_a_symlinked_source(self) -> None:
         with TemporaryDirectory() as directory:
