@@ -1,0 +1,141 @@
+{
+  "version": 1,
+  "id": "core-01-systems-tradeoffs",
+  "title": "システム思考とエンジニアリングのトレードオフ",
+  "summary": "局所最適ではなく制約、フィードバック、二次効果から判断する。",
+  "track": "foundations",
+  "stage": 1,
+  "difficulty": "foundation",
+  "estimatedMinutes": 180,
+  "prerequisiteIds": [],
+  "objectives": [
+    {
+      "id": "obj-1",
+      "statement": "制約と利害関係者を含むシステム境界を図示できる",
+      "evidenceIds": [
+        "lab-map",
+        "transfer"
+      ]
+    },
+    {
+      "id": "obj-2",
+      "statement": "二つ以上の選択肢を可逆性、費用、リスクで比較できる",
+      "evidenceIds": [
+        "lab-map",
+        "assessment"
+      ]
+    },
+    {
+      "id": "obj-3",
+      "statement": "新しい証拠によって判断を更新する条件を説明できる",
+      "evidenceIds": [
+        "teach-back",
+        "transfer"
+      ]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "lab-map",
+      "kind": "artifact",
+      "description": "比較表付き意思決定記録"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "5分の図解説明"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "障害シナリオへの判断根拠"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "未知の制約下での再評価"
+    }
+  ],
+  "lab": {
+    "title": "同期処理とキューを比較する",
+    "artifact": "decision-record.md",
+    "steps": [
+      "利用者、運用者、事業の成功条件を列挙する",
+      "同期処理とキューの障害経路を図示する",
+      "可逆性、遅延、費用、データ損失リスクを比較する",
+      "判断と再評価条件を一ページにまとめる"
+    ]
+  },
+  "teachBack": "図だけを使い、選ばなかった案が有利になる条件も5分で説明する。",
+  "assessment": [
+    {
+      "prompt": "平均遅延が改善したのに利用者体験が悪化する因果経路を二つ示す。",
+      "expectedEvidence": "境界、遅延分布、再試行、二次効果を関連付けた説明"
+    }
+  ],
+  "transferTask": "医療予約システムという別領域で同じ比較をやり直す。",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "機構の説明に重大な誤りがある",
+        "developing": "主要機構は正しいが境界条件が抜ける",
+        "proficient": "機構、境界、失敗条件を正確に説明する",
+        "exemplary": "複数層の相互作用と反例まで正確に説明する"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "結論だけで制約と代替案がない",
+        "developing": "主要制約を挙げるが代替案の反証が弱い",
+        "proficient": "代替案、リスク、再評価条件がつながる",
+        "exemplary": "二次効果と利害関係者間の緊張まで比較する"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "観測可能な証拠がない",
+        "developing": "証拠はあるが結論との因果が弱い",
+        "proficient": "再現可能な証拠で結論と反証を支える",
+        "exemplary": "不確実性と測定限界を含めて証拠を評価する"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "読者と決定事項が分からない",
+        "developing": "結論は伝わるが前提と影響が不足する",
+        "proficient": "読者が判断、実行、再評価できる",
+        "exemplary": "異なる利害関係者が非同期に合意形成できる"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "NASA Systems Engineering Handbook",
+      "url": "https://www.nasa.gov/reference/systems-engineering-handbook/",
+      "kind": "primary"
+    },
+    {
+      "title": "ISO/IEC/IEEE 42010 overview",
+      "url": "https://www.iso-architecture.org/ieee-1471/",
+      "kind": "standard"
+    }
+  ],
+  "review": {
+    "intervalDays": [
+      1,
+      7,
+      30,
+      90
+    ],
+    "prompts": [
+      "今回の判断で最も壊れやすい前提は何か",
+      "新しい証拠で結論が反転する条件は何か"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}
