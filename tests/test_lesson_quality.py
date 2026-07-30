@@ -359,6 +359,31 @@ class LessonQualityTests(unittest.TestCase):
                 ):
                     load_lesson(value)  # type: ignore[arg-type]
 
+    def test_lesson_path_rejects_log_injection_characters_generically(
+        self,
+    ) -> None:
+        unsafe_names = (
+            "secret\nforged-log.json",
+            "secret\0forged-log.json",
+            "secret\u2066forged-log.json",
+            "secret\u2028forged-log.json",
+            "secret\u2029forged-log.json",
+            ("x" * 300) + ".json",
+        )
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            for name in unsafe_names:
+                with self.subTest(name=repr(name)):
+                    path = root / name
+                    if "\0" not in name and len(name) <= 255:
+                        path.write_bytes(COMPLETE.read_bytes())
+                    with self.assertRaises(CurriculumValidationError) as caught:
+                        load_lesson(path)
+                    self.assertEqual(
+                        str(caught.exception),
+                        "lesson path is invalid",
+                    )
+
     def test_symlink_and_non_regular_files_are_rejected(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory).resolve()

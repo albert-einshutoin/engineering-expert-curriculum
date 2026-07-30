@@ -6,6 +6,7 @@ import json
 import hashlib
 import hmac
 import math
+import unicodedata
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -20,13 +21,27 @@ _DOMAIN_FIELDS = {"id", "slug", "title", "description", "prerequisites", "module
 _MODULE_FIELDS = {"index", "title", "concepts", "outcome"}
 _LEGACY_LESSON_FIELDS = set(("id", "title", "domainId", "domainTitle", "domainSlug", "moduleIndex", "moduleTitle", "level", "levelLabel", "concepts", "outcome", "path"))
 _MAX_JSON_FLOAT_TOKEN_CHARACTERS = 1_024
+_MAX_DUPLICATE_KEY_LABEL_CHARACTERS = 128
+_LOG_UNSAFE_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Zl", "Zp"})
 
 
 def _pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for key, value in pairs:
         if key in result:
-            raise CurriculumValidationError(f"duplicate JSON key: {key}")
+            # Keep useful schema diagnostics without allowing decoded keys to
+            # inject log lines, bidi controls, or unbounded output.
+            label = (
+                key
+                if len(key) <= _MAX_DUPLICATE_KEY_LABEL_CHARACTERS
+                and all(
+                    unicodedata.category(character)
+                    not in _LOG_UNSAFE_CATEGORIES
+                    for character in key
+                )
+                else "<unsafe>"
+            )
+            raise CurriculumValidationError(f"duplicate JSON key: {label}")
         result[key] = value
     return result
 

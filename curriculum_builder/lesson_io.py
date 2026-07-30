@@ -6,11 +6,14 @@ from dataclasses import dataclass
 import os
 from pathlib import Path
 import stat
+import unicodedata
 
 from .errors import CurriculumValidationError
 
 
 _READ_CHUNK_BYTES = 64 * 1024
+_MAX_LESSON_LABEL_CHARACTERS = 255
+_LOG_UNSAFE_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Zl", "Zp"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,7 +26,7 @@ class _DirectoryBinding:
 
 def read_stable_lesson_file(path: Path, maximum_bytes: int) -> bytes:
     """Read a lesson through a symlink-free, revalidated descriptor chain."""
-    label = path.name or "lesson"
+    label = _validated_lesson_label(path)
     descriptors: list[int] = []
     primary: BaseException | None = None
     result: bytes | None = None
@@ -57,6 +60,18 @@ def read_stable_lesson_file(path: Path, maximum_bytes: int) -> bytes:
         raise close_error from None
     assert result is not None
     return result
+
+
+def _validated_lesson_label(path: Path) -> str:
+    label = path.name or "lesson"
+    # The filename is retained for useful diagnostics only after bounding it
+    # and rejecting characters that can alter log structure or display order.
+    if any(
+        unicodedata.category(character) in _LOG_UNSAFE_CATEGORIES
+        for character in str(path)
+    ) or len(label) > _MAX_LESSON_LABEL_CHARACTERS:
+        raise CurriculumValidationError("lesson path is invalid")
+    return label
 
 
 def _read_with_pinned_ancestors(

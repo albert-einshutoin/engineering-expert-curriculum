@@ -36,6 +36,42 @@ def item(**overrides: object) -> dict[str, object]:
 
 
 class CatalogLoaderTests(unittest.TestCase):
+    def test_strict_json_sanitizes_unsafe_duplicate_key_labels(self) -> None:
+        unsafe_keys = (
+            "secret\nforged-log",
+            "secret\0forged-log",
+            "secret\u2066forged-log",
+            "secret\u2028forged-log",
+            "secret\u2029forged-log",
+            "x" * 300,
+        )
+        for key in unsafe_keys:
+            with self.subTest(key=repr(key)):
+                encoded = json.dumps(key, ensure_ascii=False).encode("utf-8")
+                raw = b"{" + encoded + b":1," + encoded + b":2}"
+                with self.assertRaises(CurriculumValidationError) as caught:
+                    strict_json_loads(raw, Path("fixture.json"))
+                self.assertEqual(
+                    str(caught.exception),
+                    "fixture.json: duplicate JSON key: <unsafe>",
+                )
+
+    def test_strict_json_preserves_safe_duplicate_key_details(self) -> None:
+        with self.assertRaises(CurriculumValidationError) as caught:
+            strict_json_loads(
+                b'{"version":1,"version":2}',
+                Path("fixture.json"),
+            )
+
+        self.assertEqual(
+            str(caught.exception),
+            "fixture.json: duplicate JSON key: version",
+        )
+        self.assertIsInstance(
+            caught.exception.__cause__,
+            CurriculumValidationError,
+        )
+
     def test_strict_json_rejects_float_overflow_without_leaking_tokens(
         self,
     ) -> None:
