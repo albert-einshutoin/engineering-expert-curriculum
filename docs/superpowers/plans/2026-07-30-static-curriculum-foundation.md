@@ -762,14 +762,16 @@ receives one additional parse solely to reject decoded duplicate IDs across
 the trusted base and validated content.
 
 The 30 test methods include subtest matrices rather than inflating the method
-count: head/body/header/nav/footer reorder and missing-child mutations, direct
-non-whitespace text in each container, and a closing tag for a void meta
-element. Every mutation asserts that it changed the canonical fixture before
-initializing `Renderer`. Snapshot tests independently alter `st_dev`, `st_ino`,
-`st_mode`, `st_size`, `st_mtime_ns`, and `st_ctime_ns` on both the
-before-to-opened and opened-to-after transitions. File- and root-close failure
-subtests perform the real close first, then prove both descriptors were handled
-once in reverse ownership order while returning a controlled error.
+count: swapped, missing, or text-interrupted `html` children; reordered and
+missing head/body/header/nav/footer children; direct non-whitespace text in
+each container; and a closing tag for a void meta element. Fixed title, skip,
+brand, three navigation-link, and footer text each receive an independent
+one-character mutation. Every mutation asserts that it changed the canonical
+fixture before initializing `Renderer`. Snapshot tests independently alter
+`st_dev`, `st_ino`, `st_mode`, `st_size`, `st_mtime_ns`, and `st_ctime_ns` on
+both the before-to-opened and opened-to-after transitions. File- and root-close
+failure subtests perform the real close first, then prove both descriptors were
+handled once in reverse ownership order while returning a controlled error.
 
 The base accepts exactly four meta records: UTF-8 charset, the fixed viewport,
 the structured description placeholder, and one CSP. Unknown, duplicate, or
