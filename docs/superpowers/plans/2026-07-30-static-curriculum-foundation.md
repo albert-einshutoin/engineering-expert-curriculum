@@ -882,37 +882,32 @@ git commit -m "feat: render semantic file-compatible pages"
 
 - [ ] **Step 1: Write CSS design contracts**
 
-```python
-# tests/test_styles.py
-from __future__ import annotations
+Add dependency-free `unittest` contracts in `tests/test_styles.py`. Resolve the
+repository root from `__file__`, not the process working directory, and verify:
 
-from pathlib import Path
-import unittest
-
-
-class StyleContractTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls) -> None:
-        cls.css = Path("static/styles.css").read_text(encoding="utf-8")
-
-    def test_defines_required_design_tokens(self) -> None:
-        for token in (
-            "--color-paper", "--color-ink", "--color-accent",
-            "--space-1", "--measure-reading", "--focus-ring",
-        ):
-            self.assertIn(token, self.css)
-
-    def test_has_responsive_print_and_focus_contracts(self) -> None:
-        self.assertIn("@media (max-width: 48rem)", self.css)
-        self.assertIn("@media print", self.css)
-        self.assertIn(":focus-visible", self.css)
-
-    def test_roadmap_uses_css_layout_without_animation(self) -> None:
-        self.assertIn(".learning-path", self.css)
-        self.assertIn("display: grid", self.css)
-        self.assertIn(".learning-stage:not(:last-child)::after", self.css)
-        self.assertNotIn("@keyframes", self.css)
-```
+- UTF-8 text, balanced comments/braces, a bounded file size, no C0/NUL,
+  `@import`, `url()`, external font, script URL, animation, transition, or
+  `!important`.
+- One definition of each palette, spacing, measure, border, shadow, and focus
+  token; system Japanese/Latin sans, serif, and mono stacks; a 70ch reading
+  measure; and numeric WCAG AA contrast checks for primary text, muted text,
+  links, focus, and connector colors on their intended surfaces.
+- Semantic textbook coverage for headings, links, navigation, sections,
+  articles, lists, disclosure controls, quotations, figures, tables, code,
+  keyboard input, and marks. Parse all four templates and require an intentional
+  selector for every current class and ID.
+- Catalog cards and a four-stage `.learning-path` grid with visible CSS counter
+  numbers, explicit prerequisite text, and a non-interactive patterned
+  line/arrow connector at
+  `.learning-stage:not(:last-child)::after`. Relationships must remain
+  understandable without color.
+- A single-column `max-width: 48rem` state with hidden decorative connectors,
+  320px-safe grid sizing and wrapping, clear target/focus/skip-link treatment,
+  underlined links, and approximately 44px navigation/disclosure targets.
+- Logical properties, conservative fluid `clamp()` bounds, local system
+  typography, narrow-screen code/table overflow, forced-colors and
+  reduced-motion preferences, and print rules that preserve reading order,
+  prerequisite text, HTTPS URL destinations, and break avoidance.
 
 - [ ] **Step 2: Run CSS tests and verify RED**
 
@@ -924,82 +919,18 @@ python3.13 -m unittest tests.test_styles -v
 
 Expected: `FileNotFoundError` for `static/styles.css`.
 
-- [ ] **Step 3: Add the complete token foundation and critical layouts**
+- [ ] **Step 3: Implement the complete local design system**
 
-```css
-/* static/styles.css */
-:root {
-  color-scheme: light;
-  --color-paper: #f7f3ea;
-  --color-surface: #fffdf8;
-  --color-ink: #172033;
-  --color-muted: #596273;
-  --color-border: #d9d1c1;
-  --color-accent: #17616b;
-  --color-warm: #9b4a2f;
-  --color-success: #246b47;
-  --space-1: .375rem;
-  --space-2: .75rem;
-  --space-3: 1.25rem;
-  --space-4: 2rem;
-  --space-5: 3.5rem;
-  --measure-reading: 72ch;
-  --measure-wide: 86rem;
-  --focus-ring: 3px solid #b33c00;
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-}
+Create `static/styles.css` from the contracts rather than copying a minimal
+sample. Use the approved warm-paper editorial direction, restrained teal/rust
+accents, serif reading face, sans-serif interface face, and mono code face.
+Keep the file fully local and usable over `file://`; JavaScript, downloaded
+fonts, and motion are not part of the visual contract.
 
-* { box-sizing: border-box; }
-html { background: var(--color-paper); color: var(--color-ink); }
-body { margin: 0; line-height: 1.65; }
-a { color: var(--color-accent); text-underline-offset: .18em; }
-a:focus-visible { outline: var(--focus-ring); outline-offset: .2rem; }
-.skip-link { position: absolute; left: -999rem; }
-.skip-link:focus { left: var(--space-2); top: var(--space-2); z-index: 10; }
-.site-header {
-  display: flex; justify-content: space-between; gap: var(--space-3);
-  padding: var(--space-3); border-bottom: 2px solid var(--color-ink);
-}
-.site-header nav { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.brand { color: var(--color-ink); font-weight: 800; text-decoration: none; }
-main { width: min(100% - 2rem, var(--measure-wide)); margin-inline: auto; }
-.reading { max-width: var(--measure-reading); margin-inline: auto; }
-.learning-path {
-  display: grid; grid-template-columns: repeat(4, minmax(12rem, 1fr));
-  gap: var(--space-3); padding: 0; list-style: none;
-}
-.learning-stage {
-  position: relative;
-  border-top: .4rem solid var(--color-accent);
-}
-.learning-stage:not(:last-child)::after {
-  content: "";
-  position: absolute;
-  top: 1.75rem;
-  right: calc(var(--space-3) * -1);
-  width: var(--space-3);
-  border-top: .15rem solid var(--color-warm);
-}
-.catalog-grid {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
-  gap: var(--space-3);
-}
-footer { margin-top: var(--space-5); padding: var(--space-4); text-align: center; }
-
-@media (max-width: 48rem) {
-  .site-header { display: block; }
-  .site-header nav { margin-top: var(--space-2); }
-  .learning-path { grid-template-columns: 1fr; }
-  .learning-stage::after { display: none; }
-}
-
-@media print {
-  .site-header nav, .skip-link { display: none; }
-  html { background: #fff; }
-  a { color: inherit; text-decoration: none; }
-  a[href^="https://"]::after { content: " (" attr(href) ")"; font-size: .8em; }
-}
-```
+The graph is semantic HTML first and CSS-enhanced second: the ordered list and
+prerequisite sentences carry meaning, while grid placement, numbered counters,
+and empty `pointer-events: none` pseudo-elements add orientation. Mobile,
+forced-color, and print states must not depend on those decorative connectors.
 
 - [ ] **Step 4: Run CSS contracts**
 
@@ -1009,9 +940,16 @@ Run:
 python3.13 -m unittest tests.test_styles -v
 ```
 
-Expected: three tests pass.
+Expected: all 15 stylesheet contracts pass.
 
-- [ ] **Step 5: Commit the static design system**
+- [ ] **Step 5: Perform local visual and accessibility QA**
+
+Use a temporary all-component HTML fixture linked to the repository stylesheet.
+Check `file://` loading, keyboard skip-link focus, 1440px desktop, 375px and
+320px mobile widths, print emulation, horizontal overflow, and browser console
+errors. Do not add screenshots or generated QA artifacts to the repository.
+
+- [ ] **Step 6: Commit the static design system**
 
 ```bash
 git add static/styles.css tests/test_styles.py
