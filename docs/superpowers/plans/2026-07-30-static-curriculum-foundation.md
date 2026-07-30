@@ -6,7 +6,7 @@
 
 **Architecture:** Repository-controlled JSON and semantic HTML fragments are parsed into immutable domain models, validated before rendering, and emitted into an atomically replaced `site/` directory. The build separates catalog import, prerequisite-graph logic, HTML safety, rendering, and orchestration so each boundary can be tested independently.
 
-**Tech Stack:** Python 3.12 standard library, `unittest`, HTML5, CSS3, GitHub Flow
+**Tech Stack:** Python 3.12+ standard library (validated with Python 3.13), `unittest`, HTML5, CSS3, GitHub Flow
 
 ---
 
@@ -284,7 +284,7 @@ class CatalogItemTests(unittest.TestCase):
 Run:
 
 ```bash
-python3 -m unittest tests.test_models -v
+python3.13 -m unittest tests.test_models -v
 ```
 
 Expected: import fails because `curriculum_builder.models` does not exist.
@@ -364,7 +364,7 @@ class CatalogItem:
 Run:
 
 ```bash
-python3 -m unittest tests.test_models -v
+python3.13 -m unittest tests.test_models -v
 ```
 
 Expected: three tests pass.
@@ -463,7 +463,7 @@ class CatalogTests(unittest.TestCase):
 Run:
 
 ```bash
-python3 -m unittest tests.test_import_catalog tests.test_catalog -v
+python3.13 -m unittest tests.test_import_catalog tests.test_catalog -v
 ```
 
 Expected: imports fail because importer and catalog loader do not exist.
@@ -541,10 +541,10 @@ def load_catalog(path: Path) -> tuple[CatalogItem, ...]:
 Run:
 
 ```bash
-python3 tools/import_catalog.py \
+python3.13 tools/import_catalog.py \
   --input $REPO_ROOT/data/curriculum.json \
   --output content/catalog.json
-python3 -m unittest tests.test_import_catalog tests.test_catalog -v
+python3.13 -m unittest tests.test_import_catalog tests.test_catalog -v
 ```
 
 Expected: all tests pass and `content/catalog.json` contains 1,140 sorted items.
@@ -612,7 +612,7 @@ class GraphTests(unittest.TestCase):
 Run:
 
 ```bash
-python3 -m unittest tests.test_graph -v
+python3.13 -m unittest tests.test_graph -v
 ```
 
 Expected: import fails because `curriculum_builder.graph` does not exist.
@@ -673,7 +673,7 @@ def topological_stages(
 Run:
 
 ```bash
-python3 -m unittest tests.test_graph -v
+python3.13 -m unittest tests.test_graph -v
 ```
 
 Expected: three tests pass.
@@ -734,7 +734,7 @@ class HtmlSafetyTests(unittest.TestCase):
 Run:
 
 ```bash
-python3 -m unittest tests.test_html_safety -v
+python3.13 -m unittest tests.test_html_safety -v
 ```
 
 Expected: import fails because `curriculum_builder.html_safety` does not exist.
@@ -796,7 +796,7 @@ def validate_fragment(fragment: str) -> SafeHtml:
 Run:
 
 ```bash
-python3 -m unittest tests.test_html_safety -v
+python3.13 -m unittest tests.test_html_safety -v
 ```
 
 Expected: three tests pass.
@@ -872,7 +872,7 @@ class RendererTests(unittest.TestCase):
 Run:
 
 ```bash
-python3 -m unittest tests.test_render -v
+python3.13 -m unittest tests.test_render -v
 ```
 
 Expected: import fails because `curriculum_builder.render` does not exist.
@@ -996,7 +996,7 @@ Save the following as `templates/roadmap.html`:
 Run:
 
 ```bash
-python3 -m unittest tests.test_render -v
+python3.13 -m unittest tests.test_render -v
 ```
 
 Expected: two tests pass.
@@ -1053,7 +1053,7 @@ class StyleContractTests(unittest.TestCase):
 Run:
 
 ```bash
-python3 -m unittest tests.test_styles -v
+python3.13 -m unittest tests.test_styles -v
 ```
 
 Expected: `FileNotFoundError` for `static/styles.css`.
@@ -1140,7 +1140,7 @@ footer { margin-top: var(--space-5); padding: var(--space-4); text-align: center
 Run:
 
 ```bash
-python3 -m unittest tests.test_styles -v
+python3.13 -m unittest tests.test_styles -v
 ```
 
 Expected: three tests pass.
@@ -1226,7 +1226,7 @@ class BuildTests(unittest.TestCase):
 Run:
 
 ```bash
-python3 -m unittest tests.test_build -v
+python3.13 -m unittest tests.test_build -v
 ```
 
 Expected: import fails because `curriculum_builder.build` does not exist.
@@ -1369,11 +1369,11 @@ if __name__ == "__main__":
 Run:
 
 ```bash
-python3 -m unittest tests.test_build -v
-python3 tools/build.py
+python3.13 -m unittest tests.test_build -v
+python3.13 tools/build.py
 find site -type f | sort
 find site -type f -exec shasum -a 256 {} + > /tmp/curriculum-build-1.sha256
-python3 tools/build.py
+python3.13 tools/build.py
 find site -type f -exec shasum -a 256 {} + > /tmp/curriculum-build-2.sha256
 diff -u /tmp/curriculum-build-1.sha256 /tmp/curriculum-build-2.sha256
 ```
@@ -1393,45 +1393,70 @@ git commit -m "feat: build static curriculum atlas atomically"
 - Modify locally, not in Git: `$REPO_ROOT/.archive/prototype-v1/`
 - Verify: `$REPO_ROOT/.archive/prototype-v1/manifest.json`
 
-- [ ] **Step 1: Run the complete suite before touching the prototype**
+- [ ] **Step 1: Prepare and verify the archive parent before migration**
 
 Run:
 
 ```bash
-python3 -m unittest discover -s tests -v
+install -d -m 700 $REPO_ROOT/.archive
+python3.13 - <<'PY'
+import os
+import stat
+from pathlib import Path
+
+parent = Path("$REPO_ROOT/.archive")
+metadata = parent.lstat()
+assert parent.is_dir(), "archive parent must be a directory"
+assert not stat.S_ISLNK(metadata.st_mode), "archive parent must not be a symlink"
+assert metadata.st_uid == os.geteuid(), "archive parent must be owned by the current user"
+assert not stat.S_IMODE(metadata.st_mode) & (stat.S_IWGRP | stat.S_IWOTH), (
+    "archive parent must not be group/world writable"
+)
+PY
+```
+
+Expected: the parent exists as a non-symlink directory owned by the current
+user, with no group/world write permission.
+
+- [ ] **Step 2: Run the complete suite before touching the prototype**
+
+Run:
+
+```bash
+python3.13 -m unittest discover -s tests -v
 ```
 
 Expected: all foundation tests pass.
 
-- [ ] **Step 2: Record the explicit source inventory**
+- [ ] **Step 3: Record the explicit source inventory**
 
 Run:
 
 ```bash
-python3 -c "from tools.migrate_prototype import LEGACY_PATHS; print('\\n'.join(LEGACY_PATHS))"
+python3.13 -c "from tools.migrate_prototype import LEGACY_PATHS; print('\\n'.join(LEGACY_PATHS))"
 ```
 
 Expected: the eleven approved legacy paths and no `.git`, `docs`, or
 `.superpowers` entry.
 
-- [ ] **Step 3: Preserve the prototype**
+- [ ] **Step 4: Preserve the prototype**
 
 Run:
 
 ```bash
-python3 tools/migrate_prototype.py \
+python3.13 tools/migrate_prototype.py \
   --source $REPO_ROOT \
   --archive $REPO_ROOT/.archive/prototype-v1
 ```
 
 Expected: JSON containing `"status": "preserved"` and a positive `fileCount`.
 
-- [ ] **Step 4: Verify manifest, archive, and Git worktrees**
+- [ ] **Step 5: Verify manifest, archive, and Git worktrees**
 
 Run:
 
 ```bash
-python3 -m json.tool \
+python3.13 -m json.tool \
   $REPO_ROOT/.archive/prototype-v1/manifest.json \
   >/dev/null
 git -C $REPO_ROOT status --short --branch
@@ -1441,13 +1466,13 @@ git status --short --branch
 Expected: the original worktree retains `.git`, `.superpowers`, `.archive`, and
 the committed specification; the implementation worktree remains clean.
 
-- [ ] **Step 5: Run the clean build gate and record the foundation checkpoint**
+- [ ] **Step 6: Run the clean build gate and record the foundation checkpoint**
 
 Run:
 
 ```bash
-python3 -m unittest discover -s tests -v
-python3 tools/build.py
+python3.13 -m unittest discover -s tests -v
+python3.13 tools/build.py
 git status --short --branch
 ```
 
