@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import stat
 from string import Template
+from types import MappingProxyType
 
 from .errors import CurriculumValidationError
 from .html_safety import SafeHtml, validate_fragment
@@ -36,17 +37,20 @@ _URL_SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:", re.ASCII)
 _VOID_ELEMENTS = frozenset(
     {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta"}
 )
-_PROHIBITED_BASE_ELEMENTS = frozenset(
+_BASE_ATTRIBUTES = MappingProxyType(
     {
-        "base",
-        "embed",
-        "form",
-        "frame",
-        "frameset",
-        "iframe",
-        "object",
-        "script",
-        "style",
+        "a": frozenset({"class", "href"}),
+        "body": frozenset(),
+        "footer": frozenset(),
+        "head": frozenset(),
+        "header": frozenset({"class"}),
+        "html": frozenset({"lang"}),
+        "link": frozenset({"href", "rel"}),
+        "main": frozenset({"id"}),
+        "meta": frozenset({"charset", "content", "http-equiv", "name"}),
+        "nav": frozenset({"aria-label"}),
+        "p": frozenset(),
+        "title": frozenset(),
     }
 )
 _BASE_PLACEHOLDER_COUNTS = Counter(
@@ -406,6 +410,7 @@ class _BasePolicyParser(HTMLParser):
         self.description_placeholder_count = 0
         self.title_placeholder_count = 0
         self.hrefs: Counter[str] = Counter()
+        self.stylesheet_count = 0
 
     def handle_decl(self, decl: str) -> None:
         if decl.strip().casefold() != "doctype html":
@@ -430,7 +435,7 @@ class _BasePolicyParser(HTMLParser):
         attrs: list[tuple[str, str | None]],
     ) -> None:
         normalized_tag = tag.casefold()
-        if normalized_tag in _PROHIBITED_BASE_ELEMENTS:
+        if normalized_tag not in _BASE_ATTRIBUTES:
             raise CurriculumValidationError("base template markup is invalid")
         if normalized_tag == "html":
             if self.open_tags or self.doctype_count != 1:
@@ -463,6 +468,10 @@ class _BasePolicyParser(HTMLParser):
 
         names = tuple(name.casefold() for name, _ in attrs)
         if len(names) != len(set(names)):
+            raise CurriculumValidationError("base template markup is invalid")
+        if any(value is None for _, value in attrs):
+            raise CurriculumValidationError("base template markup is invalid")
+        if any(name not in _BASE_ATTRIBUTES[normalized_tag] for name in names):
             raise CurriculumValidationError("base template markup is invalid")
         if any(name.startswith("on") or name in {"style", "srcdoc"} for name in names):
             raise CurriculumValidationError("base template markup is invalid")
@@ -506,6 +515,12 @@ class _BasePolicyParser(HTMLParser):
             and attributes.get("content") == "$description"
         ):
             self.description_placeholder_count += 1
+        if (
+            normalized_tag == "link"
+            and attributes.get("rel") == "stylesheet"
+            and attributes.get("href") == "${root}styles.css"
+        ):
+            self.stylesheet_count += 1
 
         for attribute_name in ("href", "src"):
             target = attributes.get(attribute_name)
@@ -590,6 +605,7 @@ def _validate_base_policy(source: str) -> None:
         or parser.open_tags
         or parser.description_placeholder_count != 1
         or parser.title_placeholder_count != 1
+        or parser.stylesheet_count != 1
     ):
         raise CurriculumValidationError("base template markup is invalid")
     required_hrefs = Counter(

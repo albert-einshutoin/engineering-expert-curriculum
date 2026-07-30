@@ -291,7 +291,8 @@ class RendererTests(unittest.TestCase):
             with self.subTest(name=name):
                 renderer = self.renderer_with_fragment(name, source)
                 self.assert_validation_error(
-                    "text placeholder requires element-text or quoted-attribute context",
+                    "text placeholder requires element-text or "
+                    "quoted-attribute context",
                     renderer.fragment,
                     name,
                     text_values={"value": "reading"},
@@ -663,7 +664,12 @@ class RendererTests(unittest.TestCase):
     def test_rejects_excessive_placeholder_count(self) -> None:
         renderer = self.renderer_with_fragment(
             "many.html",
-            "<p>" + "".join(f"${{value{index}}}" for index in range(MAX_PLACEHOLDERS + 1)) + "</p>",
+            "<p>"
+            + "".join(
+                f"${{value{index}}}"
+                for index in range(MAX_PLACEHOLDERS + 1)
+            )
+            + "</p>",
         )
         values = {
             f"value{index}": "x"
