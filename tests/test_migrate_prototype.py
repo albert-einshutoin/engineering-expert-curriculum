@@ -93,6 +93,34 @@ class PrototypeMigrationTests(unittest.TestCase):
             self.assertEqual(list(root.glob(".prototype-staging-*")), [])
             self.assertTrue((source / "index.html").exists())
 
+    def test_builder_failure_reports_private_staging_close_failure_with_builder_as_cause(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            source = root / "source"
+            source.mkdir()
+            (source / "index.html").write_text("legacy", encoding="utf-8")
+            parent_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+
+            def close_staging(descriptors: tuple[int | None, ...]) -> list[OSError]:
+                for descriptor in descriptors:
+                    if descriptor is not None:
+                        os.close(descriptor)
+                return [OSError("staging close failed")]
+
+            try:
+                with patch("tools.migrate_prototype._build_verified_archive", side_effect=OSError("builder failed")):
+                    with patch("tools.migrate_prototype._close_all", side_effect=close_staging):
+                        with self.assertRaisesRegex(RuntimeError, "staging close failed") as error:
+                            _publish_verified_archive(source, parent_fd, "published", _snapshot(source))
+                self.assertIsInstance(error.exception.__cause__, OSError)
+                self.assertEqual(str(error.exception.__cause__), "builder failed")
+            finally:
+                os.close(parent_fd)
+
+            self.assertFalse((root / "published").exists())
+            self.assertEqual(list(root.glob(".prototype-staging-*")), [])
+            self.assertTrue((source / "index.html").exists())
+
     def test_build_verified_archive_copies_and_manifests_without_changing_source(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory).resolve()
@@ -732,6 +760,29 @@ class PrototypeMigrationTests(unittest.TestCase):
             self.assertFalse(os.path.lexists(archive))
             self.assertFalse((root / ".archive").exists())
 
+    def test_publish_failure_reports_parent_close_failure_with_publish_as_cause(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            self._write_fixture(root)
+            archive = root / ".archive" / "prototype-v1"
+
+            def close_parent(descriptors: tuple[int | None, ...]) -> list[OSError]:
+                for descriptor in descriptors:
+                    if descriptor is not None:
+                        os.close(descriptor)
+                return [OSError("parent close failed")]
+
+            with patch("tools.migrate_prototype._publish_verified_archive", side_effect=OSError("publish failed")):
+                with patch("tools.migrate_prototype._close_all", side_effect=close_parent):
+                    with self.assertRaisesRegex(RuntimeError, "parent close failed") as error:
+                        preserve_prototype(root, archive)
+
+            self.assertIsInstance(error.exception.__cause__, OSError)
+            self.assertEqual(str(error.exception.__cause__), "publish failed")
+            self.assertFalse(archive.exists())
+            self.assertFalse((root / ".archive").exists())
+            self.assertTrue((root / "index.html").exists())
+
     def test_pre_commit_directory_fsync_failure_never_renames_manifest(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory).resolve()
@@ -758,12 +809,20 @@ class PrototypeMigrationTests(unittest.TestCase):
             original_cwd = Path.cwd()
             attempted: list[int] = []
             received: list[tuple[int | None, ...]] = []
+            post_publish_closes: list[tuple[int | None, ...]] = []
             parent_descriptor: int | None = None
+            native_published = False
+            real_publish = _rename_directory_noreplace
 
             def record_parent_descriptor(path: Path) -> int:
                 nonlocal parent_descriptor
                 parent_descriptor = _open_directory_fd(path)
                 return parent_descriptor
+
+            def record_publish(parent_fd: int, source_name: str, target_name: str) -> None:
+                nonlocal native_published
+                real_publish(parent_fd, source_name, target_name)
+                native_published = True
 
             def close_with_reported_failure(descriptors: tuple[int | None, ...]) -> list[OSError]:
                 received.append(descriptors)
@@ -771,11 +830,15 @@ class PrototypeMigrationTests(unittest.TestCase):
                     if descriptor is not None:
                         attempted.append(descriptor)
                         os.close(descriptor)
-                return [OSError("first close failed")] if descriptors == (parent_descriptor,) else []
+                if native_published:
+                    post_publish_closes.append(descriptors)
+                    return [OSError("post-publish close failed")]
+                return []
 
             with patch("tools.migrate_prototype._open_directory_fd", side_effect=record_parent_descriptor):
-                with patch("tools.migrate_prototype._close_all", side_effect=close_with_reported_failure):
-                    manifest = preserve_prototype(root, archive)
+                with patch("tools.migrate_prototype._rename_directory_noreplace", side_effect=record_publish):
+                    with patch("tools.migrate_prototype._close_all", side_effect=close_with_reported_failure):
+                        manifest = preserve_prototype(root, archive)
 
             self.assertEqual(manifest["fileCount"], 2)
             self.assertTrue((archive / "manifest.json").exists())
@@ -789,6 +852,7 @@ class PrototypeMigrationTests(unittest.TestCase):
             ]
             self.assertEqual(attempted, expected)
             self.assertEqual(received[-1], (parent_descriptor,))
+            self.assertEqual(len(post_publish_closes), 2)
 
     def test_rejects_a_symlinked_source(self) -> None:
         with TemporaryDirectory() as directory:

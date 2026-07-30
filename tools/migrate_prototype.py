@@ -560,7 +560,15 @@ def _publish_verified_archive(
         raise
     finally:
         # Once rename succeeds the final archive is committed; close failures cannot reverse it.
-        _close_all((staging_fd,))
+        close_failures = _close_all((staging_fd,))
+        if close_failures and not published:
+            close_error = RuntimeError(
+                f"private staging descriptor close failed: {close_failures[0]}"
+            )
+            active_error = sys.exception()
+            if active_error is None:
+                raise close_error
+            raise close_error from active_error
 
 
 def preserve_prototype(source: Path, archive: Path) -> PrototypeManifest:
@@ -582,8 +590,10 @@ def preserve_prototype(source: Path, archive: Path) -> PrototypeManifest:
                 f"archive parent cleanup failed after open error: {cleanup_error}"
             ) from open_error
         raise
+    completed = False
     try:
         manifest = _publish_verified_archive(source_path, parent_fd, raw_archive.name, initial)
+        completed = True
     except BaseException as operation_error:
         try:
             _cleanup_created_parents(created_parents)
@@ -595,7 +605,15 @@ def preserve_prototype(source: Path, archive: Path) -> PrototypeManifest:
         raise
     finally:
         # Native publish is the commit point; later parent-descriptor close errors cannot reverse it.
-        _close_all((parent_fd,))
+        close_failures = _close_all((parent_fd,))
+        if close_failures and not completed:
+            close_error = RuntimeError(
+                f"archive parent descriptor close failed: {close_failures[0]}"
+            )
+            active_error = sys.exception()
+            if active_error is None:
+                raise close_error
+            raise close_error from active_error
 
     # The original is deliberately retained: a later, separately reviewed retirement task can clean it safely.
     return manifest
