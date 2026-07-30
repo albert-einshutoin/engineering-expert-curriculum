@@ -271,18 +271,28 @@ def _open_trusted_directory(
         descriptor = os.open(canonical, flags)
     except OSError:
         raise _validation(f"{label} cannot be opened safely") from None
+    handle: _DirectoryHandle | None = None
     try:
         opened = os.fstat(descriptor)
         _require_owned_safe_node(opened, label, directory=True)
         if _identity(recorded) != _identity(opened):
             raise _validation(f"{label} changed while opening")
-        yield _DirectoryHandle(
+        handle = _DirectoryHandle(
             path=canonical,
             descriptor=descriptor,
             identity=_identity(opened),
             label=label,
         )
+        yield handle
     except BaseException as operation_error:
+        if handle is not None:
+            try:
+                _verify_directory_identity(handle)
+            except BaseException as binding_error:
+                operation_error.add_note(
+                    f"{label} pathname binding also changed: "
+                    f"{binding_error}"
+                )
         try:
             os.close(descriptor)
         except OSError as close_error:
@@ -302,10 +312,21 @@ def _open_trusted_directory(
             raise normalized from operation_error
         raise
     else:
+        teardown_error: BaseException | None = None
+        assert handle is not None
+        try:
+            _verify_directory_identity(handle)
+        except BaseException as error:
+            teardown_error = error
         try:
             os.close(descriptor)
         except OSError as close_error:
-            if (
+            if teardown_error is not None:
+                teardown_error.add_note(
+                    f"{label} descriptor also failed to close: "
+                    f"{close_error}"
+                )
+            elif (
                 transaction is not None
                 and transaction.publication_may_have_committed
             ):
@@ -313,19 +334,54 @@ def _open_trusted_directory(
                     "site is visible but "
                     f"{label} descriptor close failed"
                 ) from close_error
-            raise RuntimeError(
-                f"{label} descriptor close failed: {close_error}"
-            ) from close_error
+            else:
+                raise RuntimeError(
+                    f"{label} descriptor close failed: {close_error}"
+                ) from close_error
+        if teardown_error is not None:
+            if (
+                transaction is not None
+                and transaction.publication_may_have_committed
+            ):
+                normalized = BuildPublicationStateError(
+                    "publication may have committed but "
+                    "build root pathname binding changed"
+                )
+                for note in getattr(teardown_error, "__notes__", ()):
+                    normalized.add_note(note)
+                raise normalized from teardown_error
+            raise teardown_error
 
 
 def _verify_directory_identity(handle: _DirectoryHandle) -> None:
     try:
         current = os.fstat(handle.descriptor)
-    except OSError:
+        _validate_existing_components(handle.path, handle.label)
+        path_node = os.lstat(handle.path)
+        resolved = handle.path.resolve(strict=True)
+        resolved_node = os.lstat(resolved)
+    except (OSError, CurriculumValidationError):
         raise _validation(f"{handle.label} cannot be revalidated") from None
+    for node in (current, path_node, resolved_node):
+        try:
+            _require_owned_safe_node(
+                node,
+                handle.label,
+                directory=True,
+            )
+        except CurriculumValidationError:
+            raise _validation(
+                f"{handle.label} changed during build"
+            ) from None
+    # Persistent pathname rebinding is detectable, but a same-euid writer can
+    # move and restore a namespace between checks. Builds therefore require an
+    # exclusive workspace/namespace; the pathname checks are detection, not a
+    # portable atomic rename predicate.
     if (
-        not stat.S_ISDIR(current.st_mode)
+        resolved != handle.path
         or _identity(current) != handle.identity
+        or _identity(path_node) != handle.identity
+        or _identity(resolved_node) != handle.identity
     ):
         raise _validation(f"{handle.label} changed during build")
 
@@ -1463,6 +1519,7 @@ def _publish_staged_site(
                 raise _validation(
                     "output_root changed before publication"
                 )
+        _verify_directory_identity(parent)
         try:
             _publish_directory(
                 parent.descriptor,
@@ -1538,6 +1595,7 @@ def _publish_staged_site(
     post_cause: BaseException | None = None
     recovery_fd: int | None = None
     try:
+        _verify_directory_identity(parent)
         published = os.stat(
             output_name,
             dir_fd=parent.descriptor,

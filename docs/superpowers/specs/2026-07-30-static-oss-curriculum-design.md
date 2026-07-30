@@ -458,6 +458,23 @@ no errno.
 
 ## 13. Accessibility, security, and privacy
 
+The static-site builder pins every source root and the output parent by file
+descriptor, then revalidates both the descriptor inode and its canonical
+pathname binding before publication, after publication, and during descriptor
+teardown. A persistent rename/replacement is therefore detected. Portable POSIX
+directory-FD APIs cannot atomically predicate a rename on that pathname binding,
+however, so a same-euid process that moves and restores the namespace entirely
+between checks cannot be excluded. Static builds require an exclusive
+workspace/namespace with no concurrent same-euid writer; the checks detect
+violations but do not make that writer a supported trust boundary.
+
+Recursive staging and recovery cleanup pins the cleanup root filesystem device
+and rejects nested directories that cross to another device, change identity,
+are owned by another user, or are group/world writable. `st_dev` cannot identify
+a same-device bind mount on every supported OS, so generated output and recovery
+trees must be mount-free. On ambiguous cleanup state the published site is not
+rolled back and the recovery entry is retained for inspection.
+
 Catalog import pins a current-euid-owned, non-group/world-writable output parent
 by file descriptor and rejects intermediate/final symlinks, untrusted checkout
 parents, and pathname replacement outside that descriptor. POSIX rename cannot
