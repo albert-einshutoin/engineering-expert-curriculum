@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from curriculum_builder.catalog import CANONICAL_CATALOG_SHA256, LEGACY_SOURCE_SHA256, load_catalog, load_repository_catalog, serialize_catalog_document
 from curriculum_builder.errors import CurriculumValidationError
@@ -21,6 +22,13 @@ def item(**overrides: object) -> dict[str, object]:
 
 
 class CatalogLoaderTests(unittest.TestCase):
+    def test_repository_loader_parses_the_same_bytes_it_hashes(self) -> None:
+        official = Path("content/catalog.json").read_bytes()
+        altered = official.replace(b'"title": "', b'"title": "Changed ', 1)
+        with patch("curriculum_builder.catalog.Path.read_bytes", side_effect=[official, altered]) as read:
+            items = load_repository_catalog(Path("content/catalog.json"))
+        self.assertEqual(read.call_count, 1)
+        self.assertEqual(len(items), 1140)
     def test_load_catalog_rejects_invalid_json_empty_unknown_duplicate_and_unsorted(self) -> None:
         cases = {
             "invalid.json": "{",

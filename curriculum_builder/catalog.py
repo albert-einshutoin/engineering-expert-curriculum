@@ -143,13 +143,16 @@ def load_catalog(path: str | Path) -> tuple[CatalogItem, ...]:
     catalog_path = Path(path)
     try: raw = catalog_path.read_bytes()
     except OSError as error: raise CurriculumValidationError(f"{catalog_path}: cannot read catalog: {error}") from error
+    return _load_catalog_bytes(raw, catalog_path)
+
+
+def _load_catalog_bytes(raw: bytes, catalog_path: Path) -> tuple[CatalogItem, ...]:
     document = strict_json_loads(raw, catalog_path)
     if not isinstance(document, Mapping): raise CurriculumValidationError(f"{catalog_path}: catalog root must be an object")
     if set(document) != {"version", "generatedFrom", "sourceSha256", "items"}: raise CurriculumValidationError(f"{catalog_path}: catalog root fields must be exactly version, generatedFrom, sourceSha256, items")
     if document["version"] != 1 or isinstance(document["version"], bool): raise CurriculumValidationError(f"{catalog_path}: catalog version must be 1")
     generated_from = _require_text(document["generatedFrom"], "generatedFrom")
     source_sha256 = _require_sha(document["sourceSha256"])
-    if source_sha256 != LEGACY_SOURCE_SHA256: raise CurriculumValidationError(f"{catalog_path}: sourceSha256 does not match checked-in provenance")
     if not isinstance(document["items"], list): raise CurriculumValidationError(f"{catalog_path}: items must be a list")
     try: items = tuple(CatalogItem.from_dict(value) if isinstance(value, Mapping) else (_ for _ in ()).throw(CurriculumValidationError("item must be an object")) for value in document["items"])
     except CurriculumValidationError as error: raise CurriculumValidationError(f"{catalog_path}: {error}") from error
@@ -165,8 +168,8 @@ def load_catalog(path: str | Path) -> tuple[CatalogItem, ...]:
 def load_repository_catalog(path: str | Path = Path("content/catalog.json")) -> tuple[CatalogItem, ...]:
     """Load the checked-in artifact only when its fixed provenance pair matches."""
     catalog_path = Path(path)
-    try: actual = hashlib.sha256(catalog_path.read_bytes()).hexdigest()
+    try: raw = catalog_path.read_bytes(); actual = hashlib.sha256(raw).hexdigest()
     except OSError as error: raise CurriculumValidationError(f"{catalog_path}: cannot read catalog: {error}") from error
     if not hmac.compare_digest(actual, CANONICAL_CATALOG_SHA256):
         raise CurriculumValidationError(f"{catalog_path}: catalog SHA-256 mismatch: expected {CANONICAL_CATALOG_SHA256}, actual {actual}")
-    return load_catalog(catalog_path)
+    return _load_catalog_bytes(raw, catalog_path)
