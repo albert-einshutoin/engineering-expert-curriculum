@@ -10,10 +10,68 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from tools.migrate_prototype import LEGACY_PATHS, _rename_directory_noreplace, main, preserve_prototype
+from tools.migrate_prototype import LEGACY_PATHS, _create_private_staging, _rename_directory_noreplace, main, preserve_prototype
 
 
 class PrototypeMigrationTests(unittest.TestCase):
+    def test_create_private_staging_returns_a_pinned_empty_directory(self) -> None:
+        with TemporaryDirectory() as directory:
+            parent = Path(directory).resolve()
+            parent_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
+            name, staging_fd, identity = _create_private_staging(parent_fd)
+            try:
+                node = os.fstat(staging_fd)
+                self.assertTrue(name.startswith(".prototype-staging-"))
+                self.assertEqual((node.st_dev, node.st_ino), identity)
+                self.assertEqual(node.st_mode & 0o777, 0o700)
+                self.assertEqual(list(os.scandir(staging_fd)), [])
+            finally:
+                os.close(staging_fd)
+                os.rmdir(name, dir_fd=parent_fd)
+                os.close(parent_fd)
+
+    def test_private_staging_stat_race_preserves_foreign_sentinel(self) -> None:
+        with TemporaryDirectory() as directory:
+            parent = Path(directory).resolve()
+            parent_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
+            real_mkdir = os.mkdir
+            sentinel_name = "sentinel.txt"
+            foreign_name = ""
+
+            def replace_after_mkdir(name: str, *args: object, **kwargs: object) -> None:
+                nonlocal foreign_name
+                real_mkdir(name, *args, **kwargs)
+                os.rename(name, "owned", src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+                real_mkdir(name, dir_fd=parent_fd)
+                foreign_name = name
+                foreign_fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY, dir_fd=parent_fd)
+                try:
+                    file_fd = os.open(sentinel_name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=foreign_fd)
+                    try:
+                        os.write(file_fd, b"foreign")
+                    finally:
+                        os.close(file_fd)
+                finally:
+                    os.close(foreign_fd)
+
+            try:
+                with patch("tools.migrate_prototype.os.mkdir", side_effect=replace_after_mkdir):
+                    with patch("tools.migrate_prototype._clear_directory_fd") as clear:
+                        with self.assertRaises(RuntimeError):
+                            _create_private_staging(parent_fd)
+                self.assertTrue(foreign_name.startswith(".prototype-staging-"))
+                foreign_fd = os.open(foreign_name, os.O_RDONLY | os.O_DIRECTORY, dir_fd=parent_fd)
+                try:
+                    file_fd = os.open(sentinel_name, os.O_RDONLY, dir_fd=foreign_fd)
+                    try:
+                        self.assertEqual(os.read(file_fd, 16), b"foreign")
+                    finally:
+                        os.close(file_fd)
+                finally:
+                    os.close(foreign_fd)
+                clear.assert_not_called()
+            finally:
+                os.close(parent_fd)
     def test_native_noreplace_rename_publishes_a_missing_target(self) -> None:
         with TemporaryDirectory() as directory:
             parent = Path(directory).resolve()

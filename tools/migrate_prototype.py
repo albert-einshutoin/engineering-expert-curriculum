@@ -245,6 +245,35 @@ def _reserve_archive_at(parent_fd: int, name: str) -> tuple[int, tuple[int, int]
     # Ownership transfers to the caller; it pins the reservation through commit/rollback.
 
 
+def _create_private_staging(parent_fd: int) -> tuple[str, int, tuple[int, int]]:
+    """Create a private, pinned empty staging directory without trusting its pathname."""
+    name = f".prototype-staging-{uuid.uuid4().hex}"
+    os.mkdir(name, mode=0o700, dir_fd=parent_fd)
+    recorded: tuple[int, int] | None = None
+    descriptor: int | None = None
+    try:
+        node = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        recorded = (node.st_dev, node.st_ino)
+        descriptor = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd)
+        opened = os.fstat(descriptor)
+        if (opened.st_dev, opened.st_ino) != recorded:
+            raise RuntimeError("private staging changed before opening")
+        with os.scandir(descriptor) as entries:
+            if next(entries, None) is not None:
+                raise RuntimeError("private staging is not empty")
+        return name, descriptor, recorded
+    except BaseException as error:
+        _close_all((descriptor,))
+        if recorded is not None:
+            try:
+                current = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+                if (current.st_dev, current.st_ino) == recorded:
+                    os.rmdir(name, dir_fd=parent_fd)
+            except OSError as rollback_error:
+                raise RuntimeError(f"private staging rollback failed: {rollback_error}") from error
+        raise
+
+
 def _open_directory_fd(path: Path) -> int:
     """Pin a directory identity so later pathname replacement cannot redirect writes."""
     flags = os.O_RDONLY | os.O_DIRECTORY
