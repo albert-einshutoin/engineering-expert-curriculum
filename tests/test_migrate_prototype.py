@@ -228,6 +228,52 @@ class PrototypeMigrationTests(unittest.TestCase):
 
             self.assertFalse(archive_parent.exists())
 
+    def test_parent_creation_rolls_back_when_a_later_mkdir_fails(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            self._write_fixture(root)
+            archive_parent = root / ".archive"
+            archive = archive_parent / "level-one" / "level-two" / "prototype-v1"
+            real_mkdir = Path.mkdir
+
+            def fail_second_level(path: Path, *args: object, **kwargs: object) -> None:
+                if path.name == "level-two":
+                    raise OSError("second parent mkdir failed")
+                real_mkdir(path, *args, **kwargs)
+
+            with patch.object(Path, "mkdir", autospec=True, side_effect=fail_second_level):
+                with self.assertRaisesRegex(OSError, "second parent mkdir failed"):
+                    preserve_prototype(root, archive)
+
+            self.assertFalse(archive_parent.exists())
+
+    def test_parent_creation_reports_cleanup_failure_with_original_cause(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            self._write_fixture(root)
+            archive_parent = root / ".archive"
+            archive = archive_parent / "level-one" / "level-two" / "prototype-v1"
+            real_mkdir = Path.mkdir
+            real_rmdir = Path.rmdir
+
+            def fail_second_level(path: Path, *args: object, **kwargs: object) -> None:
+                if path.name == "level-two":
+                    raise OSError("second parent mkdir failed")
+                real_mkdir(path, *args, **kwargs)
+
+            def fail_cleanup(path: Path) -> None:
+                if path == archive_parent:
+                    raise OSError("parent cleanup failed")
+                real_rmdir(path)
+
+            with patch.object(Path, "mkdir", autospec=True, side_effect=fail_second_level):
+                with patch.object(Path, "rmdir", autospec=True, side_effect=fail_cleanup):
+                    with self.assertRaisesRegex(RuntimeError, "parent cleanup failed") as error:
+                        preserve_prototype(root, archive)
+
+            self.assertIsInstance(error.exception.__cause__, OSError)
+            self.assertEqual(str(error.exception.__cause__), "second parent mkdir failed")
+
     def test_rejects_archive_path_with_parent_traversal_before_reservation(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory).resolve()

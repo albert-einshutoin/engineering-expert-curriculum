@@ -84,22 +84,35 @@ def _create_archive_parent(raw_parent: Path) -> tuple[Path, list[Path]]:
     if not canonical.is_dir():
         raise ValueError(f"archive parent is not a directory: {canonical}")
     created: list[Path] = []
-    for name in reversed(missing):
-        next_parent = canonical / name
-        next_parent.mkdir(mode=0o700, exist_ok=False)
-        created.append(next_parent)
-        _validate_existing_components(next_parent, "archive")
-        canonical = next_parent.resolve(strict=True)
+    try:
+        for name in reversed(missing):
+            next_parent = canonical / name
+            next_parent.mkdir(mode=0o700, exist_ok=False)
+            created.append(next_parent)
+            _validate_existing_components(next_parent, "archive")
+            canonical = next_parent.resolve(strict=True)
+    except BaseException as creation_error:
+        try:
+            _cleanup_created_parents(created)
+        except RuntimeError as cleanup_error:
+            raise RuntimeError(
+                f"archive parent cleanup failed after creation error: {cleanup_error}"
+            ) from creation_error
+        raise
     return canonical, created
 
 
-def _cleanup_created_parents(created: list[Path]) -> None:
+def _cleanup_created_parents(created: list[Path], *, report_failures: bool = True) -> None:
     """Remove only empty directories created by this invocation, deepest first."""
+    failures: list[OSError] = []
     for directory in reversed(created):
         try:
             directory.rmdir()
-        except OSError:
-            pass
+        except OSError as error:
+            failures.append(error)
+    if failures and report_failures:
+        details = "; ".join(str(error) for error in failures)
+        raise RuntimeError(f"archive parent cleanup failed: {details}") from failures[0]
 
 
 def _source_directory(source: Path) -> Path:
@@ -257,7 +270,9 @@ def preserve_prototype(source: Path, archive: Path) -> PrototypeManifest:
     try:
         _reserve_archive(archive_path)
     except BaseException:
-        _cleanup_created_parents(created_parents)
+        # A racing process may have populated an otherwise newly created parent.
+        # It is not ours to remove, so preserve the reservation failure instead.
+        _cleanup_created_parents(created_parents, report_failures=False)
         raise
     try:
         staging = Path(tempfile.mkdtemp(prefix=".staging-", dir=archive_path))

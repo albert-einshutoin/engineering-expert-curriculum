@@ -167,6 +167,10 @@ source, take its initial snapshot (and reject empty input), then perform archive
 lexical/canonical boundary validation. Only then create missing archive parents
 and reserve the archive. On every later failure, remove empty parent directories
 created by this invocation in reverse order; never remove a pre-existing parent.
+The parent-creation helper is transactional itself: if a later `mkdir` or its
+post-create validation fails, it rolls back every earlier newly created parent
+before re-raising. If rollback fails, report that concrete cleanup failure while
+retaining the original creation error as the cause.
 
 Walk all existing allowlisted trees before copying and fail closed for symlinks,
 FIFOs, sockets, devices, or other non-regular/non-directory nodes. Build a
