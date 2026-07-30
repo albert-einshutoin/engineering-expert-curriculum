@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Iterator
+from contextlib import contextmanager
 import ctypes
 import errno
 import hashlib
@@ -306,6 +308,24 @@ def _close_all(descriptors: tuple[int | None, ...]) -> list[OSError]:
     return failures
 
 
+@contextmanager
+def _managed_descriptor(descriptor: int, context: str) -> Iterator[int]:
+    """Close a descriptor exactly once while retaining any operation error as the cause."""
+    try:
+        yield descriptor
+    except BaseException as operation_error:
+        close_failures = _close_all((descriptor,))
+        if close_failures:
+            raise RuntimeError(
+                f"{context} descriptor close failed: {close_failures[0]}"
+            ) from operation_error
+        raise
+    else:
+        close_failures = _close_all((descriptor,))
+        if close_failures:
+            raise RuntimeError(f"{context} descriptor close failed: {close_failures[0]}")
+
+
 def _fsync_fd(descriptor: int, purpose: str) -> None:
     """Durably finish an individual destination file before its descriptor closes."""
     os.fsync(descriptor)
@@ -364,29 +384,42 @@ def _copy_allowlisted_tree(source: Path, staging_fd: int) -> None:
         if stat.S_ISREG(mode):
             output = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=destination_fd)
             try:
-                with origin.open("rb") as input_file, os.fdopen(output, "wb") as output_file:
+                output_file = os.fdopen(output, "wb")
+            except BaseException as operation_error:
+                close_failures = _close_all((output,))
+                if close_failures:
+                    raise RuntimeError(
+                        f"destination regular file descriptor close failed: {close_failures[0]}"
+                    ) from operation_error
+                raise
+            try:
+                with origin.open("rb") as input_file:
                     while chunk := input_file.read(_CHUNK_SIZE):
                         output_file.write(chunk)
                     output_file.flush()
                     _fsync_fd(output_file.fileno(), "destination regular file")
-            except BaseException:
+            except BaseException as operation_error:
                 try:
-                    os.close(output)
-                except OSError:
-                    pass
+                    output_file.close()
+                except OSError as close_error:
+                    raise RuntimeError(
+                        f"destination regular file close failed: {close_error}"
+                    ) from operation_error
                 raise
+            try:
+                output_file.close()
+            except OSError as close_error:
+                raise RuntimeError(f"destination regular file close failed: {close_error}")
             return
         if not stat.S_ISDIR(mode):
             raise _unsupported(origin, mode)
         os.mkdir(name, mode=0o700, dir_fd=destination_fd)
         child_fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=destination_fd)
-        try:
+        with _managed_descriptor(child_fd, f"destination directory: {logical_path}"):
             with os.scandir(origin) as entries:
                 for entry in entries:
                     copy_node(Path(entry.path), child_fd, entry.name, f"{logical_path}/{entry.name}")
             _fsync_fd(child_fd, f"destination directory: {logical_path}")
-        finally:
-            os.close(child_fd)
 
     for relative_path in LEGACY_PATHS:
         origin = source / relative_path

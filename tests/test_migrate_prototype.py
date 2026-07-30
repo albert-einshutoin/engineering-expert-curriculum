@@ -10,7 +10,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from tools.migrate_prototype import LEGACY_PATHS, _build_verified_archive, _create_private_staging, _open_directory_fd, _publish_verified_archive, _rename_directory_noreplace, _snapshot, main, preserve_prototype
+from tools.migrate_prototype import LEGACY_PATHS, _build_verified_archive, _copy_allowlisted_tree, _create_private_staging, _open_directory_fd, _publish_verified_archive, _rename_directory_noreplace, _snapshot, main, preserve_prototype
 
 
 class PrototypeMigrationTests(unittest.TestCase):
@@ -359,6 +359,123 @@ class PrototypeMigrationTests(unittest.TestCase):
             self.assertIn("destination regular file", events)
             self.assertLess(events.index("destination regular file"), events.index("replace"))
 
+    def test_nested_copy_failure_reports_child_close_failure_and_closes_every_child(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            source = root / "source"
+            destination = root / "destination"
+            (source / "assets" / "nested").mkdir(parents=True)
+            destination.mkdir()
+            destination_fd = os.open(destination, os.O_RDONLY | os.O_DIRECTORY)
+            attempted: list[int] = []
+            close_calls = 0
+
+            def fail_nested_directory_fsync(descriptor: int, purpose: str) -> None:
+                if purpose == "destination directory: assets/nested":
+                    raise OSError("copy failed")
+
+            def close_children(descriptors: tuple[int | None, ...]) -> list[OSError]:
+                nonlocal close_calls
+                close_calls += 1
+                for descriptor in descriptors:
+                    if descriptor is not None:
+                        attempted.append(descriptor)
+                        os.close(descriptor)
+                return [OSError("child close failed")] if close_calls == 1 else []
+
+            try:
+                with patch("tools.migrate_prototype._fsync_fd", side_effect=fail_nested_directory_fsync):
+                    with patch("tools.migrate_prototype._close_all", side_effect=close_children):
+                        with self.assertRaisesRegex(RuntimeError, "child close failed") as error:
+                            _copy_allowlisted_tree(source, destination_fd)
+                self.assertIsInstance(error.exception.__cause__, OSError)
+                self.assertEqual(str(error.exception.__cause__), "copy failed")
+                self.assertEqual(len(attempted), 2)
+            finally:
+                os.close(destination_fd)
+
+    def test_copy_write_failure_does_not_double_close_fdopen_descriptor(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            source = root / "source"
+            destination = root / "destination"
+            source.mkdir()
+            destination.mkdir()
+            (source / "index.html").write_text("legacy", encoding="utf-8")
+            destination_fd = os.open(destination, os.O_RDONLY | os.O_DIRECTORY)
+            real_close = os.close
+            close_attempts: list[int] = []
+
+            class FailingOutput:
+                def __init__(self, descriptor: int) -> None:
+                    self.descriptor = descriptor
+                    self.close_calls = 0
+
+                def __enter__(self) -> "FailingOutput":
+                    return self
+
+                def __exit__(self, *args: object) -> bool:
+                    self.close()
+                    return False
+
+                def write(self, chunk: bytes) -> None:
+                    raise OSError("write failed")
+
+                def close(self) -> None:
+                    self.close_calls += 1
+                    os.close(self.descriptor)
+
+            output: FailingOutput | None = None
+
+            def failing_fdopen(descriptor: int, mode: str) -> FailingOutput:
+                nonlocal output
+                output = FailingOutput(descriptor)
+                return output
+
+            def record_close(descriptor: int) -> None:
+                close_attempts.append(descriptor)
+                real_close(descriptor)
+
+            try:
+                with patch("tools.migrate_prototype.os.fdopen", side_effect=failing_fdopen):
+                    with patch("tools.migrate_prototype.os.close", side_effect=record_close):
+                        with self.assertRaisesRegex(OSError, "write failed"):
+                            _copy_allowlisted_tree(source, destination_fd)
+                self.assertIsNotNone(output)
+                self.assertEqual(output.close_calls, 1)
+                self.assertEqual(close_attempts, [output.descriptor])
+            finally:
+                os.close(destination_fd)
+
+    def test_copy_fdopen_failure_closes_unowned_output_descriptor_once(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            source = root / "source"
+            destination = root / "destination"
+            source.mkdir()
+            destination.mkdir()
+            (source / "index.html").write_text("legacy", encoding="utf-8")
+            destination_fd = os.open(destination, os.O_RDONLY | os.O_DIRECTORY)
+            closed: list[int] = []
+
+            def close_output(descriptors: tuple[int | None, ...]) -> list[OSError]:
+                for descriptor in descriptors:
+                    if descriptor is not None:
+                        closed.append(descriptor)
+                        os.close(descriptor)
+                return []
+
+            try:
+                with patch("tools.migrate_prototype.os.fdopen", side_effect=OSError("fdopen failed")):
+                    with patch("tools.migrate_prototype._close_all", side_effect=close_output):
+                        with self.assertRaisesRegex(OSError, "fdopen failed"):
+                            _copy_allowlisted_tree(source, destination_fd)
+                self.assertEqual(len(closed), 1)
+                with self.assertRaises(OSError):
+                    os.fstat(closed[0])
+            finally:
+                os.close(destination_fd)
+
     def test_regular_file_fsync_failure_rolls_back_archive(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory).resolve()
@@ -477,7 +594,7 @@ class PrototypeMigrationTests(unittest.TestCase):
                     if descriptor is not None:
                         attempted.append(descriptor)
                         os.close(descriptor)
-                return [OSError("first close failed")]
+                return [OSError("first close failed")] if len(received) == 3 else []
 
             with patch("tools.migrate_prototype._close_all", side_effect=close_with_reported_failure):
                 manifest = preserve_prototype(root, archive)
@@ -485,7 +602,7 @@ class PrototypeMigrationTests(unittest.TestCase):
             self.assertEqual(manifest["fileCount"], 2)
             self.assertTrue((archive / "manifest.json").exists())
             self.assertEqual(Path.cwd(), original_cwd)
-            self.assertEqual(len(received), 2)
+            self.assertEqual(len(received), 3)
             expected = [
                 descriptor
                 for descriptors in received
