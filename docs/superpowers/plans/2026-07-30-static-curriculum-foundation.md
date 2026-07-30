@@ -897,10 +897,12 @@ repository root from `__file__`, not the process working directory, and verify:
   keyboard input, and marks. Parse all four templates and require an intentional
   selector for every current class and ID.
 - Catalog cards and a four-stage `.learning-path` grid with visible CSS counter
-  numbers, explicit prerequisite text, and a non-interactive patterned
-  line/arrow connector at
+  numbers, explicit prerequisite text, and a non-interactive right-facing
+  polygon arrow connector at
   `.learning-stage:not(:last-child)::after`. Relationships must remain
-  understandable without color.
+  understandable without color or generated CSS content. The prerequisite
+  label belongs in real HTML and is styled through
+  `.prerequisite-text > strong`.
 - A single-column `max-width: 48rem` state with hidden decorative connectors,
   320px-safe grid sizing and wrapping, clear target/focus/skip-link treatment,
   underlined links, and approximately 44px navigation/disclosure targets.
@@ -1010,6 +1012,23 @@ class BuildTests(unittest.TestCase):
                 self.assertNotIn("javascript:", html.lower())
                 self.assertNotIn('href="/', html)
             self.assertEqual(list(output.rglob("*.js")), [])
+            roadmap_html = (
+                output / "roadmap" / "index.html"
+            ).read_text(encoding="utf-8")
+            # These exact real-HTML assertions keep every relationship usable
+            # when CSS and its decorative pseudo-elements are unavailable.
+            for title, prerequisite in (
+                ("Think", "なし"),
+                ("Build", "Think"),
+                ("Run", "Build"),
+                ("Lead", "Run"),
+            ):
+                self.assertIn(
+                    f"<h2>{title}</h2>"
+                    f'<p class="prerequisite-text">'
+                    f"<strong>前提:</strong> {prerequisite}</p>",
+                    roadmap_html,
+                )
 
     def test_failed_build_preserves_previous_output(self) -> None:
         with TemporaryDirectory() as directory:
@@ -1111,10 +1130,25 @@ def build_site(
             ),
             encoding="utf-8",
         )
-        nodes = "".join(
-            f'<li class="learning-stage"><h2>{escape(node["title"])}</h2></li>'
-            for node in roadmap["nodes"]
-        )
+        roadmap_nodes = roadmap["nodes"]
+        title_by_id = {
+            node["id"]: node["title"]
+            for node in roadmap_nodes
+        }
+        rendered_nodes = []
+        for node in roadmap_nodes:
+            prerequisite_titles = tuple(
+                title_by_id[prerequisite_id]
+                for prerequisite_id in node["prerequisites"]
+            )
+            prerequisite_text = "、".join(prerequisite_titles) or "なし"
+            rendered_nodes.append(
+                f'<li class="learning-stage">'
+                f'<h2>{escape(node["title"])}</h2>'
+                f'<p class="prerequisite-text"><strong>前提:</strong> '
+                f'{escape(prerequisite_text)}</p></li>'
+            )
+        nodes = "".join(rendered_nodes)
         roadmap_content = renderer.fragment(
             "roadmap.html",
             text_values={},
