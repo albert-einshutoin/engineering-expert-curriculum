@@ -107,8 +107,10 @@ class LessonQualityTests(unittest.TestCase):
         self.assertIn(INCOMPLETE.name, str(caught.exception))
 
     def test_complete_status_requires_capability_progression(self) -> None:
+        raw = self.complete_document()
+        del raw["capabilityProgression"]
         self.assert_invalid(
-            self.complete_document(),
+            raw,
             r"complete lesson missing: capabilityProgression",
         )
 
@@ -238,6 +240,7 @@ class LessonQualityTests(unittest.TestCase):
         raw["objectives"] = []
         raw["evidence"] = []
         for field in (
+            "capabilityProgression",
             "lab",
             "teachBack",
             "assessment",
@@ -308,6 +311,10 @@ class LessonQualityTests(unittest.TestCase):
             ("root", lambda raw: raw.__setitem__("unexpected", True)),
             ("objective", lambda raw: raw["objectives"][0].__setitem__("x", 1)),
             ("evidence", lambda raw: raw["evidence"][0].__setitem__("x", 1)),
+            (
+                "capability-progression",
+                lambda raw: raw["capabilityProgression"][0].__setitem__("x", 1),
+            ),
             ("lab", lambda raw: raw["lab"].__setitem__("x", 1)),
             ("assessment", lambda raw: raw["assessment"][0].__setitem__("x", 1)),
             ("rubric", lambda raw: raw["rubric"][0].__setitem__("x", 1)),

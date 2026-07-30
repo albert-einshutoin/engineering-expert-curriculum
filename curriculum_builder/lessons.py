@@ -46,6 +46,8 @@ SOURCE_KINDS = frozenset(
     {"primary", "standard", "official", "peer-reviewed"}
 )
 REVIEW_INTERVALS = (1, 7, 30, 90)
+CAPABILITY_LEVELS = ("recognize", "explain", "apply", "diagnose", "lead")
+_CAPABILITY_LEVEL_SET = frozenset(CAPABILITY_LEVELS)
 
 _LESSON_ID_PATTERN = re.compile(
     r"^core-(?:0[1-9]|[12][0-9]|30)-[a-z0-9]+(?:-[a-z0-9]+)*$"
@@ -78,6 +80,7 @@ _ROOT_REQUIRED_FIELDS = frozenset(
     }
 )
 _COMPLETE_FIELDS = (
+    "capabilityProgression",
     "lab",
     "teachBack",
     "assessment",
@@ -101,6 +104,13 @@ class Evidence:
     id: str
     kind: str
     description: str
+
+
+@dataclass(frozen=True, slots=True)
+class CapabilityProgression:
+    level: str
+    criterion: str
+    evidence_ids: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,6 +166,7 @@ class Lesson:
     prerequisite_ids: tuple[str, ...]
     objectives: tuple[Objective, ...]
     evidence: tuple[Evidence, ...]
+    capability_progression: tuple[CapabilityProgression, ...]
     lab: Lab | None
     teach_back: str | None
     assessment: tuple[Assessment, ...]
@@ -245,6 +256,15 @@ def _parse_lesson(raw: dict[str, object]) -> Lesson:
         evidence,
         complete=status == "complete",
     )
+    capability_progression = (
+        _parse_capability_progression(
+            raw["capabilityProgression"],
+            evidence,
+            complete=status == "complete",
+        )
+        if "capabilityProgression" in raw
+        else ()
+    )
 
     lab = _parse_optional_lab(raw.get("lab"), complete=status == "complete")
     teach_back = _parse_optional_text(
@@ -315,6 +335,7 @@ def _parse_lesson(raw: dict[str, object]) -> Lesson:
         prerequisite_ids=prerequisite_ids,
         objectives=objectives,
         evidence=evidence,
+        capability_progression=capability_progression,
         lab=lab,
         teach_back=teach_back,
         assessment=assessment,
@@ -711,6 +732,82 @@ def _validate_objective_evidence(
                 f"complete lesson evidence kinds missing: "
                 f"{', '.join(missing_kinds)}"
             )
+
+
+def _parse_capability_progression(
+    value: object,
+    evidence: tuple[Evidence, ...],
+    *,
+    complete: bool,
+) -> tuple[CapabilityProgression, ...]:
+    items = _require_list(
+        value,
+        "capabilityProgression",
+        minimum=1,
+        maximum=len(CAPABILITY_LEVELS),
+    )
+    fields = frozenset({"level", "criterion", "evidenceIds"})
+    known_evidence = {item.id for item in evidence}
+    progression: list[CapabilityProgression] = []
+    for index, item in enumerate(items):
+        raw = _require_exact_object(
+            item,
+            fields,
+            fields,
+            f"capability progression {index + 1}",
+        )
+        evidence_values = _require_list(
+            raw["evidenceIds"],
+            f"capability progression {index + 1} evidenceIds",
+            minimum=1,
+            maximum=12,
+        )
+        evidence_ids = _require_unique(
+            tuple(
+                _require_identifier(
+                    evidence_id,
+                    "evidence id",
+                    _EVIDENCE_ID_PATTERN,
+                    maximum=80,
+                )
+                for evidence_id in evidence_values
+            ),
+            "evidence id in capability progression",
+        )
+        unknown = sorted(set(evidence_ids) - known_evidence)
+        if unknown:
+            raise CurriculumValidationError(
+                "capability progression has unknown evidence "
+                f"{', '.join(unknown)}"
+            )
+        progression.append(
+            CapabilityProgression(
+                level=_require_choice(
+                    raw["level"],
+                    _CAPABILITY_LEVEL_SET,
+                    "capability level",
+                ),
+                criterion=_require_text(
+                    raw["criterion"],
+                    f"capability progression {index + 1} criterion",
+                    maximum=1_000,
+                ),
+                evidence_ids=evidence_ids,
+            )
+        )
+
+    levels = tuple(item.level for item in progression)
+    if len(set(levels)) != len(levels):
+        raise CurriculumValidationError("duplicate capability level")
+    if levels != CAPABILITY_LEVELS[: len(levels)]:
+        raise CurriculumValidationError(
+            "capability levels must be an ordered prefix"
+        )
+    if complete and len(levels) != len(CAPABILITY_LEVELS):
+        raise CurriculumValidationError(
+            "complete lessons need five capability levels"
+        )
+    return tuple(progression)
 
 
 def _parse_optional_lab(value: object | None, *, complete: bool) -> Lab | None:

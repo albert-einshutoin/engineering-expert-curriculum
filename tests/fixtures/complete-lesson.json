@@ -56,6 +56,43 @@
       "description": "未知の制約下での再評価"
     }
   ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "制約と利害関係者を特定し、判断対象の境界を示せる",
+      "evidenceIds": [
+        "lab-map"
+      ]
+    },
+    {
+      "level": "explain",
+      "criterion": "選択肢の機構と主要なトレードオフを自分の言葉で説明できる",
+      "evidenceIds": [
+        "teach-back"
+      ]
+    },
+    {
+      "level": "apply",
+      "criterion": "制約に基づく比較を行い、レビュー可能な判断記録を作成できる",
+      "evidenceIds": [
+        "lab-map"
+      ]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "観測した証拠から障害の因果経路を切り分け、反証を示せる",
+      "evidenceIds": [
+        "assessment"
+      ]
+    },
+    {
+      "level": "lead",
+      "criterion": "異なる領域へ判断方法を移し、再評価条件を関係者へ説明できる",
+      "evidenceIds": [
+        "transfer"
+      ]
+    }
+  ],
   "lab": {
     "title": "同期処理とキューを比較する",
     "artifact": "decision-record.md",
