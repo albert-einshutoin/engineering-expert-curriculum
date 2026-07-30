@@ -750,6 +750,12 @@ post-read stat. Read exactly the opened size, reject early EOF and any extra
 byte, then close the file and directory descriptors in reverse ownership
 order.
 
+This descriptor-pinned loader uses POSIX `dir_fd`, `O_NOFOLLOW`, and directory
+file descriptors. The supported build hosts are macOS and Linux; Windows is
+outside the current availability boundary until an equivalent race-resistant
+implementation and its tests exist. This is a documented platform boundary,
+not a claim that Windows is protected by the POSIX implementation.
+
 Validate base placeholder counts and contexts, semantic landmarks, restrictive
 CSP, and external or absolute asset policy before accepting the base template.
 The document structure is exact and browser-stable: `html` contains
@@ -778,6 +784,13 @@ the structured description placeholder, and one CSP. Unknown, duplicate, or
 refresh meta records fail closed. The parsed CSP directive map must equal the
 declared policy exactly; extra directives such as `script-src-elem` or
 `script-src-attr` are forbidden even when `script-src 'none'` remains present.
+The meta-delivered policy intentionally omits `frame-ancestors`, because
+browsers do not enforce that directive from a meta element. This static build
+therefore makes no frame-embedding protection claim. A deployment that needs
+it must send and test an HTTP `Content-Security-Policy` response header with
+`frame-ancestors 'none'` or the deployment's chosen ancestor policy. If the
+host, including a GitHub Pages configuration, cannot control that response
+header, frame-embedding protection remains explicitly unavailable.
 
 ```html
 <!doctype html>
@@ -787,7 +800,7 @@ declared policy exactly; extra directives such as `script-src-elem` or
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="$description">
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; script-src 'none'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; frame-src 'none'; frame-ancestors 'none'">
+        content="default-src 'none'; script-src 'none'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; frame-src 'none'">
   <title>$title · Engineering Expert Curriculum</title>
   <link rel="stylesheet" href="${root}styles.css">
 </head>
