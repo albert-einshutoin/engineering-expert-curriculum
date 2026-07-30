@@ -485,21 +485,34 @@ def _write_manifest(archive_fd: int, snapshot: dict[str, FileSnapshot]) -> Proto
         dir_fd=archive_fd,
     )
     try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as file:
-            json.dump(manifest, file, ensure_ascii=False, indent=2, sort_keys=True)
-            file.write("\n")
-            file.flush()
-            os.fsync(file.fileno())
-    except BaseException:
-        try:
-            os.close(descriptor)
-        except OSError:
-            pass
+        file = os.fdopen(descriptor, "w", encoding="utf-8")
+    except BaseException as operation_error:
+        close_failures = _close_all((descriptor,))
+        if close_failures:
+            raise RuntimeError(
+                f"manifest temp descriptor close failed: {close_failures[0]}"
+            ) from operation_error
         raise
+    try:
+        json.dump(manifest, file, ensure_ascii=False, indent=2, sort_keys=True)
+        file.write("\n")
+        file.flush()
+        _fsync_fd(file.fileno(), "manifest temp")
+    except BaseException as operation_error:
+        try:
+            file.close()
+        except OSError as close_error:
+            raise RuntimeError(f"manifest temp close failed: {close_error}") from operation_error
+        raise
+    try:
+        file.close()
+    except OSError as close_error:
+        raise RuntimeError(f"manifest temp close failed: {close_error}")
     # Make archive entries and the temp manifest durable before rename. The rename is the
     # completion marker: if power loss loses it, no manifest means safely incomplete.
-    os.fsync(archive_fd)
+    _fsync_fd(archive_fd, "staging root before manifest rename")
     os.replace(".manifest.json.tmp", "manifest.json", src_dir_fd=archive_fd, dst_dir_fd=archive_fd)
+    _fsync_fd(archive_fd, "staging root after manifest rename")
     return manifest
 
 
@@ -510,6 +523,7 @@ def _build_verified_archive(
 ) -> PrototypeManifest:
     """Populate an already-pinned empty destination and verify it before manifest commit."""
     _copy_allowlisted_tree(source_path, destination_fd)
+    _fsync_fd(destination_fd, "staging root")
     staged = _snapshot_fd(destination_fd)
     current = _snapshot(source_path)
     if initial != staged or initial != current:

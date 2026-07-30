@@ -21,6 +21,7 @@ from tools.migrate_prototype import (
     _rename_directory_noreplace,
     _snapshot,
     _snapshot_fd,
+    _write_manifest,
     main,
     preserve_prototype,
 )
@@ -423,21 +424,111 @@ class PrototypeMigrationTests(unittest.TestCase):
             self.assertEqual((root / "index.html").read_text(encoding="utf-8"), "<main>legacy</main>")
             self.assertFalse(os.path.lexists(archive))
 
-    def test_regular_file_fsync_happens_before_manifest_rename(self) -> None:
+    def test_durability_events_precede_native_publish_in_order(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory).resolve()
-            (root / "assets" / "css").mkdir(parents=True)
-            (root / "assets" / "css" / "app.css").write_text("body{}", encoding="utf-8")
+            (root / "assets" / "nested").mkdir(parents=True)
+            (root / "assets" / "nested" / "app.css").write_text("body{}", encoding="utf-8")
             archive = root / ".archive" / "prototype-v1"
             events: list[str] = []
             real_replace = os.replace
+            real_publish = _rename_directory_noreplace
+
+            def record_replace(source: str, target: str, *args: object, **kwargs: object) -> None:
+                if target == "manifest.json":
+                    events.append("manifest rename")
+                real_replace(source, target, *args, **kwargs)
+
+            def record_publish(parent_fd: int, source_name: str, target_name: str) -> None:
+                events.append("native publish")
+                real_publish(parent_fd, source_name, target_name)
 
             with patch("tools.migrate_prototype._fsync_fd", side_effect=lambda fd, purpose: events.append(purpose)):
-                with patch("tools.migrate_prototype.os.replace", side_effect=lambda *args, **kwargs: (events.append("replace"), real_replace(*args, **kwargs))[1]):
+                with patch("tools.migrate_prototype.os.replace", side_effect=record_replace):
+                    with patch("tools.migrate_prototype._rename_directory_noreplace", side_effect=record_publish):
+                        preserve_prototype(root, archive)
+
+            self.assertEqual(
+                events,
+                [
+                    "destination regular file",
+                    "destination directory: assets/nested",
+                    "destination directory: assets",
+                    "staging root",
+                    "manifest temp",
+                    "staging root before manifest rename",
+                    "manifest rename",
+                    "staging root after manifest rename",
+                    "native publish",
+                ],
+            )
+
+    def test_post_manifest_rename_fsync_failure_cleans_private_staging_without_final_archive(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            self._write_fixture(root)
+            archive = root / ".archive" / "prototype-v1"
+
+            def fail_post_manifest_rename_fsync(descriptor: int, purpose: str) -> None:
+                if purpose == "staging root after manifest rename":
+                    raise OSError("post-manifest fsync failed")
+
+            with patch("tools.migrate_prototype._fsync_fd", side_effect=fail_post_manifest_rename_fsync):
+                with self.assertRaisesRegex(OSError, "post-manifest fsync failed"):
                     preserve_prototype(root, archive)
 
-            self.assertIn("destination regular file", events)
-            self.assertLess(events.index("destination regular file"), events.index("replace"))
+            self.assertFalse(archive.exists())
+            self.assertFalse((root / ".archive").exists())
+            self.assertEqual(list(root.glob(".prototype-staging-*")), [])
+            self.assertTrue((root / "index.html").exists())
+
+    def test_manifest_write_failure_does_not_double_close_fdopen_descriptor(self) -> None:
+        with TemporaryDirectory() as directory:
+            archive = Path(directory).resolve()
+            archive_fd = os.open(archive, os.O_RDONLY | os.O_DIRECTORY)
+            real_close = os.close
+            close_attempts: list[int] = []
+
+            class FailingOutput:
+                def __init__(self, descriptor: int) -> None:
+                    self.descriptor = descriptor
+                    self.close_calls = 0
+
+                def __enter__(self) -> "FailingOutput":
+                    return self
+
+                def __exit__(self, *args: object) -> bool:
+                    self.close()
+                    return False
+
+                def write(self, text: str) -> None:
+                    raise OSError("manifest write failed")
+
+                def close(self) -> None:
+                    self.close_calls += 1
+                    os.close(self.descriptor)
+
+            output: FailingOutput | None = None
+
+            def failing_fdopen(descriptor: int, mode: str, **kwargs: object) -> FailingOutput:
+                nonlocal output
+                output = FailingOutput(descriptor)
+                return output
+
+            def record_close(descriptor: int) -> None:
+                close_attempts.append(descriptor)
+                real_close(descriptor)
+
+            try:
+                with patch("tools.migrate_prototype.os.fdopen", side_effect=failing_fdopen):
+                    with patch("tools.migrate_prototype.os.close", side_effect=record_close):
+                        with self.assertRaisesRegex(OSError, "manifest write failed"):
+                            _write_manifest(archive_fd, {"index.html": {"sha256": "a", "byteCount": 1}})
+                self.assertIsNotNone(output)
+                self.assertEqual(output.close_calls, 1)
+                self.assertEqual(close_attempts, [output.descriptor])
+            finally:
+                os.close(archive_fd)
 
     def test_nested_copy_failure_reports_child_close_failure_and_closes_every_child(self) -> None:
         with TemporaryDirectory() as directory:
