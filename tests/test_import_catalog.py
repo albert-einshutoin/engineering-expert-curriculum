@@ -57,6 +57,20 @@ class CatalogImportTests(unittest.TestCase):
         with patch("tools.import_catalog.os.open", side_effect=open_fd), patch("tools.import_catalog.os.fstat", side_effect=OSError("fstat")), patch("tools.import_catalog.os.close", side_effect=close):
             with self.assertRaises(RuntimeError): _open_parent(Path("/one/two/catalog.json"))
         self.assertEqual(closed, [12, 11, 10])
+
+    def test_read_source_preserves_read_cause_when_all_descriptor_closes_fail(self) -> None:
+        with TemporaryDirectory(dir=Path.cwd()) as directory:
+            source = Path(directory) / "source.json"; source.write_text("{}", encoding="utf-8")
+            real_close = __import__("os").close; closed: list[int] = []
+            def close(fd: int) -> None:
+                closed.append(fd); real_close(fd); raise OSError(f"close {fd}")
+            with patch("tools.import_catalog.os.read", side_effect=OSError("read failed")), patch("tools.import_catalog.os.close", side_effect=close):
+                with self.assertRaisesRegex(RuntimeError, "source descriptor close failed") as raised:
+                    _read_source(source)
+            self.assertIsInstance(raised.exception.__cause__, OSError)
+            self.assertEqual(str(raised.exception.__cause__), "read failed")
+            self.assertGreaterEqual(len(closed), 2)
+            self.assertEqual(len(closed), len(set(closed)))
     def test_writer_rejects_missing_parent_symlink_and_non_regular_target(self) -> None:
         document = {"version": 1, "generatedFrom": "source", "sourceSha256": "a55a0d0b1cfa3773031e787c2ce7ca0df34534e16a70b65ed1baa91975c82da8", "items": [{**lesson(), "coreLessonId": None}]}
         # The writer receives canonical rows, so remove only the legacy path here.

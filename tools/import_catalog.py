@@ -40,6 +40,7 @@ def _read_source(path: Path) -> tuple[object, str, tuple[int, int]]:
     raw_path = _absolute_lexical(path, "input")
     parent_path, name, parent_fd, parent_fds = _open_parent(raw_path)
     file_fd: int | None = None
+    operation_error: BaseException | None = None
     try:
         file_fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent_fd)
         info = os.fstat(file_fd)
@@ -53,10 +54,14 @@ def _read_source(path: Path) -> tuple[object, str, tuple[int, int]]:
         raw = b"".join(chunks)
         return strict_json_loads(raw, path), hashlib.sha256(raw).hexdigest(), (info.st_dev, info.st_ino)
     except OSError as error:
+        operation_error = error
         raise CurriculumValidationError(f"{path}: cannot read source: {error}") from error
     finally:
         failures = _close_all(parent_fds + ([] if file_fd is None else [file_fd]))
-        if failures: raise RuntimeError(f"source descriptor close failed: {failures[0]}")
+        if failures:
+            detail = "; ".join(str(error) for error in failures)
+            if operation_error is not None: raise RuntimeError(f"source descriptor close failed: {detail}") from operation_error
+            raise RuntimeError(f"source descriptor close failed: {detail}")
 
 
 def _absolute_lexical(path: Path, label: str) -> Path:
