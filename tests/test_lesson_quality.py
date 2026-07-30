@@ -552,7 +552,7 @@ class LessonQualityTests(unittest.TestCase):
                     load_lesson(path)
             self.assertTrue(swapped)
 
-    def test_transient_ancestor_rebinding_is_rejected_after_restore(
+    def test_unrelated_upper_ancestor_timestamp_churn_is_accepted(
         self,
     ) -> None:
         with TemporaryDirectory() as directory:
@@ -562,39 +562,52 @@ class LessonQualityTests(unittest.TestCase):
             nested.mkdir(parents=True)
             path = nested / "lesson.json"
             path.write_bytes(COMPLETE.read_bytes())
-            replacement = root / "replacement"
-            replacement_nested = replacement / "nested"
-            replacement_nested.mkdir(parents=True)
-            os.link(path, replacement_nested / "lesson.json")
-            retired = root / "retired"
-            real_open = os.open
-            swapped = False
+            shared_temp_parent = os.stat(root.parent)
+            shared_temp_identity = (
+                shared_temp_parent.st_dev,
+                shared_temp_parent.st_ino,
+                stat.S_IFMT(shared_temp_parent.st_mode),
+            )
+            real_fstat = os.fstat
+            target_call_count = 0
 
-            def swap_and_restore_after_file_open(
-                target: object,
-                flags: int,
-                *args: object,
-                **kwargs: object,
-            ) -> int:
-                nonlocal swapped
-                descriptor = real_open(target, flags, *args, **kwargs)
-                if not swapped and Path(target).name == "lesson.json":
-                    swapped = True
-                    ancestor.rename(retired)
-                    replacement.rename(ancestor)
-                    ancestor.rename(replacement)
-                    retired.rename(ancestor)
-                return descriptor
+            def churning_ancestor_fstat(descriptor: int) -> object:
+                nonlocal target_call_count
+                result = real_fstat(descriptor)
+                identity = (
+                    result.st_dev,
+                    result.st_ino,
+                    stat.S_IFMT(result.st_mode),
+                )
+                if identity != shared_temp_identity:
+                    return result
+                target_call_count += 1
+                if target_call_count != 2:
+                    return result
+
+                class ChangedDirectoryTimestamps:
+                    def __getattr__(self, name: str) -> object:
+                        original = getattr(result, name)
+                        if name in {"st_mtime_ns", "st_ctime_ns"}:
+                            return original + 1
+                        return original
+
+                return ChangedDirectoryTimestamps()
 
             with patch(
-                "curriculum_builder.lesson_io.os.open",
-                side_effect=swap_and_restore_after_file_open,
+                "curriculum_builder.lesson_io.os.fstat",
+                side_effect=churning_ancestor_fstat,
             ):
-                with self.assertRaisesRegex(
-                    CurriculumValidationError, r"ancestor changed during read"
-                ):
-                    load_lesson(path)
-            self.assertTrue(swapped)
+                try:
+                    lesson = load_lesson(path)
+                except CurriculumValidationError as error:
+                    self.fail(
+                        f"unrelated ancestor timestamp churn was rejected: "
+                        f"{error}"
+                    )
+
+            self.assertEqual(lesson.id, "core-01-systems-tradeoffs")
+            self.assertEqual(target_call_count, 2)
 
     def test_post_read_metadata_change_is_rejected(self) -> None:
         real_fstat = os.fstat

@@ -21,7 +21,7 @@ class _DirectoryBinding:
     descriptor: int
     parent_descriptor: int | None
     name: str
-    signature: tuple[int, int, int, int, int]
+    identity: tuple[int, int, int]
 
 
 def read_stable_lesson_file(path: Path, maximum_bytes: int) -> bytes:
@@ -92,8 +92,7 @@ def _read_with_pinned_ancestors(
     root_opened = os.fstat(root_descriptor)
     if (
         not stat.S_ISDIR(root_opened.st_mode)
-        or _directory_signature(root_opened)
-        != _directory_signature(root_before)
+        or _directory_identity(root_opened) != _directory_identity(root_before)
     ):
         raise CurriculumValidationError(
             f"{label}: lesson ancestor changed while opening"
@@ -104,7 +103,7 @@ def _read_with_pinned_ancestors(
             descriptor=root_descriptor,
             parent_descriptor=None,
             name=absolute.anchor,
-            signature=_directory_signature(root_opened),
+            identity=_directory_identity(root_opened),
         )
     ]
     parent_descriptor = root_descriptor
@@ -132,7 +131,7 @@ def _read_with_pinned_ancestors(
         opened = os.fstat(descriptor)
         if (
             not stat.S_ISDIR(opened.st_mode)
-            or _directory_signature(opened) != _directory_signature(before)
+            or _directory_identity(opened) != _directory_identity(before)
         ):
             raise CurriculumValidationError(
                 f"{label}: lesson ancestor changed while opening"
@@ -142,7 +141,7 @@ def _read_with_pinned_ancestors(
                 descriptor=descriptor,
                 parent_descriptor=parent_descriptor,
                 name=component,
-                signature=_directory_signature(opened),
+                identity=_directory_identity(opened),
             )
         )
         parent_descriptor = descriptor
@@ -265,7 +264,7 @@ def _revalidate_ancestor_bindings(
 ) -> None:
     for binding in bindings:
         opened = os.fstat(binding.descriptor)
-        if _directory_signature(opened) != binding.signature:
+        if _directory_identity(opened) != binding.identity:
             raise CurriculumValidationError(
                 f"{label}: lesson ancestor changed during read"
             )
@@ -277,24 +276,16 @@ def _revalidate_ancestor_bindings(
                 dir_fd=binding.parent_descriptor,
                 follow_symlinks=False,
             )
-        if _directory_signature(current) != binding.signature:
+        if _directory_identity(current) != binding.identity:
             raise CurriculumValidationError(
                 f"{label}: lesson ancestor changed during read"
             )
 
 
-def _directory_signature(
-    value: os.stat_result,
-) -> tuple[int, int, int, int, int]:
-    # Directory timestamps detect a rename-away/restore ABA attack even when
-    # the descriptor and lexical binding end on the original inode.
-    return (
-        value.st_dev,
-        value.st_ino,
-        stat.S_IFMT(value.st_mode),
-        value.st_mtime_ns,
-        value.st_ctime_ns,
-    )
+def _directory_identity(value: os.stat_result) -> tuple[int, int, int]:
+    # Child creation changes directory timestamps, so only binding identity is
+    # stable enough for shared ancestors while still detecting replacement.
+    return value.st_dev, value.st_ino, stat.S_IFMT(value.st_mode)
 
 
 def _file_signature(

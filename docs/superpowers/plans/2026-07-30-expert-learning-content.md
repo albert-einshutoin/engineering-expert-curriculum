@@ -274,9 +274,11 @@ Implement `load_lesson(path: Path)` as a strict trust boundary:
   descriptor, reject symbolic links and file changes, and decode strict UTF-8
   JSON with duplicate-key rejection.
 - Treat version-controlled lesson files as exclusive-workspace inputs. The
-  loader detects observed symlink, rebinding, and content changes, but does not
-  use owner or mode bits as an authority decision and does not claim a privilege
-  boundary against a concurrent same-euid writer.
+  loader detects symbolic links, persistent pathname rebinding, and leaf content
+  changes. Ancestor bindings compare device, inode, and type rather than
+  timestamps so unrelated child churn in shared parents does not fail a build.
+  It does not use owner or mode bits as an authority decision and does not claim
+  a privilege boundary against a concurrent same-euid move-and-restore writer.
 - Enforce exact root and nested schemas, exact scalar types (including
   bool-as-int rejection), bounded lists and strings, trimmed/control-safe text,
   ID patterns, uniqueness, and known evidence references.
