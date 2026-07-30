@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
+import os
 from pathlib import Path
+import subprocess
+import sys
+from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from curriculum_builder.catalog import strict_json_loads
 from curriculum_builder.errors import CurriculumValidationError
 from curriculum_builder.graph import topological_stages
+
+
+_BUILTIN_FROZENSET = frozenset
 
 
 class SingleUseIds:
@@ -19,6 +27,59 @@ class SingleUseIds:
         if self.iterations > 1:
             raise AssertionError("node IDs were consumed more than once")
         return iter(self._values)
+
+
+class SingleUseItemsMapping(Mapping[object, object]):
+    def __init__(self, entries: tuple[tuple[object, object], ...]) -> None:
+        self._entries = entries
+        self.items_calls = 0
+
+    def items(self) -> Iterator[tuple[object, object]]:  # type: ignore[override]
+        self.items_calls += 1
+        if self.items_calls > 1:
+            raise AssertionError("mapping items were consumed more than once")
+        return iter(self._entries)
+
+    def __getitem__(self, key: object) -> object:
+        raise AssertionError("original mapping was accessed after snapshot")
+
+    def __iter__(self) -> Iterator[object]:
+        raise AssertionError("original mapping was iterated instead of snapshotted")
+
+    def __len__(self) -> int:
+        return len(self._entries)
+
+
+class UnhashableString(str):
+    __hash__ = None  # type: ignore[assignment]
+
+
+class StatefulRepr:
+    def __init__(self, first: str) -> None:
+        self.first = first
+        self.calls = 0
+
+    def __repr__(self) -> str:
+        self.calls += 1
+        if self.calls > 1:
+            return f"changed-{self.first}"
+        return self.first
+
+
+class RaisingRepr:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __repr__(self) -> str:
+        self.calls += 1
+        raise RuntimeError("repr failed")
+
+
+class NoQuadraticScanFrozenSet(_BUILTIN_FROZENSET[object]):
+    def isdisjoint(self, other: object) -> bool:
+        raise AssertionError(
+            "Kahn staging must not rescan every remaining node per stage"
+        )
 
 
 class GraphTests(unittest.TestCase):
@@ -219,6 +280,91 @@ class GraphTests(unittest.TestCase):
             {"foundation": 1, "build": 1, "lead": 1},
         )
 
+    def test_snapshots_prerequisite_mapping_items_once(self) -> None:
+        prerequisites = SingleUseItemsMapping(
+            (
+                ("build", ("foundation",)),
+                ("foundation", ()),
+            )
+        )
+
+        stages = topological_stages(
+            ("build", "foundation"),
+            prerequisites,  # type: ignore[arg-type]
+        )
+
+        self.assertEqual(stages, (("foundation",), ("build",)))
+        self.assertEqual(prerequisites.items_calls, 1)
+
+    def test_rejects_unhashable_string_subclasses_as_identifiers(self) -> None:
+        invalid_node = UnhashableString("node")
+        with self.assertRaisesRegex(
+            CurriculumValidationError,
+            r"^node IDs must be strings: 'node'$",
+        ):
+            topological_stages((invalid_node,), {})
+
+        invalid_key = UnhashableString("node")
+        mapping = SingleUseItemsMapping(((invalid_key, ()),))
+        with self.assertRaisesRegex(
+            CurriculumValidationError,
+            r"^prerequisite keys must be strings: 'node'$",
+        ):
+            topological_stages(("node",), mapping)  # type: ignore[arg-type]
+
+        invalid_dependency = UnhashableString("dependency")
+        with self.assertRaisesRegex(
+            CurriculumValidationError,
+            r"^prerequisites for node must be strings: 'dependency'$",
+        ):
+            topological_stages(
+                ("node",),
+                {"node": (invalid_dependency,)},
+            )
+
+    def test_renders_each_invalid_value_exactly_once_before_sorting(self) -> None:
+        zeta = StatefulRepr("zeta")
+        alpha = StatefulRepr("alpha")
+
+        with self.assertRaisesRegex(
+            CurriculumValidationError,
+            r"^node IDs must be strings: alpha, zeta$",
+        ):
+            topological_stages((zeta, alpha), {})
+
+        self.assertEqual(zeta.calls, 1)
+        self.assertEqual(alpha.calls, 1)
+
+    def test_converts_repr_failure_to_validation_error(self) -> None:
+        invalid = RaisingRepr()
+
+        with self.assertRaisesRegex(
+            CurriculumValidationError,
+            r"^node IDs must be strings: <unrepresentable RaisingRepr>$",
+        ):
+            topological_stages((invalid,), {})
+
+        self.assertEqual(invalid.calls, 1)
+
+    def test_long_chain_uses_edge_driven_kahn_staging(self) -> None:
+        size = 1_024
+        node_ids = tuple(f"node-{index:04d}" for index in range(size))
+        prerequisites = {
+            node_id: (() if index == 0 else (node_ids[index - 1],))
+            for index, node_id in enumerate(node_ids)
+        }
+
+        with patch(
+            "curriculum_builder.graph.frozenset",
+            NoQuadraticScanFrozenSet,
+            create=True,
+        ):
+            stages = topological_stages(node_ids, prerequisites)
+
+        self.assertEqual(len(stages), size)
+        self.assertEqual(stages[0], ("node-0000",))
+        self.assertEqual(stages[-1], ("node-1023",))
+
     def test_result_is_independent_of_input_and_mapping_order(self) -> None:
         first = topological_stages(
             ("lead", "operate", "foundation", "build"),
@@ -262,7 +408,7 @@ class GraphTests(unittest.TestCase):
 
 class RoadmapContractTests(unittest.TestCase):
     def test_checked_in_roadmap_has_strict_initial_schema_and_stages(self) -> None:
-        path = Path("content/roadmap.json")
+        path = Path(__file__).resolve().parents[1] / "content/roadmap.json"
         document = strict_json_loads(path.read_bytes(), path)
 
         self.assertIsInstance(document, Mapping)
@@ -312,6 +458,39 @@ class RoadmapContractTests(unittest.TestCase):
         self.assertEqual(
             topological_stages(ids, prerequisites),
             (("foundation",), ("build",), ("operate",), ("lead",)),
+        )
+
+    def test_checked_in_roadmap_test_passes_outside_repository_cwd(self) -> None:
+        repository_root = Path(__file__).resolve().parents[1]
+        environment = os.environ.copy()
+        environment["PYTHONPATH"] = os.pathsep.join(
+            part
+            for part in (
+                str(repository_root),
+                environment.get("PYTHONPATH", ""),
+            )
+            if part
+        )
+        test_name = (
+            "tests.test_graph.RoadmapContractTests."
+            "test_checked_in_roadmap_has_strict_initial_schema_and_stages"
+        )
+
+        with TemporaryDirectory() as directory:
+            result = subprocess.run(
+                [sys.executable, "-m", "unittest", test_name, "-v"],
+                cwd=directory,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30,
+            )
+
+        self.assertEqual(
+            result.returncode,
+            0,
+            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}",
         )
 
 
