@@ -495,26 +495,64 @@ class LessonRenderingTests(unittest.TestCase):
             self.assertEqual((output / "sentinel.txt").read_text(), "old")
             self.assertEqual(list(root.glob(".site.staging-*")), [])
 
-    def test_collection_input_byte_limit_fails_before_publication(self) -> None:
+    def test_collection_input_byte_limit_accumulates_across_lessons(
+        self,
+    ) -> None:
         with _site_fixture() as (root, content, templates, static_root):
-            directory = _add_lesson(
+            first = _add_lesson(
                 content,
-                _complete_document(title="PRIVATE-TITLE-CONTENT"),
-                body="<p>PRIVATE-BODY-CONTENT</p>",
+                _complete_document(title="PRIVATE-FIRST-TITLE"),
+                body="<p>PRIVATE-FIRST-BODY</p>",
             )
-            combined_bytes = sum(
-                (directory / name).stat().st_size
-                for name in ("lesson.json", "body.html")
+            second = _add_lesson(
+                content,
+                _complete_document(
+                    lesson_id="core-02-aggregate-boundary",
+                    title="PRIVATE-SECOND-TITLE",
+                ),
+                body="<p>PRIVATE-SECOND-BODY</p>",
             )
-            output = root / "site"
-            output.mkdir()
-            (output / "sentinel.txt").write_text("old", encoding="utf-8")
+            lesson_bytes = tuple(
+                sum(
+                    (directory / name).stat().st_size
+                    for name in ("lesson.json", "body.html")
+                )
+                for directory in (first, second)
+            )
+            aggregate_bytes = sum(lesson_bytes)
+            one_byte_short = aggregate_bytes - 1
+            self.assertTrue(
+                all(size < one_byte_short for size in lesson_bytes)
+            )
 
+            exact_output = root / "exact-site"
             with patch.object(
                 lesson_rendering,
                 "MAX_LESSON_COLLECTION_INPUT_BYTES",
-                combined_bytes - 1,
-                create=True,
+                aggregate_bytes,
+            ):
+                build_site(
+                    content,
+                    templates,
+                    static_root,
+                    exact_output,
+                )
+            self.assertEqual(
+                len(
+                    list(
+                        (exact_output / "lessons").glob("*/index.html")
+                    )
+                ),
+                2,
+            )
+
+            output = root / "site"
+            output.mkdir()
+            (output / "sentinel.txt").write_text("old", encoding="utf-8")
+            with patch.object(
+                lesson_rendering,
+                "MAX_LESSON_COLLECTION_INPUT_BYTES",
+                one_byte_short,
             ):
                 with self.assertRaisesRegex(
                     CurriculumValidationError,
@@ -522,8 +560,8 @@ class LessonRenderingTests(unittest.TestCase):
                 ) as caught:
                     build_site(content, templates, static_root, output)
 
-            self.assertNotIn("PRIVATE-TITLE-CONTENT", str(caught.exception))
-            self.assertNotIn("PRIVATE-BODY-CONTENT", str(caught.exception))
+            self.assertNotIn("PRIVATE-FIRST", str(caught.exception))
+            self.assertNotIn("PRIVATE-SECOND", str(caught.exception))
             self.assertEqual((output / "sentinel.txt").read_text(), "old")
             self.assertEqual(list(root.glob(".site.staging-*")), [])
 
