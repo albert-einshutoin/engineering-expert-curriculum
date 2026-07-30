@@ -141,6 +141,9 @@ archive immediately before the exclusive reservation and proves it remains
 untouched. Every owned-failure path must retain the source and leave no manifest.
 Reject lexical `..` input, source/archive intermediate symlinks, and symlink
 routes into allowlisted archive subtrees before any copy or reservation.
+Also cover replacement of the archive parent after reservation: cleanup must be
+anchored to pinned directory file descriptors and must never touch a sentinel in
+the replacement directory. Treat allowlist boundary components case-insensitively.
 
 - [ ] **Step 2: Verify RED**
 
@@ -171,6 +174,12 @@ The parent-creation helper is transactional itself: if a later `mkdir` or its
 post-create validation fails, it rolls back every earlier newly created parent
 before re-raising. If rollback fails, report that concrete cleanup failure while
 retaining the original creation error as the cause.
+
+Open the canonical archive parent with `O_DIRECTORY|O_NOFOLLOW`, verify its
+inode with `fstat`, and reserve/cleanup archive entries with `dir_fd` operations.
+This pins ownership to a directory rather than a pathname, because a pathname can
+be renamed or replaced between reservation and rollback. Fail closed where the
+required descriptor operations are unavailable.
 
 Walk all existing allowlisted trees before copying and fail closed for symlinks,
 FIFOs, sockets, devices, or other non-regular/non-directory nodes. Build a

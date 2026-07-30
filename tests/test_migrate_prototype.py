@@ -109,12 +109,12 @@ class PrototypeMigrationTests(unittest.TestCase):
             self._write_fixture(root)
             archive = root / ".archive" / "prototype-v1"
 
-            def create_competing_archive(path: Path) -> None:
-                archive.mkdir()
+            def create_competing_archive(parent_fd: int, name: str) -> None:
+                os.mkdir(name, dir_fd=parent_fd)
                 (archive / "sentinel.txt").write_text("keep", encoding="utf-8")
-                path.mkdir(mode=0o700, exist_ok=False)
+                os.mkdir(name, dir_fd=parent_fd)
 
-            with patch("tools.migrate_prototype._reserve_archive", side_effect=create_competing_archive):
+            with patch("tools.migrate_prototype._reserve_archive_at", side_effect=create_competing_archive):
                 with self.assertRaises(FileExistsError):
                     preserve_prototype(root, archive)
 
@@ -250,6 +250,43 @@ class PrototypeMigrationTests(unittest.TestCase):
             self.assertEqual(str(error.exception.__cause__), "copy failed")
             self.assertTrue((root / "index.html").exists())
             self.assertFalse(archive.exists())
+
+    def test_parent_replacement_after_reservation_never_deletes_foreign_archive(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            self._write_fixture(root)
+            archive_parent = root / ".archive"
+            archive = archive_parent / "prototype-v1"
+            moved_parent = root / ".archive-owned"
+            foreign_sentinel = archive / "sentinel.txt"
+
+            def replace_parent_then_fail(source: Path, staging: Path) -> None:
+                archive_parent.rename(moved_parent)
+                archive_parent.mkdir()
+                archive.mkdir()
+                foreign_sentinel.write_text("foreign", encoding="utf-8")
+                raise OSError("copy failed after parent replacement")
+
+            with patch(
+                "tools.migrate_prototype._copy_allowlisted_tree",
+                side_effect=replace_parent_then_fail,
+            ):
+                with self.assertRaisesRegex(OSError, "copy failed after parent replacement"):
+                    preserve_prototype(root, archive)
+
+            self.assertEqual(foreign_sentinel.read_text(encoding="utf-8"), "foreign")
+            self.assertTrue((root / "index.html").exists())
+
+    def test_rejects_casefolded_allowlist_archive_boundary_before_parent_creation(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            (root / "index.html").write_text("legacy", encoding="utf-8")
+            archive = root / "ASSETS" / "archive"
+
+            with self.assertRaisesRegex(ValueError, "archive.*allowlisted"):
+                preserve_prototype(root, archive)
+
+            self.assertFalse((root / "ASSETS").exists())
 
     def test_parent_creation_rolls_back_when_a_later_mkdir_fails(self) -> None:
         with TemporaryDirectory() as directory:

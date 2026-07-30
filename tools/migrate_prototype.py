@@ -9,8 +9,8 @@ import os
 from pathlib import Path
 import shutil
 import stat
-import tempfile
 from typing import TypedDict
+import uuid
 
 
 LEGACY_PATHS = (
@@ -72,7 +72,7 @@ def _validate_existing_components(
             raise ValueError(f"{label} parent is not a directory: {current}")
 
 
-def _create_archive_parent(raw_parent: Path) -> tuple[Path, list[Path]]:
+def _create_archive_parent(raw_parent: Path) -> tuple[Path, list[tuple[Path, tuple[int, int]]]]:
     """Create missing parents from a validated ancestor and report only owned directories."""
     missing: list[str] = []
     current = raw_parent
@@ -83,12 +83,13 @@ def _create_archive_parent(raw_parent: Path) -> tuple[Path, list[Path]]:
     canonical = current.resolve(strict=True)
     if not canonical.is_dir():
         raise ValueError(f"archive parent is not a directory: {canonical}")
-    created: list[Path] = []
+    created: list[tuple[Path, tuple[int, int]]] = []
     try:
         for name in reversed(missing):
             next_parent = canonical / name
             next_parent.mkdir(mode=0o700, exist_ok=False)
-            created.append(next_parent)
+            node = os.lstat(next_parent)
+            created.append((next_parent, (node.st_dev, node.st_ino)))
             _validate_existing_components(next_parent, "archive")
             canonical = next_parent.resolve(strict=True)
     except BaseException as creation_error:
@@ -102,11 +103,16 @@ def _create_archive_parent(raw_parent: Path) -> tuple[Path, list[Path]]:
     return canonical, created
 
 
-def _cleanup_created_parents(created: list[Path], *, report_failures: bool = True) -> None:
+def _cleanup_created_parents(
+    created: list[tuple[Path, tuple[int, int]]], *, report_failures: bool = True
+) -> None:
     """Remove only empty directories created by this invocation, deepest first."""
     failures: list[OSError] = []
-    for directory in reversed(created):
+    for directory, identity in reversed(created):
         try:
+            node = os.lstat(directory)
+            if (node.st_dev, node.st_ino) != identity:
+                continue
             directory.rmdir()
         except OSError as error:
             failures.append(error)
@@ -140,7 +146,9 @@ def _archive_path(source: Path, archive: Path) -> Path:
         relative_to_source = candidate.relative_to(source)
     except ValueError:
         return candidate
-    if relative_to_source.parts and relative_to_source.parts[0] in LEGACY_PATHS:
+    if relative_to_source.parts and relative_to_source.parts[0].casefold() in {
+        path.casefold() for path in LEGACY_PATHS
+    }:
         raise ValueError(f"archive is inside an allowlisted subtree: {candidate}")
     return raw_archive
 
@@ -151,6 +159,56 @@ def _reserve_archive(archive: Path) -> None:
         archive.mkdir(mode=0o700, exist_ok=False)
     except FileExistsError as error:
         raise FileExistsError(f"archive already exists: {archive}") from error
+
+
+def _reserve_archive_at(parent_fd: int, name: str) -> None:
+    try:
+        os.mkdir(name, mode=0o700, dir_fd=parent_fd)
+    except FileExistsError as error:
+        raise FileExistsError(f"archive already exists: {name}") from error
+
+
+def _open_directory_fd(path: Path) -> int:
+    """Pin a directory identity so later pathname replacement cannot redirect writes."""
+    flags = os.O_RDONLY | os.O_DIRECTORY
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise RuntimeError("safe directory file descriptors are not supported")
+    expected = os.stat(path, follow_symlinks=False)
+    descriptor = os.open(path, flags | os.O_NOFOLLOW)
+    actual = os.fstat(descriptor)
+    if (expected.st_dev, expected.st_ino) != (actual.st_dev, actual.st_ino):
+        os.close(descriptor)
+        raise RuntimeError(f"archive parent changed while opening: {path}")
+    return descriptor
+
+
+def _clear_directory_fd(descriptor: int) -> None:
+    """Delete entries through a pinned descriptor, never through a replaceable pathname."""
+    for entry in os.scandir(descriptor):
+        mode = entry.stat(follow_symlinks=False).st_mode
+        if stat.S_ISDIR(mode):
+            child = os.open(
+                entry.name,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                dir_fd=descriptor,
+            )
+            try:
+                _clear_directory_fd(child)
+            finally:
+                os.close(child)
+            os.rmdir(entry.name, dir_fd=descriptor)
+        else:
+            os.unlink(entry.name, dir_fd=descriptor)
+
+
+def _remove_owned_archive(parent_fd: int, name: str, archive_fd: int) -> None:
+    """Remove only the directory whose inode is still the reservation we created."""
+    expected = os.fstat(archive_fd)
+    current = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+    if (current.st_dev, current.st_ino) != (expected.st_dev, expected.st_ino):
+        raise RuntimeError("reserved archive entry was replaced; refusing cleanup")
+    _clear_directory_fd(archive_fd)
+    os.rmdir(name, dir_fd=parent_fd)
 
 
 def _unsupported(path: Path, mode: int) -> ValueError:
@@ -267,15 +325,28 @@ def preserve_prototype(source: Path, archive: Path) -> PrototypeManifest:
     raw_archive = _archive_path(source_path, archive)
     canonical_parent, created_parents = _create_archive_parent(raw_archive.parent)
     archive_path = canonical_parent / raw_archive.name
+    parent_fd = _open_directory_fd(canonical_parent)
     try:
-        _reserve_archive(archive_path)
+        _reserve_archive_at(parent_fd, raw_archive.name)
     except BaseException:
         # A racing process may have populated an otherwise newly created parent.
         # It is not ours to remove, so preserve the reservation failure instead.
         _cleanup_created_parents(created_parents, report_failures=False)
+        os.close(parent_fd)
         raise
+    archive_fd: int | None = None
+    cwd_fd: int | None = None
     try:
-        staging = Path(tempfile.mkdtemp(prefix=".staging-", dir=archive_path))
+        archive_fd = os.open(
+            raw_archive.name,
+            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+            dir_fd=parent_fd,
+        )
+        cwd_fd = os.open(".", os.O_RDONLY)
+        os.fchdir(archive_fd)
+        archive_path = Path(".")
+        staging = Path(f".staging-{uuid.uuid4().hex}")
+        staging.mkdir(mode=0o700)
         _copy_allowlisted_tree(source_path, staging)
         staged = _snapshot(staging)
         current = _snapshot(source_path)
@@ -292,8 +363,10 @@ def preserve_prototype(source: Path, archive: Path) -> PrototypeManifest:
         manifest = _write_manifest(archive_path, initial)
     except BaseException as operation_error:
         try:
-            shutil.rmtree(archive_path)
-        except OSError as cleanup_error:
+            if archive_fd is None:
+                raise RuntimeError("reserved archive descriptor could not be opened")
+            _remove_owned_archive(parent_fd, raw_archive.name, archive_fd)
+        except (OSError, RuntimeError) as cleanup_error:
             raise RuntimeError(
                 f"incomplete archive without manifest: cleanup failed for {archive_path}: "
                 f"{cleanup_error}"
@@ -306,6 +379,13 @@ def preserve_prototype(source: Path, archive: Path) -> PrototypeManifest:
                 f"{archive_path}: {cleanup_error}"
             ) from operation_error
         raise
+    finally:
+        if cwd_fd is not None:
+            os.fchdir(cwd_fd)
+            os.close(cwd_fd)
+        if archive_fd is not None:
+            os.close(archive_fd)
+        os.close(parent_fd)
 
     # The original is deliberately retained: a later, separately reviewed retirement task can clean it safely.
     return manifest
