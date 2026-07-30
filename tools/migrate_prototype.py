@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
+import errno
 import hashlib
 import json
 import os
 from pathlib import Path
 import shutil
 import stat
+import sys
 from typing import TypedDict
 import uuid
 
@@ -28,6 +31,43 @@ LEGACY_PATHS = (
 )
 
 _CHUNK_SIZE = 1024 * 1024
+
+
+def _native_rename_noreplace() -> tuple[object, int]:
+    """Return the platform rename primitive and its no-clobber flag, or fail closed."""
+    library = ctypes.CDLL(None, use_errno=True)
+    if sys.platform == "darwin":
+        try:
+            function = library.renameatx_np
+        except AttributeError as error:
+            raise RuntimeError("native no-replace rename is not supported") from error
+        function.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+        function.restype = ctypes.c_int
+        return function, 0x4  # RENAME_EXCL
+    if sys.platform.startswith("linux"):
+        try:
+            function = library.renameat2
+        except AttributeError as error:
+            raise RuntimeError("native no-replace rename is not supported") from error
+        function.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+        function.restype = ctypes.c_int
+        return function, 1  # RENAME_NOREPLACE
+    raise RuntimeError("native no-replace rename is not supported")
+
+
+def _rename_directory_noreplace(parent_fd: int, source_name: str, target_name: str) -> None:
+    """Atomically publish a directory without overwriting an existing target."""
+    for name in (source_name, target_name):
+        if not name or name in {".", ".."} or "/" in name:
+            raise ValueError(f"directory entry name must be a basename: {name!r}")
+    function, flag = _native_rename_noreplace()
+    # os.rename can overwrite the target; native no-replace is required for the publish commit point.
+    if function(parent_fd, os.fsencode(source_name), parent_fd, os.fsencode(target_name), flag) == 0:
+        return
+    code = ctypes.get_errno()
+    if code in {errno.EEXIST, errno.ENOTEMPTY}:
+        raise FileExistsError(f"archive already exists: {target_name}")
+    raise OSError(code, os.strerror(code), target_name)
 
 
 class FileSnapshot(TypedDict):

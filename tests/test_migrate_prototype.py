@@ -10,10 +10,41 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from tools.migrate_prototype import LEGACY_PATHS, main, preserve_prototype
+from tools.migrate_prototype import LEGACY_PATHS, _rename_directory_noreplace, main, preserve_prototype
 
 
 class PrototypeMigrationTests(unittest.TestCase):
+    def test_native_noreplace_rename_publishes_a_missing_target(self) -> None:
+        with TemporaryDirectory() as directory:
+            parent = Path(directory).resolve()
+            (parent / "staging").mkdir()
+            (parent / "staging" / "payload.txt").write_text("ok", encoding="utf-8")
+            descriptor = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                _rename_directory_noreplace(descriptor, "staging", "published")
+            finally:
+                os.close(descriptor)
+            self.assertFalse((parent / "staging").exists())
+            self.assertEqual((parent / "published" / "payload.txt").read_text(encoding="utf-8"), "ok")
+
+    def test_native_noreplace_rename_preserves_existing_target(self) -> None:
+        with TemporaryDirectory() as directory:
+            parent = Path(directory).resolve()
+            (parent / "staging").mkdir()
+            (parent / "published").mkdir()
+            (parent / "published" / "sentinel.txt").write_text("keep", encoding="utf-8")
+            descriptor = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                with self.assertRaises(FileExistsError):
+                    _rename_directory_noreplace(descriptor, "staging", "published")
+            finally:
+                os.close(descriptor)
+            self.assertTrue((parent / "staging").exists())
+            self.assertEqual((parent / "published" / "sentinel.txt").read_text(encoding="utf-8"), "keep")
+
+    def test_native_noreplace_rename_rejects_non_basenames(self) -> None:
+        with self.assertRaises(ValueError):
+            _rename_directory_noreplace(0, "../staging", "published")
     def _write_fixture(self, root: Path) -> None:
         (root / "assets").mkdir()
         (root / "assets" / "styles.css").write_text("body{}", encoding="utf-8")
