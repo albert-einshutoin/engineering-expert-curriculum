@@ -22,6 +22,7 @@ MAX_TABLE_SPAN = 100
 ALLOWED_TAGS = frozenset(
     {
         "a",
+        "article",
         "aside",
         "blockquote",
         "code",
@@ -34,9 +35,11 @@ ALLOWED_TAGS = frozenset(
         "em",
         "figcaption",
         "figure",
+        "h1",
         "h2",
         "h3",
         "h4",
+        "header",
         "kbd",
         "li",
         "mark",

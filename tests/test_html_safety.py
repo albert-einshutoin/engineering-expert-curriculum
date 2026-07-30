@@ -56,6 +56,14 @@ class HtmlSafetyTests(unittest.TestCase):
 
         self.assertEqual(validate_fragment(fragment).value, fragment)
 
+    def test_accepts_safe_textbook_fragment_landmarks(self) -> None:
+        fragment = (
+            '<article><header class="reading"><h1>全カタログ</h1>'
+            "</header><section><h2>領域</h2><p>本文</p></section></article>"
+        )
+
+        self.assertEqual(validate_fragment(fragment).value, fragment)
+
     def test_safe_html_cannot_be_constructed_without_validation(self) -> None:
         for args in ((), ("<p>unvalidated</p>",)):
             with self.subTest(args=args):
