@@ -424,8 +424,13 @@ create `.archive` with mode `0o700` only when absent; record its no-follow
 identity, open it with the same flags, and compare `fstat` identity before
 validating its directory type, owner, and permissions. This rejects intermediate
 or final symlinks and existing non-directories, foreign owners, or
-group/world-writable directories without changing them; every opened FD is
-closed, and close failures are reported rather than retried through a pathname.
+group/world-writable directories without changing them. If this creates a new
+parent, `fsync` its pinned FD and then the pinned repository FD to persist the
+directory before the parent that holds its name; an existing valid parent needs
+no preparation `fsync` because archive publication later syncs its FD. Every
+preparation `fsync` failure stops the migration before it begins. Every opened
+FD is closed, and close failures are reported rather than retried through a
+pathname.
 
 The tool requires that parent to already exist as a canonical directory owned by
 the current effective user and not group/world writable. It never creates or
