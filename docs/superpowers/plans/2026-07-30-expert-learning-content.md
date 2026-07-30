@@ -600,13 +600,13 @@ embedded Python harnesses also ran successfully at their documented defaults.
 The final 81-test focused bundle and all 344 tests passed.
 Two repository-external builds each emitted 10 regular artifacts, including
 five lesson pages and 1,140 catalog items. Both produced aggregate SHA-256
-`e982c5aec9add535e49c7ed82252e62ef6c0bca9eaa1d2f4f70abfccd389d662`:
+`8157322399c04de4702263692ea4dc801c85681630cdfa8bda0f9f757ba66bbc`:
 sort every artifact's UTF-8 relative POSIX path bytewise, then feed
 `path + NUL + decimal byte length + NUL + file bytes` to SHA-256. The verifier
 included all artifacts and rejected symlinks and non-regular entries.
 The initial content was committed as `b385baf`; the review fixes and regression
 contracts were committed as `a1e5a94`, `06bad7a`, `2638bec`, `90e44d3`,
-`7f0b090`, and `fa5de10`.
+`7f0b090`, `fa5de10`, `408e26d`, `9b218cd`, and `4a85b45`.
 
 - [x] **Step 5: Commit the Foundations track**
 
