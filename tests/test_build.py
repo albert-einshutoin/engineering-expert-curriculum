@@ -408,26 +408,31 @@ class BuildAcceptanceTests(unittest.TestCase):
             root = Path(directory).resolve(strict=True)
             unrelated = root / "cwd"
             unrelated.mkdir()
-            output = root / "published\nFORGED\x1b[31m"
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(REPOSITORY_ROOT / "tools/build.py"),
-                    "--output",
-                    str(output),
-                ],
-                cwd=unrelated,
-                check=False,
-                capture_output=True,
-                text=True,
-            )
+            for suffix in (
+                "published\nFORGED\x1b[31m",
+                "published\u2028FORGED",
+            ):
+                with self.subTest(suffix=suffix):
+                    output = root / suffix
+                    result = subprocess.run(
+                        [
+                            sys.executable,
+                            str(REPOSITORY_ROOT / "tools/build.py"),
+                            "--output",
+                            str(output),
+                        ],
+                        cwd=unrelated,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
 
-            self.assertNotEqual(result.returncode, 0)
-            self.assertEqual(result.stdout, "")
-            self.assertIn("control character", result.stderr)
-            self.assertNotIn("FORGED", result.stderr)
-            self.assertNotIn("\x1b", result.stderr)
-            self.assertFalse(output.exists())
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(result.stdout, "")
+                    self.assertIn("control character", result.stderr)
+                    self.assertNotIn("FORGED", result.stderr)
+                    self.assertNotIn("\x1b", result.stderr)
+                    self.assertFalse(output.exists())
 
 
 class BuildInputValidationTests(unittest.TestCase):
