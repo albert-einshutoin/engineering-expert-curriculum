@@ -568,11 +568,17 @@ python3 -m unittest \
 Expected: all tests pass and five lesson pages render.
 
 Implementation note (2026-07-31): the contract test first failed with five
-missing lesson files, then the focused 68-test gate and the full 330-test suite
-passed. Two repository-external builds emitted the five lesson pages and index
-with the same aggregate SHA-256
-`d28deaa62b8b32884161edf50484312928c6c2f83f1cfb94e486e5e4f543d859`.
-The content and contract were committed as `b385baf`.
+missing lesson files, then the focused gates and full suite passed. An
+Important-review follow-up added exact contracts for all 19 source records,
+ordered semantic body structure, weighted-score arithmetic, and the Big-O/Θ
+distinction. The pre-fix source titles and score failed the exact contracts;
+mutations of the first H2 and Big-O definition also failed the canonical
+tests. The final full suite passed 334 tests, and two repository-external
+builds emitted the five lesson pages,
+index, and 1,140 catalog items with the same aggregate SHA-256
+`fbde24b2f31d3e9247db85aced9a1207b92820c7e6863081b3c3ca52eeb55252`.
+The initial content was committed as `b385baf`; the review fixes and regression
+contracts were committed as `a1e5a94`.
 
 - [x] **Step 5: Commit the Foundations track**
 
