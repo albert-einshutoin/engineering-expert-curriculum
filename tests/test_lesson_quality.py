@@ -912,6 +912,13 @@ class LessonQualityTests(unittest.TestCase):
                 raw["sources"][1]["url"] = second
                 self.assert_invalid(raw, r"duplicate source URL")
 
+    def test_source_identity_normalizes_empty_path_to_root(self) -> None:
+        raw = self.complete_document()
+        raw["sources"][0]["url"] = "https://example.com"
+        raw["sources"][1]["url"] = "https://example.com/"
+
+        self.assert_invalid(raw, r"duplicate source URL")
+
     def test_source_identity_keeps_distinct_paths_and_queries(self) -> None:
         cases = (
             (
@@ -961,12 +968,16 @@ class LessonQualityTests(unittest.TestCase):
                 self.assert_invalid(raw, r"source URL port")
 
     def test_source_url_preserves_valid_unicode_display_url(self) -> None:
-        raw = self.complete_document()
-        display_url = "https://例え.テスト/リファレンス"
-        raw["sources"][0]["url"] = display_url
-        with TemporaryDirectory() as directory:
-            lesson = load_lesson(self.write_document(directory, raw))
-        self.assertEqual(lesson.sources[0].url, display_url)
+        for display_url in (
+            "https://例え.テスト/リファレンス",
+            "https://example.com",
+        ):
+            with self.subTest(display_url=display_url):
+                raw = self.complete_document()
+                raw["sources"][0]["url"] = display_url
+                with TemporaryDirectory() as directory:
+                    lesson = load_lesson(self.write_document(directory, raw))
+                self.assertEqual(lesson.sources[0].url, display_url)
 
     def test_review_cycle_has_exact_intervals_and_two_prompts(self) -> None:
         raw = self.complete_document()

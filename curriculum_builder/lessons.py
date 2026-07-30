@@ -922,7 +922,7 @@ def _require_https_url(
         "https",
         normalized_host,
         normalized_port,
-        parsed.path,
+        parsed.path or "/",
         parsed.query,
     )
     return url, identity
