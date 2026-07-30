@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from curriculum_builder.catalog import canonicalize
 from curriculum_builder.errors import CurriculumValidationError
-from tools.import_catalog import CatalogPublicationIntegrityError, _close_all, _open_parent, _read_source, _write_atomic, main
+from tools.import_catalog import CatalogPublicationDurabilityError, CatalogPublicationIntegrityError, _close_all, _open_parent, _read_source, _write_atomic, main
 
 
 def lesson(**overrides: object) -> dict[str, object]:
@@ -34,6 +34,31 @@ def legacy_source(lessons: list[dict[str, object]]) -> dict[str, object]:
 
 
 class CatalogImportTests(unittest.TestCase):
+    def test_writer_durability_events_are_ordered_before_publish(self) -> None:
+        document = {"version": 1, "generatedFrom": "source", "sourceSha256": "a55a0d0b1cfa3773031e787c2ce7ca0df34534e16a70b65ed1baa91975c82da8", "items": [{**lesson(), "coreLessonId": None}]}; document["items"][0].pop("path")
+        with TemporaryDirectory(dir=Path.cwd()) as directory:
+            output = Path(directory) / "catalog.json"; events: list[str] = []; real_fsync = __import__("os").fsync; real_fchmod = __import__("os").fchmod; real_replace = __import__("os").replace
+            def fsync(fd: int) -> None:
+                events.append("parent-fsync" if __import__("stat").S_ISDIR(__import__("os").fstat(fd).st_mode) else "file-fsync"); real_fsync(fd)
+            with patch("tools.import_catalog._write_all", side_effect=lambda fd, data: (events.append("write"), __import__("os").write(fd, data))[1]), patch("tools.import_catalog.os.fchmod", side_effect=lambda fd, mode: (events.append("chmod"), real_fchmod(fd, mode))[1]), patch("tools.import_catalog.os.fsync", side_effect=fsync), patch("tools.import_catalog.os.replace", side_effect=lambda *a, **k: (events.append("replace"), real_replace(*a, **k))[1]):
+                _write_atomic(output, document)
+            self.assertEqual(events, ["write", "chmod", "file-fsync", "replace", "parent-fsync"])
+            self.assertEqual(output.stat().st_mode & 0o777, 0o644)
+
+    def test_writer_reports_parent_fsync_failure_after_publish_without_rollback(self) -> None:
+        document = {"version": 1, "generatedFrom": "source", "sourceSha256": "a55a0d0b1cfa3773031e787c2ce7ca0df34534e16a70b65ed1baa91975c82da8", "items": [{**lesson(), "coreLessonId": None}]}; document["items"][0].pop("path")
+        with TemporaryDirectory(dir=Path.cwd()) as directory:
+            output = Path(directory) / "catalog.json"; real_fsync = __import__("os").fsync; real_replace = __import__("os").replace; replaces = 0
+            def fsync(fd: int) -> None:
+                if __import__("stat").S_ISDIR(__import__("os").fstat(fd).st_mode): raise OSError("parent fsync")
+                real_fsync(fd)
+            def replace(*args: object, **kwargs: object) -> None:
+                nonlocal replaces
+                replaces += 1; real_replace(*args, **kwargs)
+            with patch("tools.import_catalog.os.fsync", side_effect=fsync), patch("tools.import_catalog.os.replace", side_effect=replace):
+                with self.assertRaises(CatalogPublicationDurabilityError) as raised: _write_atomic(output, document)
+            self.assertEqual(str(raised.exception.__cause__), "parent fsync"); self.assertEqual(replaces, 1)
+            self.assertTrue(output.exists()); self.assertEqual(output.stat().st_mode & 0o777, 0o644); self.assertEqual(list(output.parent.glob(".catalog-*.tmp")), [])
     def test_writer_rejects_hardlinked_input_identity_before_temp_creation(self) -> None:
         document = {"version": 1, "generatedFrom": "source", "sourceSha256": "a55a0d0b1cfa3773031e787c2ce7ca0df34534e16a70b65ed1baa91975c82da8", "items": [{**lesson(), "coreLessonId": None}]}; document["items"][0].pop("path")
         with TemporaryDirectory(dir=Path.cwd()) as directory:
