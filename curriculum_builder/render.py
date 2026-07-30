@@ -75,7 +75,6 @@ _REQUIRED_CSP = MappingProxyType(
         "form-action": ("'none'",),
         "object-src": ("'none'",),
         "frame-src": ("'none'",),
-        "frame-ancestors": ("'none'",),
     }
 )
 _BASE_CHILDREN = MappingProxyType(
