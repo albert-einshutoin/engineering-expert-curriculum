@@ -1,0 +1,194 @@
+<section id="why">
+  <h2>なぜ重要か</h2>
+  <p>architectureの価値は箱を増やすことではなく、一つの変更理由が無関係な領域へ波及する範囲を制御することにある。file、package、serviceを増やしても、同じdecisionが各所へ漏れ、相互依存していれば変更費用は下がらない。</p>
+  <p>図とADRは判断を共有する道具であり、判断そのものの正しさを保証しない。誰のconcernを扱うviewか、何を代替案と比較したか、どの観測でdecisionを見直すかまで残して初めて更新可能になる。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> cycleは調査信号であって、個数だけでarchitecture欠陥とは断定できない。依存の種類、公開契約、build・runtimeの方向、変更履歴を分けて解釈する。ISO準拠の記述やaccepted ADRも品質保証ではない。</p>
+  </aside>
+</section>
+<section id="mental-model">
+  <h2>メンタルモデル</h2>
+  <p>moduleは関連する変更を内側へまとめ、変わりやすいdecisionを安定したinterfaceの背後へ隠す。runtimeでdomainがadapterを呼ぶ場合でも、source dependencyはdomainが定義したportへ外側が従うようにできる。</p>
+  <figure>
+    <figcaption>変更理由を内側へ隠蔽する三層の依存graph</figcaption>
+    <ol>
+      <li><strong>pricing-domain:</strong> 料金規則と不変条件。UIやDB形式を知らない。</li>
+      <li><strong>pricing-application:</strong> use caseを順序付け、domainのportを使う。</li>
+      <li><strong>pricing-adapters:</strong> HTTP、DB、batch形式をdomainの語彙へ変換する。</li>
+      <li>source dependencyはadaptersからapplication、applicationからdomainへ向ける。</li>
+      <li>運用viewでは逆向きのrequest flowを別の矢印として記述し、意味を混ぜない。</li>
+    </ol>
+  </figure>
+  <table>
+    <caption>料金変更hotspotの境界を選ぶdecision table</caption>
+    <thead>
+      <tr><th scope="col">案</th><th scope="col">変更局所性</th><th scope="col">移行費</th><th scope="col">主なrisk</th></tr>
+    </thead>
+    <tbody>
+      <tr><th scope="row">domain境界を維持</th><td>高い</td><td>中</td><td>古いadapterとの二重経路</td></tr>
+      <tr><th scope="row">一時facade</th><td>中</td><td>低い</td><td>暫定層の恒久化</td></tr>
+      <tr><th scope="row">service分離</th><td>高い可能性</td><td>高い</td><td>network・運用・data整合性</td></tr>
+    </tbody>
+  </table>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>cycleを除き、変更impactをADRで確認する</h3>
+  <dl>
+    <dt>前提</dt>
+    <dd>料金規則、use case、DB変換が三moduleにある。内側から外側へのsource dependencyは禁止し、runtime callはportを介する。</dd>
+    <dt>入力</dt>
+    <dd>変更前はdomain→adapters→application→domainの3-edge cycleを持つ。選択肢は境界維持、一時facade、service分離の三つ。</dd>
+    <dt>操作</dt>
+    <dd>graphを深さ優先探索し、cycleと層rankに反するedgeを抽出する。domainからadapterへのedgeを外し、外側から内側へ二edgeを残す。</dd>
+    <dt>観測</dt>
+    <dd>変更前はcycleと方向違反が各1件、変更後は各0件。料金規則変更で無関係moduleの変更件数も0になる。</dd>
+    <dt>結論</dt>
+    <dd>graphのgreenだけで完了せず、選択肢、負の帰結、confirmationをADRへ残し、実際の変更履歴で再評価する。</dd>
+  </dl>
+  <p>次のPython 3.13 fixtureは固定されたmoduleとedgeだけを解析する。repository、network、環境秘密情報へアクセスしない。</p>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+import json
+
+HARNESS = "architecture_lab_v1"
+MODULES = [
+    "pricing-domain",
+    "pricing-application",
+    "pricing-adapters",
+]
+RANK = {
+    "pricing-domain": 0,
+    "pricing-application": 1,
+    "pricing-adapters": 2,
+}
+BEFORE_EDGES = [
+    ("pricing-domain", "pricing-adapters"),
+    ("pricing-adapters", "pricing-application"),
+    ("pricing-application", "pricing-domain"),
+]
+AFTER_EDGES = [
+    ("pricing-adapters", "pricing-application"),
+    ("pricing-application", "pricing-domain"),
+]
+
+def cycles(edges):
+    graph = {module: [] for module in MODULES}
+    for source, target in edges:
+        graph[source].append(target)
+    found = set()
+
+    def visit(node, path):
+        if node in path:
+            cycle = path[path.index(node):] + [node]
+            # Rotation-normalization prevents one cycle being counted from
+            # every possible start node.
+            body = cycle[:-1]
+            rotations = [tuple(body[index:] + body[:index]) for index in range(len(body))]
+            found.add(min(rotations))
+            return
+        for target in graph[node]:
+            visit(target, path + [node])
+
+    for module in MODULES:
+        visit(module, [])
+    return [list(cycle) + [cycle[0]] for cycle in sorted(found)]
+
+def direction_violations(edges):
+    return [
+        {"source": source, "target": target}
+        for source, target in edges
+        if RANK[source] &lt;= RANK[target]
+    ]
+
+def snapshot(edges):
+    return {
+        "modules": MODULES,
+        "edges": [
+            {"source": source, "target": target}
+            for source, target in edges
+        ],
+        "cycles": cycles(edges),
+        "direction_violations": direction_violations(edges),
+    }
+
+options = [
+    {
+        "id": "preserve-domain-boundary",
+        "criteria": {
+            "change_locality": 5,
+            "migration_cost": 3,
+            "operability": 4,
+            "reversibility": 4,
+        },
+        "risks": ["dual-path-drift"],
+    },
+    {
+        "id": "temporary-facade",
+        "criteria": {
+            "change_locality": 3,
+            "migration_cost": 5,
+            "operability": 4,
+            "reversibility": 3,
+        },
+        "risks": ["temporary-layer-becomes-permanent"],
+    },
+    {
+        "id": "extract-service",
+        "criteria": {
+            "change_locality": 4,
+            "migration_cost": 1,
+            "operability": 1,
+            "reversibility": 2,
+        },
+        "risks": ["distributed-consistency", "network-failure"],
+    },
+]
+report = {
+    "harness": HARNESS,
+    "fixture": "pricing-change-hotspot-v1",
+    "before": snapshot(BEFORE_EDGES),
+    "after": snapshot(AFTER_EDGES),
+    "options": options,
+    "adr": {
+        "status": "accepted",
+        "context": "pricing rules change weekly and leaked into three adapters",
+        "decision": "preserve the domain boundary and depend inward through ports",
+        "alternatives": [option["id"] for option in options[1:]],
+        "positive_consequences": ["localized rule changes", "testable domain"],
+        "negative_consequences": ["temporary dual path", "port maintenance"],
+        "confirmation": "dependency gate plus monthly change-impact review",
+    },
+    "change_impact": {
+        "changed_modules": ["pricing-domain"],
+        "unrelated_modules_changed": 0,
+        "review_window_days": 30,
+    },
+    "external_network_used": False,
+}
+print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+PY</code></pre>
+</section>
+<section id="tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <ul>
+    <li><strong>誤診:</strong> file、package、microserviceが多いほどmodularityは高い。 <strong>反証:</strong> 同じdecisionが複製され、変更が同時に波及するなら物理分割は境界を作っていない。</li>
+    <li><strong>誤診:</strong> ISOの要素を満たす図とaccepted ADRがあればarchitecture品質は保証される。 <strong>反証:</strong> 記述はstakeholderの判断を支えるが、観測、代替案、反証条件が誤っていれば判断も誤る。</li>
+    <li><strong>分散化:</strong> 独立deployは有益だが、network、data ownership、障害対応、version互換性の費用を追加する。</li>
+    <li><strong>過剰な抽象:</strong> 仮説上の将来変化だけでinterfaceを増やすと、実際の変更経路が見えにくくなる。</li>
+  </ul>
+</section>
+<section id="knowledge-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>runtimeでadapterを呼ぶdomainから、source dependencyを外向きにしない方法を説明せよ。</li>
+    <li>同じ三moduleでも、どの変更履歴なら境界を分け直すか。</li>
+    <li>cycle検出が0でもmodularityが悪い例を一つ挙げよ。</li>
+    <li>architecture viewの矢印へ最低限どの意味を付けるべきか。</li>
+    <li>ADRのnegative consequenceをconfirmationへどう接続するか。</li>
+  </ol>
+</section>
+<section id="sources-next">
+  <h2>出典と次の学習</h2>
+  <p>Parnasのmodule分解論は処理手順ではなくdesign decisionの隠蔽を中心に置く。ISO/IEC/IEEE 42010とViews and Beyondはstakeholder、concern、viewpoint、viewの記述を整理する。MADRはcontext、decision、alternatives、consequencesを更新可能な記録にする。</p>
+  <p>次はcore09で、module境界の期待を実行可能なtestへ落とす。変更ごとにimpactを記録し、30日reviewで予測と実測がずれたADRを更新する。</p>
+</section>
