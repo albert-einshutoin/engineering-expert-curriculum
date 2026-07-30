@@ -196,13 +196,14 @@ def _write_manifest(archive: Path, snapshot: dict[str, FileSnapshot]) -> Prototy
         except OSError:
             pass
         raise
-    # Publish the manifest only after its complete durable temp-file write succeeds.
-    os.replace(temporary_manifest, archive / "manifest.json")
+    # Make archive entries and the temp manifest durable before rename. The rename is the
+    # completion marker: if power loss loses it, no manifest means safely incomplete.
     directory_descriptor = os.open(archive, os.O_RDONLY)
     try:
         os.fsync(directory_descriptor)
     finally:
         os.close(directory_descriptor)
+    os.replace(temporary_manifest, archive / "manifest.json")
     return manifest
 
 

@@ -165,13 +165,15 @@ match.
 
 Move the verified staging top-level entries into the reserved archive, then
 re-snapshot the archive. Write the typed manifest to an exclusively created
-temporary file in the archive, flush and `fsync` it, and atomically replace
-`manifest.json`; this file is the sole completion marker. On any failure before
-the manifest exists, remove the owned reservation while leaving source intact.
-If cleanup fails, report the incomplete archive explicitly; its missing manifest
-still marks it as incomplete. Do not delete or rename source after publication:
-source retirement is a separate reviewed task, prioritizing preservation over
-cleanup.
+temporary file in the archive, flush and `fsync` it, then `fsync` and close the
+archive directory before atomically replacing `manifest.json`. That rename is
+the sole completion marker and must be the final failure-capable operation: if
+power loss loses the rename, missing manifest still means safely incomplete. On
+any failure before the manifest exists, remove the owned reservation while
+leaving source intact. If cleanup fails, report the incomplete archive
+explicitly; its missing manifest still marks it as incomplete. Do not delete or
+rename source after publication: source retirement is a separate reviewed task,
+prioritizing preservation over cleanup.
 
 - [ ] **Step 4: Verify GREEN without running on repository files**
 

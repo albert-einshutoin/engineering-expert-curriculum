@@ -131,6 +131,24 @@ class PrototypeMigrationTests(unittest.TestCase):
             self.assertTrue((root / "index.html").exists())
             self.assertFalse(os.path.lexists(archive))
 
+    def test_pre_commit_directory_fsync_failure_never_renames_manifest(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_fixture(root)
+            archive = root / ".archive" / "prototype-v1"
+            real_replace = os.replace
+
+            with patch("tools.migrate_prototype.os.fsync", side_effect=[None, OSError("directory fsync failed")]):
+                with patch("tools.migrate_prototype.os.replace", wraps=real_replace) as replace:
+                    with self.assertRaisesRegex(OSError, "directory fsync failed"):
+                        preserve_prototype(root, archive)
+
+            self.assertTrue((root / "index.html").exists())
+            self.assertFalse(os.path.lexists(archive))
+            self.assertFalse(
+                any(Path(call.args[1]).name == "manifest.json" for call in replace.call_args_list)
+            )
+
     def test_rejects_a_symlinked_source(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
