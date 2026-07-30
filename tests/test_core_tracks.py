@@ -175,6 +175,57 @@ FOUNDATIONS = {
         "transfer": "パケット損失と依存遅延を区別する診断",
     },
 }
+BUILD = {
+    "core-06-requirements-domain-modeling": {
+        "prerequisites": ("core-01-systems-tradeoffs",),
+        "artifact": "用語集、境界、例外を含むドメインモデル",
+        "transfer": (
+            "未知のレンタル事業で用語の衝突と未宣言ルールを発見し、"
+            "境界と例外を再構成する"
+        ),
+    },
+    "core-07-api-contracts-evolution": {
+        "prerequisites": ("core-06-requirements-domain-modeling",),
+        "artifact": "互換性、冪等性、失敗形式を含むAPI契約",
+        "transfer": (
+            "長時間オフラインになる現場端末へ互換な再送・同期API契約を"
+            "設計する"
+        ),
+    },
+    "core-08-modularity-architecture-decisions": {
+        "prerequisites": (
+            "core-06-requirements-domain-modeling",
+            "core-07-api-contracts-evolution",
+        ),
+        "artifact": "変更理由と依存方向を説明するモジュール図とADR",
+        "transfer": (
+            "変更頻度が高い料金計算モジュールの依存方向を再設計し、"
+            "ADRで判断を更新する"
+        ),
+    },
+    "core-09-testing-strategy-tdd": {
+        "prerequisites": (
+            "core-02-algorithms-measurement",
+            "core-08-modularity-architecture-decisions",
+        ),
+        "artifact": "RED-GREEN-REFACTOR履歴とリスク別テスト戦略",
+        "transfer": (
+            "順序と時刻に依存する非決定的障害を再現し、"
+            "リスク別テスト戦略で診断する"
+        ),
+    },
+    "core-10-secure-by-design": {
+        "prerequisites": (
+            "core-07-api-contracts-evolution",
+            "core-09-testing-strategy-tdd",
+        ),
+        "artifact": "資産、境界、攻撃経路、検証を結ぶ脅威モデル",
+        "transfer": (
+            "正規権限を持つ委託運用者の誤操作・資格情報悪用を含む"
+            "内部者脅威へモデルを移す"
+        ),
+    },
+}
 
 
 class _BodyContractParser(HTMLParser):
@@ -510,7 +561,16 @@ class CoreTrackTests(unittest.TestCase):
             f"{lesson_id}: inline behavior or remote resource",
         )
 
-    def assert_track(self, contract: dict[str, dict[str, object]]) -> None:
+    def assert_track(
+        self,
+        contract: dict[str, dict[str, object]],
+        *,
+        expected_track: str,
+        source_contract: dict[
+            str,
+            tuple[tuple[str, str, str], ...],
+        ] | None,
+    ) -> None:
         for lesson_id, expected in contract.items():
             with self.subTest(lesson_id=lesson_id):
                 path = (
@@ -523,7 +583,7 @@ class CoreTrackTests(unittest.TestCase):
                 self.assertTrue(path.is_file(), f"missing {path}")
                 lesson = load_lesson(path)
 
-                self.assertEqual(lesson.track, "foundations")
+                self.assertEqual(lesson.track, expected_track)
                 self.assertEqual(lesson.status, "complete")
                 self.assertEqual(
                     lesson.prerequisite_ids,
@@ -542,16 +602,28 @@ class CoreTrackTests(unittest.TestCase):
                 )
                 self.assertEqual(lesson.review_intervals, (1, 7, 30, 90))
                 self.assertEqual(lesson.updated_at, "2026-07-30")
-                self.assertEqual(
-                    tuple(
-                        (source.title, source.url, source.kind)
-                        for source in lesson.sources
-                    ),
-                    FOUNDATION_SOURCES[lesson_id],
-                )
+                if source_contract is not None:
+                    self.assertEqual(
+                        tuple(
+                            (source.title, source.url, source.kind)
+                            for source in lesson.sources
+                        ),
+                        source_contract[lesson_id],
+                    )
 
     def test_foundations(self) -> None:
-        self.assert_track(FOUNDATIONS)
+        self.assert_track(
+            FOUNDATIONS,
+            expected_track="foundations",
+            source_contract=FOUNDATION_SOURCES,
+        )
+
+    def test_build(self) -> None:
+        self.assert_track(
+            BUILD,
+            expected_track="build",
+            source_contract=None,
+        )
 
     def test_foundation_bodies_follow_semantic_contract(self) -> None:
         for lesson_id in FOUNDATIONS:
