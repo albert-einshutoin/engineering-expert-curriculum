@@ -1,0 +1,241 @@
+<section id="why">
+  <h2>なぜ重要か</h2>
+  <p>testの役割は安心を演出することではなく、変更について誤り得る具体的な主張を実行可能にすることだ。greenやcoverage率だけでは、期待が正しいこと、重要な境界を観測したこと、利用者のriskを減らしたことは証明できない。</p>
+  <p>TDDは小さな設計feedback loopとして有効だが、製品全体のtest戦略と同義ではない。process境界、consumerとの契約、非決定的な時刻と順序、本番でしか見えない失敗には、別の観測と反証が要る。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> 一回のRED、GREEN、100% coverage、contract test成功はいずれも正しさの保証ではない。test code、oracle、fixture、実行環境も欠陥を持つため、mutation、異なる技法、本番観測で反証可能性を保つ。</p>
+  </aside>
+</section>
+<section id="mental-model">
+  <h2>メンタルモデル</h2>
+  <p>まずriskを「どの境界で、何が壊れ、誰にどの影響が出るか」で記述する。次に、その失敗を最短で観測できる層へtestを置く。test数の多さではなく、異なる失敗仮説への感度と診断可能性を設計する。</p>
+  <figure>
+    <figcaption>riskから証拠へ進み、mutationで感度を反証するloop</figcaption>
+    <ol>
+      <li>利用者影響と守る不変条件を一つ選ぶ。</li>
+      <li>失敗する最小の期待を実行し、REDの理由を読む。</li>
+      <li>最小実装でGREENにし、別の入力でも性質を確認する。</li>
+      <li>振る舞いを保って構造を整理し、同じ観測を再実行する。</li>
+      <li>mutantまたは障害注入で、testが実際に誤りを検出するか確かめる。</li>
+    </ol>
+  </figure>
+  <table>
+    <caption>失敗riskからtest技法を選ぶdecision table</caption>
+    <thead>
+      <tr><th scope="col">risk</th><th scope="col">主な技法</th><th scope="col">観測境界</th><th scope="col">限界</th></tr>
+    </thead>
+    <tbody>
+      <tr><th scope="row">局所計算</th><td>unit・property</td><td>純粋な入出力</td><td>接続先の契約は見ない</td></tr>
+      <tr><th scope="row">module連携</th><td>integration</td><td>adapterを含む経路</td><td>本番構成との差が残る</td></tr>
+      <tr><th scope="row">consumer互換性</th><td>contract</td><td>公開message</td><td>認可や運用成功は保証しない</td></tr>
+      <tr><th scope="row">oracle不足</th><td>metamorphic</td><td>入力変換前後の関係</td><td>関係自体を誤る可能性がある</td></tr>
+      <tr><th scope="row">時刻・順序</th><td>固定seed・時計・schedule</td><td>再現fixture</td><td>固定していない要因は残る</td></tr>
+    </tbody>
+  </table>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>割引計算を実subprocessでREDからmutation killまで進める</h3>
+  <dl>
+    <dt>前提</dt>
+    <dd>価格は0以上、割引率は0から100まで。合計は入力順に依存せず、価格0を追加しても変わらない。</dd>
+    <dt>入力</dt>
+    <dd>150円に10%を適用すると135.0円となる例、境界、順序交換、0追加、consumerの数値契約を五技法へ割り当てる。</dd>
+    <dt>操作</dt>
+    <dd>同一testを未実装、最小実装、入力検証を分離した実装へ順に実行する。続いてseed 11から14と固定時計でflaky fixtureを4回実行し、安全な算術mutantを試す。</dd>
+    <dt>観測</dt>
+    <dd>REDは非0、GREENとREFACTORは0。後二者のsource SHA-256は異なるがbehavior SHA-256は同じで、mutantは非0になる。</dd>
+    <dt>結論</dt>
+    <dd>履歴は文字列で自己申告せず、実行command、return code、hash、seedをJSONへ保存する。これによりreviewerが各主張を再実行できる。</dd>
+  </dl>
+  <p>次のfixtureは現在の一時directoryだけへ小さな教材fileを書き、shell、外部network、秘密情報を使わない。各subprocessには5秒の上限を設ける。</p>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+HARNESS = "test_strategy_lab_v1"
+TEST_SOURCE = """
+import unittest
+from order_discount import total
+
+class DiscountTests(unittest.TestCase):
+    def test_unit(self):
+        self.assertEqual(total([100, 50], 0), 150.0)
+
+    def test_integration(self):
+        self.assertEqual(total([100, 50], 10), 135.0)
+
+    def test_contract(self):
+        self.assertIs(type(total([25, 25], 20)), float)
+
+    def test_property(self):
+        for prices, rate in [([], 0), ([1], 100), ([30, 70], 25)]:
+            result = total(prices, rate)
+            self.assertGreaterEqual(result, 0)
+            self.assertLessEqual(result, sum(prices))
+
+    def test_metamorphic(self):
+        self.assertEqual(total([30, 70], 25), total([70, 0, 30], 25))
+"""
+
+RED_SOURCE = """
+def total(prices, rate_percent):
+    return float(sum(prices))
+"""
+
+GREEN_SOURCE = """
+def total(prices, rate_percent):
+    subtotal = sum(prices)
+    return round(subtotal * (100 - rate_percent) / 100, 2)
+"""
+
+REFACTOR_SOURCE = """
+def _validate(prices, rate_percent):
+    # Rejecting out-of-contract values here keeps the domain function bounded.
+    if any(type(price) not in (int, float) or price &lt; 0 for price in prices):
+        raise ValueError("prices must be non-negative numbers")
+    if type(rate_percent) not in (int, float) or not 0 &lt;= rate_percent &lt;= 100:
+        raise ValueError("rate_percent must be between 0 and 100")
+
+def total(prices, rate_percent):
+    _validate(prices, rate_percent)
+    subtotal = sum(prices)
+    return round(subtotal * (1 - rate_percent / 100), 2)
+"""
+
+MUTANT_SOURCE = REFACTOR_SOURCE.replace(
+    "1 - rate_percent / 100",
+    "rate_percent / 100",
+)
+TEST_COMMAND = [sys.executable, "-m", "unittest", "-q"]
+BEHAVIOR_COMMAND = [
+    sys.executable,
+    "-c",
+    (
+        "import json; from order_discount import total; "
+        "print(json.dumps([total([100,50],10), total([30,70],25)]))"
+    ),
+]
+
+def sha256_text(text):
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+def execute(command, environment=None):
+    return subprocess.run(
+        command,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=5,
+        env=environment,
+    )
+
+def phase(name, source):
+    Path("order_discount.py").write_text(source, encoding="utf-8")
+    result = execute(TEST_COMMAND)
+    behavior = execute(BEHAVIOR_COMMAND)
+    if behavior.returncode != 0:
+        raise RuntimeError(behavior.stderr)
+    return {
+        "name": name,
+        "command": TEST_COMMAND,
+        "returncode": result.returncode,
+        "source_sha256": sha256_text(source),
+        "behavior_sha256": sha256_text(behavior.stdout.strip()),
+        "test_runner_summary": result.stderr.strip().splitlines()[-1],
+    }
+
+Path("test_order_discount.py").write_text(TEST_SOURCE, encoding="utf-8")
+phases = [
+    phase("RED", RED_SOURCE),
+    phase("GREEN", GREEN_SOURCE),
+    phase("REFACTOR", REFACTOR_SOURCE),
+]
+
+FLAKY_SOURCE = """
+import os
+import random
+import sys
+
+seed = int(os.environ["FIXTURE_SEED"])
+tick = int(os.environ["FIXED_CLOCK_TICK"])
+operations = ["reserve", "commit"]
+random.Random(seed).shuffle(operations)
+passed = operations == ["reserve", "commit"] and tick % 2 == 0
+print("pass" if passed else "fail")
+raise SystemExit(0 if passed else 1)
+"""
+Path("flaky_fixture.py").write_text(FLAKY_SOURCE, encoding="utf-8")
+seed_sequence = [11, 12, 13, 14]
+outcomes = []
+for seed in seed_sequence:
+    controlled_environment = {
+        "PATH": os.environ.get("PATH", ""),
+        "FIXTURE_SEED": str(seed),
+        "FIXED_CLOCK_TICK": str(seed),
+    }
+    observed = execute(
+        [sys.executable, "flaky_fixture.py"],
+        controlled_environment,
+    )
+    outcomes.append(observed.stdout.strip())
+
+Path("order_discount.py").write_text(MUTANT_SOURCE, encoding="utf-8")
+mutation_result = execute(TEST_COMMAND)
+green_passed = phases[1]["returncode"] == 0
+report = {
+    "harness": HARNESS,
+    "fixture": "order-discount-v1",
+    "phases": phases,
+    "strategy_evidence": [
+        {
+            "kind": kind,
+            "passed": green_passed,
+            "evidence": "DiscountTests.test_" + kind,
+        }
+        for kind in ("unit", "integration", "contract", "property", "metamorphic")
+    ],
+    "nondeterministic_defect": {
+        "seed_sequence": seed_sequence,
+        "outcomes": outcomes,
+        "root_cause": "order-and-clock-coupling",
+    },
+    "mutation": {
+        "source_sha256": sha256_text(MUTANT_SOURCE),
+        "returncode": mutation_result.returncode,
+        "killed": mutation_result.returncode != 0,
+    },
+    "external_network_used": False,
+}
+print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+PY</code></pre>
+</section>
+<section id="tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <ul>
+    <li><strong>誤診:</strong> TDDなら全test戦略が完成し、結合・consumer・運用testは不要である。 <strong>反証:</strong> TDDはfeedbackの進め方であり、どの境界とriskをtestするかは別の設計判断である。</li>
+    <li><strong>誤診:</strong> green、coverage、contract testのどれかが高ければ製品は正しい。 <strong>反証:</strong> 誤ったoracle、未観測の認可、version差、実行されないassertionはgreenのまま残るため、mutationと異種証拠が必要になる。</li>
+    <li><strong>偽陽性:</strong> 実装と無関係な共有時刻、順序、外部serviceへ依存したtestは正しい変更を止める。</li>
+    <li><strong>偽陰性:</strong> mockが実契約より寛容、またはassertionがstatus codeだけなら、意味の破壊を見逃す。</li>
+    <li><strong>費用:</strong> 高忠実度testほど診断が遅くなるとは限らないが、fixture維持と実行時間を測り、最小境界へ寄せる必要がある。</li>
+  </ul>
+</section>
+<section id="knowledge-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>REDが期待どおり失敗したと判断するには、非0だけでなく何を読むべきか。</li>
+    <li>GREENとREFACTORでsource hashが違い、behavior hashが同じことは何を示し、何を保証しないか。</li>
+    <li>割引結果を直接計算できない場合、「入力へ0円を足しても結果が変わらない」はどの技法になるか。</li>
+    <li>固定seedだけでflaky testが再現しないとき、次に固定する候補を三つ挙げよ。</li>
+    <li>mutationが生き残った場合、test追加とmutant無効化をどう区別するか。</li>
+  </ol>
+</section>
+<section id="sources-next">
+  <h2>出典と次の学習</h2>
+  <p>ISTQB CTFLはtest processと技法を、Test Driven Development: By Exampleは小さいcycleを整理する。flaky testの実証研究は再現条件の分類を、metamorphic testingの原典はoracleを直接得にくい問題への関係検証を示す。Pact Specificationはconsumer-provider間のmessage契約を扱う。</p>
+  <p>次はcore10で、実装前の脅威仮説を資産・境界・control・verificationへ接続する。90日後には、実際に逃した欠陥と遅すぎたtestを基にportfolioを更新する。</p>
+</section>
