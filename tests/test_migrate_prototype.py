@@ -148,7 +148,7 @@ class PrototypeMigrationTests(unittest.TestCase):
             archive = root / ".archive" / "prototype-v1"
 
             def fail_directory_fsync(fd: int, purpose: str) -> None:
-                if purpose == "destination directory":
+                if purpose.startswith("destination directory:"):
                     raise OSError("directory fsync failed")
 
             with patch("tools.migrate_prototype._fsync_fd", side_effect=fail_directory_fsync):

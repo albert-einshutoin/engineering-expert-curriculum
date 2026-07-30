@@ -362,7 +362,7 @@ def _snapshot(root: Path) -> dict[str, FileSnapshot]:
 
 
 def _copy_allowlisted_tree(source: Path, staging_fd: int) -> None:
-    def copy_node(origin: Path, destination_fd: int, name: str) -> None:
+    def copy_node(origin: Path, destination_fd: int, name: str, logical_path: str) -> None:
         mode = os.lstat(origin).st_mode
         if stat.S_ISREG(mode):
             output = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=destination_fd)
@@ -386,15 +386,15 @@ def _copy_allowlisted_tree(source: Path, staging_fd: int) -> None:
         try:
             with os.scandir(origin) as entries:
                 for entry in entries:
-                    copy_node(Path(entry.path), child_fd, entry.name)
-            _fsync_fd(child_fd, "destination directory")
+                    copy_node(Path(entry.path), child_fd, entry.name, f"{logical_path}/{entry.name}")
+            _fsync_fd(child_fd, f"destination directory: {logical_path}")
         finally:
             os.close(child_fd)
 
     for relative_path in LEGACY_PATHS:
         origin = source / relative_path
         if _lexists(origin):
-            copy_node(origin, staging_fd, relative_path)
+            copy_node(origin, staging_fd, relative_path, relative_path)
 
 
 def _snapshot_fd(root_fd: int) -> dict[str, FileSnapshot]:
