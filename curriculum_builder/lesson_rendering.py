@@ -21,9 +21,14 @@ from .render import Renderer
 
 
 _LESSON_ID: Final = re.compile(
-    r"core-(?:0[1-9]|[12][0-9]|30)-[a-z0-9]+(?:-[a-z0-9]+)*\Z",
+    r"core-(0[1-9]|[12][0-9]|30)-[a-z0-9]+(?:-[a-z0-9]+)*\Z",
     re.ASCII,
 )
+MAX_LESSONS: Final = 30
+# Thirty full textbook lessons fit comfortably in these budgets, while a
+# malformed authoring tree cannot make CI read or render an unbounded corpus.
+MAX_LESSON_COLLECTION_INPUT_BYTES: Final = 16 * 1024 * 1024
+MAX_LESSON_ARTIFACT_BYTES: Final = 32 * 1024 * 1024
 _READ_CHUNK_BYTES: Final = 64 * 1024
 _DIRECTORY_FLAGS: Final = (
     os.O_RDONLY
@@ -38,6 +43,7 @@ _FILE_FLAGS: Final = (
     | getattr(os, "O_NONBLOCK", 0)
 )
 _PAIR = frozenset({"lesson.json", "body.html"})
+_CLOSE_FAILURE_NOTE: Final = "lesson descriptor also failed to close"
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,10 +104,22 @@ def load_lessons_from_root(content_descriptor: int) -> LessonCollection:
             )
 
         names = _discover_lesson_names(lessons_fd)
-        loaded = tuple(
-            _load_lesson_directory(lessons_fd, name)
-            for name in names
-        )
+        loaded_items: list[LoadedLesson] = []
+        remaining_input_bytes = MAX_LESSON_COLLECTION_INPUT_BYTES
+        for name in names:
+            item = _load_lesson_directory(
+                lessons_fd,
+                name,
+                remaining_input_bytes,
+            )
+            consumed = len(item.metadata_bytes) + len(item.body_bytes)
+            if consumed > remaining_input_bytes:
+                raise CurriculumValidationError(
+                    "lesson collection exceeds maximum input byte count"
+                )
+            remaining_input_bytes -= consumed
+            loaded_items.append(item)
+        loaded = tuple(loaded_items)
         current = os.stat(
             "lessons",
             dir_fd=content_descriptor,
@@ -118,10 +136,12 @@ def load_lessons_from_root(content_descriptor: int) -> LessonCollection:
             )
     except CurriculumValidationError:
         raise
-    except OSError:
-        raise CurriculumValidationError(
+    except OSError as error:
+        validation_error = CurriculumValidationError(
             "lessons cannot be read safely"
-        ) from None
+        )
+        _retain_close_failure_note(error, validation_error)
+        raise validation_error from None
     finally:
         if lessons_fd is not None:
             _close_descriptor(lessons_fd, "lessons directory")
@@ -156,37 +176,63 @@ def load_lessons_from_root(content_descriptor: int) -> LessonCollection:
 
 
 def _discover_lesson_names(directory_fd: int) -> tuple[str, ...]:
+    names: list[str] = []
+    ordinals: set[int] = set()
     try:
         with os.scandir(directory_fd) as entries:
-            observed = tuple(entries)
+            for entry in entries:
+                # Reject as soon as entry 31 is observed; exhausting scandir
+                # first would make the count guard itself vulnerable to DoS.
+                if len(names) >= MAX_LESSONS:
+                    raise CurriculumValidationError(
+                        "lesson collection exceeds maximum lesson count"
+                    )
+                name = entry.name
+                match = (
+                    _LESSON_ID.fullmatch(name)
+                    if type(name) is str
+                    else None
+                )
+                if match is None:
+                    raise CurriculumValidationError(
+                        "lesson directory name is unsafe"
+                    )
+                ordinal = int(match.group(1))
+                if not 1 <= ordinal <= MAX_LESSONS:
+                    raise CurriculumValidationError(
+                        "lesson ordinal must be between 1 and 30"
+                    )
+                if ordinal in ordinals:
+                    raise CurriculumValidationError(
+                        "duplicate lesson ordinal"
+                    )
+                try:
+                    node = entry.stat(follow_symlinks=False)
+                except OSError:
+                    raise CurriculumValidationError(
+                        "lesson directory cannot be inspected"
+                    ) from None
+                _require_safe_node(
+                    node,
+                    f"lesson {name}",
+                    directory=True,
+                )
+                ordinals.add(ordinal)
+                names.append(name)
+    except CurriculumValidationError:
+        raise
     except OSError:
         raise CurriculumValidationError(
             "lessons cannot be discovered safely"
         ) from None
 
-    names: list[str] = []
-    for entry in observed:
-        name = entry.name
-        if type(name) is not str or _LESSON_ID.fullmatch(name) is None:
-            raise CurriculumValidationError(
-                "lesson directory name is unsafe"
-            )
-        try:
-            node = entry.stat(follow_symlinks=False)
-        except OSError:
-            raise CurriculumValidationError(
-                "lesson directory cannot be inspected"
-            ) from None
-        _require_safe_node(node, f"lesson {name}", directory=True)
-        names.append(name)
-    if len(set(names)) != len(names):
-        raise CurriculumValidationError("duplicate lesson directory")
     return tuple(sorted(names))
 
 
 def _load_lesson_directory(
     lessons_fd: int,
     name: str,
+    remaining_input_bytes: int,
 ) -> LoadedLesson:
     descriptor: int | None = None
     try:
@@ -215,16 +261,19 @@ def _load_lesson_directory(
                 f"lesson {name} must contain the lesson.json/body.html pair"
             )
 
-        metadata, metadata_signature = _read_regular_file_at(
+        metadata, metadata_signature = _read_collection_file_at(
             descriptor,
             "lesson.json",
             MAX_LESSON_BYTES,
+            remaining_input_bytes,
             f"lesson {name}/lesson.json",
         )
-        body_raw, body_signature = _read_regular_file_at(
+        remaining_input_bytes -= len(metadata)
+        body_raw, body_signature = _read_collection_file_at(
             descriptor,
             "body.html",
             MAX_FRAGMENT_BYTES,
+            remaining_input_bytes,
             f"lesson {name}/body.html",
         )
         _revalidate_file(
@@ -271,13 +320,46 @@ def _load_lesson_directory(
         )
     except CurriculumValidationError:
         raise
-    except OSError:
-        raise CurriculumValidationError(
+    except OSError as error:
+        validation_error = CurriculumValidationError(
             f"lesson {name} cannot be read safely"
-        ) from None
+        )
+        _retain_close_failure_note(error, validation_error)
+        raise validation_error from None
     finally:
         if descriptor is not None:
             _close_descriptor(descriptor, f"lesson {name} directory")
+
+
+def _read_collection_file_at(
+    directory_fd: int,
+    name: str,
+    per_file_maximum_bytes: int,
+    remaining_collection_bytes: int,
+    label: str,
+) -> tuple[bytes, tuple[int, int, int, int, int, int]]:
+    # Applying the smaller remaining budget before opening the file prevents a
+    # late aggregate check from reading one otherwise-valid oversized lesson.
+    maximum_bytes = min(
+        per_file_maximum_bytes,
+        remaining_collection_bytes,
+    )
+    if maximum_bytes < per_file_maximum_bytes:
+        return _read_regular_file_at(
+            directory_fd,
+            name,
+            maximum_bytes,
+            label,
+            maximum_error=(
+                "lesson collection exceeds maximum input byte count"
+            ),
+        )
+    return _read_regular_file_at(
+        directory_fd,
+        name,
+        maximum_bytes,
+        label,
+    )
 
 
 def _read_regular_file_at(
@@ -285,6 +367,8 @@ def _read_regular_file_at(
     name: str,
     maximum_bytes: int,
     label: str,
+    *,
+    maximum_error: str | None = None,
 ) -> tuple[bytes, tuple[int, int, int, int, int, int]]:
     descriptor: int | None = None
     try:
@@ -296,7 +380,7 @@ def _read_regular_file_at(
         _require_safe_node(before, label, directory=False)
         if before.st_size > maximum_bytes:
             raise CurriculumValidationError(
-                f"{label} exceeds maximum byte count"
+                maximum_error or f"{label} exceeds maximum byte count"
             )
         descriptor = os.open(
             name,
@@ -394,17 +478,25 @@ def _file_signature(
 
 
 def _close_descriptor(descriptor: int, label: str) -> None:
+    active = sys.exception()
     try:
         os.close(descriptor)
-    except OSError as close_error:
-        active = sys.exception()
+    except OSError:
         if active is None:
-            raise RuntimeError(
-                f"{label} descriptor close failed: {close_error}"
-            ) from close_error
-        raise RuntimeError(
-            f"{label} descriptor close failed: {close_error}"
-        ) from active
+            raise CurriculumValidationError(
+                f"{label} descriptor close failed"
+            ) from None
+        # A cleanup fault is secondary to an in-flight validation/read error.
+        # Preserve that primary error and attach only a content-free note.
+        active.add_note(_CLOSE_FAILURE_NOTE)
+
+
+def _retain_close_failure_note(
+    source: BaseException,
+    target: BaseException,
+) -> None:
+    if _CLOSE_FAILURE_NOTE in getattr(source, "__notes__", ()):
+        target.add_note(_CLOSE_FAILURE_NOTE)
 
 
 class _AuthoredBodyLinkParser(HTMLParser):
@@ -456,6 +548,10 @@ def render_lesson_artifacts(
         raise CurriculumValidationError(
             "loaded lessons must be an exact immutable tuple"
         )
+    if len(loaded) > MAX_LESSONS:
+        raise CurriculumValidationError(
+            "lesson collection exceeds maximum lesson count"
+        )
 
     index_entries = (
         validate_fragment(
@@ -471,14 +567,19 @@ def render_lesson_artifacts(
         text_values={},
         html_values={"lessons": index_entries},
     )
-    artifacts = {
-        PurePosixPath("lessons/index.html"): renderer.page(
-            output_path=Path("lessons/index.html"),
-            title="コアレッスン",
-            description="前提順に学ぶエビデンス中心のコアレッスン索引",
-            content=index_content,
-        ).encode("utf-8")
-    }
+    index_path = PurePosixPath("lessons/index.html")
+    index_artifact = renderer.page(
+        output_path=Path(index_path.as_posix()),
+        title="コアレッスン",
+        description="前提順に学ぶエビデンス中心のコアレッスン索引",
+        content=index_content,
+    ).encode("utf-8")
+    artifacts = {index_path: index_artifact}
+    artifact_bytes = len(index_artifact)
+    if artifact_bytes > MAX_LESSON_ARTIFACT_BYTES:
+        raise CurriculumValidationError(
+            "lesson artifacts exceed maximum byte count"
+        )
     for item in loaded:
         lesson = item.lesson
         fragment = renderer.fragment(
@@ -506,12 +607,18 @@ def render_lesson_artifacts(
             },
         )
         output_path = Path("lessons") / lesson.id / "index.html"
-        artifacts[PurePosixPath(output_path.as_posix())] = renderer.page(
+        artifact = renderer.page(
             output_path=output_path,
             title=lesson.title,
             description=lesson.summary,
             content=fragment,
         ).encode("utf-8")
+        artifact_bytes += len(artifact)
+        if artifact_bytes > MAX_LESSON_ARTIFACT_BYTES:
+            raise CurriculumValidationError(
+                "lesson artifacts exceed maximum byte count"
+            )
+        artifacts[PurePosixPath(output_path.as_posix())] = artifact
     return artifacts
 
 

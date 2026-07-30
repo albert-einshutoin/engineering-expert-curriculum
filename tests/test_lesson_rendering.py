@@ -273,6 +273,384 @@ class LessonRenderingTests(unittest.TestCase):
                 with self.assertRaises(CurriculumValidationError):
                     build_site(content, templates, static_root, root / "site")
 
+    def test_discovery_rejects_the_thirty_first_entry_without_lookahead(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as directory:
+            lessons = Path(directory).resolve(strict=True) / "lessons"
+            lessons.mkdir()
+            for ordinal in range(1, 31):
+                (lessons / f"core-{ordinal:02}-lesson-{ordinal}").mkdir()
+            (lessons / "core-30-zzzz-duplicate").mkdir()
+
+            flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+            descriptor = os.open(lessons, flags)
+            real_scandir = os.scandir
+            next_calls = 0
+
+            class GuardedScandir:
+                def __init__(self, target: int) -> None:
+                    self._entries = real_scandir(target)
+                    self._ordered = iter(
+                        sorted(self._entries, key=lambda entry: entry.name)
+                    )
+
+                def __enter__(self) -> GuardedScandir:
+                    return self
+
+                def __exit__(self, *args: object) -> None:
+                    self._entries.close()
+
+                def __iter__(self) -> GuardedScandir:
+                    return self
+
+                def __next__(self) -> os.DirEntry[str]:
+                    nonlocal next_calls
+                    next_calls += 1
+                    if next_calls > 31:
+                        raise AssertionError(
+                            "lesson discovery read beyond the rejecting entry"
+                        )
+                    return next(self._ordered)
+
+            def guarded_scandir(
+                target: int | str | bytes | os.PathLike[str],
+            ) -> object:
+                if target == descriptor:
+                    return GuardedScandir(descriptor)
+                return real_scandir(target)
+
+            try:
+                with patch(
+                    "curriculum_builder.lesson_rendering.os.scandir",
+                    side_effect=guarded_scandir,
+                ):
+                    with self.assertRaisesRegex(
+                        CurriculumValidationError,
+                        "maximum lesson count",
+                    ):
+                        lesson_rendering._discover_lesson_names(descriptor)
+            finally:
+                os.close(descriptor)
+
+            self.assertEqual(next_calls, 31)
+
+    def test_duplicate_numeric_ordinal_fails_before_publication(self) -> None:
+        with _site_fixture() as (root, content, templates, static_root):
+            first = _complete_document()
+            second = _complete_document(
+                lesson_id="core-01-alternative-suffix",
+                title="同一ordinalの別教材",
+            )
+            _add_lesson(content, first)
+            _add_lesson(content, second)
+            output = root / "site"
+            output.mkdir()
+            (output / "sentinel.txt").write_text("old", encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                CurriculumValidationError,
+                "duplicate lesson ordinal",
+            ):
+                build_site(content, templates, static_root, output)
+
+            self.assertEqual((output / "sentinel.txt").read_text(), "old")
+            self.assertEqual(list(root.glob(".site.staging-*")), [])
+
+    def test_collection_input_byte_limit_fails_before_publication(self) -> None:
+        with _site_fixture() as (root, content, templates, static_root):
+            directory = _add_lesson(
+                content,
+                _complete_document(title="PRIVATE-TITLE-CONTENT"),
+                body="<p>PRIVATE-BODY-CONTENT</p>",
+            )
+            combined_bytes = sum(
+                (directory / name).stat().st_size
+                for name in ("lesson.json", "body.html")
+            )
+            output = root / "site"
+            output.mkdir()
+            (output / "sentinel.txt").write_text("old", encoding="utf-8")
+
+            with patch.object(
+                lesson_rendering,
+                "MAX_LESSON_COLLECTION_INPUT_BYTES",
+                combined_bytes - 1,
+                create=True,
+            ):
+                with self.assertRaisesRegex(
+                    CurriculumValidationError,
+                    "collection exceeds maximum input byte count",
+                ) as caught:
+                    build_site(content, templates, static_root, output)
+
+            self.assertNotIn("PRIVATE-TITLE-CONTENT", str(caught.exception))
+            self.assertNotIn("PRIVATE-BODY-CONTENT", str(caught.exception))
+            self.assertEqual((output / "sentinel.txt").read_text(), "old")
+            self.assertEqual(list(root.glob(".site.staging-*")), [])
+
+    def test_generated_lesson_artifact_byte_limit_is_aggregate(self) -> None:
+        with _site_fixture() as (root, content, templates, static_root):
+            _add_lesson(content, _complete_document())
+            baseline = root / "baseline"
+            build_site(content, templates, static_root, baseline)
+            lesson_artifact_bytes = sum(
+                path.stat().st_size
+                for path in (baseline / "lessons").rglob("*")
+                if path.is_file()
+            )
+            largest_lesson_artifact = max(
+                path.stat().st_size
+                for path in (baseline / "lessons").rglob("*")
+                if path.is_file()
+            )
+            aggregate_limit = lesson_artifact_bytes - 1
+            self.assertGreater(aggregate_limit, largest_lesson_artifact)
+
+            output = root / "site"
+            output.mkdir()
+            (output / "sentinel.txt").write_text("old", encoding="utf-8")
+            with patch.object(
+                lesson_rendering,
+                "MAX_LESSON_ARTIFACT_BYTES",
+                aggregate_limit,
+                create=True,
+            ):
+                with self.assertRaisesRegex(
+                    CurriculumValidationError,
+                    "lesson artifacts exceed maximum byte count",
+                ):
+                    build_site(content, templates, static_root, output)
+
+            self.assertEqual((output / "sentinel.txt").read_text(), "old")
+            self.assertEqual(list(root.glob(".site.staging-*")), [])
+
+    def test_default_budgets_fit_thirty_complete_lessons(self) -> None:
+        with _site_fixture() as (root, content, templates, static_root):
+            for ordinal in range(1, 31):
+                _add_lesson(
+                    content,
+                    _complete_document(
+                        lesson_id=f"core-{ordinal:02}-lesson-{ordinal}",
+                        title=f"教材 {ordinal}",
+                    ),
+                )
+
+            output = root / "site"
+            build_site(content, templates, static_root, output)
+
+            lesson_pages = tuple(
+                path
+                for path in (output / "lessons").glob("*/index.html")
+                if path.is_file()
+            )
+            input_bytes = sum(
+                path.stat().st_size
+                for path in (content / "lessons").rglob("*")
+                if path.is_file()
+            )
+            artifact_bytes = sum(
+                path.stat().st_size
+                for path in (output / "lessons").rglob("*")
+                if path.is_file()
+            )
+            self.assertEqual(len(lesson_pages), 30)
+            self.assertLessEqual(
+                input_bytes,
+                lesson_rendering.MAX_LESSON_COLLECTION_INPUT_BYTES,
+            )
+            self.assertLessEqual(
+                artifact_bytes,
+                lesson_rendering.MAX_LESSON_ARTIFACT_BYTES,
+            )
+
+    def test_lesson_close_faults_preserve_primary_and_close_outer_fds(
+        self,
+    ) -> None:
+        for failing_role, required_outer_roles in {
+            "body": ("lesson directory", "lessons root", "content root"),
+            "lesson directory": ("lessons root", "content root"),
+            "lessons root": ("content root",),
+        }.items():
+            with self.subTest(failing_role=failing_role), _site_fixture() as (
+                root,
+                content,
+                templates,
+                static_root,
+            ):
+                lesson_id = "core-01-systems-tradeoffs"
+                _add_lesson(
+                    content,
+                    _complete_document(title="PRIVATE-TITLE-CONTENT"),
+                    body="<p>PRIVATE-BODY-CONTENT</p>",
+                )
+                real_open = os.open
+                real_close = os.close
+                descriptors: dict[str, int] = {}
+                closed: list[int] = []
+                close_failed = False
+
+                def recording_open(
+                    target: object,
+                    flags: int,
+                    *args: object,
+                    **kwargs: object,
+                ) -> int:
+                    descriptor = real_open(target, flags, *args, **kwargs)
+                    spelling = os.fspath(target)  # type: ignore[arg-type]
+                    if spelling == "body.html":
+                        descriptors["body"] = descriptor
+                    elif spelling == lesson_id:
+                        descriptors["lesson directory"] = descriptor
+                    elif spelling == "lessons":
+                        descriptors["lessons root"] = descriptor
+                    elif Path(spelling) == content:
+                        descriptors["content root"] = descriptor
+                    return descriptor
+
+                def failing_close(descriptor: int) -> None:
+                    nonlocal close_failed
+                    closed.append(descriptor)
+                    real_close(descriptor)
+                    if (
+                        descriptor == descriptors.get(failing_role)
+                        and not close_failed
+                    ):
+                        close_failed = True
+                        raise OSError(
+                            "PRIVATE-BODY-CONTENT close implementation detail"
+                        )
+
+                with (
+                    patch(
+                        "curriculum_builder.lesson_rendering.os.open",
+                        side_effect=recording_open,
+                    ),
+                    patch(
+                        "curriculum_builder.lesson_rendering.os.close",
+                        side_effect=failing_close,
+                    ),
+                ):
+                    with self.assertRaises(Exception) as caught:
+                        build_site(
+                            content,
+                            templates,
+                            static_root,
+                            root / "site",
+                        )
+
+                self.assertTrue(close_failed)
+                self.assertIsInstance(
+                    caught.exception,
+                    CurriculumValidationError,
+                )
+                self.assertRegex(
+                    str(caught.exception),
+                    "descriptor close failed",
+                )
+                for role in required_outer_roles:
+                    self.assertIn(descriptors[role], closed)
+                rendered_error = "\n".join(
+                    (
+                        str(caught.exception),
+                        *getattr(caught.exception, "__notes__", ()),
+                    )
+                )
+                self.assertNotIn("PRIVATE-TITLE-CONTENT", rendered_error)
+                self.assertNotIn("PRIVATE-BODY-CONTENT", rendered_error)
+
+    def test_read_error_remains_primary_when_body_close_also_fails(self) -> None:
+        with _site_fixture() as (root, content, templates, static_root):
+            _add_lesson(
+                content,
+                _complete_document(title="PRIVATE-TITLE-CONTENT"),
+                body="<p>PRIVATE-BODY-CONTENT</p>",
+            )
+            real_open = os.open
+            real_read = os.read
+            real_close = os.close
+            body_descriptor: int | None = None
+            outer_descriptors: list[int] = []
+            closed: list[int] = []
+
+            def recording_open(
+                target: object,
+                flags: int,
+                *args: object,
+                **kwargs: object,
+            ) -> int:
+                nonlocal body_descriptor
+                descriptor = real_open(target, flags, *args, **kwargs)
+                spelling = os.fspath(target)  # type: ignore[arg-type]
+                if spelling == "body.html":
+                    body_descriptor = descriptor
+                elif spelling in {
+                    "core-01-systems-tradeoffs",
+                    "lessons",
+                }:
+                    outer_descriptors.append(descriptor)
+                return descriptor
+
+            def failing_read(descriptor: int, maximum: int) -> bytes:
+                if descriptor == body_descriptor:
+                    raise OSError(
+                        "PRIVATE-BODY-CONTENT read implementation detail"
+                    )
+                return real_read(descriptor, maximum)
+
+            def failing_close(descriptor: int) -> None:
+                closed.append(descriptor)
+                real_close(descriptor)
+                if descriptor == body_descriptor:
+                    raise OSError(
+                        "PRIVATE-BODY-CONTENT close implementation detail"
+                    )
+
+            with (
+                patch(
+                    "curriculum_builder.lesson_rendering.os.open",
+                    side_effect=recording_open,
+                ),
+                patch(
+                    "curriculum_builder.lesson_rendering.os.read",
+                    side_effect=failing_read,
+                ),
+                patch(
+                    "curriculum_builder.lesson_rendering.os.close",
+                    side_effect=failing_close,
+                ),
+            ):
+                with self.assertRaises(Exception) as caught:
+                    build_site(
+                        content,
+                        templates,
+                        static_root,
+                        root / "site",
+                    )
+
+            self.assertTrue(outer_descriptors)
+            self.assertTrue(all(item in closed for item in outer_descriptors))
+            self.assertIsInstance(
+                caught.exception,
+                CurriculumValidationError,
+            )
+            self.assertRegex(
+                str(caught.exception),
+                "cannot be read safely",
+            )
+            rendered_error = "\n".join(
+                (
+                    str(caught.exception),
+                    *getattr(caught.exception, "__notes__", ()),
+                )
+            )
+            self.assertIn(
+                "descriptor also failed to close",
+                rendered_error,
+            )
+            self.assertNotIn("PRIVATE-TITLE-CONTENT", rendered_error)
+            self.assertNotIn("PRIVATE-BODY-CONTENT", rendered_error)
+
     def test_cycle_directory_mismatch_missing_pair_and_unsafe_nodes_fail_closed(
         self,
     ) -> None:
