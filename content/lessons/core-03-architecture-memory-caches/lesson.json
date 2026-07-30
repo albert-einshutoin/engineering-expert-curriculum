@@ -137,17 +137,17 @@
   ],
   "sources": [
     {
-      "title": "Intel 64 and IA-32 Optimization Reference Manual",
+      "title": "Intel® 64 and IA-32 Architectures Optimization",
       "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel64-and-ia32-architectures-optimization.html",
       "kind": "primary"
     },
     {
-      "title": "Armv8-A memory model guide",
+      "title": "Armv8-A memory model",
       "url": "https://developer.arm.com/-/media/Arm%20Developer%20Community/PDF/Learn%20the%20Architecture/Armv8-A%20memory%20model%20guide.pdf?revision=58b1dd0a-3800-4218-b21a-f95a0332034c",
       "kind": "primary"
     },
     {
-      "title": "Linux kernel The TLB",
+      "title": "The TLB",
       "url": "https://docs.kernel.org/arch/x86/tlb.html",
       "kind": "primary"
     }

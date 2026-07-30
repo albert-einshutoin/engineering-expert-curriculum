@@ -88,7 +88,7 @@
   "teachBack": "5分で、Big-Oが絶対時間ではないこと、入力分布と定数項が選択を変えること、再現に必要な実行条件を説明する。",
   "assessment": [
     {
-      "prompt": "O(n log n)の実装がO(n²)の実装よりn=200で遅かった。直ちに後者を採用できない理由と追加測定を示す。",
+      "prompt": "支配操作がΘ(n log n)の実装がΘ(n²)の実装よりn=200で遅かった。直ちに後者を採用できない理由と追加測定を示す。",
       "expectedEvidence": "交差点、入力分布、定数項、ウォームアップ、処理系、反復統計を分けた仮説と測定計画"
     },
     {
@@ -137,7 +137,7 @@
   ],
   "sources": [
     {
-      "title": "NIST DADS big-O",
+      "title": "big-O notation",
       "url": "https://www.nist.gov/dads/HTML/bigOnotation.html",
       "kind": "primary"
     },
@@ -147,12 +147,12 @@
       "kind": "standard"
     },
     {
-      "title": "Python timeit",
+      "title": "timeit — Measure execution time of small code snippets",
       "url": "https://docs.python.org/3/library/timeit.html",
       "kind": "primary"
     },
     {
-      "title": "Princeton COS226 Quicksort",
+      "title": "Quicksort",
       "url": "https://www.cs.princeton.edu/courses/archive/spr18/cos226/lectures/23Quicksort.pdf",
       "kind": "primary"
     }
