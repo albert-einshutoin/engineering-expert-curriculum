@@ -2,7 +2,7 @@
 
 Date: 2026-07-30
 
-Status: Approved design, awaiting written-spec review
+Status: Approved for implementation
 
 License: MIT
 
