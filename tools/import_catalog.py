@@ -139,13 +139,22 @@ def _write_atomic(path: Path, document: dict[str, object], *, forbidden_identity
         temporary_name = f".catalog-{uuid.uuid4().hex}.tmp"
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
         temporary_fd = os.open(temporary_name, flags, 0o600, dir_fd=parent_fd)
+        temporary_operation: BaseException | None = None
         try:
             info = os.fstat(temporary_fd); temporary_identity = (info.st_dev, info.st_ino)
             _write_all(temporary_fd, payload)
             os.fchmod(temporary_fd, 0o644)
             os.fsync(temporary_fd)
+        except BaseException as error:
+            temporary_operation = error
+            raise
         finally:
-            os.close(temporary_fd)
+            try:
+                os.close(temporary_fd)
+            except OSError as close_error:
+                if temporary_operation is not None:
+                    raise RuntimeError(f"catalog temporary close failed: {close_error}") from temporary_operation
+                raise RuntimeError(f"catalog temporary close failed: {close_error}") from close_error
         if not _same_parent(parent_path, parent_fd): raise RuntimeError("output parent changed before publish")
         current_temp = os.stat(temporary_name, dir_fd=parent_fd, follow_symlinks=False)
         if not stat.S_ISREG(current_temp.st_mode) or (current_temp.st_dev, current_temp.st_ino) != temporary_identity:
