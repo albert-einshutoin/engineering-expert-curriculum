@@ -308,20 +308,16 @@ class PrototypeMigrationTests(unittest.TestCase):
             archive = archive_parent / "prototype-v1"
             moved_archive = archive_parent / "reserved-original"
             sentinel = archive / "sentinel.txt"
-            real_open = os.open
-            prototype_opens = 0
+            from tools.migrate_prototype import _reserve_archive_at
 
-            def replace_before_archive_open(path: str, flags: int, *args: object, **kwargs: object) -> int:
-                nonlocal prototype_opens
-                if path == "prototype-v1" and "dir_fd" in kwargs:
-                    prototype_opens += 1
-                if prototype_opens == 2:
-                    archive.rename(moved_archive)
-                    archive.mkdir()
-                    sentinel.write_text("foreign", encoding="utf-8")
-                return real_open(path, flags, *args, **kwargs)
+            def reserve_then_replace(parent_fd: int, name: str) -> tuple[int, tuple[int, int]]:
+                reservation = _reserve_archive_at(parent_fd, name)
+                archive.rename(moved_archive)
+                archive.mkdir()
+                sentinel.write_text("foreign", encoding="utf-8")
+                return reservation
 
-            with patch("tools.migrate_prototype.os.open", side_effect=replace_before_archive_open):
+            with patch("tools.migrate_prototype._reserve_archive_at", side_effect=reserve_then_replace):
                 with self.assertRaisesRegex(RuntimeError, "reserved archive changed before opening"):
                     preserve_prototype(root, archive)
 
