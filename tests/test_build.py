@@ -1680,6 +1680,140 @@ class BuildPublicationTests(unittest.TestCase):
             _assert_static_site(self, output)
             self.assertEqual(len(list(root.glob(".site.staging-*"))), 1)
 
+    def test_recovery_cleanup_refuses_a_nested_cross_device_directory(
+        self,
+    ) -> None:
+        with _fixture() as (root, content, templates, static_root):
+            output = root / "site"
+            nested = output / "nested"
+            nested.mkdir(parents=True)
+            (nested / "sentinel.txt").write_text(
+                "old",
+                encoding="utf-8",
+            )
+            original_publish = _publish_directory
+            original_open_directory = build_module._open_directory_at
+            original_scandir = os.scandir
+            original_unlink = os.unlink
+            published = False
+            recovery_descriptor: int | None = None
+            nested_opened = False
+            unlink_calls: list[object] = []
+
+            class DifferentDeviceEntry:
+                def __init__(self, entry: os.DirEntry[str]) -> None:
+                    self._entry = entry
+                    self.name = entry.name
+
+                def stat(
+                    self,
+                    *,
+                    follow_symlinks: bool = True,
+                ) -> os.stat_result:
+                    current = self._entry.stat(
+                        follow_symlinks=follow_symlinks
+                    )
+                    fields = list(current)
+                    fields[2] = current.st_dev + 1
+                    return os.stat_result(fields)
+
+            class ScandirProxy:
+                def __init__(self, delegate: object) -> None:
+                    self._delegate = delegate
+
+                def __enter__(self) -> tuple[object, ...]:
+                    entries = self._delegate.__enter__()
+                    return tuple(
+                        DifferentDeviceEntry(entry)
+                        if entry.name == "nested"
+                        else entry
+                        for entry in entries
+                    )
+
+                def __exit__(self, *arguments: object) -> object:
+                    return self._delegate.__exit__(*arguments)
+
+            def publishing(
+                parent_fd: int,
+                source_name: str,
+                target_name: str,
+                *,
+                replace_existing: bool,
+            ) -> None:
+                nonlocal published
+                original_publish(
+                    parent_fd,
+                    source_name,
+                    target_name,
+                    replace_existing=replace_existing,
+                )
+                published = True
+
+            def recording_open(
+                parent_fd: int,
+                name: str,
+            ) -> int:
+                nonlocal recovery_descriptor, nested_opened
+                descriptor = original_open_directory(parent_fd, name)
+                if published and name.startswith(".site.staging-"):
+                    recovery_descriptor = descriptor
+                if published and name == "nested":
+                    nested_opened = True
+                return descriptor
+
+            def cross_device_scandir(path: object):
+                delegate = original_scandir(path)  # type: ignore[arg-type]
+                if path == recovery_descriptor:
+                    return ScandirProxy(delegate)
+                return delegate
+
+            def recording_unlink(
+                path: object,
+                *args: object,
+                **kwargs: object,
+            ) -> None:
+                unlink_calls.append(path)
+                original_unlink(  # type: ignore[arg-type]
+                    path,
+                    *args,
+                    **kwargs,
+                )
+
+            captured: BaseException | None = None
+            with patch(
+                "curriculum_builder.build._publish_directory",
+                side_effect=publishing,
+            ), patch(
+                "curriculum_builder.build._open_directory_at",
+                side_effect=recording_open,
+            ), patch(
+                "curriculum_builder.build.os.scandir",
+                side_effect=cross_device_scandir,
+            ), patch(
+                "curriculum_builder.build.os.unlink",
+                side_effect=recording_unlink,
+            ):
+                try:
+                    build_site(
+                        content,
+                        templates,
+                        static_root,
+                        output,
+                    )
+                except BaseException as error:
+                    captured = error
+
+            self.assertIsInstance(captured, BuildCleanupError)
+            self.assertFalse(nested_opened)
+            self.assertEqual(unlink_calls, [])
+            _assert_static_site(self, output)
+            recovery = list(root.glob(".site.staging-*"))
+            self.assertEqual(len(recovery), 1)
+            self.assertEqual(
+                (recovery[0] / "nested/sentinel.txt").read_text(),
+                "old",
+            )
+
     def test_missing_input_never_partially_generates_or_damages_repository_site(
         self,
     ) -> None:
