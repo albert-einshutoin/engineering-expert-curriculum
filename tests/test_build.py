@@ -994,6 +994,103 @@ class BuildPublicationTests(unittest.TestCase):
                 "old",
             )
 
+    def test_postcommit_close_failure_does_not_replace_primary_cause(
+        self,
+    ) -> None:
+        with _fixture() as (root, content, templates, static_root):
+            output = root / "site"
+            output.mkdir()
+            (output / "sentinel.txt").write_text("old", encoding="utf-8")
+            original_publish = _publish_directory
+            original_open = __import__(
+                "curriculum_builder.build",
+                fromlist=["_open_directory_at"],
+            )._open_directory_at
+            original_stat = os.stat
+            original_close = os.close
+            previous_descriptor: int | None = None
+            committed = False
+            close_failed = False
+
+            def recording_open(parent_fd: int, name: str) -> int:
+                nonlocal previous_descriptor
+                descriptor = original_open(parent_fd, name)
+                if name == "site":
+                    previous_descriptor = descriptor
+                return descriptor
+
+            def publishing(
+                parent_fd: int,
+                source_name: str,
+                target_name: str,
+                *,
+                replace_existing: bool,
+            ) -> None:
+                nonlocal committed
+                original_publish(
+                    parent_fd,
+                    source_name,
+                    target_name,
+                    replace_existing=replace_existing,
+                )
+                committed = True
+
+            def failing_stat(
+                path: object,
+                *args: object,
+                **kwargs: object,
+            ) -> os.stat_result:
+                if committed and path == "site":
+                    raise OSError("primary post-rename stat failure")
+                return original_stat(path, *args, **kwargs)  # type: ignore[arg-type]
+
+            def failing_close(descriptor: int) -> None:
+                nonlocal close_failed
+                if (
+                    descriptor == previous_descriptor
+                    and not close_failed
+                ):
+                    close_failed = True
+                    original_close(descriptor)
+                    raise OSError("secondary close failure")
+                original_close(descriptor)
+
+            with patch(
+                "curriculum_builder.build._open_directory_at",
+                side_effect=recording_open,
+            ), patch(
+                "curriculum_builder.build._publish_directory",
+                side_effect=publishing,
+            ), patch(
+                "curriculum_builder.build.os.stat",
+                side_effect=failing_stat,
+            ), patch(
+                "curriculum_builder.build.os.close",
+                side_effect=failing_close,
+            ):
+                with self.assertRaises(BuildPostCommitError) as raised:
+                    build_site(content, templates, static_root, output)
+
+            self.assertTrue(close_failed)
+            self.assertIsInstance(raised.exception.__cause__, OSError)
+            self.assertIn(
+                "primary post-rename stat failure",
+                str(raised.exception.__cause__),
+            )
+            self.assertTrue(
+                any(
+                    "secondary close failure" in note
+                    for note in raised.exception.__notes__
+                )
+            )
+            _assert_static_site(self, output)
+            recovery = list(root.glob(".site.staging-*"))
+            self.assertEqual(len(recovery), 1)
+            self.assertEqual(
+                (recovery[0] / "sentinel.txt").read_text(),
+                "old",
+            )
+
     def test_postpublish_cleanup_failure_keeps_new_output_and_reports_state(
         self,
     ) -> None:
