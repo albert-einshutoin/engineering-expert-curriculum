@@ -643,8 +643,9 @@ git commit -m "content: teach foundational engineering judgment"
 - Create: `content/lessons/core-09-test-strategy-tdd/{lesson.json,body.html}`
 - Create: `content/lessons/core-10-threat-modeling-secure-design/{lesson.json,body.html}`
 - Modify: `tests/test_core_tracks.py`
+- Modify: `tests/test_build.py`
 
-- [ ] **Step 1: Add the exact Build track contract**
+- [x] **Step 1: Add the exact Build track contract**
 
 ```python
 BUILD = {
@@ -675,7 +676,7 @@ def test_build(self) -> None:
     self.assert_track(BUILD)
 ```
 
-- [ ] **Step 2: Run the Build track test and verify RED**
+- [x] **Step 2: Run the Build track test and verify RED**
 
 Run:
 
@@ -685,7 +686,7 @@ python3 -m unittest tests.test_core_tracks.CoreTrackTests.test_build -v
 
 Expected: failure listing five missing Build lessons.
 
-- [ ] **Step 3: Author all five lessons against the mastery contract**
+- [x] **Step 3: Author all five lessons against the mastery contract**
 
 Use the same six body sections defined in Task 3. Labs must produce the exact
 artifacts in `BUILD`; transfer tasks must respectively cover an unfamiliar
@@ -694,7 +695,7 @@ defect, and an insider threat. Authoritative sources must include
 ISO/IEC/IEEE 29148 or SWEBOK V4.0a, RFC 9110 or OpenAPI, IEEE 42010, primary
 testing literature, and NIST SSDF or OWASP guidance as appropriate.
 
-- [ ] **Step 4: Run Build track gates**
+- [x] **Step 4: Run Build track gates**
 
 Run:
 
@@ -707,12 +708,33 @@ python3 -m unittest \
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit the Build track**
+- [x] **Step 5: Commit the Build track**
 
 ```bash
 git add content/lessons/core-{06,07,08,09,10}-* tests/test_core_tracks.py
 git commit -m "content: connect software design to trustworthy evidence"
 ```
+
+**Task 4 evidence (2026-07-31):**
+
+- RED contract commits: `557cfa9`, `ed10dc9`. The first focused run reported
+  exactly five missing Build lessons.
+- GREEN content commits: `1fd1778`, `7fd6d57`, `e2c2d2e`, `393386c`,
+  `1cd0e86`, `d8d02e5`. `1cd0e86` aligns every directory, lesson ID,
+  prerequisite, source oracle, and harness oracle with the canonical contract.
+- The seven Build metadata, semantic-body, and executable-harness gates pass.
+  The requested lesson-quality/build/rendering gate passes 68 tests, and the
+  complete suite passes 352 tests.
+- The growing repository inventory exposed a stale fixed-five acceptance
+  oracle. `afe5411` keeps it independent from the production loader while
+  comparing against raw lesson-directory enumeration, rejecting a forged
+  loader-only lesson, and retaining the `core-01` source-count sentinel.
+- Two independent builds contain 15 files, 14 HTML files, zero JavaScript
+  files, and 438,708 bytes. Both produce tree SHA-256
+  `b2a5f175dad0ab1ff10e9518f1d663bd8f8502cf842992a853107edc4afae58b`.
+- Security scans report zero unsafe HTML patterns, secret patterns, dangerous
+  execution patterns, or external URLs in lesson bodies. The catalog remains
+  exactly 1,140 items.
 
 ### Task 5: Author the Data and Scale track
 
