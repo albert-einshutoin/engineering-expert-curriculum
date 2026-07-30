@@ -417,10 +417,15 @@ repository receives the canonical catalog data and new authored content, not
 the 1,140 duplicated generated HTML pages. The migration tool is one-shot and
 rerun-safe: it never clobbers an existing archive.
 
-Before running the tool, the operator prepares the archive parent with a
-no-follow create-and-verify step: create it with mode `0o700` only when absent,
-then reject an existing symlink, non-directory, foreign owner, or
-group/world-writable directory without changing it.
+Before running the tool, the operator prepares the archive parent through a
+root-to-repository `dir_fd` traversal: open `/`, then each absolute repository
+path component with `O_DIRECTORY|O_NOFOLLOW`. Through the pinned repository FD,
+create `.archive` with mode `0o700` only when absent; record its no-follow
+identity, open it with the same flags, and compare `fstat` identity before
+validating its directory type, owner, and permissions. This rejects intermediate
+or final symlinks and existing non-directories, foreign owners, or
+group/world-writable directories without changing them; every opened FD is
+closed, and close failures are reported rather than retried through a pathname.
 
 The tool requires that parent to already exist as a canonical directory owned by
 the current effective user and not group/world writable. It never creates or

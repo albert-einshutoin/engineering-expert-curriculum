@@ -1405,26 +1405,67 @@ import os
 import stat
 from pathlib import Path
 
-parent = Path("$REPO_ROOT/.archive")
-try:
-    parent.mkdir(mode=0o700)
-except FileExistsError:
-    pass
+repository = Path("$REPO_ROOT")
+if not repository.is_absolute():
+    raise RuntimeError("repository path must be absolute")
+if not hasattr(os, "O_NOFOLLOW"):
+    raise RuntimeError("safe directory file descriptors are not supported")
 
-metadata = parent.lstat()
-if not stat.S_ISDIR(metadata.st_mode):
-    raise RuntimeError("archive parent must be a real directory, not a symlink or non-directory")
-if metadata.st_uid != os.geteuid():
-    raise RuntimeError("archive parent must be owned by the current user")
-if stat.S_IMODE(metadata.st_mode) & (stat.S_IWGRP | stat.S_IWOTH):
-    raise RuntimeError("archive parent must not be group/world writable")
+flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+descriptors: list[int] = []
+operation_error: BaseException | None = None
+try:
+    current_fd = os.open("/", flags)
+    descriptors.append(current_fd)
+    for component in repository.parts[1:]:
+        current_fd = os.open(component, flags, dir_fd=current_fd)
+        descriptors.append(current_fd)
+    repository_fd = current_fd
+
+    try:
+        os.mkdir(".archive", mode=0o700, dir_fd=repository_fd)
+    except FileExistsError:
+        pass
+
+    expected = os.stat(".archive", dir_fd=repository_fd, follow_symlinks=False)
+    if stat.S_ISLNK(expected.st_mode):
+        raise RuntimeError("archive parent must not be a symlink")
+    archive_fd = os.open(".archive", flags, dir_fd=repository_fd)
+    descriptors.append(archive_fd)
+    actual = os.fstat(archive_fd)
+    if (expected.st_dev, expected.st_ino) != (actual.st_dev, actual.st_ino):
+        raise RuntimeError("archive parent changed while opening")
+    if not stat.S_ISDIR(actual.st_mode):
+        raise RuntimeError("archive parent must be a real directory")
+    if actual.st_uid != os.geteuid():
+        raise RuntimeError("archive parent must be owned by the current user")
+    if actual.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+        raise RuntimeError("archive parent must not be group/world writable")
+except BaseException as error:
+    operation_error = error
+    raise
+finally:
+    close_failures: list[str] = []
+    for descriptor in reversed(descriptors):
+        try:
+            os.close(descriptor)
+        except OSError as error:
+            close_failures.append(str(error))
+    if close_failures:
+        detail = "; ".join(close_failures)
+        if operation_error is not None:
+            raise RuntimeError(f"archive parent descriptor close failed: {detail}") from operation_error
+        raise RuntimeError(f"archive parent descriptor close failed: {detail}")
 PY
 ```
 
 Expected: the parent is a real directory owned by the current user, with no
-group/world write permission. A new parent is created with `0o700` (or a more
-restrictive umask result); an existing unsafe parent is rejected without any
-`chmod` or other mutation.
+group/world write permission. The traversal opens every repository component
+from `/` with `O_DIRECTORY|O_NOFOLLOW`, so intermediate and final symlinks are
+rejected before use. A new parent is created with `0o700` (or a more restrictive
+umask result); an existing unsafe parent is rejected without any `chmod` or
+other mutation. Every opened descriptor is closed even after an error; close
+failures are reported rather than retried through a pathname.
 
 - [ ] **Step 2: Run the complete suite before touching the prototype**
 
