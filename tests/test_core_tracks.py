@@ -5109,18 +5109,20 @@ class CoreTrackTests(unittest.TestCase):
         self.assert_causal_harness_source_mutation_fails(
             "core-21-maintenance-legacy-comprehension",
             "legacy_comprehension_lab_v1",
-            'baseline = analyze_change(FIXTURE, "discount-rate-change")',
             (
-                "isolated_fixture = {\n"
-                "        **FIXTURE,\n"
-                '        "stages": [\n'
-                '            {**stage, "change_requests": []}\n'
-                '            for stage in FIXTURE["stages"]\n'
-                "        ],\n"
-                "    }\n"
+                "baseline = analyze_change(\n"
+                "        baseline_fixture,\n"
+                '        BASELINE_CHANGE["change_request"],\n'
+                "    )"
+            ),
+            (
+                "baseline_fixture[\"stages\"] = [\n"
+                '        {**stage, "change_requests": []}\n'
+                '        for stage in baseline_fixture["stages"]\n'
+                "    ]\n"
                 "    baseline = analyze_change(\n"
-                "        isolated_fixture,\n"
-                '        "discount-rate-change",\n'
+                "        baseline_fixture,\n"
+                '        BASELINE_CHANGE["change_request"],\n'
                 "    )"
             ),
             "maintenance-comprehension-invariant",
