@@ -1176,7 +1176,7 @@ git commit -m "content: integrate human product and ethical judgment"
 - Create: `content/lessons/core-25-engineering-economics-capacity/{lesson.json,body.html}`
 - Modify: `tests/test_core_tracks.py`
 
-- [ ] **Step 1: Add the exact Sustain and Operate contract**
+- [x] **Step 1: Add the exact Sustain and Operate contract**
 
 ```python
 SUSTAIN = {
@@ -1215,17 +1215,17 @@ def test_sustain(self) -> None:
     self.assert_track(SUSTAIN)
 ```
 
-- [ ] **Step 2: Run the Sustain test and verify RED**
+- [x] **Step 2: Run the Sustain test and verify RED**
 
 Run:
 
 ```bash
-python3 -m unittest tests.test_core_tracks.CoreTrackTests.test_sustain -v
+python3.13 -m unittest tests.test_core_tracks.CoreTrackTests.test_sustain -v
 ```
 
 Expected: five missing lessons.
 
-- [ ] **Step 3: Author the five lifecycle lessons**
+- [x] **Step 3: Author the five lifecycle lessons**
 
 All labs operate on a small supplied legacy fixture so outputs can be reviewed.
 Each lesson must distinguish successful command execution from demonstrated
@@ -1233,12 +1233,12 @@ system outcome. Use SWEBOK V4.0a maintenance/operations knowledge areas, NIST
 incident guidance, SLSA provenance, DORA delivery evidence, and FinOps or cloud
 provider cost guidance as appropriate.
 
-- [ ] **Step 4: Run Sustain and Operate gates**
+- [x] **Step 4: Run Sustain and Operate gates**
 
 Run:
 
 ```bash
-python3 -m unittest \
+python3.13 -m unittest \
   tests.test_lesson_quality \
   tests.test_core_tracks.CoreTrackTests.test_sustain \
   tests.test_lesson_rendering -v
@@ -1246,12 +1246,62 @@ python3 -m unittest \
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit the Sustain and Operate track**
+- [x] **Step 5: Commit the Sustain and Operate track**
 
 ```bash
 git add content/lessons/core-{21,22,23,24,25}-* tests/test_core_tracks.py
 git commit -m "content: teach safe software evolution and operations"
 ```
+
+#### Task 7 verification evidence
+
+- The initial contract was fixed in RED commits `d2b46f6` and `0743f48`.
+  The five canonical lessons were then authored in commits `3a7f5ed`,
+  `eaa9771`, `30e3f0b`, `fde6f43`, and `83eb311`. Duplicate template IDs
+  were reproduced in `2146bb2` and fixed in `ffb7e01`.
+- False-green mutations were added before every corrective implementation.
+  Commits `c2054fe`, `538b4d5`, `2d2ef93`, `e70f6de`, `28159a3`,
+  `e8e9ada`, and `ef5a0a2` cover independent expected observations,
+  full transfer snapshots, symmetric missing/unknown/type/nested/multiple
+  changes, canonical migration phases, evidence chronology and uniqueness,
+  provenance and artifact identity, and main-first input validation.
+  Commits `6b12931` and `3dcd265` additionally prove that known invariant
+  failures produce one typed diagnostic line without exposing a Python
+  traceback, while unexpected exceptions remain uncaught.
+- The broad Task 7 gate selects every `CoreTrackTests` method beginning with
+  `test_sustain`, `test_legacy`, `test_migration`, `test_incident`,
+  `test_delivery`, or `test_economics`; all 48 tests pass. The specified
+  lesson quality, Sustain contract, and rendering gate passes all 68 tests.
+  The complete repository suite passes all 452 tests.
+- Two consecutive clean builds each contain 30 regular artifacts, 29 HTML
+  files, zero JavaScript files, zero symbolic links, zero special nodes, and
+  965,247 bytes. The canonical aggregate algorithm encodes each sorted
+  relative POSIX path, byte length, and payload; both builds produce
+  `39426ef6fa5a2c2bbbde780eb0792936fb0e025da81daa79331860d146aff327`.
+- Chrome 150 Letter-PDF evidence covers core-21 and core-22. Both render as
+  18 pages at 612 by 792 points, are tagged, and contain no PDF JavaScript.
+  PDFKit text extraction retains
+  `maintenance-comprehension-invariant`, `fixture snapshot drift`,
+  `affected path`, `migration-causal-invariant`,
+  `migration-transfer-invariant`, `migration-plan-invariant`,
+  `migration-rollback-outcome-invariant`, `reader compatibility`,
+  `dual write`, `rollback`, and `backfill error rate`.
+- Independent quality review of fixed commit
+  `3dcd2657df031aca7d6ad8fa7395c628dc20638d` concluded
+  Critical 0 / Important 0 / Minor 0. Fifteen expanded malformed-input
+  mutations fail closed with lesson-specific diagnostics and no false-green
+  system outcome. A separate security review also concluded
+  Critical 0 / Important 0 / Minor 0.
+- Security verification reports zero authored-body active markup, unsafe
+  attributes or schemes, duplicate IDs, forbidden harness imports or calls,
+  and generated CSP violations. Gitleaks scanned 37 commits from `4323422`
+  through `3dcd265` and found no leaks. Symlinked output is rejected while
+  preserving the existing sentinel.
+- The catalog remains exactly 1,140 unique items with SHA-256
+  `4f38b5f63931a7f06e13f90f5d9ef90a0a435f30dae5d4fe70720d730a057473`.
+  The preserved non-public prototype archive remains unchanged and
+  independently verifiable: 1,194 files, 16,805,630 bytes, and zero missing,
+  extra, hash-mismatched, unsafe-path, symbolic-link, or special-node entries.
 
 ### Task 8: Author the Lead and Contribute track
 
