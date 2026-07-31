@@ -163,6 +163,11 @@ VERIFICATION_FIELDS = {
     "expected_outcome",
     "actual_outcome",
 }
+IMPACT_FIELDS = {
+    "incident_start_minute",
+    "recovery_minute",
+    "affected_requests_per_minute",
+}
 
 def valid_string_list(value):
     return (
@@ -170,6 +175,23 @@ def valid_string_list(value):
         and bool(value)
         and all(type(item) is str and item for item in value)
     )
+
+def validate_impact_input(impact):
+    if (
+        type(impact) is not dict
+        or set(impact) != IMPACT_FIELDS
+        or not all(
+            type(impact[field]) is int
+            for field in IMPACT_FIELDS
+        )
+        or impact["incident_start_minute"] &lt; 0
+        or impact["recovery_minute"]
+        &lt;= impact["incident_start_minute"]
+        or impact["affected_requests_per_minute"] &lt;= 0
+    ):
+        raise AssertionError(
+            "incident-causal-invariant: invalid impact schema"
+        )
 
 def validate_incident_source_inputs():
     valid_events = (
@@ -273,6 +295,61 @@ def validate_incident_source_inputs():
     if not valid_actions:
         raise AssertionError(
             "incident-action-outcome-invariant: invalid action schema"
+        )
+    evidence_ids = [
+        event["evidence_id"]
+        for event in INCIDENT_EVIDENCE
+    ]
+    if len(evidence_ids) != len(set(evidence_ids)):
+        raise AssertionError(
+            "incident-evidence-invariant: duplicate evidence id"
+        )
+    decision_ids = [
+        decision["decision"]
+        for decision in DECISION_INPUTS
+    ]
+    if (
+        len(decision_ids) != len(set(decision_ids))
+        or any(
+            len(decision["evidence_ids"])
+            != len(set(decision["evidence_ids"]))
+            for decision in DECISION_INPUTS
+        )
+    ):
+        raise AssertionError(
+            "incident-decision-evidence-invariant: "
+            "duplicate decision evidence"
+        )
+    factor_ids = [
+        factor["factor_id"]
+        for factor in FACTOR_INPUTS
+    ]
+    if (
+        len(factor_ids) != len(set(factor_ids))
+        or any(
+            len(factor["evidence_ids"])
+            != len(set(factor["evidence_ids"]))
+            for factor in FACTOR_INPUTS
+        )
+    ):
+        raise AssertionError(
+            "incident-causal-invariant: duplicate factor evidence"
+        )
+    action_ids = [
+        action["action_id"]
+        for action in ACTION_INPUTS
+    ]
+    if (
+        len(action_ids) != len(set(action_ids))
+        or any(
+            len(action["evidence_ids"])
+            != len(set(action["evidence_ids"]))
+            for action in ACTION_INPUTS
+        )
+    ):
+        raise AssertionError(
+            "incident-action-outcome-invariant: "
+            "duplicate action evidence"
         )
 
 def validate_detection_transfer(baseline, transferred):
@@ -413,6 +490,7 @@ def validate_decision_evidence_time(decisions, timeline):
             )
 
 def main():
+    validate_impact_input(IMPACT_INPUT)
     validate_incident_source_inputs()
     changed_fields = validate_detection_transfer(
         BASELINE_ASSUMPTION,
