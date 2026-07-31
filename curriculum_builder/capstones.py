@@ -57,6 +57,7 @@ _LESSON_ID: Final = re.compile(
     r"core-(0[1-9]|[12][0-9]|30)-[a-z0-9]+(?:-[a-z0-9]+)*\Z",
     re.ASCII,
 )
+_MAX_LESSON_ID_CHARS: Final = 96
 _EXERCISE_VERBS: Final = (
     "検証",
     "再現",
@@ -103,6 +104,70 @@ _PRIMARY_OWNER: Final = MappingProxyType(
         "core-28-oss-governance-stewardship": "oss-launch",
         "core-29-cross-cultural-async-collaboration": "oss-launch",
         "core-30-evidence-based-technical-leadership": "global-service",
+    }
+)
+# Each primary exercise must retain the domain vocabulary that makes its
+# evidence attributable to one lesson. Length and action verbs alone allow a
+# generic sentence to masquerade as thirty different exercises.
+_PRIMARY_EXERCISE_ANCHORS: Final = MappingProxyType(
+    {
+        "core-01-systems-tradeoffs": ("反証条件", "adr"),
+        "core-02-algorithms-measurement": ("反復測定", "交差点"),
+        "core-03-architecture-memory-caches": ("memory", "locality"),
+        "core-04-os-processes-concurrency": ("interleaving", "不変条件"),
+        "core-05-networks-latency-failure": ("dns", "deadline"),
+        "core-06-requirements-domain-modeling": ("用語衝突", "domain"),
+        "core-07-api-contract-design": ("冪等", "contract"),
+        "core-08-modularity-evolutionary-architecture": (
+            "dependency direction",
+            "adr",
+        ),
+        "core-09-test-strategy-tdd": ("red", "mutation"),
+        "core-10-threat-modeling-secure-design": ("攻撃経路", "残余risk"),
+        "core-11-data-modeling-storage": ("storage adr", "access pattern"),
+        "core-12-transactions-isolation-consistency": (
+            "transaction schedule",
+            "分離異常",
+        ),
+        "core-13-distributed-coordination-failure": (
+            "partition",
+            "reconciliation",
+        ),
+        "core-14-performance-capacity": ("安全容量", "headroom"),
+        "core-15-reliability-observability-slo": ("sli", "burn alert"),
+        "core-16-hci-usability-accessibility": ("keyboard", "読み上げ"),
+        "core-17-graphics-visual-information": ("css-only", "同等"),
+        "core-18-product-discovery-experiments": ("利用者仮説", "guardrail"),
+        "core-19-technical-communication-design-docs": ("経営", "operations"),
+        "core-20-ethics-privacy-societal-impact": (
+            "affected population",
+            "残余risk",
+        ),
+        "core-21-maintenance-legacy-comprehension": (
+            "未知領域",
+            "characterization",
+        ),
+        "core-22-evolution-safe-migrations": ("backfill", "rollback"),
+        "core-23-incident-response-learning": ("timeline", "寄与要因"),
+        "core-24-delivery-ci-release-safety": ("provenance", "artifact"),
+        "core-25-engineering-economics-capacity": ("機会費用", "投資"),
+        "core-26-code-review-collaborative-quality": (
+            "author snapshot",
+            "別contributor",
+        ),
+        "core-27-team-interfaces-sociotechnical-architecture": (
+            "cognitive load",
+            "team interface",
+        ),
+        "core-28-oss-governance-stewardship": (
+            "maintainer boundary",
+            "contribution",
+        ),
+        "core-29-cross-cultural-async-collaboration": ("utc", "dissent"),
+        "core-30-evidence-based-technical-leadership": (
+            "withdrawal conditions",
+            "不確実性",
+        ),
     }
 )
 _NATIVE_PATH = type(Path())
@@ -260,30 +325,38 @@ def _lesson_ids(
     if not value:
         raise _validation(f"{capstone_id} lessonIds must not be empty")
     result: list[str] = []
+    seen: set[str] = set()
     for index, item in enumerate(value):
-        if type(item) is not str or _LESSON_ID.fullmatch(item) is None:
+        if (
+            type(item) is not str
+            or len(item) > _MAX_LESSON_ID_CHARS
+            or _LESSON_ID.fullmatch(item) is None
+        ):
             raise _validation(
                 f"{capstone_id} lessonIds item {index} is invalid"
             )
+        if item in seen:
+            raise _validation(
+                f"{capstone_id} lessonIds item {index} "
+                "duplicates an earlier lesson; duplicate lesson entries "
+                "are forbidden"
+            )
+        if item not in expected_lesson_ids:
+            raise _validation(
+                f"{capstone_id} lessonIds item {index} "
+                "references an unknown lesson"
+            )
+        seen.add(item)
         result.append(item)
-    duplicates = sorted(
-        item for item, count in Counter(result).items() if count > 1
-    )
-    if duplicates:
-        raise _validation(
-            f"{capstone_id} has duplicate lesson "
-            f"{', '.join(duplicates)}"
-        )
-    unknown = sorted(set(result) - expected_lesson_ids)
-    if unknown:
-        raise _validation(
-            f"{capstone_id} has unknown lesson {', '.join(unknown)}"
-        )
     if result != sorted(result):
         raise _validation(
             f"{capstone_id} lessonIds must be in canonical order"
         )
     return tuple(result)
+
+
+def _normalized_exercise(value: str) -> str:
+    return " ".join(unicodedata.normalize("NFKC", value).casefold().split())
 
 
 def _primary_exercises(
@@ -311,14 +384,20 @@ def _primary_exercises(
         raise _validation(
             f"{capstone_id} primary exercise must reference lessonIds"
         )
-    parsed: dict[str, str] = {}
-    for lesson_id in sorted(expected):
-        exercise = _text(
+    parsed = {
+        lesson_id: _text(
             value[lesson_id],
             f"{capstone_id} primary exercise {lesson_id}",
             minimum=24,
             maximum=1_000,
         )
+        for lesson_id in sorted(expected)
+    }
+    normalized = tuple(_normalized_exercise(item) for item in parsed.values())
+    if len(set(normalized)) != len(normalized):
+        raise _validation("primary exercises must be unique after normalization")
+    for lesson_id in sorted(expected):
+        exercise = parsed[lesson_id]
         if lesson_id in exercise or not any(
             verb in exercise for verb in _EXERCISE_VERBS
         ):
@@ -326,7 +405,14 @@ def _primary_exercises(
                 f"{capstone_id} primary exercise must describe "
                 "an observable action"
             )
-        parsed[lesson_id] = exercise
+        normalized_exercise = _normalized_exercise(exercise)
+        if any(
+            _normalized_exercise(anchor) not in normalized_exercise
+            for anchor in _PRIMARY_EXERCISE_ANCHORS[lesson_id]
+        ):
+            raise _validation(
+                f"{capstone_id} primary exercise must be lesson-specific"
+            )
     return MappingProxyType(parsed)
 
 
@@ -469,6 +555,13 @@ def parse_capstone_documents(
         )
         for capstone_id in CAPSTONE_IDS
     )
+    normalized_exercises = tuple(
+        _normalized_exercise(exercise)
+        for capstone in capstones
+        for exercise in capstone.primary_exercises.values()
+    )
+    if len(set(normalized_exercises)) != len(normalized_exercises):
+        raise _validation("primary exercises must be unique after normalization")
     covered = frozenset(
         lesson_id
         for capstone in capstones
@@ -651,12 +744,17 @@ def load_capstones(path: Path) -> tuple[Capstone, ...]:
     """Load repository capstones and bind references to complete lessons."""
     _require_descriptor_support()
     absolute = _validate_lexical_path(path)
+    if absolute.name != "capstones":
+        raise _validation("capstone path must name the capstones directory")
     try:
         recorded_parent = os.lstat(absolute.parent)
+        recorded_leaf = os.lstat(absolute)
     except OSError:
-        raise _validation("capstone parent cannot be inspected") from None
+        raise _validation("capstone path cannot be inspected") from None
     if not stat.S_ISDIR(recorded_parent.st_mode):
         raise _validation("capstone parent must be a directory")
+    if not stat.S_ISDIR(recorded_leaf.st_mode):
+        raise _validation("capstones must be a directory")
 
     parent = absolute.parent
     parent_fd: int | None = None
@@ -667,6 +765,15 @@ def load_capstones(path: Path) -> tuple[Capstone, ...]:
             recorded_parent
         ):
             raise _validation("capstone parent changed while opening")
+        opened_leaf = os.stat(
+            "capstones",
+            dir_fd=parent_fd,
+            follow_symlinks=False,
+        )
+        if _directory_signature(opened_leaf) != _directory_signature(
+            recorded_leaf
+        ):
+            raise _validation("capstones directory changed while opening")
 
         # Reuse the release lesson loader through the same pinned content
         # descriptor. This binds draft/reference validation to the snapshot
@@ -686,6 +793,15 @@ def load_capstones(path: Path) -> tuple[Capstone, ...]:
         )
         if expected != frozenset(_PRIMARY_OWNER):
             raise _validation("capstones require the complete lesson release")
+        current_leaf = os.stat(
+            "capstones",
+            dir_fd=parent_fd,
+            follow_symlinks=False,
+        )
+        if _directory_signature(current_leaf) != _directory_signature(
+            opened_leaf
+        ):
+            raise _validation("capstones directory changed before read")
         result = load_capstones_from_content_fd(
             parent_fd,
             expected_lesson_ids=expected,
@@ -693,6 +809,11 @@ def load_capstones(path: Path) -> tuple[Capstone, ...]:
         if lesson_snapshot != load_lessons_from_root(parent_fd):
             raise _validation("lessons changed while loading capstones")
         current_parent = os.lstat(parent)
+        current_leaf = os.stat(
+            "capstones",
+            dir_fd=parent_fd,
+            follow_symlinks=False,
+        )
         if (
             _directory_signature(os.fstat(parent_fd))
             != _directory_signature(opened_parent)
@@ -700,11 +821,25 @@ def load_capstones(path: Path) -> tuple[Capstone, ...]:
             != _directory_signature(opened_parent)
         ):
             raise _validation("capstone parent changed during read")
+        if _directory_signature(current_leaf) != _directory_signature(
+            opened_leaf
+        ):
+            raise _validation("capstones directory changed during read")
         return result
     except CurriculumValidationError:
         raise
     except OSError:
         raise _validation("capstone path cannot be opened safely") from None
     finally:
+        primary_error = sys.exception()
         if parent_fd is not None:
-            os.close(parent_fd)
+            try:
+                os.close(parent_fd)
+            except OSError as close_error:
+                if primary_error is None:
+                    raise RuntimeError(
+                        "capstone parent descriptor close failed"
+                    ) from close_error
+                primary_error.add_note(
+                    "capstone parent descriptor also failed to close"
+                )
