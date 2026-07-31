@@ -1571,6 +1571,19 @@ class CoreTrackTests(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(diagnostic, result.stderr)
+        if lesson_id in {
+            "core-21-maintenance-legacy-comprehension",
+            "core-22-evolution-safe-migrations",
+            "core-23-incident-response-learning",
+            "core-24-delivery-ci-release-safety",
+            "core-25-engineering-economics-capacity",
+        }:
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(result.stdout, "")
+            self.assertNotIn("Traceback", result.stderr)
+            self.assertNotIn("AssertionError:", result.stderr)
+            self.assertEqual(len(result.stderr.splitlines()), 1)
+            self.assertTrue(result.stderr.endswith("\n"))
 
     def assert_body_contract(self, body: str, lesson_id: str) -> None:
         parser = _BodyContractParser()
