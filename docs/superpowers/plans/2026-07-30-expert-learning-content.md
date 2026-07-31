@@ -2058,18 +2058,34 @@ git commit -m "content: prove expertise through integrated capstones"
   rebinding, mistyped document-map keys, and platforms without effective
   no-follow directory support. Commits `0501157`, `dc97b11`, and `fc6bf5b`
   make each boundary fail closed before any capstone is accepted.
-- All 14 focused capstone tests and the complete 523-test repository suite pass
+- Review-remediation tests-only commits `f516a24` and `f01bb5e` reproduce the
+  remaining confused-deputy path, capstone-leaf replacement, generic exercise,
+  reflected lesson-ID diagnostic, descriptor-close masking, fragmented print
+  card, and footer-only final-page failures. Commit `9ea2d89` pins the exact
+  `capstones` leaf identity, enforces bounded indexed diagnostics without
+  reflecting rejected values, preserves a primary validation error when close
+  also fails, and requires NFKC-normalized unique exercises with two
+  lesson-specific semantic anchors. Commit `7794858` replaces the print grid
+  with a non-fragmenting block flow and removes the site footer from capstone
+  print documents.
+- All 20 focused capstone tests and the complete 529-test repository suite pass
   with CPython 3.13. Two repository-external builds each contain 40 artifacts,
   39 HTML files, four capstone pages, and zero JavaScript files; both have the
   canonical aggregate SHA-256
-  `e3ca8043be67eb9e763b10409298081d327bbe27bd6bbdb17b3d678e660c8c97`.
-- Chromium generated tagged PDFs for all briefs: global service 7 pages,
-  legacy evolution 7 pages, and OSS launch 6 pages. The canonical catalog
+  `ad89009277b65e7be1030b32917844837db643ccb857bdc47f47a0247e07744e`.
+- Chromium generated tagged, JavaScript-free, Letter PDFs of six pages for
+  each of the three briefs. PDFKit extraction finds all 30 primary-exercise
+  markers and all 46 reinforcement markers. Full 18-page Poppler raster review
+  confirms that every rendered lesson heading, explanation, and enclosing
+  border stays on one page, including the previously fragmented global-service
+  and OSS-launch cards; each final page contains its rubric and no footer-only
+  or blank page remains. The canonical catalog
   remains at SHA-256
   `4f38b5f63931a7f06e13f90f5d9ef90a0a435f30dae5d4fe70720d730a057473`.
   The private prototype payload remains 1,194 files and 16,805,630 bytes; its
   separate 157,542-byte manifest makes the observed archive total 1,195 files.
-  Gitleaks scanned the complete Task 11 commit range and reported no leaks.
+  Gitleaks scanned both the complete Task 11 history and all four remediation
+  commits and reported no leaks; `git diff --check` is clean.
 
 ### Task 12: Run the complete learning-quality gate
 
