@@ -351,7 +351,7 @@ class CapstoneContractTests(unittest.TestCase):
 class CapstoneRenderingTests(unittest.TestCase):
     def test_release_build_generates_index_and_three_semantic_briefs(self) -> None:
         with TemporaryDirectory() as temporary:
-            output = Path(temporary) / "site"
+            output = Path(temporary).resolve() / "site"
             build_site(
                 REPOSITORY_ROOT / "content",
                 REPOSITORY_ROOT / "templates",
@@ -381,7 +381,7 @@ class CapstoneRenderingTests(unittest.TestCase):
 
     def test_invalid_capstone_never_replaces_previous_site(self) -> None:
         with TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             content = root / "content"
             templates = root / "templates"
             static = root / "static"
