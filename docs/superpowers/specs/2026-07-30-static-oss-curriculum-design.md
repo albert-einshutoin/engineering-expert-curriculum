@@ -206,7 +206,10 @@ always HTML-escaped by the renderer.
 
 ### 6.3 Definition of textbook quality
 
-A lesson may display the `complete` status only when:
+`status: complete` is a machine-validated structural state; it does not prove human review, factual correctness, publication approval, or learner mastery.
+
+A lesson may display the `complete` status only when its checked-in structure
+satisfies all of these conditions:
 
 - Every required section and metadata field exists.
 - Objectives use observable verbs and map to lab or assessment evidence.
@@ -217,10 +220,16 @@ A lesson may display the `complete` status only when:
   work using observable evidence.
 - Sources are relevant, reachable HTTPS links, and include primary or
   standards-based material where available.
-- The content has passed technical, pedagogical, accessibility, and editorial
-  review.
 
 CI treats any lesson marked complete but failing this contract as an error.
+
+Review evidence covers four dimensions: technical accuracy, learning design and evidence, accessibility, and editorial and source quality.
+
+`reviewerKind` is one of `human`, `ai-assisted`, or `automated`; AI-assisted and automated reviews never count as human approval.
+
+Publishability is decided per commit from PR and release evidence plus an explicit decision by an authenticated maintainer.
+
+Starting with `v0.1.0`, this disclosure policy applies prospectively and does not infer or retroactively grant human approval to existing content.
 
 ## 7. Curated core
 
