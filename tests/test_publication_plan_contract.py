@@ -272,13 +272,20 @@ class PublicationPlanContractTests(unittest.TestCase):
                 return left + right
             return None
 
-        # Keep the guard effective when a scanner-shaped value is split across
-        # Python literals in an attempt to hide it from a repository text scan.
-        split_prefix_tree = ast.parse('fixture = "g" + "hp_"')
-        self.assertIn(
-            pat_prefixes[0].decode("ascii"),
-            (folded_constant(node) for node in ast.walk(split_prefix_tree)),
-        )
+        # Build positive controls as AST nodes from numeric bytes so the test
+        # proves both token families without tracking a scanner-shaped fixture.
+        for prefix, pattern in zip(pat_prefixes, secret_shaped, strict=True):
+            parts = (prefix[:1], prefix[1:], bytes((120,)) * 20)
+            expression: ast.AST = ast.Constant(value=parts[0])
+            for part in parts[1:]:
+                expression = ast.BinOp(
+                    left=expression,
+                    op=ast.Add(),
+                    right=ast.Constant(value=part),
+                )
+            reconstructed = folded_constant(expression)
+            self.assertIsInstance(reconstructed, bytes)
+            self.assertIsNotNone(pattern.fullmatch(reconstructed))
 
         tracked = subprocess.run(
             ["git", "-C", str(REPOSITORY_ROOT), "ls-files", "-z"],
