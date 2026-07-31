@@ -1,0 +1,172 @@
+{
+  "version": 1,
+  "id": "core-16-hci-usability-accessibility",
+  "title": "人間中心設計で静的サイトの利用可能性を監査する",
+  "summary": "キーボード、200%ズーム、読み上げ順、ユーザビリティを観測し、標準への適合と人が使えることを区別した監査記録を作る。",
+  "track": "human-product",
+  "stage": 3,
+  "difficulty": "advanced",
+  "estimatedMinutes": 300,
+  "prerequisiteIds": [
+    "core-06-requirements-domain-modeling"
+  ],
+  "objectives": [
+    {
+      "id": "obj-audit",
+      "statement": "WCAG 2.2 Level AAを基準に、キーボード、200%ズーム、読み上げ順を再現可能に監査できる",
+      "evidenceIds": ["audit-record", "assessment"]
+    },
+    {
+      "id": "obj-usability",
+      "statement": "適合確認とISO 9241-210:2019に基づく利用者タスクの評価を区別できる",
+      "evidenceIds": ["audit-record", "teach-back"]
+    },
+    {
+      "id": "obj-scope",
+      "statement": "WCAG 3.0 Working DraftとAPCAをWCAG 2.2適合主張へ混同せず、入力方式を変えて再評価できる",
+      "evidenceIds": ["assessment", "transfer"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "audit-record",
+      "kind": "artifact",
+      "description": "キーボード、ズーム、読み上げ、ユーザビリティの監査記録"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "適合、アクセシビリティ、ユーザビリティの境界を説明する5分発表"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "標準の地位、観測限界、手動確認を含む監査判断"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "入力方式だけを変えた再監査の差分と不変条件"
+    }
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "WCAG 2.2 Level AA、WCAG-EM、ISO 9241-210:2019の役割を区別できる",
+      "evidenceIds": ["audit-record"]
+    },
+    {
+      "level": "explain",
+      "criterion": "自動検査合格が読み上げ順や利用者タスクの成功を保証しない理由を説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "固定fixtureでkeyboard、200% zoom、reading order、usabilityを観測できる",
+      "evidenceIds": ["audit-record"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "失敗を知覚、操作、理解、堅牢性、利用者タスクへ切り分け、反証を残せる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "適合範囲、手動確認、残余リスク、再評価条件を関係者と合意できる",
+      "evidenceIds": ["transfer"]
+    }
+  ],
+  "lab": {
+    "title": "生成済み静的カリキュラムをWCAG 2.2 Level AAで監査する",
+    "artifact": "キーボード、ズーム、読み上げ、ユーザビリティの監査記録",
+    "steps": [
+      "generated-static-curriculumのページfixture、利用者タスク、適合範囲、除外事項を固定する",
+      "keyboard操作の到達順、フォーカス可視性、操作完了を観測し、期待値と比較する",
+      "200% zoomでreflow、欠落、重なりを確認し、reading orderを文書順と照合する",
+      "代表利用者タスクのusabilityを成功条件と観測証拠で評価し、手動確認と残余リスクを記録する",
+      "同じページ、WCAG target、期待結果のままpointer中心からkeyboard-onlyへinput modeだけを変えて再監査する"
+    ]
+  },
+  "teachBack": "5分で、WCAG 2.2 Level AAへの適合主張、WCAG-EMの評価手順、ISO 9241-210:2019の人間中心設計、WCAG 3.0とAPCAの非標準扱いを説明する。",
+  "assessment": [
+    {
+      "prompt": "自動検査が全件合格した生成サイトを、なぜkeyboardとreading orderで手動確認するのか。",
+      "expectedEvidence": "自動化の観測範囲、操作順、意味順、タスク成功、支援技術差異、適合主張の限界"
+    },
+    {
+      "prompt": "APCAの値を満たしたためWCAG 2.2 Level AA適合と報告してよいか。",
+      "expectedEvidence": "規範的target、非標準候補、WCAG 3.0 Working Draft、手動証拠、主張範囲の区別"
+    }
+  ],
+  "transferTask": "pointer操作中心からkeyboard-only利用へ入力方式だけを変え、生成サイト監査を再評価する",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "標準の版、Level、観測対象を示さず適合を断定する",
+        "developing": "WCAG項目を列挙するが期待値と実測値を対応させない",
+        "proficient": "規範target、入力、期待、実測、判定、手動確認を一貫して記録する",
+        "exemplary": "支援技術差異、例外、再現限界まで含めて適合範囲を限定する"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "自動検査合格を利用可能性の保証とみなす",
+        "developing": "手動確認を行うが利用者タスクと優先度を結ばない",
+        "proficient": "適合、タスク影響、修正費用、残余リスクから優先順位を決める",
+        "exemplary": "影響を受ける利用者と不確実性を含めて再評価条件を合意する"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "画面の印象だけで判定し操作記録を残さない",
+        "developing": "結果はあるがfixture、入力方式、期待値のいずれかが欠ける",
+        "proficient": "固定fixtureと期待値から各判定を再計算できる",
+        "exemplary": "失敗する観測を保持し、mutationで因果関係を反証できる"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "合否だけを伝え影響と修正方針を示さない",
+        "developing": "問題を説明するが対象利用者と主張範囲が曖昧である",
+        "proficient": "利用者影響、証拠、標準、修正案、残余リスクを追跡可能に伝える",
+        "exemplary": "開発、デザイン、評価者が同じ監査契約を更新できる"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "Web Content Accessibility Guidelines (WCAG) 2.2",
+      "url": "https://www.w3.org/TR/WCAG22/",
+      "kind": "standard"
+    },
+    {
+      "title": "Website Accessibility Conformance Evaluation Methodology (WCAG-EM) 1.0",
+      "url": "https://www.w3.org/TR/WCAG-EM/",
+      "kind": "standard"
+    },
+    {
+      "title": "ISO 9241-210:2019 - Ergonomics of human-system interaction — Part 210: Human-centred design for interactive systems",
+      "url": "https://www.iso.org/standard/77520.html",
+      "kind": "standard"
+    },
+    {
+      "title": "W3C Accessibility Guidelines (WCAG) 3.0 Working Draft 03 March 2026",
+      "url": "https://www.w3.org/TR/wcag-3.0/",
+      "kind": "primary"
+    }
+  ],
+  "review": {
+    "intervalDays": [1, 7, 30, 90],
+    "prompts": [
+      "自動検査だけでは証明できないkeyboard観測を一つ挙げる",
+      "WCAG 2.2適合とISO 9241-210:2019のusability評価はどう異なるか",
+      "WCAG 3.0とAPCAを適合報告でどう位置付けるか"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}

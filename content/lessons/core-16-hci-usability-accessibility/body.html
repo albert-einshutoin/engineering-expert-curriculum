@@ -1,0 +1,243 @@
+<section id="why">
+  <h2>なぜ重要か</h2>
+  <p>生成サイトが表示できても、keyboardだけでは到達できない、200% zoomで内容が欠ける、reading orderが意味順と一致しない、目的のタスクを完了できないことがある。品質を「自分の環境で見えた」から利用者が検証できる契約へ変えるには、入力、期待、実測、判定、限界を監査記録へ残す必要がある。</p>
+  <p>このレッスンの規範的targetはWCAG 2.2 Level AAである。WCAG-EM 1.0を評価手順、ISO 9241-210:2019を人間中心設計とusabilityの枠組みに使う。WCAG 3.0はWorking Draftであり、APCAとともにWCAG 2.2適合の規範ではない。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> 自動検査の合格はWCAG 2.2適合やusabilityの保証ではない。支援技術、ブラウザ、入力方式、利用者タスクを明示しない結果は一般化できない。WCAG 3.0やAPCAを試行する場合も、非標準の補助的観測として適合主張から分離する。</p>
+  </aside>
+</section>
+<section id="mental-model">
+  <h2>メンタルモデル</h2>
+  <p>監査を「基準を選ぶ、範囲を固定する、期待を操作可能なcheckへ落とす、実測する、差分を修正へ結ぶ」の循環として扱う。規範へのconformanceと、特定の人が目的を達成できるusabilityは重なるが同義ではない。</p>
+  <figure>
+    <figcaption>生成サイトの監査を適合主張と利用者タスクへ結ぶ証拠flow</figcaption>
+    <ol>
+      <li><strong>Scope:</strong> ページfixture、利用者、入力方式、環境、除外を固定する。</li>
+      <li><strong>Target:</strong> WCAG 2.2 Level AAの規範的targetと版を記録する。</li>
+      <li><strong>Observe:</strong> keyboard、200% zoom、reading order、usabilityを期待値と比較する。</li>
+      <li><strong>Review:</strong> 自動化で判定できない意味、順序、タスク成功を人が確認する。</li>
+      <li><strong>Claim:</strong> 合否、未確認、残余リスクを分け、範囲を限定して報告する。</li>
+    </ol>
+  </figure>
+  <p>一つのcheckは、対象、操作、期待、actual、passed、証拠を持つ。failedを消すのではなく、利用者影響、修正、再試験へ追跡する。入力方式だけを変えるtransferでは、ページと期待結果を固定し、どのcheckが変わるかを観測する。</p>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>固定fixtureから生成サイト監査を導出する</h3>
+  <dl>
+    <dt>前提</dt>
+    <dd>generated-static-curriculumを対象とするlesson-defined synthetic fixtureであり、productionの適合認証ではない。WCAG 2.2 RecommendationのLevel AAをtargetにする。</dd>
+    <dt>入力</dt>
+    <dd>keyboard、zoom-200、reading-order、usabilityの4観測を使う。各観測は期待値とactualを持ち、usabilityに意図的な差分を1件残す。</dd>
+    <dt>操作</dt>
+    <dd>actualとexpectedの等価性からpassedを導出し、合格数と失敗数を計算する。pointer中心からkeyboard-onlyへinput modeだけを変更し、check IDを再構成する。</dd>
+    <dt>観測</dt>
+    <dd>4件中3件がpassし、1件はmanual reviewが必要になる。transfer後もページ、WCAG target、期待結果は不変だが、入力方式に結び付くcheck IDは変わる。</dd>
+    <dt>結論</dt>
+    <dd>監査記録は「問題なし」という印象ではなく、差分を保持する因果証拠である。このfixtureだけからサイト全体のconformance claimは行わない。</dd>
+  </dl>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+import json
+
+HARNESS = "hci_accessibility_audit_lab_v1"
+SITE = "generated-static-curriculum"
+OBSERVATION_FIXTURE = [
+    {
+        "dimension": "keyboard",
+        "expected": "all-controls-reachable-and-focus-visible",
+        "actual": "all-controls-reachable-and-focus-visible",
+    },
+    {
+        "dimension": "zoom-200",
+        "expected": "no-content-loss-or-two-dimensional-scroll",
+        "actual": "no-content-loss-or-two-dimensional-scroll",
+    },
+    {
+        "dimension": "reading-order",
+        "expected": "dom-order-matches-meaning-order",
+        "actual": "dom-order-matches-meaning-order",
+    },
+    {
+        "dimension": "usability",
+        "expected": "five-of-five-tasks-completed",
+        "actual": "four-of-five-tasks-completed",
+    },
+]
+
+def derive_observations(fixture, input_mode):
+    observations = []
+    for index, source in enumerate(fixture, start=1):
+        observation = dict(source)
+        observation["check_id"] = (
+            f"{input_mode}-{index}-{source['dimension']}"
+        )
+        observation["input_mode"] = input_mode
+        passed = observation["actual"] == observation["expected"]
+        observation["passed"] = passed
+        observations.append(observation)
+    return observations
+
+def summarize(observations):
+    passed = sum(item["passed"] for item in observations)
+    return {
+        "total": len(observations),
+        "passed": passed,
+        "failed": len(observations) - passed,
+    }
+
+def mastery_evidence():
+    return {
+        "lab_steps": [
+            {"step": 1, "evidence": "site、task、target、scopeを固定"},
+            {"step": 2, "evidence": "keyboardのexpectedとactual"},
+            {"step": 3, "evidence": "zoom-200とreading-orderの観測"},
+            {"step": 4, "evidence": "usability差分とmanual review"},
+            {"step": 5, "evidence": "input-modeだけを変えたcheck差分"},
+        ],
+        "assessments": [
+            {"assessment": 1, "evidence": "自動化範囲と手動観測の区別"},
+            {"assessment": 2, "evidence": "規範targetと非標準候補の分離"},
+        ],
+        "rubric_dimensions": [
+            "technical-correctness",
+            "judgment",
+            "evidence",
+            "communication",
+        ],
+        "transfer": {
+            "task": (
+                "pointer操作中心からkeyboard-only利用へ入力方式だけを変え、"
+                "生成サイト監査を再評価する"
+            ),
+            "changed_assumption": "input-mode",
+            "evidence": "同じpage、target、expectedでcheckを再導出",
+        },
+    }
+
+def main():
+    baseline = derive_observations(OBSERVATION_FIXTURE, "pointer-primary")
+    transferred = derive_observations(
+        OBSERVATION_FIXTURE,
+        "keyboard-only",
+    )
+    expected_passes = [
+        item["actual"] == item["expected"]
+        for item in OBSERVATION_FIXTURE
+    ]
+    assert (
+        [item["passed"] for item in baseline] == expected_passes
+    ), "hci-causal-invariant"
+    assert summarize(baseline)["failed"] == 1, "hci-causal-invariant"
+    report = {
+        "harness": HARNESS,
+        "site_under_audit": SITE,
+        "standards": {
+            "normative_target": {
+                "name": "WCAG",
+                "version": "2.2",
+                "level": "AA",
+                "status": "W3C Recommendation",
+                "date": "2024-12-12",
+            },
+            "human_centred_design": "ISO 9241-210:2019",
+            "non_normative_candidates": {
+                "WCAG 3.0": "W3C Working Draft 2026-03-03",
+                "APCA": "not-a-WCAG-2.2-conformance-standard",
+            },
+        },
+        "audit": {
+            "observations": baseline,
+            "summary": summarize(baseline),
+            "manual_review_required": True,
+            "conformance_claim": False,
+        },
+        "input_mode_transfer": {
+            "changed_assumption": "input-mode",
+            "changed_fields": ["input_mode"],
+            "unchanged": {
+                "page_fixture": True,
+                "wcag_target": True,
+                "expected_outcomes": True,
+            },
+            "baseline_check_ids": [
+                item["check_id"] for item in baseline
+            ],
+            "transferred_check_ids": [
+                item["check_id"] for item in transferred
+            ],
+        },
+        "fixture_metadata": {
+            "kind": "synthetic",
+            "provenance": (
+                "lesson-defined generated static curriculum observations"
+            ),
+            "limitations": (
+                "not a production audit or a complete conformance claim"
+            ),
+        },
+        "runtime_bound": {
+            "records": len(baseline) + len(transferred),
+            "subprocesses": 0,
+        },
+        "mastery_evidence": mastery_evidence(),
+        "external_network_used": False,
+    }
+    return report
+
+print(json.dumps(main(), ensure_ascii=False, indent=2))
+PY</code></pre>
+</section>
+<section id="tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <table>
+    <caption>監査結果から行動を選ぶ decision table</caption>
+    <thead>
+      <tr>
+        <th scope="col">観測</th>
+        <th scope="col">主張</th>
+        <th scope="col">行動</th>
+        <th scope="col">再評価条件</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row">規範checkが失敗</th>
+        <td>Level AA未確認</td>
+        <td>影響と修正を追跡して同条件で再試験</td>
+        <td>実装またはfixtureが変わった時</td>
+      </tr>
+      <tr>
+        <th scope="row">自動checkは合格、意味順は未確認</th>
+        <td>自動検査範囲だけ合格</td>
+        <td>keyboardとreading orderを手動確認</td>
+        <td>支援技術または文書構造が変わった時</td>
+      </tr>
+      <tr>
+        <th scope="row">WCAG 3.0またはAPCAだけで評価</th>
+        <td>WCAG 2.2適合を主張しない</td>
+        <td>非標準の補助観測として分離</td>
+        <td>規範targetの版を更新した時</td>
+      </tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><strong>誤診:</strong> automated checkerが0件を報告したのでサイトはWCAG 2.2 Level AAに完全適合する。<strong>反証:</strong> keyboardの操作順、reading orderの意味、usabilityのタスク成功は自動結果だけで証明できず、WCAG-EMのscopeと手動証拠が必要である。</li>
+    <li><strong>誤診:</strong> APCAは新しいcontrast計算なのでWCAG 2.2の比率に置き換えてよい。<strong>反証:</strong> この監査の規範targetはWCAG 2.2であり、APCAは非標準の候補として分離する。Working DraftのWCAG 3.0も同じ適合根拠にはできない。</li>
+    <li><strong>失敗モード:</strong> 200% zoomで見た目を戻すため文字を小さくすると、reflow問題を隠して利用者の可読性を悪化させる。</li>
+    <li><strong>失敗モード:</strong> DOM順を変えず視覚位置だけをCSSで入れ替えると、見た順と読み上げ順が分岐する。</li>
+  </ul>
+</section>
+<section id="knowledge-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>WCAG 2.2 Level AAのconformanceと特定タスクのusabilityはどう違うか。</li>
+    <li>200% zoomで保持すべき内容と操作を二つ挙げよ。</li>
+    <li>reading orderを視覚順だけで判定できない理由は何か。</li>
+    <li>input modeだけを変えるtransferで固定すべき条件は何か。</li>
+  </ol>
+</section>
+<section id="sources-next">
+  <h2>出典と次の学習</h2>
+  <p>適合targetはWeb Content Accessibility Guidelines 2.2のRecommendation、評価手順はWCAG-EM 1.0、人間中心設計はISO 9241-210:2019へ版を固定する。W3C Accessibility Guidelines 3.0は03 March 2026のWorking Draftとして地位を明示し、APCAとともに非標準候補へ分離する。</p>
+  <p>次は、roadmapとquantitative chartをsemantic HTMLとCSSで表し、視覚表現と同じ関係と値を同等のテキスト構造へ残す。</p>
+</section>
