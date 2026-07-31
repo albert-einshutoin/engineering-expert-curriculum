@@ -105,6 +105,12 @@ TRANSFER_OBSERVATION = {
     "backfill_rows": 500,
     "backfill_errors": 20,
 }
+ROLLBACK_OBSERVATION = {
+    "executed": True,
+    "observed": True,
+    "expected_state": "backfill-paused-at-checkpoint",
+    "actual_state": "backfill-paused-at-checkpoint",
+}
 
 def ratio(numerator, denominator):
     if denominator &lt;= 0:
@@ -191,24 +197,64 @@ def build_phases(phase_inputs):
         )
     return phases
 
+def verify_rollback(decision, observation):
+    system_outcome = (
+        decision == "rollback"
+        and observation["executed"]
+        and observation["observed"]
+        and observation["actual_state"]
+        == observation["expected_state"]
+    )
+    if decision == "rollback" and not system_outcome:
+        raise AssertionError(
+            "migration-rollback-outcome-invariant: "
+            "rollback outcome was not observed"
+        )
+    return {
+        "executed": observation["executed"],
+        "observed": observation["observed"],
+        "expected_state": observation["expected_state"],
+        "actual_state": observation["actual_state"],
+        "system_outcome": system_outcome,
+    }
+
 def main():
     phases = build_phases(PHASE_INPUTS)
+    transferred_plan = build_phases(PHASE_INPUTS)
+    if phases != transferred_plan:
+        raise AssertionError(
+            "migration-plan-invariant: plan snapshots drifted"
+        )
     baseline = evaluate(BASELINE_OBSERVATION, THRESHOLDS)
     transferred = evaluate(TRANSFER_OBSERVATION, THRESHOLDS)
-    source_fields = sorted(BASELINE_OBSERVATION)
-    changed_fields = [
+    source_fields = sorted(
+        set(BASELINE_OBSERVATION) | set(TRANSFER_OBSERVATION)
+    )
+    changed_input_fields = [
         field
         for field in source_fields
-        if BASELINE_OBSERVATION[field] != TRANSFER_OBSERVATION[field]
+        if (
+            field not in BASELINE_OBSERVATION
+            or field not in TRANSFER_OBSERVATION
+            or BASELINE_OBSERVATION[field]
+            != TRANSFER_OBSERVATION[field]
+        )
     ]
+    if changed_input_fields != ["backfill_errors"]:
+        raise AssertionError(
+            "migration-transfer-invariant: transfer changed unknown fields"
+        )
     if (
-        changed_fields != ["backfill_errors"]
-        or baseline["decision"] != "continue"
+        baseline["decision"] != "continue"
         or transferred["decision"] != "rollback"
     ):
         raise AssertionError(
             "migration-causal-invariant: transfer changed wrong cause"
         )
+    rollback_outcome = verify_rollback(
+        transferred["decision"],
+        ROLLBACK_OBSERVATION,
+    )
     compatibility = {
         "old_reader_supported": (
             baseline["observation"]["old_reader_supported"]
@@ -252,10 +298,9 @@ def main():
         "backfill_error_rate_transfer": {
             "changed_assumption": "backfill-error-rate",
             "changed_fields": ["backfill_error_rate"],
-            "same_migration_plan": (
-                [phase["name"] for phase in phases]
-                == [phase["name"] for phase in build_phases(PHASE_INPUTS)]
-            ),
+            "same_migration_plan": phases == transferred_plan,
+            "baseline_plan": phases,
+            "transferred_plan": transferred_plan,
             "baseline_error_rate": (
                 baseline["observation"]["backfill_error_rate"]
             ),
@@ -264,6 +309,7 @@ def main():
             ),
             "baseline_decision": baseline["decision"],
             "transferred_decision": transferred["decision"],
+            "rollback_outcome": rollback_outcome,
         },
         "command_success_distinction": {
             "command_completed": True,
@@ -271,18 +317,19 @@ def main():
                 all(compatibility.values())
                 and baseline["decision"] == "continue"
                 and transferred["decision"] == "rollback"
+                and rollback_outcome["system_outcome"]
             ),
             "command_success_equals_system_outcome": False,
             "outcome_evidence": (
                 "reader compatibility、write parity、backfill error、"
-                "rollback decisionを検査"
+                "観測済みrollback system outcomeを検査"
             ),
         },
         "mastery_evidence": {
             "lab_steps": [
                 {"step": 1, "evidence": phases},
                 {"step": 2, "evidence": baseline["observation"]},
-                {"step": 3, "evidence": transferred["decision"]},
+                {"step": 3, "evidence": rollback_outcome},
             ],
             "assessments": [
                 {"assessment": 1, "evidence": compatibility},
