@@ -1663,6 +1663,14 @@ class CoreTrackTests(unittest.TestCase):
             ["RED", "GREEN", "REFACTOR"],
         )
         self.assertNotEqual(phases[0]["returncode"], 0)
+        self.assertEqual(
+            phases[0]["test_id"],
+            "test_strategy_fixture.PureUnitTests.test_discount",
+        )
+        self.assertIn(
+            "NotImplementedError: total is not implemented",
+            phases[0]["failure_reason"],
+        )
         self.assertEqual(phases[1]["returncode"], 0)
         self.assertEqual(phases[2]["returncode"], 0)
         self.assertNotEqual(
@@ -1678,22 +1686,125 @@ class CoreTrackTests(unittest.TestCase):
             phases[2]["behavior_sha256"],
         )
         self.assertTrue(
-            all(phase["command"][-3:] == ["-m", "unittest", "-q"] for phase in phases)
+            all(
+                phase["command"][-4:-1]
+                == ["-m", "unittest", "-q"]
+                and phase["command"][-1] == phase["test_id"]
+                for phase in phases
+            )
         )
+        strategy = {
+            item["kind"]: item
+            for item in report["strategy_evidence"]
+        }
         self.assertEqual(
-            {item["kind"] for item in report["strategy_evidence"]},
+            set(strategy),
             {"unit", "integration", "contract", "property", "metamorphic"},
         )
-        self.assertTrue(
-            all(item["passed"] for item in report["strategy_evidence"])
+        self.assertEqual(
+            len({item["test_id"] for item in strategy.values()}),
+            5,
+        )
+        for item in strategy.values():
+            self.assertTrue(item["passed"])
+            self.assertEqual(item["returncode"], 0)
+            self.assertEqual(item["command"][-1], item["test_id"])
+            self.assertTrue(item["boundary"])
+            self.assertTrue(item["evidence"])
+        self.assertEqual(strategy["unit"]["boundary"], "pure-function")
+        self.assertEqual(
+            strategy["integration"]["boundary"],
+            "stdlib-sqlite-repository-adapter",
+        )
+        self.assertEqual(
+            strategy["contract"]["boundary"],
+            "consumer-provider-schema-and-semantics",
+        )
+        self.assertEqual(
+            strategy["property"]["generation"],
+            "bounded-exhaustive",
+        )
+        self.assertGreaterEqual(strategy["property"]["case_count"], 100)
+        self.assertEqual(
+            strategy["metamorphic"]["relation"],
+            "permutation-and-zero-item-preserve-total",
         )
         defect = report["nondeterministic_defect"]
         self.assertEqual(defect["seed_sequence"], [11, 12, 13, 14])
         self.assertEqual(set(defect["outcomes"]), {"pass", "fail"})
         self.assertEqual(defect["root_cause"], "order-and-clock-coupling")
+        self.assertEqual(len(defect["schedules"]), 4)
+        self.assertEqual(
+            set(defect["isolation"]["fixed_order_variable_clock"]),
+            {"pass", "fail"},
+        )
+        self.assertEqual(
+            set(defect["isolation"]["fixed_clock_variable_order"]),
+            {"pass", "fail"},
+        )
         self.assertTrue(report["mutation"]["killed"])
         self.assertNotEqual(report["mutation"]["returncode"], 0)
+        self.assertEqual(
+            report["mutation"]["test_id"],
+            strategy["integration"]["test_id"],
+        )
+        self.assertIn(
+            "AssertionError",
+            report["mutation"]["failure_reason"],
+        )
+        workspace = report["workspace"]
+        self.assertTrue(workspace["temporary_directory_used"])
+        self.assertTrue(workspace["all_subprocesses_used_workspace_cwd"])
+        self.assertEqual(
+            set(workspace["explicit_test_ids"]),
+            {item["test_id"] for item in strategy.values()},
+        )
         self.assertFalse(report["external_network_used"])
+
+    def test_testing_harness_isolates_symlinks_and_ambient_tests(
+        self,
+    ) -> None:
+        source = self.python_harness_source(
+            "core-09-test-strategy-tdd",
+            "test_strategy_lab_v1",
+        )
+        with TemporaryDirectory() as directory_text:
+            directory = Path(directory_text)
+            victim = directory / "victim.txt"
+            victim.write_text("do-not-overwrite", encoding="utf-8")
+            os.symlink(victim, directory / "order_discount.py")
+            ambient_marker = directory / "ambient-ran.txt"
+            ambient_test = directory / "test_ambient.py"
+            ambient_test.write_text(
+                "from pathlib import Path\n"
+                f"Path({str(ambient_marker)!r}).write_text("
+                "'ran', encoding='utf-8')\n"
+                "raise RuntimeError('ambient test must not run')\n",
+                encoding="utf-8",
+            )
+            script = directory / "harness.py"
+            script.write_text(source, encoding="utf-8")
+
+            result = subprocess.run(
+                [sys.executable, script],
+                cwd=directory,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = json.loads(result.stdout)
+            self.assertEqual(
+                [phase["returncode"] for phase in report["phases"]],
+                [1, 0, 0],
+            )
+            self.assertEqual(
+                victim.read_text(encoding="utf-8"),
+                "do-not-overwrite",
+            )
+            self.assertFalse(ambient_marker.exists())
 
     def test_threat_model_harness_links_assets_controls_and_verification(
         self,
