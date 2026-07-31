@@ -19,7 +19,7 @@
     },
     {
       "id": "obj-control",
-      "statement": "各脅威を予防・検知・回復controlと具体的なverificationへ対応付けられる",
+      "statement": "各脅威を型付けしたprevent・detect・recover controlと、control単位の具体的なverificationへ対応付けられる",
       "evidenceIds": ["threat-model", "assessment"]
     },
     {
@@ -32,7 +32,7 @@
     {
       "id": "threat-model",
       "kind": "artifact",
-      "description": "資産、境界、data flow、外部・内部者脅威、control、verification、残余riskを結ぶ機械可読モデル"
+      "description": "資産、境界、data flow、外部・内部者脅威、型付けcontrol、verification、decisionとuncertaintyを持つ残余riskを結ぶ機械可読モデル"
     },
     {
       "id": "teach-back",
@@ -63,7 +63,7 @@
     },
     {
       "level": "apply",
-      "criterion": "固定scenarioから外部・内部者の攻撃経路を列挙し、controlとverificationを追跡できる",
+      "criterion": "固定scenarioから外部・内部者の攻撃経路を列挙し、各脅威のprevent・detect・recover controlとverificationを追跡できる",
       "evidenceIds": ["threat-model"]
     },
     {
@@ -84,8 +84,8 @@
       "customer data、deployment credential、audit logを資産として、外部利用者、委託運用者、管理者をactorとして列挙する",
       "internet、operations zone、productionのtrust boundaryを越えるdata flowを固定fixtureへ記録する",
       "外部actorと内部者について、対象資産とflowを結ぶharmlessな攻撃経路仮説を作る",
-      "各脅威へ予防・検知・回復controlを割り当て、具体的なverification IDと結果を対応付ける",
-      "残余riskへownerとreview dateを付け、全脅威のtraceabilityと未検証項目を機械的に確認する"
+      "各脅威へ型付けしたprevent・detect・recover controlを割り当て、controlごとのverification IDと結果を対応付ける",
+      "残余riskへthreat ID、decision、uncertainty、owner、review dateを付け、空control、未知参照、failed verification、owner空欄、type欠落のmutationがrejectされることを確認する"
     ]
   },
   "teachBack": "6分で、frameworkやchecklist適合が安全を保証しない理由、内部者が悪意ある従業員だけではない理由、least privilegeとprivacyを両立する方法を説明する。",

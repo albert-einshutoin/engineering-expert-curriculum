@@ -15,9 +15,9 @@
       <li><strong>asset:</strong> customer data、deployment credential、audit logの価値と安全性目標を定義する。</li>
       <li><strong>actorとboundary:</strong> external customer、operations contractor、platform adminの権限と越境点を分ける。</li>
       <li><strong>threat:</strong> 意図ではなく、credential再利用、誤ったbulk export、audit停止など観測可能な行為で表す。</li>
-      <li><strong>control:</strong> 予防、検知、回復を一つのcontrolだけに依存せず重ねる。</li>
-      <li><strong>verification:</strong> 具体的なtest IDと結果をthreatへ接続する。</li>
-      <li><strong>residual risk:</strong> owner、期限、再review条件を付け、未解決を隠さない。</li>
+      <li><strong>control:</strong> prevent、detect、recoverを型として区別し、各threatへ三種類すべてを重ねる。</li>
+      <li><strong>verification:</strong> 具体的なtest ID、control ID、resultをthreatへ接続する。</li>
+      <li><strong>residual risk:</strong> threat ID、decision、uncertainty、owner、期限を付け、未解決を隠さない。</li>
     </ol>
   </figure>
   <table>
@@ -41,17 +41,21 @@
     <dt>入力</dt>
     <dd>外部credential悪用、委託者の誤bulk export、委託credential悪用の3脅威をharmlessなIDと関係だけで表す。</dd>
     <dt>操作</dt>
-    <dd>各脅威からasset、flow、control、verificationへIDを接続し、欠落参照、未検証result、ownerなし残余riskを検査する。</dd>
+    <dd>各脅威からasset、flow、prevent・detect・recover control、verification、残余riskへIDを接続し、空集合、欠落参照、failed result、owner空欄、control型欠落を検査する。</dd>
     <dt>観測</dt>
-    <dd>外部・内部者の両actor typeが存在し、全脅威にcontrolとpassed verificationが一つ以上、残余riskにownerとreview dateがある。</dd>
+    <dd>外部・内部者の両actor typeが存在し、全脅威に三種類のcontrolと各controlのpassed verificationがあり、残余riskにthreat ID、decision、uncertainty、owner、review dateがある。5種の壊れたmodelはすべてrejectされる。</dd>
     <dt>結論</dt>
     <dd>modelは安全の証明ではなく、現在の仮説と検証範囲を可視化する。変更、incident、test失敗ごとに再評価する。</dd>
   </dl>
   <p>次のPython 3.13 harnessは固定JSON相当の関係だけを検査し、攻撃codeを実行せず、networkや秘密情報へアクセスしない。</p>
   <pre><code>python3.13 - &lt;&lt;'PY'
+import copy
 import json
 
 HARNESS = "threat_model_lab_v1"
+REQUIRED_CONTROL_TYPES = {"prevent", "detect", "recover"}
+ALLOWED_RISK_DECISIONS = {"accept", "avoid", "mitigate", "transfer"}
+
 assets = [
     {"id": "customer-data", "goal": "confidentiality-and-integrity"},
     {"id": "deployment-credential", "goal": "confidentiality-and-limited-use"},
@@ -109,75 +113,339 @@ threats = [
         "scenario": "contractor credential is used outside an approved window",
     },
 ]
+controls = [
+    {
+        "id": "short-lived-token",
+        "type": "prevent",
+        "purpose": "limit credential reuse window",
+    },
+    {
+        "id": "auth-anomaly-alert",
+        "type": "detect",
+        "purpose": "detect unusual session and tenant access",
+    },
+    {
+        "id": "session-revoke",
+        "type": "recover",
+        "purpose": "revoke affected sessions without waiting for expiry",
+    },
+    {
+        "id": "purpose-scope",
+        "type": "prevent",
+        "purpose": "bound export records to an approved purpose",
+    },
+    {
+        "id": "export-volume-alert",
+        "type": "detect",
+        "purpose": "detect export volume outside the approved envelope",
+    },
+    {
+        "id": "cancelable-job",
+        "type": "recover",
+        "purpose": "stop and remove an erroneous pending export",
+    },
+    {
+        "id": "approved-window",
+        "type": "prevent",
+        "purpose": "reject deployment credentials outside an approved window",
+    },
+    {
+        "id": "signed-audit",
+        "type": "detect",
+        "purpose": "detect unapproved credential use with tamper evidence",
+    },
+    {
+        "id": "credential-rotation",
+        "type": "recover",
+        "purpose": "replace exposed deployment credentials",
+    },
+]
 control_links = [
     {
         "threat_id": "T-EXT-CREDENTIAL",
-        "control_ids": ["short-lived-token", "rate-limit", "revoke"],
+        "control_ids": [
+            "short-lived-token",
+            "auth-anomaly-alert",
+            "session-revoke",
+        ],
     },
     {
         "threat_id": "T-IN-BULK-ERROR",
-        "control_ids": ["purpose-scope", "dual-approval", "cancelable-job"],
+        "control_ids": [
+            "purpose-scope",
+            "export-volume-alert",
+            "cancelable-job",
+        ],
     },
     {
         "threat_id": "T-IN-CREDENTIAL",
-        "control_ids": ["step-up", "approved-window", "signed-audit"],
+        "control_ids": [
+            "approved-window",
+            "signed-audit",
+            "credential-rotation",
+        ],
     },
 ]
 verification_links = [
     {
         "threat_id": "T-EXT-CREDENTIAL",
-        "verification_id": "V-AUTH-01",
+        "control_id": "short-lived-token",
+        "verification_id": "V-AUTH-PREVENT-01",
+        "result": "passed",
+    },
+    {
+        "threat_id": "T-EXT-CREDENTIAL",
+        "control_id": "auth-anomaly-alert",
+        "verification_id": "V-AUTH-DETECT-02",
+        "result": "passed",
+    },
+    {
+        "threat_id": "T-EXT-CREDENTIAL",
+        "control_id": "session-revoke",
+        "verification_id": "V-AUTH-RECOVER-03",
         "result": "passed",
     },
     {
         "threat_id": "T-IN-BULK-ERROR",
-        "verification_id": "V-EXPORT-02",
+        "control_id": "purpose-scope",
+        "verification_id": "V-EXPORT-PREVENT-01",
+        "result": "passed",
+    },
+    {
+        "threat_id": "T-IN-BULK-ERROR",
+        "control_id": "export-volume-alert",
+        "verification_id": "V-EXPORT-DETECT-02",
+        "result": "passed",
+    },
+    {
+        "threat_id": "T-IN-BULK-ERROR",
+        "control_id": "cancelable-job",
+        "verification_id": "V-EXPORT-RECOVER-03",
         "result": "passed",
     },
     {
         "threat_id": "T-IN-CREDENTIAL",
-        "verification_id": "V-DEPLOY-03",
+        "control_id": "approved-window",
+        "verification_id": "V-DEPLOY-PREVENT-01",
+        "result": "passed",
+    },
+    {
+        "threat_id": "T-IN-CREDENTIAL",
+        "control_id": "signed-audit",
+        "verification_id": "V-DEPLOY-DETECT-02",
+        "result": "passed",
+    },
+    {
+        "threat_id": "T-IN-CREDENTIAL",
+        "control_id": "credential-rotation",
+        "verification_id": "V-DEPLOY-RECOVER-03",
         "result": "passed",
     },
 ]
 residual_risks = [
     {
         "id": "R-SESSION-THEFT",
+        "threat_id": "T-EXT-CREDENTIAL",
+        "decision": "mitigate",
+        "uncertainty": "device-bound sessions are not available on one client",
         "owner": "security-product-owner",
         "review_date": "2026-10-30",
-        "condition": "device-bound session control becomes available",
     },
     {
         "id": "R-APPROVER-COLLUSION",
+        "threat_id": "T-IN-BULK-ERROR",
+        "decision": "accept",
+        "uncertainty": "two approvers can still coordinate an excessive export",
         "owner": "operations-director",
         "review_date": "2026-09-30",
-        "condition": "quarterly access review or relevant incident",
+    },
+    {
+        "id": "R-AUDIT-DELAY",
+        "threat_id": "T-IN-CREDENTIAL",
+        "decision": "mitigate",
+        "uncertainty": "alert delivery may be delayed during a regional outage",
+        "owner": "platform-security-lead",
+        "review_date": "2026-09-15",
     },
 ]
 
-# Fixed, harmless relationship data makes missing trace links observable
-# without teaching or executing an intrusion technique.
-asset_ids = {asset["id"] for asset in assets}
-flow_ids = {flow["id"] for flow in cross_boundary_flows}
-threat_ids = {threat["id"] for threat in threats}
-if any(
-    threat["asset_id"] not in asset_ids or threat["flow_id"] not in flow_ids
-    for threat in threats
-):
-    raise ValueError("threat has an unknown asset or flow")
-if {link["threat_id"] for link in control_links} != threat_ids:
-    raise ValueError("control traceability is incomplete")
-if {link["threat_id"] for link in verification_links} != threat_ids:
-    raise ValueError("verification traceability is incomplete")
+def validate_model(model):
+    errors = set()
+    required_collections = (
+        "assets",
+        "trust_boundaries",
+        "cross_boundary_flows",
+        "threats",
+        "controls",
+        "control_links",
+        "verification_links",
+        "residual_risks",
+    )
+    for collection in required_collections:
+        if not model.get(collection):
+            errors.add(f"empty:{collection}")
 
-report = {
-    "harness": HARNESS,
-    "fixture": "operations-portal-v1",
+    def indexed(items, label):
+        result = {}
+        for item in items:
+            item_id = item.get("id")
+            if not item_id:
+                errors.add(f"missing-id:{label}")
+            elif item_id in result:
+                errors.add(f"duplicate-id:{label}:{item_id}")
+            else:
+                result[item_id] = item
+        return result
+
+    asset_by_id = indexed(model.get("assets", []), "asset")
+    boundary_by_id = indexed(
+        model.get("trust_boundaries", []),
+        "boundary",
+    )
+    flow_by_id = indexed(
+        model.get("cross_boundary_flows", []),
+        "flow",
+    )
+    threat_by_id = indexed(model.get("threats", []), "threat")
+    control_by_id = indexed(model.get("controls", []), "control")
+
+    for control_id, control in control_by_id.items():
+        control_type = control.get("type")
+        if control_type not in REQUIRED_CONTROL_TYPES:
+            errors.add(f"invalid-control-type:{control_id}")
+
+    for flow_id, flow in flow_by_id.items():
+        crossed = flow.get("crosses", [])
+        if not crossed:
+            errors.add(f"missing-boundary-crossing:{flow_id}")
+        for boundary_id in crossed:
+            if boundary_id not in boundary_by_id:
+                errors.add(f"unknown-boundary:{flow_id}:{boundary_id}")
+
+    for threat_id, threat in threat_by_id.items():
+        if threat.get("asset_id") not in asset_by_id:
+            errors.add(f"unknown-asset:{threat_id}")
+        if threat.get("flow_id") not in flow_by_id:
+            errors.add(f"unknown-flow:{threat_id}")
+        if threat.get("actor_type") not in {"external", "insider"}:
+            errors.add(f"invalid-actor-type:{threat_id}")
+
+    linked_controls = {threat_id: set() for threat_id in threat_by_id}
+    for link in model.get("control_links", []):
+        threat_id = link.get("threat_id")
+        if threat_id not in threat_by_id:
+            errors.add(f"unknown-control-threat:{threat_id}")
+            continue
+        for control_id in link.get("control_ids", []):
+            if control_id not in control_by_id:
+                errors.add(f"unknown-control:{threat_id}:{control_id}")
+            else:
+                linked_controls[threat_id].add(control_id)
+
+    for threat_id, control_ids in linked_controls.items():
+        linked_types = {
+            control_by_id[control_id].get("type")
+            for control_id in control_ids
+        }
+        if linked_types != REQUIRED_CONTROL_TYPES:
+            errors.add(f"incomplete-control-types:{threat_id}")
+
+    verified_controls = {threat_id: set() for threat_id in threat_by_id}
+    for verification in model.get("verification_links", []):
+        threat_id = verification.get("threat_id")
+        control_id = verification.get("control_id")
+        if threat_id not in threat_by_id:
+            errors.add(f"unknown-verification-threat:{threat_id}")
+            continue
+        if control_id not in control_by_id:
+            errors.add(f"unknown-verification-control:{control_id}")
+            continue
+        if control_id not in linked_controls[threat_id]:
+            errors.add(f"unlinked-verification:{threat_id}:{control_id}")
+        if verification.get("result") != "passed":
+            errors.add(
+                f"verification-not-passed:"
+                f"{verification.get('verification_id', 'unknown')}"
+            )
+        else:
+            verified_controls[threat_id].add(control_id)
+
+    for threat_id, control_ids in linked_controls.items():
+        if verified_controls[threat_id] != control_ids:
+            errors.add(f"unverified-controls:{threat_id}")
+
+    risks_by_threat = {threat_id: 0 for threat_id in threat_by_id}
+    for risk in model.get("residual_risks", []):
+        threat_id = risk.get("threat_id")
+        if threat_id not in threat_by_id:
+            errors.add(f"unknown-risk-threat:{threat_id}")
+            continue
+        risks_by_threat[threat_id] += 1
+        if not str(risk.get("owner", "")).strip():
+            errors.add(f"blank-risk-owner:{risk.get('id', 'unknown')}")
+        if not risk.get("review_date"):
+            errors.add(f"missing-risk-review:{risk.get('id', 'unknown')}")
+        if risk.get("decision") not in ALLOWED_RISK_DECISIONS:
+            errors.add(f"invalid-risk-decision:{risk.get('id', 'unknown')}")
+        if not str(risk.get("uncertainty", "")).strip():
+            errors.add(
+                f"missing-risk-uncertainty:{risk.get('id', 'unknown')}"
+            )
+    for threat_id, count in risks_by_threat.items():
+        if count == 0:
+            errors.add(f"missing-residual-risk:{threat_id}")
+
+    # Sorting makes validation evidence deterministic across Python runs.
+    return sorted(errors)
+
+model = {
     "assets": assets,
     "actors": actors,
     "trust_boundaries": trust_boundaries,
     "cross_boundary_flows": cross_boundary_flows,
     "threats": threats,
+    "controls": controls,
+    "control_links": control_links,
+    "verification_links": verification_links,
+    "residual_risks": residual_risks,
+}
+validation_errors = validate_model(model)
+assert validation_errors == [], validation_errors
+
+# Every mutation is harmless relationship data. Running it demonstrates that
+# the validator rejects false-green traceability without executing an attack.
+mutation_models = {}
+mutation_models["empty_controls"] = copy.deepcopy(model)
+mutation_models["empty_controls"]["controls"] = []
+mutation_models["unknown_reference"] = copy.deepcopy(model)
+mutation_models["unknown_reference"]["threats"][0][
+    "asset_id"
+] = "unknown-asset"
+mutation_models["failed_verification"] = copy.deepcopy(model)
+mutation_models["failed_verification"]["verification_links"][0][
+    "result"
+] = "failed"
+mutation_models["blank_owner"] = copy.deepcopy(model)
+mutation_models["blank_owner"]["residual_risks"][0]["owner"] = " "
+mutation_models["missing_control_type"] = copy.deepcopy(model)
+del mutation_models["missing_control_type"]["controls"][0]["type"]
+
+negative_mutations = {}
+for name, mutated_model in mutation_models.items():
+    mutation_errors = validate_model(mutated_model)
+    negative_mutations[name] = {
+        "rejected": bool(mutation_errors),
+        "errors": mutation_errors,
+    }
+assert all(
+    mutation["rejected"] and mutation["errors"]
+    for mutation in negative_mutations.values()
+)
+
+report = {
+    "harness": HARNESS,
+    "fixture": "operations-portal-v1",
+    **model,
     "attack_paths": [
         {
             "threat_id": threat["id"],
@@ -186,14 +454,15 @@ report = {
         }
         for threat in threats
     ],
-    "control_links": control_links,
-    "verification_links": verification_links,
-    "residual_risks": residual_risks,
     "model_validation": {
-        "unknown_references": 0,
-        "uncontrolled_threats": 0,
-        "unverified_threats": 0,
+        "valid": not validation_errors,
+        "errors": validation_errors,
+        "threat_count": len(threats),
+        "control_count": len(controls),
+        "verification_count": len(verification_links),
+        "residual_risk_count": len(residual_risks),
     },
+    "negative_mutations": negative_mutations,
     "attack_code_executed": False,
     "external_network_used": False,
 }
