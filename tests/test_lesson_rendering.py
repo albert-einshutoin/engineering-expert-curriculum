@@ -1015,6 +1015,7 @@ class LessonRenderingTests(unittest.TestCase):
                 Path("index.html"),
                 Path("styles.css"),
                 Path("catalog/index.html"),
+                Path("capstones/index.html"),
                 Path("competencies/index.html"),
                 Path("roadmap/index.html"),
                 Path("lessons/index.html"),
