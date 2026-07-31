@@ -837,6 +837,11 @@ footer p {
   }
 }
 
+@page competency-matrix {
+  size: Letter landscape;
+  margin: 0.4in;
+}
+
 @media print {
   html,
   body {
@@ -952,10 +957,24 @@ footer p {
     overflow: visible;
   }
 
+  body:has(.competency-matrix-page),
+  .competency-matrix-page {
+    page: competency-matrix;
+  }
+
+  /*
+   * Chromium can omit a repeated thead after a fragmented table. Each track
+   * therefore owns one table and one landscape page, with its own real header.
+   */
+  .competency-matrix + .competency-matrix {
+    break-before: page;
+  }
+
   .competency-matrix {
     min-inline-size: 0;
-    font-size: 8pt;
-    line-height: 1.35;
+    break-inside: avoid;
+    font-size: 7pt;
+    line-height: 1.2;
     table-layout: auto;
   }
 
@@ -964,8 +983,8 @@ footer p {
     inline-size: auto;
     min-inline-size: 0;
     max-inline-size: none;
-    padding-block: 0.2rem;
-    padding-inline: 0.25rem;
+    padding-block: 0.1rem;
+    padding-inline: 0.2rem;
   }
 
   .competency-matrix th:first-child,
@@ -990,6 +1009,75 @@ footer p {
     overflow-wrap: anywhere;
     white-space: normal;
     word-break: normal;
+  }
+
+  .competency-matrix thead,
+  .competency-matrix thead tr,
+  .competency-matrix thead th {
+    break-after: avoid;
+    break-inside: avoid;
+    overflow-wrap: normal;
+    white-space: nowrap;
+    word-break: keep-all;
+  }
+
+  body:has(.competency-matrix-page) > .site-header,
+  body:has(.competency-matrix-page) > footer {
+    display: none;
+  }
+
+  body:has(.competency-matrix-page) main {
+    padding-block: 0;
+  }
+
+  .competency-matrix-page > header {
+    max-inline-size: none;
+    font-size: 7pt;
+    line-height: 1.15;
+  }
+
+  .competency-matrix-page > header .eyebrow,
+  .competency-matrix-page > header h1,
+  .competency-matrix-page > header p,
+  .competency-matrix-page > section,
+  .competency-matrix-page > section h2,
+  .competency-frameworks,
+  .competency-matrix caption {
+    margin-block: 0;
+  }
+
+  .competency-matrix-page > header h1 {
+    max-inline-size: none;
+    font-size: 16pt;
+  }
+
+  .competency-matrix-page > section {
+    margin-block-start: 0.15rem;
+  }
+
+  .competency-matrix-page > section h2 {
+    font-size: 9pt;
+  }
+
+  .competency-frameworks {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.15rem;
+    font-size: 7pt;
+    line-height: 1.15;
+  }
+
+  .competency-frameworks > li {
+    padding: 0.1rem 0.2rem;
+  }
+
+  .competency-frameworks a[href^="https://"]::after {
+    content: "";
+  }
+
+  .competency-matrix caption {
+    padding-block: 0.1rem;
+    font-size: 7pt;
+    line-height: 1.15;
   }
 
   thead {

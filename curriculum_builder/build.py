@@ -1185,9 +1185,20 @@ def _competency_content(
             "release buildで公式版を検証します。</li>"
             "</ul>"
         )
-        rendered_rows = ""
+        tables = validate_fragment(
+            '<p class="empty-state">'
+            "release buildでトラック別対応表を生成します。</p>"
+        )
     else:
         framework_order = ("CS2023", "SWEBOK", "SFIA")
+        track_order = (
+            "foundations",
+            "build",
+            "data-scale",
+            "human-product",
+            "sustain",
+            "lead",
+        )
         source_items: list[str] = []
         for framework in framework_order:
             source = matrix.framework_sources[framework]
@@ -1207,18 +1218,29 @@ def _competency_content(
             + "".join(source_items)
             + "</ul>"
         )
-        lesson_titles = {
-            item.lesson.id: item.lesson.title
+        lesson_metadata = {
+            item.lesson.id: (
+                item.lesson.title,
+                item.lesson.track,
+            )
             for item in lessons
         }
-        rendered_rows: list[str] = []
+        rendered_rows = {
+            track: []
+            for track in track_order
+        }
         for mapping in matrix.mappings:
-            title = lesson_titles.get(mapping.target_id)
-            if title is None:
+            metadata = lesson_metadata.get(mapping.target_id)
+            if metadata is None:
                 raise _validation(
                     "competency mapping target is missing from lesson snapshot"
                 )
-            rendered_rows.append(
+            title, track = metadata
+            if track not in rendered_rows:
+                raise _validation(
+                    "competency mapping target has an unsupported track"
+                )
+            rendered_rows[track].append(
                 "<tr>"
                 '<th scope="row"><a href="../lessons/'
                 f"{escape(mapping.target_id, quote=True)}/index.html\">"
@@ -1237,26 +1259,38 @@ def _competency_content(
                 f"{escape(mapping.rationale, quote=False)}</td>"
                 "</tr>"
             )
-        rendered_rows = "".join(rendered_rows)
-    table = validate_fragment(
-        '<table class="competency-matrix">'
-        "<caption>30のコアレッスンとCS2023、SWEBOK、SFIAの90対応</caption>"
-        "<thead><tr>"
-        '<th scope="col">レッスン</th>'
-        '<th scope="col">フレームワーク</th>'
-        '<th scope="col">版</th>'
-        '<th scope="col">対応強度</th>'
-        '<th scope="col">公式識別子・名称</th>'
-        '<th scope="col">対応根拠</th>'
-        "</tr></thead><tbody>"
-        f"{rendered_rows}</tbody></table>"
-    )
+        # Six independent tables keep each track understandable on screen and
+        # avoid Chromium's unreliable repeated-thead behavior across pages.
+        rendered_tables: list[str] = []
+        header = (
+            "<thead><tr>"
+            '<th scope="col">レッスン</th>'
+            '<th scope="col">フレームワーク</th>'
+            '<th scope="col">版</th>'
+            '<th scope="col">対応強度</th>'
+            '<th scope="col">公式識別子・名称</th>'
+            '<th scope="col">対応根拠</th>'
+            "</tr></thead>"
+        )
+        for track in track_order:
+            rows = rendered_rows[track]
+            if len(rows) != 15:
+                raise _validation(
+                    "each competency track must contain exactly 15 mappings"
+                )
+            rendered_tables.append(
+                '<table class="competency-matrix">'
+                f"<caption>{escape(track, quote=False)}"
+                " — 5レッスン・15対応</caption>"
+                f"{header}<tbody>{''.join(rows)}</tbody></table>"
+            )
+        tables = validate_fragment("".join(rendered_tables))
     return renderer.fragment(
         "competency-matrix.html",
         text_values={},
         html_values={
             "frameworks": frameworks,
-            "table": table,
+            "table": tables,
         },
     )
 
