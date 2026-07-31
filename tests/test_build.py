@@ -309,6 +309,7 @@ def _assert_static_site(
         Path("index.html"),
         Path("styles.css"),
         Path("catalog/index.html"),
+        Path("competencies/index.html"),
         Path("roadmap/index.html"),
         Path("lessons/index.html"),
     }
@@ -730,6 +731,7 @@ class BuildInputValidationTests(unittest.TestCase):
                 template_source: object,
                 stylesheet: bytes,
                 lessons: object,
+                competencies: object,
             ) -> dict[object, bytes]:
                 nonlocal restored
                 templates.rename(saved)
@@ -741,6 +743,7 @@ class BuildInputValidationTests(unittest.TestCase):
                         template_source,  # type: ignore[arg-type]
                         stylesheet,
                         lessons,  # type: ignore[arg-type]
+                        competencies,  # type: ignore[arg-type]
                     )
                 finally:
                     templates.rename(raced)

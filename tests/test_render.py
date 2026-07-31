@@ -1104,6 +1104,10 @@ class RendererTests(unittest.TestCase):
             '      <a href="${root}lessons/index.html">'
             "コアレッスン</a>\n"
         )
+        competencies_link = (
+            '      <a href="${root}competencies/index.html">'
+            "コンピテンシー</a>\n"
+        )
         catalog_link = (
             '      <a href="${root}catalog/index.html">'
             "全カタログ</a>\n"
@@ -1112,6 +1116,7 @@ class RendererTests(unittest.TestCase):
             nav_open
             + roadmap_link
             + lessons_link
+            + competencies_link
             + catalog_link
             + "    </nav>\n"
         )
@@ -1296,6 +1301,7 @@ class RendererTests(unittest.TestCase):
                     + brand
                     + roadmap_link
                     + lessons_link
+                    + competencies_link
                     + catalog_link
                     + "  </header>\n",
                     1,
@@ -1394,6 +1400,14 @@ class RendererTests(unittest.TestCase):
                         lessons_link.replace(
                             "コアレッスン",
                             "コアレッスン!",
+                            1,
+                        ),
+                    ),
+                    (
+                        competencies_link,
+                        competencies_link.replace(
+                            "コンピテンシー",
+                            "コンピテンシー!",
                             1,
                         ),
                     ),

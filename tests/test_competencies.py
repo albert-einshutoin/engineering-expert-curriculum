@@ -5,7 +5,6 @@ from html.parser import HTMLParser
 import json
 import os
 from pathlib import Path
-import stat
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
@@ -86,7 +85,7 @@ class _MatrixParser(HTMLParser):
             self.rows += 1
         elif (
             tag == "a"
-            and (values.get("href") or "").startswith("../lessons/")
+            and (values.get("href") or "").startswith("../lessons/core-")
         ):
             self.lesson_links.append(values["href"] or "")
 

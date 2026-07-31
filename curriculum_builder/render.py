@@ -59,7 +59,7 @@ _BASE_PLACEHOLDER_COUNTS = MappingProxyType(
     {
         "title": 1,
         "description": 1,
-        "root": 5,
+        "root": 6,
         "content": 1,
     }
 )
@@ -90,7 +90,12 @@ _BASE_CHILDREN = MappingProxyType(
         ),
         "body": ("a:skip", "header", "main", "footer"),
         "header": ("a:brand", "nav"),
-        "nav": ("a:roadmap", "a:lessons", "a:catalog"),
+        "nav": (
+            "a:roadmap",
+            "a:lessons",
+            "a:competencies",
+            "a:catalog",
+        ),
         "footer": ("p:footer",),
         "a": (),
         "main": (),
@@ -104,6 +109,7 @@ _BASE_LEAF_TEXT = MappingProxyType(
         "a:brand": "Engineering Atlas",
         "a:roadmap": "ロードマップ",
         "a:lessons": "コアレッスン",
+        "a:competencies": "コンピテンシー",
         "a:catalog": "全カタログ",
         "main": "$content",
         "p:footer": "Learn · Practice · Explain · Prove",
@@ -117,6 +123,7 @@ _REQUIRED_BASE_HREFS = MappingProxyType(
         "${root}index.html": 1,
         "${root}roadmap/index.html": 1,
         "${root}lessons/index.html": 1,
+        "${root}competencies/index.html": 1,
         "${root}catalog/index.html": 1,
     }
 )
@@ -797,6 +804,9 @@ class _BasePolicyParser(HTMLParser):
                 (
                     ("href", "${root}lessons/index.html"),
                 ): "a:lessons",
+                (
+                    ("href", "${root}competencies/index.html"),
+                ): "a:competencies",
                 (
                     ("href", "${root}catalog/index.html"),
                 ): "a:catalog",

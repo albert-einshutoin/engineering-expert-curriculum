@@ -27,6 +27,11 @@ from .catalog import (
     load_repository_catalog_bytes,
     strict_json_loads,
 )
+from .competencies import (
+    MAX_COMPETENCIES_BYTES,
+    CompetencyMatrix,
+    parse_competencies_bytes,
+)
 from .css_safety import (
     MAX_STYLESHEET_BYTES,
     validate_stylesheet_bytes,
@@ -73,6 +78,7 @@ _TEMPLATE_NAMES = (
     "base.html",
     "index.html",
     "catalog.html",
+    "competency-matrix.html",
     "roadmap.html",
     "lesson.html",
     "lessons-index.html",
@@ -82,6 +88,7 @@ _BASE_ARTIFACTS = frozenset(
         PurePosixPath("index.html"),
         PurePosixPath("styles.css"),
         PurePosixPath("catalog/index.html"),
+        PurePosixPath("competencies/index.html"),
         PurePosixPath("roadmap/index.html"),
         PurePosixPath("lessons/index.html"),
     }
@@ -543,6 +550,31 @@ def _load_catalog_from_root(
     if before != after:
         raise _validation("catalog.json changed during build")
     return items
+
+
+def _load_competencies_from_root(
+    content: _DirectoryHandle,
+    expected_target_ids: frozenset[str],
+) -> tuple[CompetencyMatrix, bytes]:
+    """Bind official mappings to one descriptor-pinned release snapshot."""
+    before = _read_stable_regular_file(
+        content,
+        "competencies.json",
+        MAX_COMPETENCIES_BYTES,
+    )
+    matrix = parse_competencies_bytes(
+        before,
+        expected_target_ids=expected_target_ids,
+        source_name="competencies.json",
+    )
+    after = _read_stable_regular_file(
+        content,
+        "competencies.json",
+        MAX_COMPETENCIES_BYTES,
+    )
+    if before != after:
+        raise _validation("competencies.json changed during build")
+    return matrix, before
 
 
 def _exact_fields(
@@ -1141,6 +1173,80 @@ def _roadmap_content(
     )
 
 
+def _competency_content(
+    renderer: Renderer,
+    matrix: CompetencyMatrix | None,
+    lessons: tuple[LoadedLesson, ...],
+) -> SafeHtml:
+    if matrix is None:
+        frameworks = validate_fragment(
+            '<ul class="competency-frameworks">'
+            '<li class="empty-state">release buildで公式版を検証します。</li>'
+            "</ul>"
+        )
+        rendered_rows = ""
+    else:
+        framework_order = ("CS2023", "SWEBOK", "SFIA")
+        frameworks = validate_fragment(
+            '<ul class="competency-frameworks">'
+            + "".join(
+                "<li><strong>"
+                f"{escape(framework, quote=False)}</strong>: "
+                f"{escape(matrix.framework_versions[framework], quote=False)}"
+                "</li>"
+                for framework in framework_order
+            )
+            + "</ul>"
+        )
+        lesson_titles = {
+            item.lesson.id: item.lesson.title
+            for item in lessons
+        }
+        rendered_rows: list[str] = []
+        for mapping in matrix.mappings:
+            title = lesson_titles.get(mapping.target_id)
+            if title is None:
+                raise _validation(
+                    "competency mapping target is missing from lesson snapshot"
+                )
+            rendered_rows.append(
+                "<tr>"
+                '<th scope="row"><a href="../lessons/'
+                f"{escape(mapping.target_id, quote=True)}/index.html\">"
+                f"{escape(title, quote=False)}</a></th>"
+                f"<td>{escape(mapping.framework, quote=False)}</td>"
+                "<td>"
+                f"{escape(matrix.framework_versions[mapping.framework], quote=False)}"
+                "</td>"
+                "<td><strong>"
+                f"{escape(mapping.competency_id, quote=False)}</strong> — "
+                f"{escape(mapping.competency_name, quote=False)}</td>"
+                f"<td>{escape(mapping.rationale, quote=False)}</td>"
+                "</tr>"
+            )
+        rendered_rows = "".join(rendered_rows)
+    table = validate_fragment(
+        '<table class="competency-matrix">'
+        "<caption>30のコアレッスンとCS2023、SWEBOK、SFIAの90対応</caption>"
+        "<thead><tr>"
+        '<th scope="col">レッスン</th>'
+        '<th scope="col">フレームワーク</th>'
+        '<th scope="col">版</th>'
+        '<th scope="col">公式識別子・名称</th>'
+        '<th scope="col">対応根拠</th>'
+        "</tr></thead><tbody>"
+        f"{rendered_rows}</tbody></table>"
+    )
+    return renderer.fragment(
+        "competency-matrix.html",
+        text_values={},
+        html_values={
+            "frameworks": frameworks,
+            "table": table,
+        },
+    )
+
+
 class _SiteDocumentParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -1345,6 +1451,7 @@ def _render_artifacts(
     template_sources: Mapping[str, bytes],
     stylesheet: bytes,
     lessons: tuple[LoadedLesson, ...],
+    competencies: CompetencyMatrix | None,
 ) -> dict[PurePosixPath, bytes]:
     renderer = Renderer.from_template_bytes(
         template_sources,
@@ -1374,6 +1481,18 @@ def _render_artifacts(
             title="全カタログ",
             description=f"{len(items):,}項目のエンジニアリング知識地図",
             content=catalog,
+        ),
+        PurePosixPath("competencies/index.html"): renderer.page(
+            output_path=Path("competencies/index.html"),
+            title="グローバル・コンピテンシー対応表",
+            description=(
+                "30のコアレッスンとCS2023、SWEBOK、SFIAの対応根拠"
+            ),
+            content=_competency_content(
+                renderer,
+                competencies,
+                lessons,
+            ),
         ),
         PurePosixPath("roadmap/index.html"): renderer.page(
             output_path=Path("roadmap/index.html"),
@@ -2454,10 +2573,16 @@ def build_site(
         )
         lesson_snapshot = load_lessons_from_root(content.descriptor)
         lessons = lesson_snapshot.lessons
+        competencies: CompetencyMatrix | None = None
+        competency_snapshot: bytes | None = None
         if require_complete_curriculum:
             validate_release_curriculum(
                 roadmap,
                 tuple(item.lesson for item in lessons),
+            )
+            competencies, competency_snapshot = _load_competencies_from_root(
+                content,
+                frozenset(item.lesson.id for item in lessons),
             )
         stylesheet = _read_stable_regular_file(
             static_files,
@@ -2479,6 +2604,7 @@ def build_site(
             before_templates,
             stylesheet,
             lessons,
+            competencies,
         )
         after_templates = {
             name: _read_stable_regular_file(
@@ -2498,6 +2624,16 @@ def build_site(
             raise _validation("styles.css changed during build")
         if lesson_snapshot != load_lessons_from_root(content.descriptor):
             raise _validation("lessons changed during build")
+        if (
+            competency_snapshot is not None
+            and competency_snapshot
+            != _read_stable_regular_file(
+                content,
+                "competencies.json",
+                MAX_COMPETENCIES_BYTES,
+            )
+        ):
+            raise _validation("competencies.json changed during build")
         for handle in (content, templates, static_files, output_parent):
             _verify_directory_identity(handle)
         _stage_and_publish(

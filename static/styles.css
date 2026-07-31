@@ -708,6 +708,37 @@ mark {
   inline-size: 100%;
 }
 
+.competency-matrix-page > section {
+  margin-block-start: var(--space-5);
+}
+
+.competency-frameworks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: var(--space-2);
+  padding: 0;
+  list-style: none;
+}
+
+.competency-frameworks > li {
+  padding: var(--space-2);
+  border: 0.0625rem solid var(--color-border);
+  border-inline-start: 0.35rem solid var(--color-accent);
+  background: var(--color-surface);
+}
+
+.competency-matrix {
+  min-inline-size: 64rem;
+}
+
+.competency-matrix th:first-child {
+  inline-size: 17rem;
+}
+
+.competency-matrix td:last-child {
+  min-inline-size: 26rem;
+}
+
 footer {
   margin-block-start: var(--space-5);
   padding-block: clamp(1.5rem, 1rem + 2vw, 3rem);
@@ -854,7 +885,8 @@ footer p {
   }
 
   .learning-stage-list,
-  .mastery-gate-list {
+  .mastery-gate-list,
+  .competency-frameworks {
     grid-template-columns: 1fr;
   }
 
@@ -916,6 +948,7 @@ footer p {
 
   table {
     display: table;
+    min-inline-size: 0;
     overflow: visible;
   }
 
