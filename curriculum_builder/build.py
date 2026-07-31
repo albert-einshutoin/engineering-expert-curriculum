@@ -750,6 +750,12 @@ def parse_roadmap_bytes(
     ordered = tuple(by_id[node_id] for stage in stages for node_id in stage)
     if len(ordered) != len(nodes):
         raise _validation("roadmap topological ordering is incomplete")
+    if require_complete and stages[0] != (
+        "core-01-systems-tradeoffs",
+    ):
+        raise _validation(
+            "release roadmap must have core-01 as its only root"
+        )
 
     if require_complete and tuple(
         sorted(
