@@ -5197,6 +5197,53 @@ class CoreTrackTests(unittest.TestCase):
             "migration-transfer-invariant",
         )
 
+    def test_migration_harness_rejects_missing_transfer_field(
+        self,
+    ) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-22-evolution-safe-migrations",
+            "migration_state_machine_lab_v1",
+            (
+                '    "dual_write_attempts": 200,\n'
+                '    "backfill_rows": 500,\n'
+                '    "backfill_errors": 20,'
+            ),
+            (
+                '    "dual_write_attempts": 200,\n'
+                '    "backfill_errors": 20,'
+            ),
+            "migration-transfer-invariant",
+        )
+
+    def test_migration_harness_rejects_invalid_transfer_schema(
+        self,
+    ) -> None:
+        cases = (
+            (
+                '"backfill_errors": 20,',
+                '"backfill_errors": "20",',
+            ),
+            (
+                (
+                    "TRANSFER_OBSERVATION = {\n"
+                    '    "old_reader_successes": 200,'
+                ),
+                (
+                    "TRANSFER_OBSERVATION = {\n"
+                    '    "old_reader_successes": 199,'
+                ),
+            ),
+        )
+        for original, replacement in cases:
+            with self.subTest(replacement=replacement):
+                self.assert_causal_harness_source_mutation_fails(
+                    "core-22-evolution-safe-migrations",
+                    "migration_state_machine_lab_v1",
+                    original,
+                    replacement,
+                    "migration-transfer-invariant",
+                )
+
     def test_migration_harness_rejects_plan_snapshot_drift(
         self,
     ) -> None:
@@ -5339,6 +5386,47 @@ class CoreTrackTests(unittest.TestCase):
             "incident-transfer-invariant",
         )
 
+    def test_incident_harness_rejects_missing_transfer_assumption(
+        self,
+    ) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-23-incident-response-learning",
+            "incident_learning_review_lab_v1",
+            (
+                "TRANSFER_ASSUMPTION = {\n"
+                '    "detection_minute": 18,\n'
+                "}"
+            ),
+            "TRANSFER_ASSUMPTION = {}",
+            "incident-transfer-invariant",
+        )
+
+    def test_incident_harness_rejects_invalid_transfer_schema(
+        self,
+    ) -> None:
+        cases = (
+            (
+                '"detection_minute": 18,',
+                '"detection_minute": "18",',
+            ),
+            (
+                '"detection_minute": 18,',
+                (
+                    '"detection_minute": 18,\n'
+                    '    "unreviewed_clock_skew": 1,'
+                ),
+            ),
+        )
+        for original, replacement in cases:
+            with self.subTest(replacement=replacement):
+                self.assert_causal_harness_source_mutation_fails(
+                    "core-23-incident-response-learning",
+                    "incident_learning_review_lab_v1",
+                    original,
+                    replacement,
+                    "incident-transfer-invariant",
+                )
+
     def test_delivery_harness_fails_closed_and_verifies_provenance(
         self,
     ) -> None:
@@ -5435,6 +5523,88 @@ class CoreTrackTests(unittest.TestCase):
             "delivery-transfer-invariant",
         )
 
+    def test_delivery_harness_rejects_unknown_top_level_transfer_field(
+        self,
+    ) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-24-delivery-ci-release-safety",
+            "delivery_safety_lab_v1",
+            (
+                "transferred_delivery_inputs = {\n"
+                '        "artifact_bytes": ARTIFACT_BYTES,\n'
+                '        "provenance": dict(PROVENANCE),\n'
+                '        "canary": dict(TRANSFER_CANARY),\n'
+                "    }"
+            ),
+            (
+                "transferred_delivery_inputs = {\n"
+                '        "artifact_bytes": ARTIFACT_BYTES,\n'
+                '        "provenance": dict(PROVENANCE),\n'
+                '        "canary": dict(TRANSFER_CANARY),\n'
+                '        "unreviewed_rollout_window": 30,\n'
+                "    }"
+            ),
+            "delivery-transfer-invariant",
+        )
+
+    def test_delivery_harness_rejects_invalid_transfer_schema(
+        self,
+    ) -> None:
+        cases = (
+            (
+                (
+                    "transferred_delivery_inputs = {\n"
+                    '        "artifact_bytes": ARTIFACT_BYTES,\n'
+                    '        "provenance": dict(PROVENANCE),'
+                ),
+                (
+                    "transferred_delivery_inputs = {\n"
+                    '        "provenance": dict(PROVENANCE),'
+                ),
+            ),
+            (
+                '"canary_error_rate": 0.05,',
+                '"canary_error_rate": "degraded",',
+            ),
+            (
+                (
+                    '        "provenance": dict(PROVENANCE),\n'
+                    '        "canary": dict(TRANSFER_CANARY),'
+                ),
+                (
+                    '        "provenance": {\n'
+                    '            **PROVENANCE,\n'
+                    '            "unreviewed_attestation": True,\n'
+                    "        },\n"
+                    '        "canary": dict(TRANSFER_CANARY),'
+                ),
+            ),
+            (
+                (
+                    "TRANSFER_CANARY = {\n"
+                    "    **BASELINE_CANARY,\n"
+                    '    "canary_error_rate": 0.05,\n'
+                    "}"
+                ),
+                (
+                    "TRANSFER_CANARY = {\n"
+                    "    **BASELINE_CANARY,\n"
+                    '    "canary_error_rate": 0.05,\n'
+                    '    "maximum_error_rate": 0.10,\n'
+                    "}"
+                ),
+            ),
+        )
+        for original, replacement in cases:
+            with self.subTest(replacement=replacement):
+                self.assert_causal_harness_source_mutation_fails(
+                    "core-24-delivery-ci-release-safety",
+                    "delivery_safety_lab_v1",
+                    original,
+                    replacement,
+                    "delivery-transfer-invariant",
+                )
+
     def test_economics_harness_compares_input_derived_investments(
         self,
     ) -> None:
@@ -5489,6 +5659,10 @@ class CoreTrackTests(unittest.TestCase):
             ["demand_growth"],
         )
         self.assertTrue(transfer["same_investment_candidates"])
+        self.assertEqual(
+            transfer["baseline_candidate_snapshot"],
+            transfer["transferred_candidate_snapshot"],
+        )
         self.assertNotEqual(
             transfer["baseline_selected_option"],
             transfer["transferred_selected_option"],
@@ -5524,3 +5698,102 @@ class CoreTrackTests(unittest.TestCase):
             ),
             "economics-transfer-invariant",
         )
+
+    def test_economics_harness_rejects_candidate_snapshot_drift(
+        self,
+    ) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-25-engineering-economics-capacity",
+            "engineering_economics_lab_v1",
+            (
+                "baseline = compare_all(\n"
+                "        baseline_candidates,\n"
+                "        BASELINE_ASSUMPTIONS,\n"
+                "    )"
+            ),
+            (
+                "baseline = compare_all(\n"
+                "        baseline_candidates,\n"
+                "        BASELINE_ASSUMPTIONS,\n"
+                "    )\n"
+                '    transferred_candidates[0]["direct_cost"] += 1'
+            ),
+            "economics-candidate-invariant",
+        )
+
+    def test_economics_harness_rejects_missing_transfer_assumption(
+        self,
+    ) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-25-engineering-economics-capacity",
+            "engineering_economics_lab_v1",
+            (
+                '    "demand_growth": 0.5,\n'
+                "}"
+            ),
+            (
+                '    "demand_growth": 0.5,\n'
+                "}\n"
+                'TRANSFER_ASSUMPTIONS.pop("operations_hour_cost")'
+            ),
+            "economics-transfer-invariant",
+        )
+
+    def test_economics_harness_rejects_invalid_transfer_schema(
+        self,
+    ) -> None:
+        cases = (
+            (
+                '"demand_growth": 0.5,',
+                '"demand_growth": "high",',
+            ),
+            (
+                '"demand_growth": 0.5,',
+                (
+                    '"demand_growth": 0.5,\n'
+                    '    "unreviewed_financing_rate": 0.1,'
+                ),
+            ),
+        )
+        for original, replacement in cases:
+            with self.subTest(replacement=replacement):
+                self.assert_causal_harness_source_mutation_fails(
+                    "core-25-engineering-economics-capacity",
+                    "engineering_economics_lab_v1",
+                    original,
+                    replacement,
+                    "economics-transfer-invariant",
+                )
+
+    def test_economics_harness_rejects_invalid_candidate_schema(
+        self,
+    ) -> None:
+        cases = (
+            (
+                '        "direct_cost": 12000,',
+                (
+                    '        "direct_cost": 12000,\n'
+                    '        "unreviewed_vendor_score": 5,'
+                ),
+            ),
+            (
+                (
+                    '        "id": "scale-up",\n'
+                    '        "direct_cost": 12000,'
+                ),
+                '        "id": "scale-up",',
+            ),
+            (
+                '        "direct_cost": 12000,',
+                '        "direct_cost": "12000",',
+            ),
+        )
+        for original, replacement in cases:
+            with self.subTest(replacement=replacement):
+                self.assert_causal_harness_source_mutation_fails(
+                    "core-25-engineering-economics-capacity",
+                    "engineering_economics_lab_v1",
+                    original,
+                    replacement,
+                    "economics-candidate-invariant",
+                )
