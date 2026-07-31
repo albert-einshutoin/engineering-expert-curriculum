@@ -139,6 +139,46 @@ def observe_rollback(fixture):
     }
 
 def main():
+    baseline_delivery_inputs = {
+        "artifact_bytes": ARTIFACT_BYTES,
+        "provenance": dict(PROVENANCE),
+        "canary": dict(BASELINE_CANARY),
+    }
+    transferred_delivery_inputs = {
+        "artifact_bytes": ARTIFACT_BYTES,
+        "provenance": dict(PROVENANCE),
+        "canary": dict(TRANSFER_CANARY),
+    }
+    baseline_artifact_digest = hashlib.sha256(
+        baseline_delivery_inputs["artifact_bytes"].encode("utf-8")
+    ).hexdigest()
+    transferred_artifact_digest = hashlib.sha256(
+        transferred_delivery_inputs["artifact_bytes"].encode("utf-8")
+    ).hexdigest()
+    changed_fields = []
+    if (
+        baseline_delivery_inputs["artifact_bytes"]
+        != transferred_delivery_inputs["artifact_bytes"]
+    ):
+        changed_fields.append("artifact_bytes")
+    if (
+        baseline_delivery_inputs["provenance"]
+        != transferred_delivery_inputs["provenance"]
+    ):
+        changed_fields.append("provenance")
+    changed_fields.extend(
+        field
+        for field in sorted(BASELINE_CANARY)
+        if (
+            baseline_delivery_inputs["canary"][field]
+            != transferred_delivery_inputs["canary"][field]
+        )
+    )
+    if changed_fields != ["canary_error_rate"]:
+        raise AssertionError(
+            "delivery-transfer-invariant: transfer changed wrong input"
+        )
+
     ci = verify_ci(REQUIRED_CHECKS, CI_CHECKS)
     provenance_verified = verify_provenance(PROVENANCE, artifact_digest)
     assert (
@@ -196,13 +236,33 @@ def main():
         "dora_five_metrics": list(DORA_METRICS),
         "canary_error_rate_transfer": {
             "changed_assumption": "canary-error-rate",
-            "changed_fields": ["canary_error_rate"],
-            "same_artifact": artifact_digest == artifact_digest,
-            "same_provenance": PROVENANCE == PROVENANCE,
+            "changed_fields": changed_fields,
+            "same_artifact": (
+                baseline_artifact_digest
+                == transferred_artifact_digest
+            ),
+            "same_provenance": (
+                baseline_delivery_inputs["provenance"]
+                == transferred_delivery_inputs["provenance"]
+            ),
+            "baseline_artifact_digest": baseline_artifact_digest,
+            "transferred_artifact_digest": (
+                transferred_artifact_digest
+            ),
+            "baseline_provenance": (
+                baseline_delivery_inputs["provenance"]
+            ),
+            "transferred_provenance": (
+                transferred_delivery_inputs["provenance"]
+            ),
             "baseline_decision": baseline_decision,
             "transferred_decision": transferred_decision,
-            "baseline_observation": dict(BASELINE_CANARY),
-            "transferred_observation": dict(TRANSFER_CANARY),
+            "baseline_observation": (
+                baseline_delivery_inputs["canary"]
+            ),
+            "transferred_observation": (
+                transferred_delivery_inputs["canary"]
+            ),
         },
         "fixture_metadata": {
             "kind": "simulated",
