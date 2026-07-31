@@ -1313,7 +1313,7 @@ git commit -m "content: teach safe software evolution and operations"
 - Create: `content/lessons/core-30-evidence-based-technical-leadership/{lesson.json,body.html}`
 - Modify: `tests/test_core_tracks.py`
 
-- [ ] **Step 1: Add the exact Lead and Contribute contract**
+- [x] **Step 1: Add the exact Lead and Contribute contract**
 
 ```python
 LEAD = {
@@ -1358,7 +1358,7 @@ def test_lead(self) -> None:
     self.assert_track(LEAD)
 ```
 
-- [ ] **Step 2: Run the Lead test and verify RED**
+- [x] **Step 2: Run the Lead test and verify RED**
 
 Run:
 
@@ -1368,7 +1368,7 @@ python3.13 -m unittest tests.test_core_tracks.CoreTrackTests.test_lead -v
 
 Expected: five missing lessons.
 
-- [ ] **Step 3: Author the five leadership lessons**
+- [x] **Step 3: Author the five leadership lessons**
 
 Each lab must involve reviewing or enabling another contributor, not only
 producing an individual artifact. The OSS lesson uses this repository as the
@@ -1377,7 +1377,7 @@ decision that can be reviewed without a meeting. The final leadership lesson
 requires explicit metrics, dissent, uncertainty, ethics, cost, and a reversible
 first step.
 
-- [ ] **Step 4: Run Lead and Contribute gates**
+- [x] **Step 4: Run Lead and Contribute gates**
 
 Run:
 
@@ -1390,12 +1390,63 @@ python3.13 -m unittest \
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit the Lead and Contribute track**
+- [x] **Step 5: Commit the Lead and Contribute track**
 
 ```bash
 git add content/lessons/core-{26,27,28,29,30}-* tests/test_core_tracks.py
 git commit -m "content: develop collaborative technical leadership"
 ```
+
+#### Task 8 verification evidence
+
+- Tests-only RED commit `8a44715` fixed the Lead contract before the lessons
+  existed. The five canonical lessons were then authored in commits `e69cc4b`,
+  `8faf58a`, `65c5079`, `1c9f839`, and `698465c`; `bf11c2c` keeps the Lead
+  fixtures isolated from the preceding Sustain track.
+- Independent quality review of that first complete implementation reported
+  zero Critical, five Important, and one Minor finding. Tests-only RED commit
+  `c1f06ba` reproduces all five false-green boundaries: simulated rather than
+  observed review outcomes, partial team-interface transfer, a non-causal
+  async window, conflated required and observed release evidence, and a
+  leadership selection detached from its ranking. Before the fixes, the six
+  focused methods fail with five errors and three subtest failures.
+- GREEN commits `83d8dde`, `e8e666d`, `381a56e`, `4764b81`, and `0889a3b`
+  make both review cycles apply and verify actual patches, recompute the team
+  interface and contributor enablement together, distinguish required
+  approval from observed verified evidence, derive overlap and response
+  windows from participant availability, and derive strategy ranking and
+  selection from the same context. Commit `3ecaa0d` pins the Task 8 commands
+  to Python 3.13.
+- At fixed implementation commit
+  `e8e666d843a1268f7c84104ff47e7a5e5c1e9c17`, the six review-regression
+  methods pass. The specified lesson quality, Lead contract, and rendering
+  gate passes all 68 tests; all 142 core-track tests pass; and the complete
+  repository suite passes all 474 tests.
+- Two consecutive clean builds each contain 35 regular artifacts, 34 HTML
+  files, one CSS file, zero JavaScript files, 30 lesson pages, and 1,140,849
+  bytes. The canonical aggregate algorithm encodes each sorted relative POSIX
+  path, byte length, and payload; both builds produce
+  `1ddb29d7f40ef9bfb84395ca1c9dabf9d7e96debdea3ec2a8a987b1abca753d2`.
+- Chrome 150 Letter-PDF evidence covers the two longest final Lead bodies:
+  core-26 renders as 24 pages and core-28 as 23 pages, both at 612 by 792
+  points, tagged, and without PDF JavaScript. PDFKit text extraction retains
+  the actual-outcome, independent-reevaluation, transfer, observed-approval,
+  and provenance boundaries through the late harness suffixes.
+- The same quality reviewer rechecked every original finding against the fixed
+  HEAD and concluded Critical 0 / Important 0 / Minor 0. A separate security
+  delta review of `bf11c2c..e8e666d` also concluded Critical 0 / Important 0 /
+  Minor 0 after 230 related tests, an isolated build, static HTML inspection,
+  and a seven-commit gitleaks scan.
+- Security verification reports zero authored-body script or style elements,
+  unsafe attributes, unsafe URL schemes, external authored URLs, or per-page
+  duplicate IDs. All 34 generated HTML pages carry CSP and contain no script
+  element. Gitleaks also scanned the complete 14-commit Task 8 implementation
+  range and found no leaks.
+- The catalog remains exactly 1,140 unique items with SHA-256
+  `4f38b5f63931a7f06e13f90f5d9ef90a0a435f30dae5d4fe70720d730a057473`.
+  The preserved non-public prototype archive remains independently
+  verifiable: 1,194 files, 16,805,630 bytes, and zero missing, extra,
+  hash-mismatched, unsafe-path, symbolic-link, or special-node entries.
 
 ### Task 9: Replace the stage placeholder with the 30-lesson roadmap
 
