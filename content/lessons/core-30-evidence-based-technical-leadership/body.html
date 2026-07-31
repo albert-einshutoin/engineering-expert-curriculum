@@ -246,33 +246,106 @@ def validate_all_inputs():
     validate_investment_order(OPTIONS)
 
 def select_strategy(options, context):
+    ranked = rank_strategies(options, context)
+    eligible_ids = [
+        item["option_id"]
+        for item in ranked
+        if item["eligible"]
+    ]
     eligible = [
         option
         for option in options
-        if (
-            option["cost"] &lt;= context["budget_cap"]
-            and option["risk_score"] &lt;= context["risk_tolerance"]
-        )
+        if option["option_id"] in eligible_ids
     ]
     if not eligible:
         raise AssertionError(
             "leadership-decision-invariant: no eligible strategy"
         )
-    return min(
-        eligible,
+    selected_id = eligible_ids[0]
+    return next(
+        option
+        for option in eligible
+        if option["option_id"] == selected_id
+    )
+
+def rank_strategies(options, context):
+    ranked = sorted(
+        options,
         key=lambda option: (
+            not (
+                option["cost"] &lt;= context["budget_cap"]
+                and option["risk_score"]
+                &lt;= context["risk_tolerance"]
+            ),
             option["lead_time_days"],
             option["cost"],
+            INVESTMENT_ORDER.index(option["option_id"]),
         ),
     )
+    return [
+        {
+            "rank": rank,
+            "option_id": option["option_id"],
+            "cost": option["cost"],
+            "risk_score": option["risk_score"],
+            "eligible": (
+                option["cost"] &lt;= context["budget_cap"]
+                and option["risk_score"]
+                &lt;= context["risk_tolerance"]
+            ),
+            "score_inputs": {
+                "budget_cap": context["budget_cap"],
+                "risk_tolerance": context["risk_tolerance"],
+                "lead_time_days": option["lead_time_days"],
+            },
+        }
+        for rank, option in enumerate(ranked, start=1)
+    ]
 
 def evaluate_withdrawal_conditions(selected):
     return selected["withdrawal_triggered"]
 
 def evaluate_strategy(options, context):
+    investment_order = rank_strategies(options, context)
+    valid_order = (
+        type(investment_order) is list
+        and len(investment_order) == len(options)
+        and all(
+            type(item) is dict
+            and set(item)
+            == {
+                "rank",
+                "option_id",
+                "cost",
+                "risk_score",
+                "eligible",
+                "score_inputs",
+            }
+            and type(item["rank"]) is int
+            and item["rank"] &gt; 0
+            and type(item["option_id"]) is str
+            and type(item["eligible"]) is bool
+            and type(item["score_inputs"]) is dict
+            and bool(item["score_inputs"])
+            for item in investment_order
+        )
+        and [item["rank"] for item in investment_order]
+        == list(range(1, len(investment_order) + 1))
+        and len({item["option_id"] for item in investment_order})
+        == len(investment_order)
+    )
+    if not valid_order:
+        raise AssertionError(
+            "leadership-order-invariant: ranking derivation bypassed"
+        )
     selected = select_strategy(options, context)
     independently_selected = select_strategy(options, context)
-    if selected["option_id"] != independently_selected["option_id"]:
+    if (
+        selected["option_id"] != independently_selected["option_id"]
+        or investment_order[0]["option_id"]
+        != selected["option_id"]
+        or not investment_order[0]["eligible"]
+    ):
         raise AssertionError(
             "leadership-decision-invariant: selection derivation bypassed"
         )
@@ -285,6 +358,7 @@ def evaluate_strategy(options, context):
     return {
         "selected": selected,
         "withdrawal_ready": withdrawal_ready,
+        "investment_order": investment_order,
     }
 
 def main():
@@ -325,19 +399,6 @@ def main():
         raise AssertionError(
             "leadership-decision-invariant: unexpected strategy selection"
         )
-    by_id = {
-        option["option_id"]: option
-        for option in options
-    }
-    investment_order = [
-        {
-            "rank": rank,
-            "option_id": option_id,
-            "cost": by_id[option_id]["cost"],
-            "risk_score": by_id[option_id]["risk_score"],
-        }
-        for rank, option_id in enumerate(INVESTMENT_ORDER, start=1)
-    ]
     selected = baseline["selected"]
 
     report = {
@@ -356,7 +417,7 @@ def main():
             "withdrawal_ready": baseline["withdrawal_ready"],
             "reversible_first_step": selected["reversible_first_step"],
             "selected_option": selected["option_id"],
-            "investment_order": investment_order,
+            "investment_order": baseline["investment_order"],
         },
         "contributor_enablement": {
             "other_contributor": "strategy-reviewer",
@@ -382,6 +443,12 @@ def main():
             ),
             "transferred_selected_option": (
                 transferred["selected"]["option_id"]
+            ),
+            "baseline_investment_order": (
+                baseline["investment_order"]
+            ),
+            "transferred_investment_order": (
+                transferred["investment_order"]
             ),
             "baseline_context": baseline_context,
             "transferred_context": transferred_context,
@@ -435,7 +502,10 @@ def main():
         "mastery_evidence": {
             "lab_steps": [
                 {"step": 1, "evidence": baseline_context},
-                {"step": 2, "evidence": investment_order},
+                {
+                    "step": 2,
+                    "evidence": baseline["investment_order"],
+                },
                 {
                     "step": 3,
                     "evidence": {
