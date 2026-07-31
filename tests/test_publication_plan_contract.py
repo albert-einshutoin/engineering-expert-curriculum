@@ -749,11 +749,11 @@ gh pr view "$PUBLIC_PR_URL" --repo "wrong/project" # --repo "$PUBLIC_REPOSITORY_
 
     def test_public_https_evidence_rejects_unsafe_files_and_sensitive_fixture(self) -> None:
         valid = ("\n".join(_VALID_EVIDENCE_LINES) + "\n").encode("utf-8")
-        secret_fixture = b"SENSITIVE-DIAGNOSTIC-MARKER:" + (b"x" * 64)
+        sensitive_marker = b"SENSITIVE-DIAGNOSTIC-MARKER:" + (b"x" * 64)
         sensitive_fixture = (
             valid
             + b"notes: $USER_HOME/.ssh/id_ed25519 "
-            + secret_fixture
+            + sensitive_marker
             + b"\n"
         )
         unsafe_contents = {
@@ -773,7 +773,7 @@ gh pr view "$PUBLIC_PR_URL" --repo "wrong/project" # --repo "$PUBLIC_REPOSITORY_
                     rejected = _run_evidence_validator(evidence)
                     self.assertNotEqual(rejected.returncode, 0)
                     self.assertNotIn(
-                        secret_fixture.decode("ascii"),
+                        sensitive_marker.decode("ascii"),
                         rejected.stdout + rejected.stderr,
                     )
 
