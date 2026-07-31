@@ -36,6 +36,56 @@
     <dt>結論</dt>
     <dd>視覚表現は情報そのものではなくdataのviewである。同等textを同じ変換から生成し、欠落mutationを失敗させることでdriftを検出できる。</dd>
   </dl>
+  <figure class="quantitative-chart-artifact">
+    <figcaption>同じ0–100%尺度で比較する学習活動の時間</figcaption>
+    <div class="chart-scale" aria-hidden="true">
+      <span>0%</span>
+      <span>100%</span>
+    </div>
+    <section class="chart-display chart-display--color" aria-labelledby="color-chart-title">
+      <h4 id="color-chart-title">color表示</h4>
+      <ol class="chart-bars">
+        <li><strong>学習: 12 hours (60%)</strong><span class="chart-bar chart-bar--60">60%</span></li>
+        <li><strong>実践: 20 hours (100%)</strong><span class="chart-bar chart-bar--100">100%</span></li>
+        <li><strong>復習: 8 hours (40%)</strong><span class="chart-bar chart-bar--40">40%</span></li>
+      </ol>
+    </section>
+    <section class="chart-display chart-display--monochrome" aria-labelledby="monochrome-chart-title">
+      <h4 id="monochrome-chart-title">monochrome表示</h4>
+      <ol class="chart-bars">
+        <li><strong>学習: 12 hours (60%)</strong><span class="chart-bar chart-bar--60">60%</span></li>
+        <li><strong>実践: 20 hours (100%)</strong><span class="chart-bar chart-bar--100">100%</span></li>
+        <li><strong>復習: 8 hours (40%)</strong><span class="chart-bar chart-bar--40">40%</span></li>
+      </ol>
+    </section>
+    <table>
+      <caption>barと同じfixtureから導出した活動別時間</caption>
+      <thead>
+        <tr>
+          <th scope="col">活動</th>
+          <th scope="col">ID</th>
+          <th scope="col">時間</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th scope="row">学習</th>
+          <td>learn</td>
+          <td>12 hours</td>
+        </tr>
+        <tr>
+          <th scope="row">実践</th>
+          <td>practice</td>
+          <td>20 hours</td>
+        </tr>
+        <tr>
+          <th scope="row">復習</th>
+          <td>review</td>
+          <td>8 hours</td>
+        </tr>
+      </tbody>
+    </table>
+  </figure>
   <pre><code>python3.13 - &lt;&lt;'PY'
 from html import escape
 from html.parser import HTMLParser
@@ -66,6 +116,8 @@ ROADMAP_CSS = (
 )
 CHART_CSS = (
     ".quantitative-chart { border: 1px solid currentColor; padding: 1rem; } "
+    ".chart-bars { list-style: none; padding: 0; } "
+    ".chart-bar { inline-size: 100%; accent-color: #245d63; } "
     ".quantitative-chart table { border-collapse: collapse; width: 100%; } "
     ".quantitative-chart th, .quantitative-chart td { "
     "border: 1px solid currentColor; padding: 0.25rem; }"
@@ -81,6 +133,7 @@ class ArtifactParser(HTMLParser):
         self.figure_caption_count = 0
         self.table_caption_count = 0
         self.table_rows = []
+        self.meter_values = []
         self.unsafe = []
         self.in_tbody = False
         self.current_row = None
@@ -108,6 +161,16 @@ class ArtifactParser(HTMLParser):
             self.figure_caption_count += 1
         if normalized_tag == "caption":
             self.table_caption_count += 1
+        if normalized_tag == "meter":
+            self.meter_values.append(
+                {
+                    "id": values.get("data-id", ""),
+                    "min": int(values.get("min", "0")),
+                    "max": int(values.get("max", "0")),
+                    "value": int(values.get("value", "0")),
+                    "raw_value": int(values.get("data-raw-value", "0")),
+                }
+            )
         if normalized_tag == "tbody":
             self.in_tbody = True
         if normalized_tag == "tr" and self.in_tbody:
@@ -191,7 +254,31 @@ def render_roadmap_html(nodes, edges):
         "&lt;/figure&gt;"
     )
 
+def render_meter_rows(chart_data, scale_max):
+    # All marks share one maximum so bar length preserves quantitative ratios;
+    # visible labels keep the raw value available without relying on color.
+    raw_max = max(point["value"] for point in chart_data)
+    return "".join(
+        (
+            "&lt;li&gt;"
+            f'&lt;span&gt;{escape(point["label"])}: '
+            f'{point["value"]} hours '
+            f'({round(point["value"] / raw_max * scale_max)}%)'
+            "&lt;/span&gt;"
+            f'&lt;meter class="chart-bar" data-id="{escape(point["id"])}" '
+            f'data-raw-value="{point["value"]}" min="0" '
+            f'max="{scale_max}" '
+            f'value="{round(point["value"] / raw_max * scale_max)}"&gt;'
+            f'{round(point["value"] / raw_max * scale_max)}%'
+            "&lt;/meter&gt;"
+            "&lt;/li&gt;"
+        )
+        for point in chart_data
+    )
+
 def render_chart_html(chart_data):
+    scale_max = 100
+    meter_rows = render_meter_rows(chart_data, scale_max)
     rows = "".join(
         (
             "&lt;tr&gt;"
@@ -205,6 +292,7 @@ def render_chart_html(chart_data):
     return (
         '&lt;figure class="quantitative-chart"&gt;'
         "&lt;figcaption&gt;学習活動の時間比較&lt;/figcaption&gt;"
+        f'&lt;ol class="chart-bars"&gt;{meter_rows}&lt;/ol&gt;'
         "&lt;table&gt;"
         "&lt;caption&gt;活動別時間の quantitative chart&lt;/caption&gt;"
         "&lt;thead&gt;&lt;tr&gt;"
@@ -250,7 +338,18 @@ def validate_chart_artifact(html, expected_rows):
         "th",
         "td",
     }
-    valid = (
+    raw_max = max(row["value"] for row in expected_rows)
+    expected_meters = [
+        {
+            "id": row["id"],
+            "min": 0,
+            "max": 100,
+            "value": round(row["value"] / raw_max * 100),
+            "raw_value": row["value"],
+        }
+        for row in expected_rows
+    ]
+    semantic_valid = (
         required_tags.issubset(parser.tags)
         and parser.figure_caption_count == 1
         and parser.table_caption_count == 1
@@ -262,9 +361,16 @@ def validate_chart_artifact(html, expected_rows):
         and parser.table_rows == expected_rows
         and not parser.unsafe
     )
+    scale_valid = (
+        "meter" in parser.tags
+        and parser.meter_values == expected_meters
+    )
     return {
-        "valid": valid,
+        "valid": semantic_valid and scale_valid,
+        "semantic_valid": semantic_valid,
+        "scale_valid": scale_valid,
         "table_rows": parser.table_rows,
+        "meter_values": parser.meter_values,
         "header_scopes": parser.table_header_scopes,
         "unsafe": parser.unsafe,
     }
@@ -303,13 +409,18 @@ def render_display_artifact(
         mode_css += (
             ".display-monochrome .roadmap, "
             ".display-monochrome .quantitative-chart { "
-            "border-style: double; }"
+            "border-style: double; } "
+            ".display-monochrome .chart-bar { "
+            "accent-color: CanvasText; border-style: double; "
+            "background-image: repeating-linear-gradient("
+            "135deg, CanvasText 0 2px, Canvas 2px 4px); }"
         )
     else:
         mode_css += (
             ".display-color .roadmap, "
             ".display-color .quantitative-chart { "
-            "border-style: solid; }"
+            "border-style: solid; } "
+            ".display-color .chart-bar { accent-color: #245d63; }"
         )
     parser = ArtifactParser()
     parser.feed(html)
@@ -382,9 +493,13 @@ def derive_chart(chart_data):
         chart_html,
         expected_rows,
     )
-    assert artifact_validation["valid"], "graphics-artifact-invariant"
+    assert (
+        artifact_validation["semantic_valid"]
+    ), "graphics-artifact-invariant"
+    assert artifact_validation["scale_valid"], "graphics-scale-invariant"
     maximum = max(chart_data, key=lambda point: point["value"])
     minimum = min(chart_data, key=lambda point: point["value"])
+    raw_max = maximum["value"]
     return {
         "data": [dict(point) for point in chart_data],
         "semantic_html": {
@@ -406,6 +521,15 @@ def derive_chart(chart_data):
             "quantitative": "position-on-common-scale",
             "color_only": False,
             "unit": "hours",
+        },
+        "visual_encoding": {
+            "mark": "meter-bar",
+            "scale": "normalized-common-zero-to-100",
+            "scale_min": 0,
+            "scale_max": 100,
+            "raw_max": raw_max,
+            "visible_value_labels": True,
+            "non_color_cue": "length-pattern-border-and-text",
         },
         "artifact": {
             "html": chart_html,

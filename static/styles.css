@@ -287,6 +287,77 @@ figcaption {
   font-size: 0.9rem;
 }
 
+.quantitative-chart-artifact {
+  display: grid;
+  gap: var(--space-3);
+  max-inline-size: var(--measure-reading);
+}
+
+.chart-scale {
+  display: flex;
+  justify-content: space-between;
+  border-block-end: 0.125rem solid var(--color-border);
+  color: var(--color-muted);
+  font-family: var(--font-interface);
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-display {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.chart-bars {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chart-bars > li {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.chart-bar {
+  display: block;
+  box-sizing: border-box;
+  min-block-size: 1.75rem;
+  padding: 0.2rem var(--space-1);
+  border: 0.125rem solid currentColor;
+  font-family: var(--font-interface);
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.chart-bar--40 {
+  inline-size: 40%;
+}
+
+.chart-bar--60 {
+  inline-size: 60%;
+}
+
+.chart-bar--100 {
+  inline-size: 100%;
+}
+
+.chart-display--color .chart-bar {
+  background: #245d63;
+  color: #ffffff;
+}
+
+.chart-display--monochrome .chart-bar {
+  border-style: double;
+  background-image: repeating-linear-gradient(
+    135deg,
+    CanvasText 0 0.125rem,
+    Canvas 0.125rem 0.25rem
+  );
+  color: CanvasText;
+}
+
 details {
   padding: var(--space-2);
   border-block: 0.0625rem solid var(--color-border);
@@ -779,6 +850,16 @@ footer p {
   .hero > p:last-child,
   figcaption {
     color: var(--color-print-muted);
+  }
+
+  .chart-display--color .chart-bar {
+    border: 2px solid currentColor;
+    background: transparent;
+    color: var(--color-print-ink);
+  }
+
+  .chart-display--monochrome .chart-bar {
+    background: transparent;
   }
 
   .learning-stage:not(:last-child)::after {
