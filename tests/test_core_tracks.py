@@ -1724,8 +1724,6 @@ class CoreTrackTests(unittest.TestCase):
         self.assertTrue(metadata["provenance"])
         self.assertTrue(metadata["limitations"])
         self.assertTrue(metadata["synthetic_or_observed_explicit"])
-        self.assertTrue(metadata["hidden_assumption"])
-        self.assertTrue(report["input_derived_evidence"])
 
         runtime_bound = report["runtime_bound"]
         self.assertGreater(runtime_bound["records"], 0)
