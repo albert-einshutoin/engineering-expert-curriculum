@@ -345,11 +345,12 @@ class CapstoneContractTests(unittest.TestCase):
     def test_primary_exercises_are_unique_and_lesson_specific(self) -> None:
         generic = "固定入力を反復測定し、観測結果から設計判断を更新して妥当性を検証する"
         documents = _decoded()
-        for document in documents.values():
-            primary = document["primaryExercises"]
-            assert isinstance(primary, dict)
-            for lesson_id in primary:
-                primary[lesson_id] = generic
+        primary = documents["global-service.json"]["primaryExercises"]
+        assert isinstance(primary, dict)
+        first, second = tuple(primary)[:2]
+        primary[first] = generic.replace("固定入力", "固定入力 ", 1)
+        primary[second] = generic.replace("固定入力", "固定入力　", 1)
+        self.assertNotEqual(primary[first], primary[second])
         with self.assertRaisesRegex(
             CurriculumValidationError,
             "primary exercises must be unique",
