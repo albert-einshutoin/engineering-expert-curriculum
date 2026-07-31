@@ -4012,6 +4012,53 @@ class CoreTrackTests(unittest.TestCase):
             "communication-causal-invariant",
         )
 
+    def test_communication_harness_derives_audience_specific_views(
+        self,
+    ) -> None:
+        report = self.run_python_harness(
+            "core-19-technical-communication-design-docs",
+            "technical_communication_lab_v1",
+        )
+
+        summary = report["one_page_executive_summary"]
+        appendix = report["technical_appendix"]
+        transfer = report["audience_transfer"]
+        baseline_view = transfer["baseline_view"]
+        transferred_view = transfer["transferred_view"]
+        self.assertEqual(baseline_view["audience"], "executive")
+        self.assertEqual(transferred_view["audience"], "implementer")
+        self.assertEqual(summary["audience_view"], baseline_view)
+        self.assertEqual(appendix["audience_view"], transferred_view)
+        self.assertEqual(
+            baseline_view["decision_evidence"],
+            transferred_view["decision_evidence"],
+        )
+        self.assertEqual(
+            baseline_view["decision"],
+            transferred_view["decision"],
+        )
+        self.assertNotEqual(
+            baseline_view["sections"],
+            transferred_view["sections"],
+        )
+        self.assertTrue(transfer["decision_evidence_unchanged"])
+        self.assertTrue(transfer["audience_specific_content_differs"])
+
+    def test_communication_harness_rejects_audience_bypass(self) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-19-technical-communication-design-docs",
+            "technical_communication_lab_v1",
+            (
+                'transferred_view = build_audience_view('
+                '"implementer", decision)'
+            ),
+            (
+                'transferred_view = build_audience_view('
+                '"executive", decision)'
+            ),
+            "communication-audience-invariant",
+        )
+
     def test_ethics_harness_derives_uneven_harm_and_residual_risk(
         self,
     ) -> None:
