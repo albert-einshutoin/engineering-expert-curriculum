@@ -5076,6 +5076,17 @@ class CoreTrackTests(unittest.TestCase):
             "maintenance-comprehension-invariant",
         )
 
+    def test_legacy_harness_rejects_characterization_behavior_drift(
+        self,
+    ) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-21-maintenance-legacy-comprehension",
+            "legacy_comprehension_lab_v1",
+            "return discounted + rounded_tax",
+            "return discounted + rounded_tax + 1",
+            "maintenance-comprehension-invariant",
+        )
+
     def test_migration_harness_models_expand_contract_state_machine(
         self,
     ) -> None:
@@ -5156,10 +5167,22 @@ class CoreTrackTests(unittest.TestCase):
         self.assertEqual(transfer["changed_assumption"], "detection-delay")
         self.assertEqual(transfer["changed_fields"], ["detection_minute"])
         self.assertTrue(transfer["same_incident_evidence"])
+        self.assertEqual(
+            transfer["baseline_incident_evidence"],
+            transfer["transferred_incident_evidence"],
+        )
+        self.assertGreater(
+            transfer["transferred_detection_minute"],
+            transfer["baseline_detection_minute"],
+        )
         self.assertGreater(
             transfer["transferred_impact_minutes"],
             transfer["baseline_impact_minutes"],
         )
+        for action in report["verifiable_actions"]:
+            verification = action["verification_result"]
+            self.assertTrue(verification["observed"])
+            self.assertTrue(verification["system_outcome"])
 
     def test_incident_harness_rejects_impact_derivation_bypass(
         self,
@@ -5167,9 +5190,37 @@ class CoreTrackTests(unittest.TestCase):
         self.assert_causal_harness_source_mutation_fails(
             "core-23-incident-response-learning",
             "incident_learning_review_lab_v1",
-            "impact_minutes = recovery_minute - detection_minute",
+            (
+                "impact_minutes = "
+                "detection_minute - incident_start_minute"
+            ),
             "impact_minutes = recovery_minute",
             "incident-causal-invariant",
+        )
+
+    def test_incident_harness_rejects_transfer_evidence_drift(
+        self,
+    ) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-23-incident-response-learning",
+            "incident_learning_review_lab_v1",
+            "transferred_evidence = fixed_incident_evidence()",
+            (
+                "transferred_evidence = fixed_incident_evidence()\n"
+                '    transferred_evidence["timeline"] = []'
+            ),
+            "incident-transfer-invariant",
+        )
+
+    def test_incident_harness_rejects_unobserved_action_outcome(
+        self,
+    ) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-23-incident-response-learning",
+            "incident_learning_review_lab_v1",
+            '"observed": True,',
+            '"observed": False,',
+            "incident-action-outcome-invariant",
         )
 
     def test_delivery_harness_fails_closed_and_verifies_provenance(
@@ -5212,6 +5263,14 @@ class CoreTrackTests(unittest.TestCase):
         self.assertEqual(transfer["changed_fields"], ["canary_error_rate"])
         self.assertTrue(transfer["same_artifact"])
         self.assertTrue(transfer["same_provenance"])
+        self.assertEqual(
+            transfer["baseline_artifact_digest"],
+            transfer["transferred_artifact_digest"],
+        )
+        self.assertEqual(
+            transfer["baseline_provenance"],
+            transfer["transferred_provenance"],
+        )
         self.assertEqual(transfer["baseline_decision"], "advance")
         self.assertEqual(transfer["transferred_decision"], "rollback")
 
@@ -5227,6 +5286,23 @@ class CoreTrackTests(unittest.TestCase):
             ),
             "provenance_verified = bool(PROVENANCE)",
             "delivery-provenance-invariant",
+        )
+
+    def test_delivery_harness_rejects_transfer_artifact_drift(
+        self,
+    ) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-24-delivery-ci-release-safety",
+            "delivery_safety_lab_v1",
+            (
+                "transferred_delivery_inputs = {\n"
+                '        "artifact_bytes": ARTIFACT_BYTES,'
+            ),
+            (
+                "transferred_delivery_inputs = {\n"
+                '        "artifact_bytes": ARTIFACT_BYTES + "-drift",'
+            ),
+            "delivery-transfer-invariant",
         )
 
     def test_economics_harness_compares_input_derived_investments(
@@ -5271,6 +5347,17 @@ class CoreTrackTests(unittest.TestCase):
         transfer = report["demand_growth_transfer"]
         self.assertEqual(transfer["changed_assumption"], "demand-growth")
         self.assertEqual(transfer["changed_fields"], ["demand_growth"])
+        baseline_assumptions = transfer["baseline_assumptions"]
+        transferred_assumptions = transfer["transferred_assumptions"]
+        self.assertEqual(
+            [
+                field
+                for field in sorted(baseline_assumptions)
+                if baseline_assumptions[field]
+                != transferred_assumptions[field]
+            ],
+            ["demand_growth"],
+        )
         self.assertTrue(transfer["same_investment_candidates"])
         self.assertNotEqual(
             transfer["baseline_selected_option"],
@@ -5288,4 +5375,22 @@ class CoreTrackTests(unittest.TestCase):
             ),
             "total_cost = direct_cost",
             "economics-causal-invariant",
+        )
+
+    def test_economics_harness_rejects_multi_assumption_transfer(
+        self,
+    ) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-25-engineering-economics-capacity",
+            "engineering_economics_lab_v1",
+            (
+                '    "demand_growth": 0.5,\n'
+                "}"
+            ),
+            (
+                '    "demand_growth": 0.5,\n'
+                '    "operations_hour_cost": 1,\n'
+                "}"
+            ),
+            "economics-transfer-invariant",
         )
