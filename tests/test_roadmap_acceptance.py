@@ -189,11 +189,12 @@ class RoadmapAcceptanceTests(unittest.TestCase):
                 {
                     **valid,
                     "nodes": [
+                        valid["nodes"][0],
                         {
                             **valid["nodes"][1],
                             "prerequisiteIds": [1],
                         },
-                        *valid["nodes"][1:],
+                        *valid["nodes"][2:],
                     ],
                 },
                 "prerequisites for core-02-algorithms-measurement "

@@ -449,21 +449,27 @@ class BuildAcceptanceTests(unittest.TestCase):
             roadmap = (output / "roadmap/index.html").read_text(
                 encoding="utf-8"
             )
-            positions: list[int] = []
-            for title, prerequisite in (
-                ("Think", "なし"),
-                ("Build", "Think"),
-                ("Run", "Build"),
-                ("Lead", "Run"),
-            ):
-                marker = (
-                    f"<h2>{title}</h2>"
-                    '<p class="prerequisite-text">'
-                    f"<strong>前提:</strong> {prerequisite}</p>"
+            lesson_ids = tuple(sorted(_repository_lesson_source_counts()))
+            self.assertEqual(len(lesson_ids), 30)
+            for lesson_id in lesson_ids:
+                self.assertEqual(
+                    roadmap.count(
+                        f'../lessons/{lesson_id}/index.html'
+                    ),
+                    1,
                 )
-                self.assertIn(marker, roadmap)
-                positions.append(roadmap.index(marker))
-            self.assertEqual(positions, sorted(positions))
+            gate_positions = tuple(
+                roadmap.index(f'id="mastery-{gate_id}"')
+                for gate_id in (
+                    "foundation",
+                    "builder",
+                    "scaler",
+                    "human",
+                    "operator",
+                    "leader",
+                )
+            )
+            self.assertEqual(gate_positions, tuple(sorted(gate_positions)))
 
     def test_build_is_byte_mode_and_mtime_deterministic(self) -> None:
         with TemporaryDirectory() as directory:

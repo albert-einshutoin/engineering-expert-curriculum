@@ -571,6 +571,30 @@ mark {
   font-weight: 850;
 }
 
+.roadmap-track {
+  margin-block-end: var(--space-2);
+  color: var(--color-muted);
+  font-family: var(--font-interface);
+  font-size: 0.85rem;
+}
+
+.mastery-gate {
+  min-inline-size: 0;
+  padding: var(--space-3);
+  border: var(--border-strong);
+  border-block-start: 0.55rem double var(--color-warm);
+  background: color-mix(in srgb, var(--color-surface) 88%, #f4dd8d);
+  box-shadow: var(--shadow-card);
+}
+
+.mastery-gate h2 {
+  margin-block-start: 0;
+}
+
+.mastery-gate p:last-child {
+  margin-block-end: 0;
+}
+
 .lesson {
   padding-block: var(--space-3);
 }
@@ -752,6 +776,7 @@ footer p {
   .hero,
   .catalog-card,
   .learning-stage,
+  .mastery-gate,
   .prerequisite-text,
   .lesson-meta,
   .lesson-index-item,
@@ -829,6 +854,7 @@ footer p {
 
   .catalog-card,
   .learning-stage,
+  .mastery-gate,
   .prerequisite-text,
   .lesson-meta,
   .lesson-index-item,
@@ -881,6 +907,7 @@ footer p {
   li,
   tr,
   .learning-stage,
+  .mastery-gate,
   .prerequisite-text {
     break-inside: avoid;
   }

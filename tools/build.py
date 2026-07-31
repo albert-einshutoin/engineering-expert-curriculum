@@ -41,6 +41,7 @@ def main(arguments: list[str] | None = None) -> int:
         root / "templates",
         root / "static",
         output,
+        require_complete_curriculum=True,
     )
     print(f"built {output}")
     return 0

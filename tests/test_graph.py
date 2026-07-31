@@ -407,23 +407,27 @@ class GraphTests(unittest.TestCase):
 
 
 class RoadmapContractTests(unittest.TestCase):
-    def test_checked_in_roadmap_has_strict_initial_schema_and_stages(self) -> None:
+    def test_checked_in_roadmap_has_strict_release_schema_and_graph(self) -> None:
         path = Path(__file__).resolve().parents[1] / "content/roadmap.json"
         document = strict_json_loads(path.read_bytes(), path)
 
         self.assertIsInstance(document, Mapping)
         assert isinstance(document, Mapping)
-        self.assertEqual(set(document), {"version", "nodes"})
+        self.assertEqual(
+            set(document),
+            {"version", "nodes", "masteryGates"},
+        )
         self.assertIs(type(document["version"]), int)
         self.assertEqual(document["version"], 1)
         self.assertIsInstance(document["nodes"], list)
         nodes = document["nodes"]
         assert isinstance(nodes, list)
-        self.assertEqual(len(nodes), 4)
+        self.assertEqual(len(nodes), 30)
         self.assertTrue(all(isinstance(node, Mapping) for node in nodes))
         self.assertTrue(
             all(
-                set(node) == {"id", "title", "prerequisites"}
+                set(node)
+                == {"id", "title", "track", "prerequisiteIds"}
                 for node in nodes
                 if isinstance(node, Mapping)
             )
@@ -432,32 +436,37 @@ class RoadmapContractTests(unittest.TestCase):
             all(
                 type(node["id"]) is str
                 and type(node["title"]) is str
-                and type(node["prerequisites"]) is list
+                and type(node["track"]) is str
+                and type(node["prerequisiteIds"]) is list
                 for node in nodes
                 if isinstance(node, Mapping)
             )
         )
 
         ids = tuple(node["id"] for node in nodes)
-        titles = tuple(node["title"] for node in nodes)
         prerequisites = {
-            node["id"]: tuple(node["prerequisites"])
+            node["id"]: tuple(node["prerequisiteIds"])
             for node in nodes
         }
-        self.assertEqual(ids, ("foundation", "build", "operate", "lead"))
-        self.assertEqual(titles, ("Think", "Build", "Run", "Lead"))
         self.assertEqual(
-            prerequisites,
-            {
-                "foundation": (),
-                "build": ("foundation",),
-                "operate": ("build",),
-                "lead": ("operate",),
-            },
+            tuple(int(lesson_id[5:7]) for lesson_id in ids),
+            tuple(range(1, 31)),
+        )
+        stages = topological_stages(ids, prerequisites)
+        self.assertEqual(stages[0], ("core-01-systems-tradeoffs",))
+        self.assertEqual(
+            set().union(*map(set, stages)),
+            set(ids),
+        )
+        gates = document["masteryGates"]
+        self.assertIsInstance(gates, list)
+        self.assertEqual(
+            tuple(gate["id"] for gate in gates),
+            ("foundation", "builder", "scaler", "human", "operator", "leader"),
         )
         self.assertEqual(
-            topological_stages(ids, prerequisites),
-            (("foundation",), ("build",), ("operate",), ("lead",)),
+            tuple(gate["after"] for gate in gates),
+            (5, 10, 15, 20, 25, 30),
         )
 
     def test_checked_in_roadmap_test_passes_outside_repository_cwd(self) -> None:
@@ -473,7 +482,7 @@ class RoadmapContractTests(unittest.TestCase):
         )
         test_name = (
             "tests.test_graph.RoadmapContractTests."
-            "test_checked_in_roadmap_has_strict_initial_schema_and_stages"
+            "test_checked_in_roadmap_has_strict_release_schema_and_graph"
         )
 
         with TemporaryDirectory() as directory:

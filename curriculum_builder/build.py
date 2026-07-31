@@ -39,6 +39,7 @@ from .lesson_rendering import (
     load_lessons_from_root,
     render_lesson_artifacts,
 )
+from .lessons import LESSON_TRACKS, Lesson
 from .models import CatalogItem
 from .render import MAX_TEMPLATE_BYTES, Renderer
 
@@ -53,6 +54,10 @@ _READ_CHUNK_SIZE: Final = 64 * 1024
 _DETERMINISTIC_MTIME_NS: Final = 0
 _STAGING_ATTEMPTS: Final = 16
 _HTML_ID = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,63}", re.ASCII)
+_ROADMAP_LESSON_ID = re.compile(
+    r"core-(0[1-9]|[12][0-9]|30)-[a-z0-9]+(?:-[a-z0-9]+)*\Z",
+    re.ASCII,
+)
 _SAFE_ARTIFACT_PART = re.compile(
     r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\Z",
     re.ASCII,
@@ -163,10 +168,32 @@ class _DirectoryHandle:
 
 
 @dataclass(frozen=True, slots=True)
-class _RoadmapNode:
+class RoadmapNode:
+    ordinal: int | None
     id: str
     title: str
-    prerequisites: tuple[str, ...]
+    track: str | None
+    prerequisite_ids: tuple[str, ...]
+
+    @property
+    def prerequisites(self) -> tuple[str, ...]:
+        """Retain the established graph vocabulary for authoring callers."""
+        return self.prerequisite_ids
+
+
+@dataclass(frozen=True, slots=True)
+class MasteryGate:
+    id: str
+    after: int
+    artifact: str
+    review: str
+
+
+@dataclass(frozen=True, slots=True)
+class Roadmap:
+    version: int
+    nodes: tuple[RoadmapNode, ...]
+    mastery_gates: tuple[MasteryGate, ...]
 
 
 @dataclass(slots=True)
@@ -526,20 +553,114 @@ def _exact_fields(
         )
 
 
-def _load_roadmap(content: _DirectoryHandle) -> tuple[_RoadmapNode, ...]:
-    raw = _read_stable_regular_file(
-        content,
-        "roadmap.json",
-        MAX_ROADMAP_BYTES,
-    )
-    document = strict_json_loads(raw, content.path / "roadmap.json")
+_CANONICAL_ROADMAP_ROOT_FIELDS = frozenset(
+    {"version", "nodes", "masteryGates"}
+)
+_AUTHORING_ROADMAP_ROOT_FIELDS = frozenset({"version", "nodes"})
+_CANONICAL_ROADMAP_NODE_FIELDS = frozenset(
+    {"id", "title", "track", "prerequisiteIds"}
+)
+_AUTHORING_ROADMAP_NODE_FIELDS = frozenset(
+    {"id", "title", "prerequisites"}
+)
+_MASTERY_GATE_FIELDS = frozenset({"id", "after", "artifact", "review"})
+_RELEASE_MASTERY_GATES = (
+    (
+        "foundation",
+        5,
+        "未知システムの診断記録",
+        "機構と証拠を説明できる",
+    ),
+    (
+        "builder",
+        10,
+        "契約・テスト・脅威モデル付きサービス",
+        "信頼性を設計へ埋め込める",
+    ),
+    (
+        "scaler",
+        15,
+        "負荷・障害・SLO実験",
+        "分散失敗を測定し判断できる",
+    ),
+    (
+        "human",
+        20,
+        "アクセシブルな検証済み改善",
+        "人と社会への影響を説明できる",
+    ),
+    (
+        "operator",
+        25,
+        "移行・運用・費用計画",
+        "変更を安全かつ経済的に進められる",
+    ),
+    (
+        "leader",
+        30,
+        "他者が実行可能な技術方針",
+        "不確実性の中で組織を前進させられる",
+    ),
+)
+
+
+def _roadmap_text(value: object, label: str) -> str:
+    if type(value) is not str:
+        raise _validation(f"{label} must be a string")
+    if (
+        not value
+        or value != value.strip()
+        or len(value) > MAX_ROADMAP_TEXT_CHARS
+    ):
+        raise _validation(
+            f"{label} must be non-empty, unpadded, and bounded"
+        )
+    return value
+
+
+def parse_roadmap_bytes(
+    raw: bytes,
+    source_name: str,
+    *,
+    require_complete: bool = False,
+) -> Roadmap:
+    """Parse a pinned roadmap snapshot into an immutable graph contract.
+
+    The compact legacy shape remains available to isolated authoring fixtures.
+    Release callers opt into the canonical lesson projection and mastery gates;
+    this keeps incremental lesson discovery useful without weakening publish.
+    """
+    if type(raw) is not bytes:
+        raise _validation("roadmap snapshot must be exact bytes")
+    if type(source_name) is not str or not source_name:
+        raise _validation("roadmap source name must be a non-empty string")
+    if type(require_complete) is not bool:
+        raise _validation("require_complete must be a boolean")
+
+    document = strict_json_loads(raw, source_name)
     if not isinstance(document, Mapping):
         raise _validation("roadmap root must be an object")
-    _exact_fields(
-        document,
-        frozenset({"version", "nodes"}),
-        "roadmap root",
-    )
+
+    fields = frozenset(document)
+    if require_complete:
+        if fields == _AUTHORING_ROADMAP_ROOT_FIELDS:
+            raise _validation("release roadmap requires masteryGates")
+        _exact_fields(
+            document,
+            _CANONICAL_ROADMAP_ROOT_FIELDS,
+            "roadmap root",
+        )
+    elif fields not in {
+        _AUTHORING_ROADMAP_ROOT_FIELDS,
+        _CANONICAL_ROADMAP_ROOT_FIELDS,
+    }:
+        raise _validation(
+            "roadmap root fields must be exactly nodes, version "
+            "or masteryGates, nodes, version"
+        )
+
+    # Root gates are deliberately checked before nested entries so malformed
+    # child data cannot hide an invalid document/version contract.
     if type(document["version"]) is not int or document["version"] != 1:
         raise _validation("roadmap version must be integer 1")
     raw_nodes = document["nodes"]
@@ -550,50 +671,78 @@ def _load_roadmap(content: _DirectoryHandle) -> tuple[_RoadmapNode, ...]:
     if len(raw_nodes) > MAX_ROADMAP_NODES:
         raise _validation("roadmap exceeds maximum node count")
 
-    nodes: list[_RoadmapNode] = []
+    canonical = "masteryGates" in document
+    raw_gates = document.get("masteryGates", [])
+    if type(raw_gates) is not list:
+        raise _validation("roadmap masteryGates must be a list")
+    if require_complete and len(raw_nodes) != 30:
+        raise _validation("release roadmap must contain exactly 30 nodes")
+    if require_complete and len(raw_gates) != 6:
+        raise _validation("release roadmap must contain exactly 6 mastery gates")
+
+    nodes: list[RoadmapNode] = []
     edge_count = 0
     for index, value in enumerate(raw_nodes):
         if not isinstance(value, Mapping):
             raise _validation(f"roadmap node {index} must be an object")
         _exact_fields(
             value,
-            frozenset({"id", "title", "prerequisites"}),
+            (
+                _CANONICAL_ROADMAP_NODE_FIELDS
+                if canonical
+                else _AUTHORING_ROADMAP_NODE_FIELDS
+            ),
             f"roadmap node {index}",
         )
         node_id = value["id"]
-        title = value["title"]
-        raw_prerequisites = value["prerequisites"]
         if type(node_id) is not str:
             raise _validation(f"roadmap node {index} id must be a string")
-        if type(title) is not str:
-            raise _validation(f"roadmap node {index} title must be a string")
-        if (
-            not title
-            or title != title.strip()
-            or len(title) > MAX_ROADMAP_TEXT_CHARS
-        ):
-            raise _validation(
-                f"roadmap node {index} title must be non-empty, unpadded, "
-                "and bounded"
+        title = _roadmap_text(
+            value["title"],
+            f"roadmap node {index} title",
+        )
+        track: str | None = None
+        ordinal: int | None = None
+        if canonical:
+            track = _roadmap_text(
+                value["track"],
+                f"roadmap node {index} track",
             )
+            if track not in LESSON_TRACKS:
+                raise _validation(
+                    f"roadmap node {index} track is unsupported"
+                )
+            match = _ROADMAP_LESSON_ID.fullmatch(node_id)
+            if match is None:
+                raise _validation(
+                    f"roadmap node {index} id must be a canonical lesson id"
+                )
+            ordinal = int(match.group(1))
+        raw_prerequisites = value[
+            "prerequisiteIds" if canonical else "prerequisites"
+        ]
         if type(raw_prerequisites) is not list:
             raise _validation(
-                f"roadmap node {index} prerequisites must be a list"
+                f"roadmap node {index} prerequisiteIds must be a list"
+                if canonical
+                else f"roadmap node {index} prerequisites must be a list"
             )
         edge_count += len(raw_prerequisites)
         if edge_count > MAX_ROADMAP_EDGES:
             raise _validation("roadmap exceeds maximum prerequisite count")
         nodes.append(
-            _RoadmapNode(
+            RoadmapNode(
+                ordinal=ordinal,
                 id=node_id,
                 title=title,
-                prerequisites=tuple(raw_prerequisites),
+                track=track,
+                prerequisite_ids=tuple(raw_prerequisites),
             )
         )
 
     ids = tuple(node.id for node in nodes)
     prerequisites = {
-        node.id: node.prerequisites
+        node.id: node.prerequisite_ids
         for node in nodes
     }
     stages = topological_stages(ids, prerequisites)
@@ -601,7 +750,130 @@ def _load_roadmap(content: _DirectoryHandle) -> tuple[_RoadmapNode, ...]:
     ordered = tuple(by_id[node_id] for stage in stages for node_id in stage)
     if len(ordered) != len(nodes):
         raise _validation("roadmap topological ordering is incomplete")
-    return ordered
+
+    if require_complete and tuple(
+        sorted(
+            node.ordinal
+            for node in nodes
+            if node.ordinal is not None
+        )
+    ) != tuple(range(1, 31)):
+        raise _validation(
+            "release roadmap lesson ordinals must be exactly 1 through 30"
+        )
+
+    gates: list[MasteryGate] = []
+    for index, value in enumerate(raw_gates):
+        if not isinstance(value, Mapping):
+            raise _validation(f"mastery gate {index} must be an object")
+        _exact_fields(
+            value,
+            _MASTERY_GATE_FIELDS,
+            f"mastery gate {index}",
+        )
+        gate_id = _roadmap_text(
+            value["id"],
+            f"mastery gate {index} id",
+        )
+        after = value["after"]
+        if type(after) is not int:
+            raise _validation(
+                f"mastery gate {index} after must be an integer"
+            )
+        if not 1 <= after <= 30:
+            raise _validation(
+                f"mastery gate {index} after must be between 1 and 30"
+            )
+        gates.append(
+            MasteryGate(
+                id=gate_id,
+                after=after,
+                artifact=_roadmap_text(
+                    value["artifact"],
+                    f"mastery gate {index} artifact",
+                ),
+                review=_roadmap_text(
+                    value["review"],
+                    f"mastery gate {index} review",
+                ),
+            )
+        )
+
+    if require_complete and tuple(
+        (gate.id, gate.after, gate.artifact, gate.review)
+        for gate in gates
+    ) != _RELEASE_MASTERY_GATES:
+        raise _validation(
+            "release mastery gates must match the canonical order and evidence"
+        )
+
+    return Roadmap(
+        version=1,
+        nodes=ordered,
+        mastery_gates=tuple(gates),
+    )
+
+
+def validate_release_curriculum(
+    roadmap: Roadmap,
+    lessons: Sequence[Lesson],
+) -> None:
+    """Bind the release roadmap to the exact immutable lesson snapshot."""
+    if not isinstance(roadmap, Roadmap):
+        raise _validation("release roadmap must be a Roadmap")
+    if len(lessons) != 30:
+        raise _validation("release curriculum must contain exactly 30 lessons")
+    if any(not isinstance(lesson, Lesson) for lesson in lessons):
+        raise _validation("release lessons must be Lesson values")
+
+    lesson_ids = tuple(lesson.id for lesson in lessons)
+    if len(set(lesson_ids)) != len(lesson_ids):
+        raise _validation("release lesson IDs must be unique")
+    ordinals: list[int] = []
+    for lesson_id in lesson_ids:
+        match = _ROADMAP_LESSON_ID.fullmatch(lesson_id)
+        if match is None:
+            raise _validation("release lesson ID is not canonical")
+        ordinals.append(int(match.group(1)))
+    if tuple(sorted(ordinals)) != tuple(range(1, 31)):
+        raise _validation(
+            "release lesson ordinals must be exactly 1 through 30"
+        )
+    if any(lesson.status != "complete" for lesson in lessons):
+        raise _validation("release curriculum cannot contain draft lessons")
+    if len(roadmap.nodes) != 30:
+        raise _validation("release roadmap must contain exactly 30 nodes")
+
+    lessons_by_id = {lesson.id: lesson for lesson in lessons}
+    if {node.id for node in roadmap.nodes} != set(lessons_by_id):
+        raise _validation("roadmap and release lesson IDs must match exactly")
+    for node in roadmap.nodes:
+        lesson = lessons_by_id[node.id]
+        if (
+            node.title != lesson.title
+            or node.track != lesson.track
+            or node.prerequisite_ids != lesson.prerequisite_ids
+        ):
+            raise _validation(
+                f"roadmap node does not match lesson metadata: {node.id}"
+            )
+
+
+def _load_roadmap(
+    content: _DirectoryHandle,
+    *,
+    require_complete: bool,
+) -> Roadmap:
+    raw = _read_stable_regular_file(
+        content,
+        "roadmap.json",
+        MAX_ROADMAP_BYTES,
+    )
+    return parse_roadmap_bytes(
+        raw,
+        str(content.path / "roadmap.json"),
+        require_complete=require_complete,
+    )
 
 
 def _safe_id(value: str) -> str:
@@ -643,24 +915,69 @@ def _catalog_content(items: Sequence[CatalogItem]) -> SafeHtml:
 
 def _roadmap_content(
     renderer: Renderer,
-    nodes: Sequence[_RoadmapNode],
+    roadmap: Roadmap,
+    available_lesson_ids: frozenset[str],
 ) -> SafeHtml:
+    nodes = roadmap.nodes
     title_by_id = {node.id: node.title for node in nodes}
     rendered: list[str] = []
-    for node in nodes:
+    canonical_nodes = all(node.ordinal is not None for node in nodes)
+    gate_by_after = {
+        gate.after: gate
+        for gate in roadmap.mastery_gates
+    }
+    display_nodes = (
+        tuple(
+            sorted(
+                nodes,
+                key=lambda node: (
+                    node.ordinal if node.ordinal is not None else 0
+                ),
+            )
+        )
+        if canonical_nodes
+        else tuple(nodes)
+    )
+    for node in display_nodes:
         prerequisite_text = (
             "、".join(
                 title_by_id[prerequisite]
-                for prerequisite in node.prerequisites
+                for prerequisite in node.prerequisite_ids
             )
             or "なし"
         )
+        title_markup = escape(node.title, quote=False)
+        track_markup = ""
+        if canonical_nodes and node.id in available_lesson_ids:
+            title_markup = (
+                f'<a href="../lessons/{escape(node.id, quote=True)}'
+                f'/index.html">{title_markup}</a>'
+            )
+        if canonical_nodes:
+            track_markup = (
+                '<p class="roadmap-track"><strong>トラック:</strong> '
+                f"{escape(node.track or '', quote=False)}</p>"
+            )
         rendered.append(
             '<li class="learning-stage">'
-            f"<h2>{escape(node.title, quote=False)}</h2>"
+            f"<h2>{title_markup}</h2>"
+            f"{track_markup}"
             '<p class="prerequisite-text"><strong>前提:</strong> '
             f"{escape(prerequisite_text, quote=False)}</p></li>"
         )
+        if node.ordinal is None:
+            continue
+        gate = gate_by_after.get(node.ordinal)
+        if gate is not None:
+            rendered.append(
+                f'<li class="mastery-gate" id="mastery-{gate.id}">'
+                '<p class="eyebrow">Mastery Gate</p>'
+                f"<h2>{escape(gate.id.title(), quote=False)}</h2>"
+                '<p><strong>成果物:</strong> '
+                f"{escape(gate.artifact, quote=False)}</p>"
+                '<p><strong>レビュー基準:</strong> '
+                f"{escape(gate.review, quote=False)}</p></li>"
+            )
     stages = validate_fragment(
         '<ol class="learning-path">' + "".join(rendered) + "</ol>"
     )
@@ -871,7 +1188,7 @@ def _validate_site_artifacts(
 
 def _render_artifacts(
     items: tuple[CatalogItem, ...],
-    roadmap: tuple[_RoadmapNode, ...],
+    roadmap: Roadmap,
     template_sources: Mapping[str, bytes],
     stylesheet: bytes,
     lessons: tuple[LoadedLesson, ...],
@@ -911,7 +1228,11 @@ def _render_artifacts(
             description=(
                 "前提から実践、運用、リーダーシップへ進む学習経路"
             ),
-            content=_roadmap_content(renderer, roadmap),
+            content=_roadmap_content(
+                renderer,
+                roadmap,
+                frozenset(item.lesson.id for item in lessons),
+            ),
         ),
     }
     artifacts = {
@@ -1937,8 +2258,14 @@ def build_site(
     template_root: Path,
     static_root: Path,
     output_root: Path,
+    *,
+    require_complete_curriculum: bool = False,
 ) -> None:
     """Validate, stage, durably publish, and atomically replace the static site."""
+    if type(require_complete_curriculum) is not bool:
+        raise _validation(
+            "require_complete_curriculum must be a boolean"
+        )
     output_parent_path, output_name = _output_basename(output_root)
     transaction = _BuildTransaction()
     with (
@@ -1968,9 +2295,17 @@ def build_site(
             (content.path, templates.path, static_files.path),
         )
         items = _load_catalog_from_root(content)
-        roadmap = _load_roadmap(content)
+        roadmap = _load_roadmap(
+            content,
+            require_complete=require_complete_curriculum,
+        )
         lesson_snapshot = load_lessons_from_root(content.descriptor)
         lessons = lesson_snapshot.lessons
+        if require_complete_curriculum:
+            validate_release_curriculum(
+                roadmap,
+                tuple(item.lesson for item in lessons),
+            )
         stylesheet = _read_stable_regular_file(
             static_files,
             "styles.css",
