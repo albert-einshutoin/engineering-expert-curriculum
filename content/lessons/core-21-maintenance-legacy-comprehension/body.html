@@ -88,6 +88,7 @@ FIXTURE = {
             "discount_basis_points": 1000,
             "tax_basis_points": 0,
             "tax_rounding_increment": 1,
+            "observed_output_cents": 9000,
         },
         {
             "id": "discount-boundary",
@@ -96,6 +97,7 @@ FIXTURE = {
             "discount_basis_points": 500,
             "tax_basis_points": 0,
             "tax_rounding_increment": 1,
+            "observed_output_cents": 9500,
         },
         {
             "id": "tax-rounding-standard",
@@ -104,6 +106,7 @@ FIXTURE = {
             "discount_basis_points": 0,
             "tax_basis_points": 1000,
             "tax_rounding_increment": 5,
+            "observed_output_cents": 11001,
         },
         {
             "id": "tax-rounding-boundary",
@@ -112,6 +115,7 @@ FIXTURE = {
             "discount_basis_points": 0,
             "tax_basis_points": 800,
             "tax_rounding_increment": 10,
+            "observed_output_cents": 10799,
         },
     ],
 }
@@ -142,9 +146,9 @@ def characterize(fixture, change_request, affected_path):
         if case["change_request"] != change_request:
             continue
         actual = execute_case(case)
-        # expectedは別仕様ではなく固定fixtureの観測値であるため、
-        # provenanceと限界をreport側に明示して過剰な正しさを主張しない。
-        expected = execute_case(case)
+        # expectedは変更前に保存した独立観測値を読む。現実装を二度
+        # 実行してexpectedを作ると同じbehavior driftを見逃すためである。
+        expected = case["observed_output_cents"]
         tests.append(
             {
                 "case_id": case["id"],
