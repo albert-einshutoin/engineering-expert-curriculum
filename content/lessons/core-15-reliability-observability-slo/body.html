@@ -243,22 +243,52 @@ def main():
         FIXTURE_EVENTS,
         "purchase-completion",
     )
-    fixture_event_ids = [event["id"] for event in FIXTURE_EVENTS]
+    baseline_contract = {
+        "journey": "search-success",
+        "target": TARGET,
+        "window_days": 28,
+        "event_ids": [event["id"] for event in FIXTURE_EVENTS],
+        "telemetry_errors": validate_telemetry(resources, metric_labels),
+    }
+    transferred_contract = {
+        **baseline_contract,
+        "journey": "purchase-completion",
+        "event_ids": [event["id"] for event in FIXTURE_EVENTS],
+        "telemetry_errors": validate_telemetry(resources, metric_labels),
+    }
+    changed_fields = sorted(
+        field
+        for field in baseline_contract
+        if baseline_contract[field] != transferred_contract[field]
+    )
     journey_boundary_transfer = {
-        "changed_fields": ["journey"],
+        "changed_fields": changed_fields,
         "baseline_sli": baseline_sli,
         "transferred_sli": transferred_sli,
-        "baseline_event_ids": fixture_event_ids,
-        "transferred_event_ids": fixture_event_ids,
+        "baseline_event_ids": baseline_contract["event_ids"],
+        "transferred_event_ids": transferred_contract["event_ids"],
         "unchanged": {
-            "event_fixture": True,
-            "target": True,
-            "window": True,
-            "telemetry_contract": True,
+            "event_fixture": (
+                baseline_contract["event_ids"]
+                == transferred_contract["event_ids"]
+            ),
+            "target": (
+                baseline_contract["target"]
+                == transferred_contract["target"]
+            ),
+            "window": (
+                baseline_contract["window_days"]
+                == transferred_contract["window_days"]
+            ),
+            "telemetry_contract": (
+                baseline_contract["telemetry_errors"]
+                == transferred_contract["telemetry_errors"]
+            ),
         },
-        "telemetry_errors_before": telemetry_errors,
-        "telemetry_errors_after": telemetry_errors,
+        "telemetry_errors_before": baseline_contract["telemetry_errors"],
+        "telemetry_errors_after": transferred_contract["telemetry_errors"],
     }
+    assert changed_fields == ["journey"]
     assert baseline_sli["ratio"] != transferred_sli["ratio"]
     assert journey_boundary_transfer["baseline_event_ids"] == (
         journey_boundary_transfer["transferred_event_ids"]
