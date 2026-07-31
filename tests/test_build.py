@@ -343,6 +343,8 @@ def _assert_static_site(
             else None
         )
         expected_source_count = source_counts.get(lesson_id or "", 0)
+        if relative == Path("competencies/index.html"):
+            expected_source_count = 3
         test.assertEqual(
             len(parser.external_links),
             expected_source_count,

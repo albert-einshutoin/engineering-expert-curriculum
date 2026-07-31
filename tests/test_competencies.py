@@ -1000,6 +1000,16 @@ class CompetencyBuildTests(unittest.TestCase):
             stylesheet,
             (
                 r"(?s)@media print.*"
+                r"\.competency-matrix th:first-child.*"
+                r"\.competency-matrix td:last-child.*"
+                r"inline-size:\s*auto.*"
+                r"min-inline-size:\s*0"
+            ),
+        )
+        self.assertRegex(
+            stylesheet,
+            (
+                r"(?s)@media print.*"
                 r"\.competency-framework.*"
                 r"\.competency-version.*"
                 r"\.competency-code.*"
