@@ -492,65 +492,60 @@ mark {
 
 .learning-path {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
   margin-block-start: var(--space-4);
+}
+
+.roadmap-stage {
+  padding-block: var(--space-2) var(--space-3);
+  border-block-start: 0.25rem solid var(--color-accent);
+}
+
+.roadmap-stage > h2 {
+  margin-block-start: 0;
+}
+
+.learning-stage-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: var(--space-3);
   padding: 0;
-  counter-reset: learning-stage;
+  list-style: none;
+}
+
+.mastery-gate-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: var(--space-3);
+  padding: 0;
   list-style: none;
 }
 
 .learning-stage {
-  position: relative;
   min-inline-size: 0;
-  padding-block: var(--space-4) var(--space-3);
-  padding-inline: var(--space-3);
+  padding: var(--space-3);
   border: 0.0625rem solid var(--color-border);
   border-block-start: 0.4rem solid var(--color-accent);
   background: var(--color-surface);
   box-shadow: var(--shadow-card);
-  counter-increment: learning-stage;
 }
 
-.learning-stage::before {
-  content: counter(learning-stage);
-  position: absolute;
-  inset-block-start: calc(var(--space-2) * -1);
-  inset-inline-start: var(--space-3);
-  display: grid;
-  place-items: center;
-  inline-size: 2.25rem;
-  block-size: 2.25rem;
+.lesson-ordinal {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 2rem;
+  margin-block-end: var(--space-2);
+  padding-inline: var(--space-2);
   border: 0.15rem solid var(--color-ink);
-  border-radius: 50%;
+  border-radius: 999px;
   background: var(--color-paper);
   color: var(--color-ink);
   font-family: var(--font-interface);
+  font-variant-numeric: tabular-nums;
   font-weight: 900;
 }
 
-.learning-stage:not(:last-child)::after {
-  content: "";
-  position: absolute;
-  z-index: 2;
-  inset-block-start: 2.35rem;
-  inset-inline-end: calc(var(--space-4) * -1);
-  inline-size: var(--space-4);
-  block-size: 0.8rem;
-  background: var(--color-warm);
-  clip-path: polygon(
-    0 35%,
-    70% 35%,
-    70% 0,
-    100% 50%,
-    70% 100%,
-    70% 65%,
-    0 65%
-  );
-  pointer-events: none;
-}
-
-.learning-stage h2,
 .learning-stage h3 {
   margin-block-start: 0;
 }
@@ -576,6 +571,12 @@ mark {
   color: var(--color-muted);
   font-family: var(--font-interface);
   font-size: 0.85rem;
+}
+
+.mastery-gates {
+  margin-block-start: var(--space-5);
+  padding-block-start: var(--space-3);
+  border-block-start: var(--border-strong);
 }
 
 .mastery-gate {
@@ -744,8 +745,12 @@ footer p {
     gap: var(--space-3);
   }
 
-  .learning-stage:not(:last-child)::after {
-    display: none;
+  .learning-stage-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mastery-gate-list {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -795,13 +800,9 @@ footer p {
     color: LinkText;
   }
 
-  .learning-stage::before,
+  .lesson-ordinal,
   :where(a, summary, [tabindex]):focus-visible {
     border-color: CanvasText;
-  }
-
-  .learning-stage:not(:last-child)::after {
-    background: CanvasText;
   }
 }
 
@@ -852,6 +853,11 @@ footer p {
     grid-template-columns: 1fr;
   }
 
+  .learning-stage-list,
+  .mastery-gate-list {
+    grid-template-columns: 1fr;
+  }
+
   .catalog-card,
   .learning-stage,
   .mastery-gate,
@@ -886,10 +892,6 @@ footer p {
 
   .chart-display--monochrome .chart-bar {
     background: transparent;
-  }
-
-  .learning-stage:not(:last-child)::after {
-    display: none;
   }
 
   .prerequisite-text {

@@ -1015,66 +1015,96 @@ def _roadmap_content(
 ) -> SafeHtml:
     nodes = roadmap.nodes
     title_by_id = {node.id: node.title for node in nodes}
-    rendered: list[str] = []
+    node_by_id = {node.id: node for node in nodes}
     canonical_nodes = all(node.ordinal is not None for node in nodes)
-    gate_by_after = {
-        gate.after: gate
-        for gate in roadmap.mastery_gates
-    }
-    display_nodes = (
-        tuple(
-            sorted(
-                nodes,
-                key=lambda node: (
-                    node.ordinal if node.ordinal is not None else 0
-                ),
-            )
-        )
-        if canonical_nodes
-        else tuple(nodes)
+    topological = topological_stages(
+        tuple(node.id for node in nodes),
+        {
+            node.id: node.prerequisite_ids
+            for node in nodes
+        },
     )
-    for node in display_nodes:
-        prerequisite_text = (
-            "、".join(
-                title_by_id[prerequisite]
-                for prerequisite in node.prerequisite_ids
+
+    rendered_stages: list[str] = []
+    for stage_number, stage_ids in enumerate(topological, start=1):
+        rendered_nodes: list[str] = []
+        for node_id in stage_ids:
+            node = node_by_id[node_id]
+            prerequisite_text = (
+                "、".join(
+                    title_by_id[prerequisite]
+                    for prerequisite in node.prerequisite_ids
+                )
+                or "なし"
             )
-            or "なし"
+            title_markup = escape(node.title, quote=False)
+            ordinal_markup = ""
+            track_markup = ""
+            if canonical_nodes and node.id in available_lesson_ids:
+                title_markup = (
+                    f'<a href="../lessons/{escape(node.id, quote=True)}'
+                    f'/index.html">{title_markup}</a>'
+                )
+            if canonical_nodes:
+                ordinal = node.ordinal
+                if ordinal is None:
+                    raise _validation(
+                        "canonical roadmap node is missing its ordinal"
+                    )
+                ordinal_markup = (
+                    '<p class="lesson-ordinal">'
+                    f"Lesson {ordinal:02}</p>"
+                )
+                track_markup = (
+                    '<p class="roadmap-track"><strong>トラック:</strong> '
+                    f"{escape(node.track or '', quote=False)}</p>"
+                )
+            rendered_nodes.append(
+                '<li class="learning-stage">'
+                f"{ordinal_markup}<h3>{title_markup}</h3>"
+                f"{track_markup}"
+                '<p class="prerequisite-text"><strong>前提:</strong> '
+                f"{escape(prerequisite_text, quote=False)}</p></li>"
+            )
+        rendered_stages.append(
+            '<section class="roadmap-stage">'
+            f"<h2>前提段階 {stage_number}</h2>"
+            "<p>同じ段階の教材は、表示された前提を満たした後に"
+            "並行して学べます。</p>"
+            '<ol class="learning-stage-list">'
+            + "".join(rendered_nodes)
+            + "</ol></section>"
         )
-        title_markup = escape(node.title, quote=False)
-        track_markup = ""
-        if canonical_nodes and node.id in available_lesson_ids:
-            title_markup = (
-                f'<a href="../lessons/{escape(node.id, quote=True)}'
-                f'/index.html">{title_markup}</a>'
-            )
-        if canonical_nodes:
-            track_markup = (
-                '<p class="roadmap-track"><strong>トラック:</strong> '
-                f"{escape(node.track or '', quote=False)}</p>"
-            )
-        rendered.append(
-            '<li class="learning-stage">'
-            f"<h2>{title_markup}</h2>"
-            f"{track_markup}"
-            '<p class="prerequisite-text"><strong>前提:</strong> '
-            f"{escape(prerequisite_text, quote=False)}</p></li>"
-        )
-        if node.ordinal is None:
-            continue
-        gate = gate_by_after.get(node.ordinal)
-        if gate is not None:
-            rendered.append(
+
+    gates_markup = ""
+    if roadmap.mastery_gates:
+        rendered_gates = "".join(
+            (
                 f'<li class="mastery-gate" id="mastery-{gate.id}">'
                 '<p class="eyebrow">Mastery Gate</p>'
-                f"<h2>{escape(gate.id.title(), quote=False)}</h2>"
+                f"<h3>{escape(gate.id.title(), quote=False)}</h3>"
+                '<p><strong>到達時点:</strong> '
+                f"Lesson {gate.after:02} 後</p>"
                 '<p><strong>成果物:</strong> '
                 f"{escape(gate.artifact, quote=False)}</p>"
                 '<p><strong>レビュー基準:</strong> '
                 f"{escape(gate.review, quote=False)}</p></li>"
             )
+            for gate in roadmap.mastery_gates
+        )
+        gates_markup = (
+            '<section class="mastery-gates">'
+            "<h2>習熟ゲート</h2>"
+            "<p>5レッスンごとに、成果物とレビューで理解を確認します。</p>"
+            '<ol class="mastery-gate-list">'
+            f"{rendered_gates}</ol></section>"
+        )
+
     stages = validate_fragment(
-        '<ol class="learning-path">' + "".join(rendered) + "</ol>"
+        '<div class="learning-path">'
+        + "".join(rendered_stages)
+        + "</div>"
+        + gates_markup
     )
     return renderer.fragment(
         "roadmap.html",
