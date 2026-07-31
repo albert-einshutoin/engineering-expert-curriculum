@@ -298,6 +298,13 @@ class _MatrixParser(HTMLParser):
         self.column_headers = 0
         self.column_header_labels: list[str] = []
         self.in_column_header = False
+        self.competency_tables = 0
+        self.table_captions: list[str] = []
+        self.table_data_rows: list[int] = []
+        self.table_header_labels: list[list[str]] = []
+        self.in_competency_table = False
+        self.in_table_body = False
+        self.in_caption = False
         self.row_headers = 0
         self.rows = 0
         self.lesson_links: list[str] = []
@@ -314,8 +321,21 @@ class _MatrixParser(HTMLParser):
         values = dict(attrs)
         if tag == "script":
             self.has_script = True
+        elif (
+            tag == "table"
+            and "competency-matrix"
+            in (values.get("class") or "").split()
+        ):
+            self.competency_tables += 1
+            self.table_captions.append("")
+            self.table_data_rows.append(0)
+            self.table_header_labels.append([])
+            self.in_competency_table = True
+        elif tag == "tbody" and self.in_competency_table:
+            self.in_table_body = True
         elif tag == "caption":
             self.captions += 1
+            self.in_caption = True
         elif tag == "th" and values.get("scope") == "col":
             self.column_headers += 1
             self.in_column_header = True
@@ -323,6 +343,8 @@ class _MatrixParser(HTMLParser):
             self.row_headers += 1
         elif tag == "tr":
             self.rows += 1
+            if self.in_table_body:
+                self.table_data_rows[-1] += 1
         elif (
             tag == "a"
             and (values.get("href") or "").startswith("../lessons/core-")
@@ -346,10 +368,19 @@ class _MatrixParser(HTMLParser):
         self.text.append(data)
         if self.in_column_header:
             self.column_header_labels.append(data)
+            self.table_header_labels[-1].append(data)
+        if self.in_caption:
+            self.table_captions[-1] += data
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "th":
             self.in_column_header = False
+        elif tag == "caption":
+            self.in_caption = False
+        elif tag == "tbody":
+            self.in_table_body = False
+        elif tag == "table":
+            self.in_competency_table = False
 
 
 class CompetencyContractTests(unittest.TestCase):
@@ -896,21 +927,42 @@ class CompetencyBuildTests(unittest.TestCase):
             parser = _MatrixParser()
             parser.feed(document)
             parser.close()
-            self.assertEqual(parser.captions, 1)
-            self.assertEqual(parser.column_headers, 6)
+            expected_headers = [
+                "レッスン",
+                "フレームワーク",
+                "版",
+                "対応強度",
+                "公式識別子・名称",
+                "対応根拠",
+            ]
+            self.assertEqual(parser.competency_tables, 6)
+            self.assertEqual(parser.captions, 6)
+            self.assertEqual(parser.table_data_rows, [15] * 6)
+            self.assertEqual(parser.column_headers, 36)
             self.assertEqual(
-                parser.column_header_labels,
+                parser.table_header_labels,
                 [
-                    "レッスン",
-                    "フレームワーク",
-                    "版",
-                    "対応強度",
-                    "公式識別子・名称",
-                    "対応根拠",
+                    expected_headers,
+                    expected_headers,
+                    expected_headers,
+                    expected_headers,
+                    expected_headers,
+                    expected_headers,
+                ],
+            )
+            self.assertEqual(
+                parser.table_captions,
+                [
+                    "foundations — 5レッスン・15対応",
+                    "build — 5レッスン・15対応",
+                    "data-scale — 5レッスン・15対応",
+                    "human-product — 5レッスン・15対応",
+                    "sustain — 5レッスン・15対応",
+                    "lead — 5レッスン・15対応",
                 ],
             )
             self.assertEqual(parser.row_headers, 90)
-            self.assertEqual(parser.rows, 91)
+            self.assertEqual(parser.rows, 96)
             self.assertEqual(len(parser.lesson_links), 90)
             self.assertEqual(parser.nowrap_cells, 360)
             self.assertEqual(parser.wrapping_cells, 180)
@@ -1044,6 +1096,14 @@ class CompetencyBuildTests(unittest.TestCase):
                 r"\.competency-matrix thead th.*"
                 r"break-inside:\s*avoid.*"
                 r"white-space:\s*nowrap"
+            ),
+        )
+        self.assertRegex(
+            stylesheet,
+            (
+                r"(?s)@media print.*"
+                r"\.competency-matrix \+ \.competency-matrix.*"
+                r"break-before:\s*page"
             ),
         )
         self.assertRegex(
