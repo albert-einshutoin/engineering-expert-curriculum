@@ -1566,7 +1566,7 @@ git commit -m "feat: connect thirty lessons through mastery gates"
   lessons, unique ordinals 1–30, the canonical metadata projection, and all
   six ordered mastery gates are mandatory before publication.
 - The roadmap, graph, build, lesson-rendering, and stylesheet gate passes all
-  110 tests. The complete repository suite passes all 484 tests. Two
+  111 tests. The complete repository suite passes all 484 tests. Two
   consecutive clean release builds each contain 35 regular artifacts, 34 HTML
   files, one CSS file, zero JavaScript files, zero symbolic links, and
   1,155,439 bytes. Both produce canonical aggregate SHA-256
