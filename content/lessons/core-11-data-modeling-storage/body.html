@@ -39,11 +39,11 @@
   <h3>顧客中心から商品・期間中心へADRを更新する</h3>
   <dl>
     <dt>前提</dt>
-    <dd>現在500,000注文、月50,000件増、12か月予測のsynthetic workloadを使う。baselineでは顧客履歴が主要queryであり、商品・期間検索は毎時48回以上ある。</dd>
+    <dd>現在500,000注文、月50,000件増、12か月予測のsynthetic workloadを使う。baselineでは顧客履歴が毎時480回の主要queryであり、商品・期間検索は毎時48回ある。</dd>
     <dt>入力</dt>
     <dd>4つのquery shape、3つの不変条件、2つの更新競合と、合計weight 1.0の5 criteriaを入力する。三モデルには同じcriteria IDで1〜5のratingを与える。</dd>
     <dt>操作</dt>
-    <dd>各ratingとweightの積を合計し、baseline winnerをADRへ記録する。その後、顧客履歴を毎時24回、商品・期間検索を毎時480回へ変え、access fitを再評価して同じ式でscoreを求める。</dd>
+    <dd>各queryのfrequencyとmodel別query fitの積からaccess fitを加重平均し、他criteriaのratingとweightを合計してbaseline winnerをADRへ記録する。その後、顧客履歴を毎時24回、商品・期間検索を毎時480回へ変え、同じ式で全optionのscoreを再計算する。</dd>
     <dt>観測</dt>
     <dd>baselineではrelationalが最大scoreとなる。変更後は固定された商品・期間keyのread modelに適合するkey-valueが最大となり、winnerが変わる。constraint、hot key、再構築、dual-read照合は未解決の運用責任として残る。</dd>
     <dt>結論</dt>
@@ -55,7 +55,7 @@ import json
 
 HARNESS = "storage_decision_lab_v1"
 QUERY_FREQUENCIES = {
-    "get_customer_history": 120,
+    "get_customer_history": 480,
     "get_order_detail": 360,
     "list_product_window": 48,
     "update_order_state": 90,
@@ -136,11 +136,33 @@ CRITERIA = {
     },
 }
 
+# Query fit stays independent of frequency so every workload mutation is
+# recomputed through one auditable weighted average instead of a scenario table.
+QUERY_FIT_RATINGS = {
+    "relational": {
+        "get_customer_history": 5,
+        "get_order_detail": 3,
+        "list_product_window": 1,
+        "update_order_state": 4,
+    },
+    "document": {
+        "get_customer_history": 4,
+        "get_order_detail": 5,
+        "list_product_window": 2,
+        "update_order_state": 4,
+    },
+    "key-value": {
+        "get_customer_history": 2,
+        "get_order_detail": 4,
+        "list_product_window": 5,
+        "update_order_state": 2,
+    },
+}
+
 BASELINE_INPUTS = [
     {
         "id": "relational",
         "ratings": {
-            "access_fit": 5,
             "constraint_coverage": 5,
             "capacity": 4,
             "operations": 4,
@@ -162,7 +184,6 @@ BASELINE_INPUTS = [
     {
         "id": "document",
         "ratings": {
-            "access_fit": 4,
             "constraint_coverage": 3,
             "capacity": 4,
             "operations": 3,
@@ -184,7 +205,6 @@ BASELINE_INPUTS = [
     {
         "id": "key-value",
         "ratings": {
-            "access_fit": 3,
             "constraint_coverage": 2,
             "capacity": 5,
             "operations": 2,
@@ -206,34 +226,25 @@ BASELINE_INPUTS = [
 ]
 
 def rating_inputs_for(workload):
-    frequencies = {
+    return {
         query["id"]: query["frequency_per_hour"]
         for query in workload["query_shapes"]
     }
-    return {
-        "get_customer_history": frequencies["get_customer_history"],
-        "list_product_window": frequencies["list_product_window"],
-    }
 
-def derive_access_fit_ratings(workload):
-    inputs = rating_inputs_for(workload)
-    customer_history_frequency = inputs["get_customer_history"]
-    product_window_frequency = inputs["list_product_window"]
-    # The threshold is a lesson fixture boundary, not a vendor benchmark.
-    # Keeping it in one function makes a workload mutation change the ratings
-    # through an inspectable causal rule instead of a second score table.
-    if product_window_frequency >= 400:
-        assert product_window_frequency > customer_history_frequency
-        return {"relational": 2, "document": 4, "key-value": 5}
-    assert customer_history_frequency > product_window_frequency
-    return {"relational": 5, "document": 4, "key-value": 3}
-
-def score_options(option_inputs, access_fit_ratings):
+def score_options(option_inputs, workload):
+    rating_inputs = rating_inputs_for(workload)
+    total_frequency = sum(rating_inputs.values())
     options = []
     for option_input in option_inputs:
+        query_fit_ratings = dict(QUERY_FIT_RATINGS[option_input["id"]])
+        query_contributions = {
+            query_id: frequency * query_fit_ratings[query_id]
+            for query_id, frequency in rating_inputs.items()
+        }
+        access_fit = sum(query_contributions.values()) / total_frequency
         ratings = {
             **option_input["ratings"],
-            "access_fit": access_fit_ratings[option_input["id"]],
+            "access_fit": access_fit,
         }
         score = sum(
             rating * CRITERIA[criterion_id]["weight"]
@@ -243,13 +254,34 @@ def score_options(option_inputs, access_fit_ratings):
             {
                 **option_input,
                 "ratings": dict(ratings),
-                "score": round(score, 6),
+                "query_fit_ratings": query_fit_ratings,
+                "query_contributions": query_contributions,
+                "score": score,
             }
         )
     return options
 
 def selected_option(options):
     return max(options, key=lambda option: option["score"])["id"]
+
+def evaluate_workload(workload):
+    # A shared evaluator prevents baseline and transfer scenarios from drifting
+    # into different scoring rules while still exposing every derived value.
+    rating_inputs = rating_inputs_for(workload)
+    dominant_query_id = max(rating_inputs, key=rating_inputs.__getitem__)
+    options = score_options(BASELINE_INPUTS, workload)
+    return {
+        "workload": workload,
+        "rating_inputs": rating_inputs,
+        "dominant_query_id": dominant_query_id,
+        "workload_profile": f"{dominant_query_id}-dominant",
+        "derived_access_fit_ratings": {
+            option["id"]: option["ratings"]["access_fit"]
+            for option in options
+        },
+        "options": options,
+        "selected_option": selected_option(options),
+    }
 
 def mutate_access_pattern(workload):
     changed_frequencies = {
@@ -259,6 +291,22 @@ def mutate_access_pattern(workload):
         },
         "get_customer_history": 24,
         "list_product_window": 480,
+    }
+    return {
+        **workload,
+        "query_shapes": [
+            {
+                **query,
+                "frequency_per_hour": changed_frequencies[query["id"]],
+            }
+            for query in workload["query_shapes"]
+        ],
+    }
+
+def mutate_order_detail(workload):
+    changed_frequencies = {
+        **rating_inputs_for(workload),
+        "get_order_detail": 3_600_000,
     }
     return {
         **workload,
@@ -282,23 +330,28 @@ assert GROWTH_FORECAST["projected_records"] == (
     GROWTH_FORECAST["current_records"]
     + GROWTH_FORECAST["monthly_growth"] * GROWTH_FORECAST["months"]
 )
-
-baseline_rating_inputs = rating_inputs_for(WORKLOAD)
-baseline_access_fit_ratings = derive_access_fit_ratings(WORKLOAD)
-baseline_options = score_options(BASELINE_INPUTS, baseline_access_fit_ratings)
-baseline_winner = selected_option(baseline_options)
-mutated_workload = mutate_access_pattern(WORKLOAD)
-mutated_rating_inputs = rating_inputs_for(mutated_workload)
-mutated_access_fit_ratings = derive_access_fit_ratings(mutated_workload)
-mutated_options = score_options(
-    BASELINE_INPUTS,
-    mutated_access_fit_ratings,
+assert all(
+    set(query_ids) == set(query_fit_ratings)
+    for query_fit_ratings in QUERY_FIT_RATINGS.values()
 )
-mutated_winner = selected_option(mutated_options)
 
-assert baseline_winner == "relational"
-assert mutated_winner == "key-value"
-assert mutated_winner != baseline_winner
+baseline = evaluate_workload(WORKLOAD)
+mutated_workload = mutate_access_pattern(WORKLOAD)
+access_pattern_mutation = evaluate_workload(mutated_workload)
+order_detail_mutation = evaluate_workload(mutate_order_detail(WORKLOAD))
+
+assert baseline["dominant_query_id"] == "get_customer_history"
+assert baseline["selected_option"] == "relational"
+assert access_pattern_mutation["dominant_query_id"] == "list_product_window"
+assert access_pattern_mutation["selected_option"] == "key-value"
+assert (
+    access_pattern_mutation["selected_option"]
+    != baseline["selected_option"]
+)
+assert order_detail_mutation["dominant_query_id"] == "get_order_detail"
+assert (
+    order_detail_mutation["selected_option"] == "document"
+), "order-detail-causal-invariant"
 assert next(
     query["frequency_per_hour"]
     for query in mutated_workload["query_shapes"]
@@ -319,17 +372,11 @@ report = {
     "workload": WORKLOAD,
     "growth_forecast": GROWTH_FORECAST,
     "criteria": CRITERIA,
-    "baseline": {
-        "workload_profile": "customer-history-dominant",
-        "rating_inputs": baseline_rating_inputs,
-        "derived_access_fit_ratings": baseline_access_fit_ratings,
-        "options": baseline_options,
-        "selected_option": baseline_winner,
-    },
+    "baseline": baseline,
     "adr": {
         "status": "accepted-for-lab",
         "context": "customer-history queries dominate the synthetic baseline",
-        "decision": baseline_winner,
+        "decision": baseline["selected_option"],
         "negative_consequences": [
             "secondary indexes add write and migration cost",
             "joins and index growth require measured latency and capacity evidence",
@@ -341,18 +388,25 @@ report = {
         ],
     },
     "access_pattern_mutation": {
+        **access_pattern_mutation,
         "changed_assumption": "access-pattern",
-        "workload": mutated_workload,
-        "rating_inputs": mutated_rating_inputs,
-        "derived_access_fit_ratings": mutated_access_fit_ratings,
-        "options": mutated_options,
-        "selected_option": mutated_winner,
-        "decision_recomputed": mutated_winner != baseline_winner,
+        "decision_recomputed": (
+            access_pattern_mutation["selected_option"]
+            != baseline["selected_option"]
+        ),
         "migration_evidence": [
             "backfill the product-window read model from an immutable snapshot",
             "compare dual-read result sets before routing traffic",
             "retain relational source and replay cursor for rollback",
         ],
+    },
+    "order_detail_mutation": {
+        **order_detail_mutation,
+        "changed_assumption": "dominant-query",
+        "decision_recomputed": (
+            order_detail_mutation["selected_option"]
+            != baseline["selected_option"]
+        ),
     },
     "vendor_scope": {
         "PostgreSQL": "18",
