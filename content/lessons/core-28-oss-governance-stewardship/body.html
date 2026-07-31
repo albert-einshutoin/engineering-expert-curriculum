@@ -59,6 +59,10 @@ REPOSITORY_READINESS = {
     "governance": False,
     "maintainer-boundary": False,
 }
+RELEASE_EVIDENCE = {
+    "maintainer_approval_observed": False,
+    "provenance_verified": False,
+}
 JOURNEY_ORDER = (
     "discover",
     "prepare",
@@ -129,6 +133,10 @@ READINESS_FIELDS = {
 }
 JOURNEY_FIELDS = {"phase", "actor", "evidence_ids"}
 CONTRIBUTION_KINDS = {"documentation", "release-workflow"}
+RELEASE_EVIDENCE_FIELDS = {
+    "maintainer_approval_observed",
+    "provenance_verified",
+}
 
 def is_non_empty_text(value):
     return type(value) is str and bool(value.strip())
@@ -265,6 +273,17 @@ def validate_required_evidence(value):
             "oss-input-invariant: invalid required evidence schema"
         )
 
+def validate_release_evidence(value):
+    if (
+        type(value) is not dict
+        or set(value) != RELEASE_EVIDENCE_FIELDS
+        or not all(type(observed) is bool for observed in value.values())
+        or any(value.values())
+    ):
+        raise AssertionError(
+            "oss-input-invariant: invalid release evidence schema"
+        )
+
 def validate_command(value):
     if (
         type(value) is not dict
@@ -282,6 +301,7 @@ def validate_all_inputs():
     validate_readiness(REPOSITORY_READINESS)
     validate_journey(JOURNEY_ORDER, JOURNEY_REQUIREMENTS)
     validate_required_evidence(REQUIRED_EVIDENCE_BY_KIND)
+    validate_release_evidence(RELEASE_EVIDENCE)
     validate_command(COMMAND_INPUT)
 
 def changed_contribution_fields(baseline, transferred):
@@ -341,6 +361,31 @@ def required_evidence(contribution):
         ]
     )
 
+def evaluate_release_boundary(
+    readiness,
+    evidence,
+    third_party_can_release,
+):
+    repository_ready = all(readiness.values())
+    maintainer_approval_required = True
+    release_allowed = (
+        repository_ready
+        and evidence["maintainer_approval_observed"]
+        and evidence["provenance_verified"]
+        and not third_party_can_release
+    )
+    return {
+        "repository_ready": repository_ready,
+        "maintainer_approval_required": (
+            maintainer_approval_required
+        ),
+        "maintainer_approval_observed": evidence[
+            "maintainer_approval_observed"
+        ],
+        "provenance_verified": evidence["provenance_verified"],
+        "release_allowed": release_allowed,
+    }
+
 def main():
     validate_all_inputs()
     changed_fields = changed_contribution_fields(
@@ -392,11 +437,30 @@ def main():
         )
 
     third_party_can_release = False
-    maintainer_approval_required = True
-    release_allowed = (
-        repository_ready
-        and maintainer_approval_required
-        and not third_party_can_release
+    release_evidence = json.loads(
+        json.dumps(RELEASE_EVIDENCE, ensure_ascii=False)
+    )
+    boundary = evaluate_release_boundary(
+        baseline_snapshot,
+        release_evidence,
+        third_party_can_release,
+    )
+    maintainer_approval_required = boundary[
+        "maintainer_approval_required"
+    ]
+    release_allowed = boundary["release_allowed"]
+    ready_controls_probe = {
+        field: True
+        for field in READINESS_FIELDS
+    }
+    missing_approval_probe = {
+        "maintainer_approval_observed": False,
+        "provenance_verified": True,
+    }
+    ready_probe_boundary = evaluate_release_boundary(
+        ready_controls_probe,
+        missing_approval_probe,
+        third_party_can_release,
     )
     if third_party_can_release:
         raise AssertionError(
@@ -405,6 +469,10 @@ def main():
     if release_allowed or not maintainer_approval_required:
         raise AssertionError(
             "oss-maintainer-boundary-invariant: unsafe release gate"
+        )
+    if ready_probe_boundary["release_allowed"]:
+        raise AssertionError(
+            "oss-approval-invariant: release lacks observed approval"
         )
 
     baseline_required = required_evidence(BASELINE_CONTRIBUTION)
@@ -442,8 +510,17 @@ def main():
             "maintainer_approval_required": (
                 maintainer_approval_required
             ),
+            "maintainer_approval_observed": boundary[
+                "maintainer_approval_observed"
+            ],
+            "provenance_verified": boundary[
+                "provenance_verified"
+            ],
             "release_allowed": release_allowed,
             "blocked_by_readiness_gaps": blocked_by_readiness,
+            "ready_without_approval_probe_allowed": (
+                ready_probe_boundary["release_allowed"]
+            ),
         },
         "contribution_kind_transfer": {
             "changed_fields": changed_fields,
