@@ -418,10 +418,47 @@ class ContentStandardContractTests(unittest.TestCase):
                 f"> {clause}",
                 1,
             ),
+            "raw pre": valid.replace(
+                clause,
+                f"<pre>{clause}</pre>",
+                1,
+            ),
+            "raw code": valid.replace(
+                clause,
+                f"<code>{clause}</code>",
+                1,
+            ),
+            "raw template": valid.replace(
+                clause,
+                f"<template>{clause}</template>",
+                1,
+            ),
+            "tilde fence with a backtick in info": valid.replace(
+                clause,
+                f"~~~language`variant\n{clause}\n~~~",
+                1,
+            ),
+            "nested HTML comment": valid.replace(
+                clause,
+                f"<!-- outer <!-- inner --> {clause} -->",
+                1,
+            ),
         }
         for label, mutated in mutations.items():
             with self.subTest(label=label), self.assertRaises(AssertionError):
                 _assert_content_standard(mutated)
+
+    def test_invalid_backtick_fence_info_is_rejected(self) -> None:
+        valid = _valid_standard()
+        clause = REQUIRED_CLAUSES[EXPECTED_H2[1]][0]
+        mutated = valid.replace(
+            clause,
+            f"```language`variant\n{clause}\n```",
+            1,
+        )
+
+        with self.assertRaises(AssertionError):
+            _assert_content_standard(mutated)
 
     def test_setext_and_raw_html_extra_headings_are_rejected(self) -> None:
         valid = _valid_standard()
@@ -491,7 +528,7 @@ class ContentStandardContractTests(unittest.TestCase):
             with self.subTest(label=label), self.assertRaises(AssertionError):
                 _assert_content_standard(mutated)
 
-    def test_design_spec_defines_six_authored_and_seven_generated_sections(
+    def test_design_spec_defines_six_authored_and_nine_generated_responsibilities(
         self,
     ) -> None:
         source = DESIGN_SPEC.read_text(encoding="utf-8")
@@ -506,9 +543,10 @@ class ContentStandardContractTests(unittest.TestCase):
             "6. Sources and further study"
         )
         generated_contract = (
-            "`lesson.json` provides the structured lab, teach-back, assessment, "
-            "transfer, review schedule, rubric, and sources that the renderer "
-            "generates outside the authored body."
+            "`lesson.json` has exactly nine structured responsibilities that the "
+            "renderer generates outside the authored body: objectives, capability "
+            "progression, lab, teach-back, assessment, transfer, review, rubric, "
+            "and sources."
         )
         self.assertIn(authored_contract, source)
         self.assertIn(generated_contract, source)
@@ -518,6 +556,23 @@ class ContentStandardContractTests(unittest.TestCase):
         for contradictory_heading in ("Practical lab", "Transfer task", "Rubric"):
             with self.subTest(heading=contradictory_heading):
                 self.assertNotIn(contradictory_heading, authored_region)
+
+    def test_design_spec_separates_source_shape_from_reachability_audit(
+        self,
+    ) -> None:
+        source = _normalized_prose(
+            tuple(DESIGN_SPEC.read_text(encoding="utf-8").splitlines())
+        )
+        clauses = (
+            "The dependency-free validator checks source metadata and the syntax "
+            "and distinctness of at least two HTTPS URLs; it does not make network "
+            "requests or guarantee reachability.",
+            "Source reachability is an editorial responsibility checked by scheduled "
+            "link audits, not a dependency-free build or CI guarantee.",
+        )
+        for clause in clauses:
+            with self.subTest(clause=clause):
+                self.assertIn(_normalized_prose((clause,)), source)
 
     def test_weakened_normative_or_reversed_completion_claims_fail(self) -> None:
         valid = _valid_standard()

@@ -1407,6 +1407,38 @@ class ContentAcceptanceTests(unittest.TestCase):
                 with self.assertRaises(AssertionError):
                     _assert_generated_map_contract(tampered)
 
+        visibility_mutations = {
+            "HTML comment": f"<!--\n{document}\n-->",
+            "code fence": f"````markdown\n{document}\n````",
+            "extra H2": document.replace(
+                "## 地図の読み方",
+                "## 追加方針\n\nこの節は許可されない。\n\n## 地図の読み方",
+                1,
+            ),
+            "reordered H2": document.replace(
+                "## 地図の読み方",
+                "## SWAP",
+                1,
+            )
+            .replace("## 推奨する進み方", "## 地図の読み方", 1)
+            .replace("## SWAP", "## 推奨する進み方", 1),
+            "clause moved to the wrong section": document.replace(
+                "データ表はsource of truthから\n"
+                "機械生成し、学び方と解釈上の注意は人が保守する。",
+                "",
+                1,
+            ).replace(
+                "## 地図の読み方",
+                "## 地図の読み方\n\n"
+                "データ表はsource of truthから\n"
+                "機械生成し、学び方と解釈上の注意は人が保守する。",
+                1,
+            ),
+        }
+        for label, tampered in visibility_mutations.items():
+            with self.subTest(label=label), self.assertRaises(AssertionError):
+                _assert_generated_map_contract(tampered)
+
         for injected in (
             "| unexpected | generated | row |",
             '<img src="https://example.invalid/tracker">',
