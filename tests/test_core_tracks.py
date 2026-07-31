@@ -6810,6 +6810,235 @@ class CoreTrackTests(unittest.TestCase):
             transfer["transferred_selected_option"],
         )
 
+    def test_review_harness_verifies_actual_outcomes_in_both_cycles(
+        self,
+    ) -> None:
+        report = self.run_python_harness(
+            "core-26-code-review-collaborative-quality",
+            "collaborative_code_review_lab_v1",
+        )
+        cycles = (
+            report["review_cycle"],
+            report["risk_kind_transfer"]["transferred_review_cycle"],
+        )
+        for cycle in cycles:
+            self.assertTrue(cycle["author_fix"]["applied_patch_ids"])
+            reevaluation = cycle["independent_re_evaluation"]
+            self.assertEqual(reevaluation["blocking_findings"], [])
+            self.assertEqual(reevaluation["approval"], "approved")
+            self.assertTrue(reevaluation["outcome_evidence"])
+            for evidence in reevaluation["outcome_evidence"]:
+                self.assertEqual(evidence["actual"], evidence["expected"])
+                self.assertTrue(evidence["probe_input"])
+        self.assert_causal_harness_source_mutation_fails(
+            "core-26-code-review-collaborative-quality",
+            "collaborative_code_review_lab_v1",
+            '"expected_outcome_evidence": "negative quantity is rejected",',
+            (
+                '"expected_outcome_evidence": '
+                '"negative quantity is still accepted",'
+            ),
+            "review-reevaluation-invariant",
+        )
+
+    def test_team_transfer_recomputes_interface_and_enablement(
+        self,
+    ) -> None:
+        report = self.run_python_harness(
+            "core-27-team-interfaces-sociotechnical-architecture",
+            "team_interface_lab_v1",
+        )
+        transfer = report["dependency_latency_transfer"]
+        baseline = transfer["baseline_interface"]
+        transferred = transfer["transferred_interface"]
+        self.assertEqual(baseline["slo"]["status"], "healthy")
+        self.assertEqual(transferred["slo"]["status"], "breached")
+        self.assertEqual(
+            baseline["dependencies"],
+            transferred["dependencies"],
+        )
+        self.assertEqual(
+            baseline["cognitive_load"],
+            transferred["cognitive_load"],
+        )
+        self.assertNotEqual(
+            baseline["slo"]["observed"],
+            transferred["slo"]["observed"],
+        )
+        baseline_enablement = transfer["baseline_enablement"]
+        transferred_enablement = transfer["transferred_enablement"]
+        self.assertEqual(
+            baseline_enablement["review_evidence"]["status"],
+            "healthy",
+        )
+        self.assertEqual(
+            transferred_enablement["review_evidence"]["status"],
+            "breached",
+        )
+        self.assertNotEqual(
+            baseline_enablement["decision"],
+            transferred_enablement["decision"],
+        )
+        self.assert_causal_harness_source_mutation_fails(
+            "core-27-team-interfaces-sociotechnical-architecture",
+            "team_interface_lab_v1",
+            (
+                "enablement_decision = "
+                "evaluate_enablement_decision(team_interface)"
+            ),
+            'enablement_decision = "monitor"',
+            "team-interface-enablement-invariant",
+        )
+
+    def test_oss_release_gate_separates_required_and_observed_evidence(
+        self,
+    ) -> None:
+        report = self.run_python_harness(
+            "core-28-oss-governance-stewardship",
+            "oss_stewardship_lab_v1",
+        )
+        boundary = report["release_boundary"]
+        self.assertTrue(boundary["maintainer_approval_required"])
+        self.assertFalse(boundary["maintainer_approval_observed"])
+        self.assertFalse(boundary["provenance_verified"])
+        self.assertFalse(boundary["release_allowed"])
+        self.assertFalse(boundary["ready_without_approval_probe_allowed"])
+        self.assert_causal_harness_source_mutation_fails(
+            "core-28-oss-governance-stewardship",
+            "oss_stewardship_lab_v1",
+            'and evidence["maintainer_approval_observed"]',
+            "and maintainer_approval_required",
+            "oss-approval-invariant",
+        )
+
+    def test_async_transfer_derives_overlap_window_and_meeting_need(
+        self,
+    ) -> None:
+        report = self.run_python_harness(
+            "core-29-cross-cultural-async-collaboration",
+            "async_rfc_decision_lab_v1",
+        )
+        rfc = report["async_rfc"]
+        transfer = report["timezone_overlap_transfer"]
+        self.assertEqual(rfc["derived_timezone_overlap_hours"], 4)
+        self.assertEqual(
+            transfer["derived_baseline_overlap_hours"],
+            4,
+        )
+        self.assertEqual(
+            transfer["derived_transferred_overlap_hours"],
+            0,
+        )
+        self.assertGreater(
+            transfer["transferred_response_window_hours"],
+            transfer["baseline_response_window_hours"],
+        )
+        self.assertFalse(rfc["meeting_required"])
+        self.assertTrue(rfc["meeting_need_derived_from_context"])
+        self.assertTrue(transfer["same_proposal_evidence"])
+        self.assert_causal_harness_source_mutation_fails(
+            "core-29-cross-cultural-async-collaboration",
+            "async_rfc_decision_lab_v1",
+            '        "timezone": "UTC-07:00",',
+            '        "timezone": "UTC+09:00",',
+            "async-timezone-invariant",
+        )
+        self.assert_causal_harness_source_mutation_fails(
+            "core-29-cross-cultural-async-collaboration",
+            "async_rfc_decision_lab_v1",
+            "meeting_required = not context_complete",
+            "meeting_required = False",
+            "async-context-invariant",
+        )
+
+    def test_leadership_transfer_derives_order_and_selection_together(
+        self,
+    ) -> None:
+        report = self.run_python_harness(
+            "core-30-evidence-based-technical-leadership",
+            "technical_strategy_lab_v1",
+        )
+        strategy = report["technical_strategy"]
+        transfer = report["risk_tolerance_transfer"]
+        baseline_order = transfer["baseline_investment_order"]
+        transferred_order = transfer["transferred_investment_order"]
+        self.assertEqual(
+            baseline_order[0]["option_id"],
+            transfer["baseline_selected_option"],
+        )
+        self.assertEqual(
+            transferred_order[0]["option_id"],
+            transfer["transferred_selected_option"],
+        )
+        self.assertEqual(
+            strategy["investment_order"],
+            baseline_order,
+        )
+        self.assertNotEqual(
+            [item["option_id"] for item in baseline_order],
+            [item["option_id"] for item in transferred_order],
+        )
+        for order in (baseline_order, transferred_order):
+            self.assertEqual(
+                [item["rank"] for item in order],
+                list(range(1, len(order) + 1)),
+            )
+            self.assertTrue(
+                all(item["score_inputs"] for item in order),
+            )
+        self.assert_causal_harness_source_mutation_fails(
+            "core-30-evidence-based-technical-leadership",
+            "technical_strategy_lab_v1",
+            "investment_order = rank_strategies(options, context)",
+            "investment_order = list(INVESTMENT_ORDER)",
+            "leadership-order-invariant",
+        )
+
+    def test_quality_review_inputs_reject_nested_unknown_fields(
+        self,
+    ) -> None:
+        cases = (
+            (
+                "core-26-code-review-collaborative-quality",
+                "collaborative_code_review_lab_v1",
+                '        "expected": "rejected",',
+                (
+                    '        "expected": "rejected",\n'
+                    '        "unreviewed_actual": "rejected",'
+                ),
+                "review-input-invariant",
+            ),
+            (
+                "core-28-oss-governance-stewardship",
+                "oss_stewardship_lab_v1",
+                '    "maintainer_approval_observed": False,',
+                (
+                    '    "maintainer_approval_observed": False,\n'
+                    '    "unreviewed_signature": True,'
+                ),
+                "oss-input-invariant",
+            ),
+            (
+                "core-29-cross-cultural-async-collaboration",
+                "async_rfc_decision_lab_v1",
+                '        "baseline_local_hours": [9, 13],',
+                (
+                    '        "baseline_local_hours": [9, 13],\n'
+                    '        "unreviewed_dst_rule": "implicit",'
+                ),
+                "async-input-invariant",
+            ),
+        )
+        for lesson_id, marker, original, replacement, diagnostic in cases:
+            with self.subTest(lesson_id=lesson_id):
+                self.assert_causal_harness_source_mutation_fails(
+                    lesson_id,
+                    marker,
+                    original,
+                    replacement,
+                    diagnostic,
+                )
+
     def test_lead_harnesses_reject_malformed_transfer_schema(
         self,
     ) -> None:
