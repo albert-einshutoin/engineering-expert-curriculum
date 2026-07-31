@@ -367,12 +367,6 @@ DATA_SCALE_SOURCES = {
             "primary",
         ),
         (
-            "Improving your app’s performance",
-            "https://developer.apple.com/documentation/xcode/"
-            "improving-your-app-s-performance/",
-            "primary",
-        ),
-        (
             "Handling Overload",
             "https://sre.google/sre-book/handling-overload/",
             "primary",
@@ -2698,12 +2692,19 @@ class CoreTrackTests(unittest.TestCase):
     def test_coordination_harness_rejects_partition_mutation(
         self,
     ) -> None:
-        self.assert_harness_source_mutation_fails(
+        source = self.python_harness_source(
             "core-13-distributed-coordination-failure",
             "coordination_simulator_lab_v1",
-            'if event["kind"] == "partition_start":',
-            "if False:",
         )
+        original = 'if event["kind"] == "partition_start":'
+        self.assertIn(original, source)
+        mutated = source.replace(original, "if False:", 1)
+
+        result = self.execute_python_harness_source(mutated)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("partition-causal-invariant", result.stderr)
+        self.assertNotIn("KeyError", result.stderr)
 
     def test_performance_harness_separates_simulation_and_measurement(
         self,
@@ -2739,6 +2740,7 @@ class CoreTrackTests(unittest.TestCase):
             self.assertGreaterEqual(point["memory_mb"], 0)
             self.assertGreaterEqual(point["queue_depth"], 0)
             self.assertGreaterEqual(point["downstream_ms"], 0)
+            self.assertGreater(point["observed_active_concurrency"], 0)
         analysis = report["curve_analysis"]
         self.assertTrue(analysis["throughput_plateau"])
         self.assertTrue(analysis["tail_growth"])
@@ -2770,15 +2772,30 @@ class CoreTrackTests(unittest.TestCase):
         )
         self.assertEqual(
             little["observed_concurrency"],
-            near_limit["observed_concurrency"],
+            near_limit["observed_active_concurrency"],
+        )
+        self.assertEqual(
+            little["observed_concurrency_source"],
+            "independent-simulated-fixture-input",
         )
         self.assertAlmostEqual(
-            little["observed_concurrency"],
+            little["calculated_concurrency"],
             little["throughput_per_second"]
             * little["mean_response_seconds"],
-            delta=0.01,
         )
-        self.assertLessEqual(little["relative_error"], 0.01)
+        self.assertNotEqual(
+            little["observed_concurrency"],
+            little["calculated_concurrency"],
+        )
+        self.assertAlmostEqual(
+            little["relative_error"],
+            abs(
+                little["observed_concurrency"]
+                - little["calculated_concurrency"]
+            )
+            / little["observed_concurrency"],
+        )
+        self.assertLessEqual(little["relative_error"], 0.05)
 
         profile = report["local_profile"]
         self.assertEqual(
@@ -2799,7 +2816,6 @@ class CoreTrackTests(unittest.TestCase):
                 "python": "3.13",
                 "profiler": "cProfile/pstats standard library",
                 "go_docs": "rolling; reviewed 2026-07-31",
-                "apple_docs": "rolling; reviewed 2026-07-31",
             },
         )
         self.assertTrue(profile["environment_limitations"])
@@ -2852,6 +2868,12 @@ class CoreTrackTests(unittest.TestCase):
             sli["good_events"] / sli["valid_events"],
         )
         self.assertEqual(sli["journey"], "purchase-completion")
+        self.assertTrue(
+            all(
+                event["timestamp"].endswith("+00:00")
+                for event in report["fixture_events"]
+            )
+        )
         slo = report["slo"]
         self.assertGreater(slo["window_days"], 0)
         self.assertGreater(slo["target"], 0)
@@ -2860,19 +2882,67 @@ class CoreTrackTests(unittest.TestCase):
             slo["error_budget_fraction"],
             1 - slo["target"],
         )
-        self.assertAlmostEqual(
-            report["burn_rate"]["observed_bad_fraction"]
-            / slo["error_budget_fraction"],
-            report["burn_rate"]["rate"],
-        )
+        burn_windows = report["burn_windows"]
+        self.assertEqual(set(burn_windows), {"short", "long"})
+        self.assertEqual(burn_windows["short"]["window_minutes"], 5)
+        self.assertEqual(burn_windows["long"]["window_minutes"], 60)
+        for window in burn_windows.values():
+            self.assertGreater(window["valid_events"], 0)
+            self.assertEqual(
+                window["good_events"] + window["bad_events"],
+                window["valid_events"],
+            )
+            self.assertAlmostEqual(
+                window["observed_bad_fraction"],
+                window["bad_events"] / window["valid_events"],
+            )
+            self.assertAlmostEqual(
+                window["rate"],
+                window["observed_bad_fraction"]
+                / slo["error_budget_fraction"],
+            )
+            self.assertTrue(window["start_timestamp"].endswith("+00:00"))
+            self.assertTrue(window["end_timestamp"].endswith("+00:00"))
         alerts = report["alerts"]
         self.assertTrue(alerts["multi_window"])
+        self.assertEqual(alerts["combination"], "short-and-long")
         self.assertTrue(alerts["page"]["actionable"])
         self.assertTrue(alerts["ticket"]["actionable"])
-        self.assertNotEqual(
-            alerts["page"]["window_minutes"],
-            alerts["ticket"]["window_minutes"],
+        self.assertEqual(
+            alerts["page"]["triggered"],
+            (
+                alerts["page"]["conditions"]["short"]
+                and alerts["page"]["conditions"]["long"]
+            ),
         )
+        scenarios = alerts["scenarios"]
+        self.assertEqual(set(scenarios), {"normal", "short-only", "both"})
+        self.assertEqual(
+            {
+                name: (
+                    scenario["conditions"]["short"],
+                    scenario["conditions"]["long"],
+                    scenario["page_triggered"],
+                )
+                for name, scenario in scenarios.items()
+            },
+            {
+                "normal": (False, False, False),
+                "short-only": (True, False, False),
+                "both": (True, True, True),
+            },
+        )
+        for scenario in scenarios.values():
+            for window in scenario["windows"].values():
+                self.assertAlmostEqual(
+                    window["observed_bad_fraction"],
+                    window["bad_events"] / window["valid_events"],
+                )
+                self.assertAlmostEqual(
+                    window["rate"],
+                    window["observed_bad_fraction"]
+                    / slo["error_budget_fraction"],
+                )
         runbook = report["runbook"]
         self.assertTrue(runbook["owner"])
         self.assertTrue(runbook["user_impact_check"])
@@ -2892,11 +2962,36 @@ class CoreTrackTests(unittest.TestCase):
         self.assertTrue(telemetry["cardinality_check"]["bounded"])
         self.assertTrue(telemetry["sampling_limitations"])
         self.assertTrue(telemetry["stability"])
-        mutation = report["event_telemetry_mutation"]
-        self.assertTrue(mutation["detected"])
-        self.assertTrue(
-            mutation["alert_changed"]
-            or mutation["validation_changed"]
+        transfer = report["journey_boundary_transfer"]
+        self.assertEqual(transfer["changed_fields"], ["journey"])
+        self.assertEqual(
+            transfer["baseline_sli"]["journey"],
+            "search-success",
+        )
+        self.assertEqual(
+            transfer["transferred_sli"]["journey"],
+            "purchase-completion",
+        )
+        self.assertNotEqual(
+            transfer["baseline_sli"]["ratio"],
+            transfer["transferred_sli"]["ratio"],
+        )
+        self.assertEqual(
+            transfer["baseline_event_ids"],
+            transfer["transferred_event_ids"],
+        )
+        self.assertEqual(
+            transfer["unchanged"],
+            {
+                "event_fixture": True,
+                "target": True,
+                "window": True,
+                "telemetry_contract": True,
+            },
+        )
+        self.assertEqual(
+            transfer["telemetry_errors_before"],
+            transfer["telemetry_errors_after"],
         )
         self.assert_data_scale_mastery_evidence(report, lesson_id)
         self.assertFalse(report["external_network_used"])
