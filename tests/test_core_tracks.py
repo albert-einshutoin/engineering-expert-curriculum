@@ -5087,6 +5087,27 @@ class CoreTrackTests(unittest.TestCase):
             "maintenance-comprehension-invariant",
         )
 
+    def test_legacy_harness_rejects_detached_fixture_path(self) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-21-maintenance-legacy-comprehension",
+            "legacy_comprehension_lab_v1",
+            'baseline = analyze_change(FIXTURE, "discount-rate-change")',
+            (
+                "isolated_fixture = {\n"
+                "        **FIXTURE,\n"
+                '        "stages": [\n'
+                '            {**stage, "change_requests": []}\n'
+                '            for stage in FIXTURE["stages"]\n'
+                "        ],\n"
+                "    }\n"
+                "    baseline = analyze_change(\n"
+                "        isolated_fixture,\n"
+                '        "discount-rate-change",\n'
+                "    )"
+            ),
+            "maintenance-comprehension-invariant",
+        )
+
     def test_migration_harness_models_expand_contract_state_machine(
         self,
     ) -> None:
@@ -5119,8 +5140,19 @@ class CoreTrackTests(unittest.TestCase):
             ["backfill_error_rate"],
         )
         self.assertTrue(transfer["same_migration_plan"])
+        self.assertEqual(
+            transfer["baseline_plan"],
+            transfer["transferred_plan"],
+        )
         self.assertEqual(transfer["baseline_decision"], "continue")
         self.assertEqual(transfer["transferred_decision"], "rollback")
+        rollback = transfer["rollback_outcome"]
+        self.assertTrue(rollback["executed"])
+        self.assertTrue(rollback["observed"])
+        self.assertTrue(rollback["system_outcome"])
+        self.assertTrue(
+            report["command_success_distinction"]["system_outcome_checked"],
+        )
 
     def test_migration_harness_rejects_stop_decision_bypass(self) -> None:
         self.assert_causal_harness_source_mutation_fails(
@@ -5129,6 +5161,45 @@ class CoreTrackTests(unittest.TestCase):
             "decision = decide_migration(observation, thresholds)",
             'decision = "continue"',
             "migration-causal-invariant",
+        )
+
+    def test_migration_harness_rejects_unknown_transfer_field(
+        self,
+    ) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-22-evolution-safe-migrations",
+            "migration_state_machine_lab_v1",
+            '"backfill_errors": 20,',
+            (
+                '"backfill_errors": 20,\n'
+                '    "unreviewed_reader_errors": 1,'
+            ),
+            "migration-transfer-invariant",
+        )
+
+    def test_migration_harness_rejects_plan_snapshot_drift(
+        self,
+    ) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-22-evolution-safe-migrations",
+            "migration_state_machine_lab_v1",
+            "phases = build_phases(PHASE_INPUTS)",
+            (
+                "phases = build_phases(PHASE_INPUTS)\n"
+                '    phases[0]["rollback"] = "drifted rollback"'
+            ),
+            "migration-plan-invariant",
+        )
+
+    def test_migration_harness_rejects_unobserved_rollback_outcome(
+        self,
+    ) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-22-evolution-safe-migrations",
+            "migration_state_machine_lab_v1",
+            '"observed": True,',
+            '"observed": False,',
+            "migration-rollback-outcome-invariant",
         )
 
     def test_incident_harness_builds_non_blaming_evidence_review(
@@ -5221,6 +5292,17 @@ class CoreTrackTests(unittest.TestCase):
             '"observed": True,',
             '"observed": False,',
             "incident-action-outcome-invariant",
+        )
+
+    def test_incident_harness_rejects_future_decision_evidence(
+        self,
+    ) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-23-incident-response-learning",
+            "incident_learning_review_lab_v1",
+            '"evidence_ids": ["ev-saturation"],',
+            '"evidence_ids": ["ev-saturation", "ev-recovery"],',
+            "incident-decision-evidence-invariant",
         )
 
     def test_delivery_harness_fails_closed_and_verifies_provenance(
