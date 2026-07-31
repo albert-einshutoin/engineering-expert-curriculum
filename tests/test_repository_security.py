@@ -375,6 +375,17 @@ class RepositorySecurityTests(unittest.TestCase):
                     )
 
     def test_workflows_default_read_only_and_bound_every_job(self) -> None:
+        allowed_overrides = {
+            ("codeql.yml", "analysis"): {
+                "contents": "read",
+                "security-events": "write",
+            },
+            ("pages.yml", "deploy"): {
+                "pages": "write",
+                "id-token": "write",
+            },
+        }
+        observed_overrides: dict[tuple[str, str], dict[str, YamlValue]] = {}
         for path in _workflow_files():
             document = _load_yaml(path)
             self.assertEqual(
@@ -398,6 +409,11 @@ class RepositorySecurityTests(unittest.TestCase):
                     self.assertTrue(
                         set(permission_map.values()) <= _ALLOWED_PERMISSION_VALUES
                     )
+                    override = (path.name, job_name)
+                    self.assertIn(override, allowed_overrides)
+                    self.assertEqual(permission_map, allowed_overrides[override])
+                    observed_overrides[override] = permission_map
+        self.assertEqual(observed_overrides, allowed_overrides)
 
     def test_checkout_never_persists_credentials(self) -> None:
         checkout = "actions/checkout@" + _ACTION_LEDGER["actions/checkout"]

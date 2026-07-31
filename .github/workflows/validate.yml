@@ -1,0 +1,42 @@
+name: Validate
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  full-validation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository without retained credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.13"
+      - name: Compile build and test modules
+        run: python -m compileall -q curriculum_builder tools tests
+      - name: Run complete test suite
+        run: python -m unittest discover -s tests -v
+      - name: Verify generated curriculum map
+        run: python tools/generate_curriculum_map.py --check
+      - name: Build and verify reproducible release artifact
+        run: |
+          python tools/build.py
+          python tools/check_site.py --root site --require-current-release
+          LC_ALL=C find site -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum > /tmp/site-first.sha256
+          python tools/build.py
+          python tools/check_site.py --root site --require-current-release
+          LC_ALL=C find site -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum > /tmp/site-second.sha256
+          diff -u /tmp/site-first.sha256 /tmp/site-second.sha256
