@@ -142,7 +142,7 @@ class PublicationPlanContractTests(unittest.TestCase):
             'PUBLIC_REPOSITORY_SLUG="${PUBLIC_OWNER}/engineering-expert-curriculum"',
             'EXPECTED_NOREPLY_EMAIL="${PUBLIC_ACCOUNT_ID}+${PUBLIC_OWNER}@users.noreply.github.com"',
             'test "$PUBLIC_NOREPLY_EMAIL" = "$EXPECTED_NOREPLY_EMAIL"',
-            '"nameWithOwner":"$PUBLIC_REPOSITORY_SLUG"',
+            'test "$REPOSITORY_NAME_WITH_OWNER" = "$PUBLIC_REPOSITORY_SLUG"',
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, publication)
@@ -155,6 +155,7 @@ class PublicationPlanContractTests(unittest.TestCase):
             "gh pr checks",
             "gh pr diff",
             "gh pr merge",
+            "gh pr comment",
             "gh run list",
             "gh run watch",
             "gh release create",
@@ -179,7 +180,8 @@ class PublicationPlanContractTests(unittest.TestCase):
         )
         for phrase in (
             'gh api --method PUT "repos/$PUBLIC_REPOSITORY_SLUG/private-vulnerability-reporting"',
-            'gh api "repos/$PUBLIC_REPOSITORY_SLUG/private-vulnerability-reporting"',
+            "PRIVATE_REPORTING_STATUS",
+            "204 No Content",
             'gh label create code --repo "$PUBLIC_REPOSITORY_SLUG"',
             'gh label create content --repo "$PUBLIC_REPOSITORY_SLUG"',
             'gh label create correction --repo "$PUBLIC_REPOSITORY_SLUG"',
@@ -189,6 +191,13 @@ class PublicationPlanContractTests(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, publication)
                 self.assertLess(publication.index(phrase), push)
+
+    def test_review_evidence_uses_the_actual_implementation_date(self) -> None:
+        publication = _read(PUBLICATION_PLAN)
+        evidence = "docs/reviews/2026-07-31-release-readiness.md"
+        self.assertIn(f"Create: `{evidence}`", publication)
+        self.assertIn(f"git add {evidence}", publication)
+        self.assertNotIn("2026-07-30-release-readiness.md", publication)
 
     def test_sanitized_history_is_verified_before_any_public_push(self) -> None:
         publication = _read(PUBLICATION_PLAN)
@@ -217,6 +226,27 @@ class PublicationPlanContractTests(unittest.TestCase):
             '"$(git -C "$PUBLICATION_CLONE" rev-list',
             verification,
         )
+
+    def test_push_requires_a_sha_bound_successful_preflight_token(self) -> None:
+        publication = _read(PUBLICATION_PLAN)
+        verification = publication.split(
+            "**Step 4: Verify rewritten refs, identity, paths, secrets, and tests**",
+            maxsplit=1,
+        )[1].split("**Step 5: Push exactly the reviewed public refs**", maxsplit=1)[0]
+        push = publication.split(
+            "**Step 5: Push exactly the reviewed public refs**",
+            maxsplit=1,
+        )[1].split("**Step 6: Open a context-complete pull request**", maxsplit=1)[0]
+        for phrase in (
+            "PUBLICATION_PREFLIGHT_TOKEN",
+            "PREFLIGHT_PAYLOAD",
+            "refs/heads/main",
+            "refs/heads/feat/static-oss-curriculum",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, verification)
+                self.assertIn(phrase, push)
+        self.assertIn('test "$(cat "$PUBLICATION_PREFLIGHT_TOKEN")" = "$PREFLIGHT_PAYLOAD"', push)
 
     def test_current_site_checker_cli_is_used_everywhere(self) -> None:
         publication = _read(PUBLICATION_PLAN)
