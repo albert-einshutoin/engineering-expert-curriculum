@@ -306,12 +306,22 @@ def main():
     )
     changed_fields = [
         field
-        for field in sorted(BASELINE_ASSUMPTION)
-        if BASELINE_ASSUMPTION[field] != TRANSFER_ASSUMPTION[field]
+        for field in sorted(
+            set(BASELINE_ASSUMPTION) | set(TRANSFER_ASSUMPTION)
+        )
+        if (
+            field not in BASELINE_ASSUMPTION
+            or field not in TRANSFER_ASSUMPTION
+            or BASELINE_ASSUMPTION[field]
+            != TRANSFER_ASSUMPTION[field]
+        )
     ]
+    if changed_fields != ["detection_minute"]:
+        raise AssertionError(
+            "incident-transfer-invariant: transfer changed wrong input"
+        )
     if (
-        changed_fields != ["detection_minute"]
-        or transferred["duration_minutes"]
+        transferred["duration_minutes"]
         &lt;= baseline["duration_minutes"]
     ):
         raise AssertionError(
