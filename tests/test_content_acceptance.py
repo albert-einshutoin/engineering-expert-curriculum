@@ -8,6 +8,7 @@ import json
 from pathlib import Path, PurePosixPath
 import re
 import stat
+import string
 from tempfile import TemporaryDirectory
 import unicodedata
 import unittest
@@ -538,10 +539,14 @@ def _parse_markdown_table_row(line: str) -> tuple[str, ...]:
     while index < len(line) - 1:
         character = line[index]
         if character == "\\":
-            index += 1
-            if index >= len(line) - 1:
+            if index + 1 >= len(line) - 1:
                 raise AssertionError("generated map row has a dangling escape")
-            current.append(line[index])
+            escaped = line[index + 1]
+            if escaped in string.punctuation:
+                current.append(escaped)
+                index += 2
+                continue
+            current.append("\\")
         elif character == "|":
             cells.append(unescape("".join(current).strip()))
             current = []
@@ -571,6 +576,34 @@ def _map_section(
     return tuple(section.splitlines())
 
 
+def _map_table_rows(
+    block: str,
+    heading: str,
+    next_heading: str | None,
+    header: str,
+    separator: str,
+    expected_rows: int,
+) -> tuple[str, ...]:
+    """Consume every nonblank line so injected content cannot hide in a section."""
+    content = tuple(
+        line
+        for line in _map_section(block, heading, next_heading)
+        if line
+    )
+    if next_heading is None:
+        if not content or content[-1] != END_GENERATED_MAP:
+            raise AssertionError("generated map must end after its final table")
+        content = content[:-1]
+    if any(not line.startswith("|") or not line.endswith("|") for line in content):
+        raise AssertionError(f"generated map {heading} contains unexpected content")
+    if content[:2] != (header, separator):
+        raise AssertionError(f"generated map {heading} table header drifted")
+    rows = content[2:]
+    if len(rows) != expected_rows:
+        raise AssertionError(f"generated map {heading} row count drifted")
+    return rows
+
+
 def _assert_generated_map_contract(
     document: str,
     repository_root: Path = REPOSITORY_ROOT,
@@ -584,19 +617,28 @@ def _assert_generated_map_contract(
         "| 統合 Capstone | 3 projects |",
         "| Primary exercise coverage | 30/30 |",
     )
-    for row in expected_release_rows:
-        if block.count(row) != 1:
-            raise AssertionError(f"missing or duplicated release row: {row}")
+    release_rows = _map_table_rows(
+        block,
+        "リリース集計",
+        "Framework baseline",
+        "| 項目 | 件数・固定値 |",
+        "|---|---|",
+        len(expected_release_rows),
+    )
+    if release_rows != expected_release_rows:
+        raise AssertionError("generated map release rows are not canonical")
 
-    framework_lines = _map_section(
+    framework_lines = _map_table_rows(
         block,
         "Framework baseline",
         "Mastery gates",
+        "| Framework | Version | Official source | Verified |",
+        "|---|---|---|---|",
+        len(FRAMEWORKS),
     )
     framework_rows = tuple(
         _parse_markdown_table_row(line)
         for line in framework_lines
-        if any(line.startswith(f"| {framework} |") for framework in FRAMEWORKS)
     )
     expected_framework_rows = tuple(
         (
@@ -610,11 +652,17 @@ def _assert_generated_map_contract(
     if framework_rows != expected_framework_rows:
         raise AssertionError("generated map framework baseline is not canonical")
 
-    gate_lines = _map_section(block, "Mastery gates", "30-lesson release map")
+    gate_lines = _map_table_rows(
+        block,
+        "Mastery gates",
+        "30-lesson release map",
+        "| Order | Gate | After | Artifact | Review evidence |",
+        "|---:|---|---:|---|---|",
+        len(EXPECTED_MASTERY_GATES),
+    )
     gate_rows = tuple(
         _parse_markdown_table_row(line)
         for line in gate_lines
-        if re.match(r"^\| [1-6] \| `", line)
     )
     expected_gate_rows = tuple(
         (
@@ -658,16 +706,24 @@ def _assert_generated_map_contract(
         for capstone_id in CAPSTONE_IDS
     }
 
-    lesson_lines = _map_section(
+    lesson_lines = _map_table_rows(
         block,
         "30-lesson release map",
         "Capstone coverage",
+        "| # | Lesson | Track / Stage | Prerequisites | Mastery gate | "
+        "CS2023 | SWEBOK | SFIA | Primary / Supporting Capstone |",
+        "|---:|---|---|---|---|---|---|---|---|",
+        len(LESSON_IDS),
     )
-    lesson_rows = tuple(
-        (match, line, _parse_markdown_table_row(line))
-        for line in lesson_lines
-        if (match := _LESSON_MAP_ROW.match(line)) is not None
-    )
+    parsed_lesson_rows = []
+    for line in lesson_lines:
+        match = _LESSON_MAP_ROW.match(line)
+        if match is None:
+            raise AssertionError("generated map contains an invalid lesson row")
+        parsed_lesson_rows.append(
+            (match, line, _parse_markdown_table_row(line))
+        )
+    lesson_rows = tuple(parsed_lesson_rows)
     if len(lesson_rows) != 30:
         raise AssertionError("generated map must contain exactly 30 lesson rows")
     if tuple(
@@ -740,17 +796,26 @@ def _assert_generated_map_contract(
     if len(mapping_cells) != 90:
         raise AssertionError("generated map must expose exactly 90 mapping cells")
 
-    capstone_lines = _map_section(block, "Capstone coverage", None)
-    capstone_rows = tuple(
-        _parse_markdown_table_row(line)
-        for line in capstone_lines
-        if re.match(
+    capstone_lines = _map_table_rows(
+        block,
+        "Capstone coverage",
+        None,
+        "| Capstone | Lessons | Primary exercises | Evidence kinds |",
+        "|---|---:|---:|---|",
+        len(CAPSTONE_IDS),
+    )
+    if any(
+        re.match(
             r"^\| `(?:global-service|legacy-evolution|oss-launch)` — ",
             line,
         )
+        is None
+        for line in capstone_lines
+    ):
+        raise AssertionError("generated map contains an invalid capstone row")
+    capstone_rows = tuple(
+        _parse_markdown_table_row(line) for line in capstone_lines
     )
-    if len(capstone_rows) != 3:
-        raise AssertionError("generated map must contain three capstone rows")
     expected_capstone_rows = tuple(
         (
             f"`{capstone_id}` — {capstone_documents[capstone_id]['title']}",

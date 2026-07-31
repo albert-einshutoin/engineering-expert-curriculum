@@ -3,44 +3,114 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import dataclass
+import hashlib
 from pathlib import Path
+import string
 from typing import Final
+import unicodedata
 
 from .build import (
+    MAX_CATALOG_BYTES,
     MAX_ROADMAP_BYTES,
+    _DirectoryHandle,
+    _open_trusted_directory,
+    _read_stable_regular_file,
+    _verify_directory_identity,
     parse_roadmap_bytes,
     validate_release_curriculum,
 )
-from .capstones import load_capstones
-from .catalog import CANONICAL_CATALOG_SHA256, load_catalog
-from .competencies import load_competencies
+from .capstones import Capstone, load_capstones_from_content_fd
+from .catalog import load_repository_catalog_bytes
+from .competencies import (
+    MAX_COMPETENCIES_BYTES,
+    parse_competencies_bytes,
+)
 from .errors import CurriculumValidationError
-from .lesson_io import read_stable_lesson_file
-from .lessons import Lesson, load_lesson
+from .lesson_rendering import LessonCollection, load_lessons_from_root
+from .lessons import Lesson
 
 
 BEGIN_GENERATED_MAP: Final = "<!-- BEGIN GENERATED CURRICULUM MAP -->"
 END_GENERATED_MAP: Final = "<!-- END GENERATED CURRICULUM MAP -->"
 _FRAMEWORK_ORDER: Final = ("CS2023", "SWEBOK", "SFIA")
 _NATIVE_PATH_TYPE: Final = type(Path())
+MAX_MARKDOWN_CELL_CHARACTERS: Final = 4_096
+MAX_MARKDOWN_CELL_BYTES: Final = 16 * 1_024
+_ASCII_PUNCTUATION: Final = frozenset(string.punctuation)
+_UNSAFE_TEXT_CATEGORIES: Final = frozenset({"Cc", "Cf", "Cs", "Zl", "Zp"})
+
+
+@dataclass(frozen=True, slots=True)
+class _ReleaseInputs:
+    """One comparable capture of every source that contributes to the map."""
+
+    catalog_bytes: bytes
+    roadmap_bytes: bytes
+    lesson_snapshot: LessonCollection
+    competency_bytes: bytes
+    capstones: tuple[Capstone, ...]
 
 
 def _markdown_cell(value: str) -> str:
-    """Keep generated tables stable even if reviewed source text uses pipes."""
-    return " ".join(value.split()).replace("|", "\\|")
+    """Render reviewed source as bounded plain text inside a Markdown cell."""
+    if type(value) is not str:
+        raise CurriculumValidationError("markdown cell must be an exact string")
+    if any(
+        unicodedata.category(character) in _UNSAFE_TEXT_CATEGORIES
+        for character in value
+    ):
+        raise CurriculumValidationError("markdown cell contains a control character")
+    if len(value) > MAX_MARKDOWN_CELL_CHARACTERS or len(
+        value.encode("utf-8")
+    ) > MAX_MARKDOWN_CELL_BYTES:
+        raise CurriculumValidationError("markdown cell exceeds maximum size")
+
+    normalized = " ".join(value.split())
+    # Numeric references keep punctuation visually intact without leaving GFM
+    # syntax for raw HTML, autolinks, mentions, or issue references to activate.
+    # Pipes and backslashes retain conventional Markdown escapes so table
+    # parsers can distinguish cell boundaries without decoding HTML first.
+    rendered: list[str] = []
+    for character in normalized:
+        if character == "\\":
+            rendered.append("\\\\")
+        elif character == "|":
+            rendered.append("\\|")
+        elif character in _ASCII_PUNCTUATION:
+            rendered.append(f"&#{ord(character)};")
+        else:
+            rendered.append(character)
+    return "".join(rendered)
 
 
-def _release_lessons(root: Path) -> tuple[Lesson, ...]:
-    lessons_root = root / "content/lessons"
-    lessons = tuple(
-        load_lesson(path)
-        for path in sorted(lessons_root.glob("*/lesson.json"))
+def _capture_release_inputs(content: _DirectoryHandle) -> _ReleaseInputs:
+    """Capture all map inputs through one pinned content directory."""
+    lesson_snapshot = load_lessons_from_root(content.descriptor)
+    lesson_ids = frozenset(
+        item.lesson.id for item in lesson_snapshot.lessons
     )
-    return tuple(
-        sorted(
-            lessons,
-            key=lambda lesson: int(lesson.id.removeprefix("core-")[:2]),
-        )
+    return _ReleaseInputs(
+        catalog_bytes=_read_stable_regular_file(
+            content,
+            "catalog.json",
+            MAX_CATALOG_BYTES,
+        ),
+        roadmap_bytes=_read_stable_regular_file(
+            content,
+            "roadmap.json",
+            MAX_ROADMAP_BYTES,
+        ),
+        lesson_snapshot=lesson_snapshot,
+        competency_bytes=_read_stable_regular_file(
+            content,
+            "competencies.json",
+            MAX_COMPETENCIES_BYTES,
+        ),
+        capstones=load_capstones_from_content_fd(
+            content.descriptor,
+            expected_lesson_ids=lesson_ids,
+        ),
     )
 
 
@@ -49,21 +119,47 @@ def render_generated_curriculum_map(repository_root: Path) -> str:
     if type(repository_root) is not _NATIVE_PATH_TYPE:
         raise CurriculumValidationError("repository root must be an exact Path")
 
-    lessons = _release_lessons(repository_root)
-    roadmap_path = repository_root / "content/roadmap.json"
-    roadmap = parse_roadmap_bytes(
-        read_stable_lesson_file(roadmap_path, MAX_ROADMAP_BYTES),
-        roadmap_path.name,
-        require_complete=True,
-    )
-    validate_release_curriculum(roadmap, lessons)
-    lesson_ids = frozenset(lesson.id for lesson in lessons)
-    matrix = load_competencies(
-        repository_root / "content/competencies.json",
-        expected_target_ids=lesson_ids,
-    )
-    capstones = load_capstones(repository_root / "content/capstones")
-    catalog = load_catalog(repository_root / "content/catalog.json")
+    with _open_trusted_directory(
+        repository_root / "content",
+        "repository content",
+    ) as content:
+        before = _capture_release_inputs(content)
+        lessons = tuple(
+            sorted(
+                (item.lesson for item in before.lesson_snapshot.lessons),
+                key=lambda lesson: int(
+                    lesson.id.removeprefix("core-")[:2]
+                ),
+            )
+        )
+        lesson_ids = frozenset(lesson.id for lesson in lessons)
+        catalog = load_repository_catalog_bytes(
+            before.catalog_bytes,
+            "catalog.json",
+        )
+        roadmap = parse_roadmap_bytes(
+            before.roadmap_bytes,
+            "roadmap.json",
+            require_complete=True,
+        )
+        validate_release_curriculum(roadmap, lessons)
+        matrix = parse_competencies_bytes(
+            before.competency_bytes,
+            expected_target_ids=lesson_ids,
+            source_name="competencies.json",
+        )
+        capstones = before.capstones
+
+        # A second complete capture prevents a valid but mixed old/new graph
+        # from being documented when an authoring process writes concurrently.
+        # As with the build, the same-euid ABA gap requires an exclusive workspace.
+        if before != _capture_release_inputs(content):
+            raise CurriculumValidationError(
+                "release inputs changed during map generation"
+            )
+        _verify_directory_identity(content)
+
+    catalog_sha256 = hashlib.sha256(before.catalog_bytes).hexdigest()
 
     mappings_by_lesson = defaultdict(dict)
     for mapping in matrix.mappings:
@@ -89,7 +185,7 @@ def render_generated_curriculum_map(repository_root: Path) -> str:
         "| 項目 | 件数・固定値 |",
         "|---|---|",
         f"| 保存カタログ | {len(catalog):,} items |",
-        f"| カタログ SHA-256 | `{CANONICAL_CATALOG_SHA256}` |",
+        f"| カタログ SHA-256 | `{catalog_sha256}` |",
         f"| コアレッスン | {len(lessons)} complete lessons |",
         f"| コンピテンシー対応 | {len(matrix.mappings)} mappings |",
         f"| 統合 Capstone | {len(capstones)} projects |",
