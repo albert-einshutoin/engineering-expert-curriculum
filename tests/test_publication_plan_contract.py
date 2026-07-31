@@ -88,7 +88,10 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def _run_evidence_validator(path: Path) -> subprocess.CompletedProcess[str]:
+def _run_evidence_validator(
+    path: Path,
+    environment_overrides: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
     publication = _read(PUBLICATION_PLAN)
     match = _EVIDENCE_VALIDATOR.search(publication)
     if match is None:
@@ -106,6 +109,8 @@ def _run_evidence_validator(path: Path) -> subprocess.CompletedProcess[str]:
             "EXPECTED_REVIEWER_KIND": "ai-assisted",
         }
     )
+    if environment_overrides is not None:
+        environment.update(environment_overrides)
     return subprocess.run(
         [sys.executable, "-c", match.group("body")],
         capture_output=True,
@@ -461,12 +466,13 @@ gh pr view "$PUBLIC_PR_URL" --repo "wrong/project" # --repo "$PUBLIC_REPOSITORY_
             'gh run view "$PAGES_RUN_ID" --repo "$PUBLIC_REPOSITORY_SLUG"',
             '"$PUBLIC_MERGE_SHA:completed:success"',
             "PUBLIC_HTTPS_EVIDENCE_SOURCE",
-            "public HTTPS smoke: PASS",
-            "tested commit: $PUBLIC_MERGE_SHA",
             "PUBLIC_HTTPS_REVIEWER_KIND",
             "human|ai-assisted",
-            "reviewerKind: $PUBLIC_HTTPS_REVIEWER_KIND",
-            'grep -Fqx "$check: PASS"',
+            "REQUIRED_PASS_KEYS",
+            'f"tested commit: {expected_commit}"',
+            'f"reviewerKind: {expected_reviewer}"',
+            '*(f"{key}: PASS" for key in REQUIRED_PASS_KEYS)',
+            'validate_public_https_evidence "$PUBLIC_HTTPS_EVIDENCE_SOURCE"',
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, pages)
@@ -552,12 +558,35 @@ gh pr view "$PUBLIC_PR_URL" --repo "wrong/project" # --repo "$PUBLIC_REPOSITORY_
                     rejected = _run_evidence_validator(evidence)
                     self.assertNotEqual(rejected.returncode, 0)
 
+            base_url = _VALID_EVIDENCE_LINES[1].removeprefix("public URL: ")
+            for control in ("\u0080", "\u0085"):
+                with self.subTest(unicode_control=hex(ord(control))):
+                    unsafe_url = base_url[:-1] + control + "/"
+                    evidence.write_text(
+                        "\n".join(
+                            (
+                                _VALID_EVIDENCE_LINES[0],
+                                f"public URL: {unsafe_url}",
+                                *_VALID_EVIDENCE_LINES[2:],
+                            )
+                        )
+                        + "\n",
+                        encoding="utf-8",
+                    )
+                    rejected = _run_evidence_validator(
+                        evidence,
+                        {"EXPECTED_PUBLIC_SITE_URL": unsafe_url},
+                    )
+                    self.assertNotEqual(rejected.returncode, 0)
+
     def test_public_https_evidence_rejects_unsafe_files_and_sensitive_fixture(self) -> None:
         valid = ("\n".join(_VALID_EVIDENCE_LINES) + "\n").encode("utf-8")
+        secret_fixture = b"SENSITIVE-DIAGNOSTIC-MARKER:" + (b"x" * 64)
         sensitive_fixture = (
             valid
             + b"notes: $USER_HOME/.ssh/id_ed25519 "
-            + b"SENSITIVE-DIAGNOSTIC-MARKER:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+            + secret_fixture
+            + b"\n"
         )
         unsafe_contents = {
             "private-path-and-secret": sensitive_fixture,
@@ -576,7 +605,7 @@ gh pr view "$PUBLIC_PR_URL" --repo "wrong/project" # --repo "$PUBLIC_REPOSITORY_
                     rejected = _run_evidence_validator(evidence)
                     self.assertNotEqual(rejected.returncode, 0)
                     self.assertNotIn(
-                        "SENSITIVE-DIAGNOSTIC-MARKER:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                        secret_fixture.decode("ascii"),
                         rejected.stdout + rejected.stderr,
                     )
 
@@ -585,6 +614,10 @@ gh pr view "$PUBLIC_PR_URL" --repo "wrong/project" # --repo "$PUBLIC_REPOSITORY_
             symlink.symlink_to(evidence)
             rejected_symlink = _run_evidence_validator(symlink)
             self.assertNotEqual(rejected_symlink.returncode, 0)
+            hardlink = root / "evidence-hardlink.md"
+            os.link(evidence, hardlink)
+            rejected_hardlink = _run_evidence_validator(hardlink)
+            self.assertNotEqual(rejected_hardlink.returncode, 0)
             rejected_directory = _run_evidence_validator(root)
             self.assertNotEqual(rejected_directory.returncode, 0)
 
@@ -607,6 +640,25 @@ gh pr view "$PUBLIC_PR_URL" --repo "wrong/project" # --repo "$PUBLIC_REPOSITORY_
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, pre_add)
+
+    def test_committed_release_evidence_is_rescanned_before_push(self) -> None:
+        publication = _read(PUBLICATION_PLAN)
+        release = publication.split(
+            "**Step 5: Materialize release metadata through a PR, then publish**",
+            maxsplit=1,
+        )[1].split("**Step 6: Clean only the merged public feature branch**", maxsplit=1)[0]
+        commit = release.index('commit -m "docs: materialize v0.1.0 release metadata"')
+        push = release.index('git -C "$PUBLICATION_CLONE" push --set-upstream public')
+        post_commit = release[commit:push]
+        for phrase in (
+            'git -C "$PUBLICATION_CLONE" show',
+            '"$RELEASE_METADATA_SHA:$RELEASE_READINESS_PATH"',
+            "PRIVATE_PATH_PATTERN",
+            '"$GITLEAKS_DIR/gitleaks" git',
+            '--log-opts="${RELEASE_METADATA_SHA}^!"',
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, post_commit)
 
     def test_release_commit_and_annotated_tag_use_verified_public_identity(self) -> None:
         publication = _read(PUBLICATION_PLAN).replace("\\\n", " ")

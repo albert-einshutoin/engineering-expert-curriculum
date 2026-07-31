@@ -1663,31 +1663,182 @@ new private staging file. Record each check truthfully as `PASS` or `FAIL`; a
 recorded `FAIL` stops publication. Do not mark this gate complete from the
 earlier local review or from a successful Pages job.
 
+The evidence file is a strict, LF-terminated 16-line schema in the exact order
+validated below. It permits no headings, blank lines, notes, duplicate keys,
+unknown keys, or additional prose. Every result must be the single value
+`PASS`; recording both `PASS` and `FAIL`, or recording any `FAIL`, is invalid.
+The file must be one regular, single-link, non-symlink UTF-8 file of at most
+4 KiB with no control characters other than LF.
+
 ```bash
 PUBLIC_HTTPS_EVIDENCE_SOURCE="${PUBLIC_HTTPS_EVIDENCE_SOURCE:?write the public HTTPS evidence file after manual inspection}"
 PUBLIC_HTTPS_REVIEWER_KIND="${PUBLIC_HTTPS_REVIEWER_KIND:?set human or ai-assisted truthfully}"
 case "$PUBLIC_HTTPS_REVIEWER_KIND" in human|ai-assisted) ;; *) exit 1 ;; esac
-test -f "$PUBLIC_HTTPS_EVIDENCE_SOURCE"
-test ! -L "$PUBLIC_HTTPS_EVIDENCE_SOURCE"
-test -s "$PUBLIC_HTTPS_EVIDENCE_SOURCE"
-grep -Fqx "tested commit: $PUBLIC_MERGE_SHA" "$PUBLIC_HTTPS_EVIDENCE_SOURCE"
-grep -Fqx "public URL: $PUBLIC_SITE_URL" "$PUBLIC_HTTPS_EVIDENCE_SOURCE"
-grep -Fqx "public HTTPS smoke: PASS" "$PUBLIC_HTTPS_EVIDENCE_SOURCE"
-grep -Fqx "reviewerKind: $PUBLIC_HTTPS_REVIEWER_KIND" \
-  "$PUBLIC_HTTPS_EVIDENCE_SOURCE"
-grep -Eq '^checked at UTC: [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$' \
-  "$PUBLIC_HTTPS_EVIDENCE_SOURCE"
-for check in navigation viewport-320 viewport-1280 zoom-200-percent \
-  keyboard-focus voiceover-headings voiceover-landmarks voiceover-links \
-  high-contrast forced-colors print; do
-  grep -Eq "^${check}: (PASS|FAIL)$" "$PUBLIC_HTTPS_EVIDENCE_SOURCE"
-  grep -Fqx "$check: PASS" "$PUBLIC_HTTPS_EVIDENCE_SOURCE"
-done
+PUBLIC_HTTPS_VALIDATOR="$PUBLICATION_CLONE/.git/validate-public-https-evidence.py"
+install -m 0700 /dev/stdin "$PUBLIC_HTTPS_VALIDATOR" <<'PY'
+#!/usr/bin/env python3.13
+# BEGIN PUBLIC HTTPS EVIDENCE VALIDATOR
+from __future__ import annotations
+
+from datetime import datetime
+import os
+import re
+import stat
+import unicodedata
+
+
+MAX_EVIDENCE_BYTES = 4_096
+REQUIRED_PASS_KEYS = (
+    "public HTTPS smoke",
+    "navigation",
+    "viewport-320",
+    "viewport-1280",
+    "zoom-200-percent",
+    "keyboard-focus",
+    "voiceover-headings",
+    "voiceover-landmarks",
+    "voiceover-links",
+    "high-contrast",
+    "forced-colors",
+    "print",
+)
+
+
+class EvidenceValidationError(Exception):
+    """Keep private staging paths and rejected contents out of diagnostics."""
+
+
+def reject() -> None:
+    raise EvidenceValidationError
+
+
+def metadata_signature(
+    value: os.stat_result,
+) -> tuple[int, int, int, int, int, int, int]:
+    return (
+        value.st_dev,
+        value.st_ino,
+        stat.S_IFMT(value.st_mode),
+        value.st_nlink,
+        value.st_size,
+        value.st_mtime_ns,
+        value.st_ctime_ns,
+    )
+
+
+def read_bounded_regular_file(path: str) -> bytes:
+    if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_CLOEXEC"):
+        reject()
+    before = os.lstat(path)
+    if not stat.S_ISREG(before.st_mode):
+        reject()
+    if before.st_nlink != 1:
+        reject()
+    if before.st_size < 1 or before.st_size > MAX_EVIDENCE_BYTES:
+        reject()
+
+    descriptor = os.open(
+        path,
+        os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK,
+    )
+    try:
+        opened = os.fstat(descriptor)
+        if metadata_signature(opened) != metadata_signature(before):
+            reject()
+        chunks: list[bytes] = []
+        remaining = MAX_EVIDENCE_BYTES + 1
+        while remaining:
+            chunk = os.read(descriptor, remaining)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        content = b"".join(chunks)
+        after = os.fstat(descriptor)
+        if metadata_signature(after) != metadata_signature(opened):
+            reject()
+        if len(content) != opened.st_size:
+            reject()
+        return content
+    finally:
+        os.close(descriptor)
+
+
+def validate() -> None:
+    path = os.environ["EVIDENCE_PATH"]
+    expected_commit = os.environ["EXPECTED_PUBLIC_MERGE_SHA"]
+    expected_url = os.environ["EXPECTED_PUBLIC_SITE_URL"]
+    expected_reviewer = os.environ["EXPECTED_REVIEWER_KIND"]
+    if re.fullmatch(r"[0-9a-f]{40}", expected_commit) is None:
+        reject()
+    if (
+        not expected_url.startswith("https://")
+        or not expected_url.endswith("/")
+        or any(unicodedata.category(character) == "Cc" for character in expected_url)
+        or any(character.isspace() for character in expected_url)
+    ):
+        reject()
+    if expected_reviewer not in {"human", "ai-assisted"}:
+        reject()
+
+    content = read_bounded_regular_file(path)
+    if any(byte < 32 and byte != 10 or byte == 127 for byte in content):
+        reject()
+    text = content.decode("utf-8", errors="strict")
+    if any(
+        unicodedata.category(character) == "Cc" and character != "\n"
+        for character in text
+    ):
+        reject()
+    if not text.endswith("\n"):
+        reject()
+    lines = text[:-1].split("\n")
+    if len(lines) != 4 + len(REQUIRED_PASS_KEYS):
+        reject()
+    timestamp_prefix = "checked at UTC: "
+    if not lines[2].startswith(timestamp_prefix):
+        reject()
+    timestamp = lines[2][len(timestamp_prefix):]
+    if re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z", timestamp) is None:
+        reject()
+    datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+
+    expected_lines = [
+        f"tested commit: {expected_commit}",
+        f"public URL: {expected_url}",
+        lines[2],
+        f"reviewerKind: {expected_reviewer}",
+        *(f"{key}: PASS" for key in REQUIRED_PASS_KEYS),
+    ]
+    if lines != expected_lines:
+        reject()
+
+
+try:
+    validate()
+except (EvidenceValidationError, KeyError, OSError, UnicodeError, ValueError):
+    raise SystemExit("public HTTPS evidence validation failed") from None
+# END PUBLIC HTTPS EVIDENCE VALIDATOR
+PY
+validate_public_https_evidence() {
+  EVIDENCE_PATH="$1" \
+  EXPECTED_PUBLIC_MERGE_SHA="$PUBLIC_MERGE_SHA" \
+  EXPECTED_PUBLIC_SITE_URL="$PUBLIC_SITE_URL" \
+  EXPECTED_REVIEWER_KIND="$PUBLIC_HTTPS_REVIEWER_KIND" \
+    python3.13 "$PUBLIC_HTTPS_VALIDATOR"
+}
+validate_public_https_evidence "$PUBLIC_HTTPS_EVIDENCE_SOURCE"
+PUBLIC_HTTPS_EVIDENCE_SHA256="$(shasum -a 256 \
+  "$PUBLIC_HTTPS_EVIDENCE_SOURCE" | awk '{print $1}')"
+printf '%s\n' "$PUBLIC_HTTPS_EVIDENCE_SHA256" | grep -Eq '^[0-9a-f]{64}$'
 ```
 
 Expected: the manual evidence is bound to the initial merge commit and public
-HTTPS URL. Missing or failed evidence blocks the release metadata branch and
-therefore blocks the tag.
+HTTPS URL, and its validated bytes are frozen by SHA-256. Missing, ambiguous,
+extra, unsafe, or failed evidence blocks the release metadata branch and
+therefore blocks the tag. Keep this shell and its private validator available
+through Step 5; restarting in a fresh shell without recreating them fails
+closed.
 
 - [ ] **Step 5: Materialize release metadata through a PR, then publish**
 
@@ -1709,10 +1860,20 @@ RELEASE_READINESS_PATH="docs/reviews/2026-07-31-release-readiness.md"
 mkdir -p "$PUBLICATION_CLONE/docs/reviews"
 install -m 0644 "$PUBLIC_HTTPS_EVIDENCE_SOURCE" \
   "$PUBLICATION_CLONE/$RELEASE_READINESS_PATH"
-grep -Fqx "tested commit: $PUBLIC_MERGE_SHA" \
-  "$PUBLICATION_CLONE/$RELEASE_READINESS_PATH"
-grep -Fqx "public HTTPS smoke: PASS" \
-  "$PUBLICATION_CLONE/$RELEASE_READINESS_PATH"
+PUBLIC_HTTPS_VALIDATOR="$PUBLICATION_CLONE/.git/validate-public-https-evidence.py"
+test -f "$PUBLIC_HTTPS_VALIDATOR"
+test ! -L "$PUBLIC_HTTPS_VALIDATOR"
+case "$PUBLIC_HTTPS_REVIEWER_KIND" in human|ai-assisted) ;; *) exit 1 ;; esac
+validate_public_https_evidence() {
+  EVIDENCE_PATH="$1" \
+  EXPECTED_PUBLIC_MERGE_SHA="$PUBLIC_MERGE_SHA" \
+  EXPECTED_PUBLIC_SITE_URL="$PUBLIC_SITE_URL" \
+  EXPECTED_REVIEWER_KIND="$PUBLIC_HTTPS_REVIEWER_KIND" \
+    python3.13 "$PUBLIC_HTTPS_VALIDATOR"
+}
+validate_public_https_evidence "$PUBLICATION_CLONE/$RELEASE_READINESS_PATH"
+test "$(shasum -a 256 "$PUBLICATION_CLONE/$RELEASE_READINESS_PATH" | \
+  awk '{print $1}')" = "$PUBLIC_HTTPS_EVIDENCE_SHA256"
 (cd "$PUBLICATION_CLONE" && RELEASE_DATE="$RELEASE_DATE" python3.13 - <<'PY'
 from datetime import date
 import os
@@ -1763,6 +1924,47 @@ PY
 (cd "$PUBLICATION_CLONE" && python3.13 tools/build.py)
 (cd "$PUBLICATION_CLONE" && \
   python3.13 tools/check_site.py --root site --require-current-release)
+validate_public_https_evidence "$PUBLICATION_CLONE/$RELEASE_READINESS_PATH"
+test "$(shasum -a 256 "$PUBLICATION_CLONE/$RELEASE_READINESS_PATH" | \
+  awk '{print $1}')" = "$PUBLIC_HTTPS_EVIDENCE_SHA256"
+PRIVATE_PATH_PATTERN='/(Users)/[[:alnum:]_.-]+/|/(Volumes)/[[:alnum:]_. -]+/'
+if grep -Eq "$PRIVATE_PATH_PATTERN" \
+  "$PUBLICATION_CLONE/$RELEASE_READINESS_PATH"; then
+  printf '%s\n' "private path found in release evidence" >&2
+  exit 1
+else
+  grep_status=$?
+  test "$grep_status" -eq 1
+fi
+EVIDENCE_PATH="$PUBLICATION_CLONE/$RELEASE_READINESS_PATH" python3.13 - <<'PY'
+from __future__ import annotations
+
+import os
+import re
+
+
+email_pattern = re.compile(
+    r"[A-Za-z0-9._%+-]+@(?P<domain>[A-Za-z0-9.-]+\.[A-Za-z]{2,})"
+)
+SAFE_FIXTURE_EMAIL_DOMAINS = {"example.com", "example.invalid"}
+try:
+    with open(os.environ["EVIDENCE_PATH"], "r", encoding="utf-8") as evidence:
+        content = evidence.read(4_097)
+except (KeyError, OSError, UnicodeError):
+    raise SystemExit("release evidence email scan failed") from None
+for match in email_pattern.finditer(content):
+    if match.group("domain").lower() not in SAFE_FIXTURE_EMAIL_DOMAINS:
+        raise SystemExit("unexpected email-like text found in release evidence")
+PY
+test -f "$GITLEAKS_ARCHIVE"
+test ! -L "$GITLEAKS_ARCHIVE"
+printf '%s  %s\n' \
+  b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5 \
+  "$GITLEAKS_ARCHIVE" | shasum -a 256 -c -
+tar --extract --gzip --file "$GITLEAKS_ARCHIVE" \
+  --directory "$GITLEAKS_DIR" gitleaks
+"$GITLEAKS_DIR/gitleaks" dir --redact --no-banner --exit-code 1 \
+  "$PUBLICATION_CLONE/$RELEASE_READINESS_PATH"
 git -C "$PUBLICATION_CLONE" add CITATION.cff CHANGELOG.md \
   "$RELEASE_READINESS_PATH"
 git -C "$PUBLICATION_CLONE" \
@@ -1779,6 +1981,27 @@ RELEASE_COMMIT_IDENTITY="$(git -C "$PUBLICATION_CLONE" for-each-ref \
   --format='%(authorname)%0a%(authoremail)%0a%(committername)%0a%(committeremail)' \
   refs/heads/release/v0.1.0-metadata)"
 test "$RELEASE_COMMIT_IDENTITY" = "$EXPECTED_RELEASE_COMMIT_IDENTITY"
+git -C "$PUBLICATION_CLONE" cat-file -e \
+  "$RELEASE_METADATA_SHA:$RELEASE_READINESS_PATH"
+test "$(git -C "$PUBLICATION_CLONE" show \
+  "$RELEASE_METADATA_SHA:$RELEASE_READINESS_PATH" | shasum -a 256 | \
+  awk '{print $1}')" = "$PUBLIC_HTTPS_EVIDENCE_SHA256"
+if git -C "$PUBLICATION_CLONE" show \
+  "$RELEASE_METADATA_SHA:$RELEASE_READINESS_PATH" | \
+  grep -Eq "$PRIVATE_PATH_PATTERN"; then
+  printf '%s\n' "private path found in committed release evidence" >&2
+  exit 1
+else
+  grep_status=$?
+  test "$grep_status" -eq 1
+fi
+printf '%s  %s\n' \
+  b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5 \
+  "$GITLEAKS_ARCHIVE" | shasum -a 256 -c -
+tar --extract --gzip --file "$GITLEAKS_ARCHIVE" \
+  --directory "$GITLEAKS_DIR" gitleaks
+"$GITLEAKS_DIR/gitleaks" git --redact --no-banner --exit-code 1 \
+  --log-opts="${RELEASE_METADATA_SHA}^!" "$PUBLICATION_CLONE"
 git -C "$PUBLICATION_CLONE" push --set-upstream public \
   refs/heads/release/v0.1.0-metadata:refs/heads/release/v0.1.0-metadata
 RELEASE_PR_URL="$(gh pr create --repo "$PUBLIC_REPOSITORY_SLUG" --base main \
