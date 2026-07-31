@@ -1342,10 +1342,45 @@ class CoreTrackTests(unittest.TestCase):
             for scenario in report["example_scenarios"]
         }
         self.assertGreaterEqual(len(scenarios), 5)
+        state_machine = report["asset_state_machine"]
+        self.assertEqual(state_machine["asset_id"], "camera-17")
+        state_trace = state_machine["state_trace"]
+        self.assertEqual(
+            [step["id"] for step in state_trace],
+            [
+                "normal-checkout",
+                "competing-reservation",
+                "normal-return",
+                "expired-hold",
+                "overdue-checkout",
+                "overdue-return",
+            ],
+        )
+        self.assertTrue(
+            all(
+                step["asset_id"] == state_machine["asset_id"]
+                for step in state_trace
+            )
+        )
+        self.assertEqual(
+            [step["active_loan_count"] for step in state_trace],
+            [1, 1, 0, 0, 1, 0],
+        )
+        self.assertEqual(state_machine["max_active_loan_count"], 1)
+        self.assertEqual(state_machine["final_state"], "available")
+        competing = scenarios["competing-reservation"]
+        self.assertEqual(competing["state_before"], "checked-out")
+        self.assertEqual(competing["state_after"], "checked-out")
+        self.assertEqual(competing["observed"], "rejected-unavailable")
+        normal_return = scenarios["normal-return"]
+        self.assertEqual(normal_return["state_before"], "checked-out")
+        self.assertEqual(normal_return["state_after"], "available")
         overdue = scenarios["overdue-return"]
         self.assertEqual(overdue["command"], "ReturnAsset")
         self.assertEqual(overdue["event"], "LoanReturned")
         self.assertEqual(overdue["observed"], "accepted-overdue")
+        self.assertEqual(overdue["state_before"], "checked-out")
+        self.assertEqual(overdue["state_after"], "available")
         self.assertGreater(overdue["returned_at"], overdue["due_at"])
         self.assertEqual(
             overdue["policy_event"],
@@ -1366,6 +1401,15 @@ class CoreTrackTests(unittest.TestCase):
             item["name"] for item in report["invariants"]
         }
         self.assertIn("return-restores-availability", invariant_names)
+        one_active = next(
+            item
+            for item in report["invariants"]
+            if item["name"] == "one-active-checkout-per-asset"
+        )
+        self.assertEqual(
+            one_active["evidence"]["max_active_loan_count"],
+            state_machine["max_active_loan_count"],
+        )
         self.assertIn(
             "overdue-return-emits-policy-event",
             invariant_names,
@@ -1413,6 +1457,20 @@ class CoreTrackTests(unittest.TestCase):
         result = self.execute_python_harness_source(mutated)
 
         self.assertNotEqual(result.returncode, 0)
+
+        active_state_marker = 'if asset["active_loan"] is not None:'
+        self.assertIn(active_state_marker, source)
+        active_state_mutation = source.replace(
+            active_state_marker,
+            "if False:",
+            1,
+        )
+
+        active_state_result = self.execute_python_harness_source(
+            active_state_mutation
+        )
+
+        self.assertNotEqual(active_state_result.returncode, 0)
 
     def test_api_contract_harness_models_replay_and_evolution(self) -> None:
         report = self.run_python_harness(
