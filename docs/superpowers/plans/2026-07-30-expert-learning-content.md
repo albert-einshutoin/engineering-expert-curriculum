@@ -1579,6 +1579,38 @@ git commit -m "feat: connect thirty lessons through mastery gates"
   verifiable: 1,194 files, 16,805,630 bytes, and zero missing, extra,
   hash-mismatched, symbolic-link, or special-node entries.
 
+#### Task 9 quality-review remediation
+
+- The first independent quality review reported Critical 0 / Important 4 /
+  Minor 1. Tests-only commit `8e1d3d6` reproduced every finding: a partial
+  parser result could bypass mastery-gate checks in the release validator,
+  the byte parser lacked its own size and safe-label boundary, decorative
+  arrows represented nonexistent graph edges, the CLI release decision lacked
+  an end-to-end regression, and authoring mode accepted duplicate gate identity.
+- Commit `bd5ecd5` makes `validate_release_curriculum` independently recheck
+  version, the exact six mastery gates, immutable node values, ordinals,
+  graph validity, the single `core-01` root, metadata equality, and complete
+  lessons. `parse_roadmap_bytes` now bounds exact bytes before JSON decoding,
+  rejects unsafe diagnostic labels without reflecting them, and rejects
+  duplicate gate IDs or `after` values even in authoring mode.
+- Commit `e28a3a4` removes all decorative prerequisite arrows and CSS counters.
+  The 30 lessons are now rendered in nine semantic topological-stage sections,
+  with their canonical ordinals present as DOM text. The six mastery gates use
+  a separate section and ordered list, so assistive technology no longer sees
+  one misleading 36-item lesson sequence. Commit `e5554b0` additionally
+  fail-closes forged mutable roadmap values at the validator boundary.
+- The CLI regression builds from a copied root missing lesson 30 and proves a
+  nonzero result, unchanged prior output, and zero staging residue. Removing
+  the explicit release option from `tools/build.py` therefore fails the test.
+  The expanded focused gate passes all 115 tests and the complete suite passes
+  all 488 tests.
+- Two consecutive release builds each contain 35 regular artifacts, 34 HTML
+  files, one CSS file, zero JavaScript files, nine topological-stage sections,
+  30 lesson list items, and six separately listed mastery gates. Both contain
+  1,158,954 bytes and produce canonical aggregate SHA-256
+  `2f44d246e1a8e2f0e851c5e99e15fe05179d2051e3b5d946af51bd947af64ced`.
+  Catalog and archive preservation evidence remains unchanged.
+
 ### Task 10: Add the versioned competency matrix
 
 **Files:**
