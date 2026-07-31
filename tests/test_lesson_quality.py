@@ -835,6 +835,66 @@ class LessonQualityTests(unittest.TestCase):
         raw["objectives"] = raw["objectives"] * 3
         self.assert_invalid(raw, r"3 to 6 objectives")
 
+    def test_complete_evidence_requires_full_dual_reference_coverage(
+        self,
+    ) -> None:
+        cases = (
+            (
+                "unreferenced",
+                False,
+                False,
+                r"objective evidence coverage missing.*orphan-evidence",
+            ),
+            (
+                "objective only",
+                True,
+                False,
+                r"capability evidence coverage missing.*orphan-evidence",
+            ),
+            (
+                "capability only",
+                False,
+                True,
+                r"objective evidence coverage missing.*orphan-evidence",
+            ),
+        )
+        for label, add_objective, add_capability, pattern in cases:
+            with self.subTest(label=label):
+                raw = self.complete_document()
+                raw["evidence"].append(
+                    {
+                        "id": "orphan-evidence",
+                        "kind": "artifact",
+                        "description": (
+                            "追加証拠も二つの学習経路から追跡できる必要がある"
+                        ),
+                    }
+                )
+                if add_objective:
+                    raw["objectives"][0]["evidenceIds"].append(
+                        "orphan-evidence"
+                    )
+                if add_capability:
+                    raw["capabilityProgression"][0]["evidenceIds"].append(
+                        "orphan-evidence"
+                    )
+                self.assert_invalid(raw, pattern)
+
+    def test_complete_requires_two_assessments_but_draft_keeps_one(
+        self,
+    ) -> None:
+        raw = self.complete_document()
+        raw["assessment"] = raw["assessment"][:1]
+        self.assert_invalid(raw, r"complete lessons need at least two assessments")
+
+        raw["status"] = "draft"
+        lesson = load_lesson_bytes(
+            json.dumps(raw, ensure_ascii=False).encode("utf-8"),
+            "draft-one-assessment.json",
+        )
+        self.assertEqual(lesson.status, "draft")
+        self.assertEqual(len(lesson.assessment), 1)
+
     def test_complete_lab_teach_back_transfer_and_assessment_are_substantive(
         self,
     ) -> None:
