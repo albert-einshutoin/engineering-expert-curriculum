@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 import hashlib
-from html import unescape
 from html.parser import HTMLParser
 import json
 from pathlib import Path, PurePosixPath
@@ -529,8 +528,12 @@ def _extract_generated_map(document: str) -> str:
     return document[start : end + len(END_GENERATED_MAP)]
 
 
-def _parse_markdown_table_row(line: str) -> tuple[str, ...]:
-    """Parse one generated table row without sharing production rendering."""
+_CANONICAL_DECIMAL_ENTITY = re.compile(r"&#([0-9]{1,3});")
+_ENTITY_PUNCTUATION = frozenset(string.punctuation) - {"\\", "|"}
+
+
+def _split_markdown_table_row(line: str) -> tuple[str, ...]:
+    """Split only the two backslash escapes production can generate."""
     if not line.startswith("|") or not line.endswith("|"):
         raise AssertionError("generated map row must start and end with a pipe")
     cells: list[str] = []
@@ -542,19 +545,79 @@ def _parse_markdown_table_row(line: str) -> tuple[str, ...]:
             if index + 1 >= len(line) - 1:
                 raise AssertionError("generated map row has a dangling escape")
             escaped = line[index + 1]
-            if escaped in string.punctuation:
-                current.append(escaped)
-                index += 2
-                continue
-            current.append("\\")
+            if escaped not in {"\\", "|"}:
+                raise AssertionError("generated map row has an unsupported escape")
+            current.extend(("\\", escaped))
+            index += 2
+            continue
         elif character == "|":
-            cells.append(unescape("".join(current).strip()))
+            cells.append("".join(current).strip())
             current = []
         else:
             current.append(character)
         index += 1
-    cells.append(unescape("".join(current).strip()))
+    cells.append("".join(current).strip())
     return tuple(cells)
+
+
+def _decode_generated_cell(value: str) -> str:
+    decoded: list[str] = []
+    index = 0
+    while index < len(value):
+        character = value[index]
+        if character == "\\":
+            if index + 1 >= len(value) or value[index + 1] not in {"\\", "|"}:
+                raise AssertionError("generated map row has an unsupported escape")
+            decoded.append(value[index + 1])
+            index += 2
+            continue
+        if character == "&":
+            match = _CANONICAL_DECIMAL_ENTITY.match(value, index)
+            if match is None:
+                raise AssertionError("generated map row has an unsupported entity")
+            codepoint = int(match.group(1))
+            if (
+                match.group(1) != str(codepoint)
+                or chr(codepoint) not in _ENTITY_PUNCTUATION
+            ):
+                raise AssertionError("generated map row has a noncanonical entity")
+            decoded.append(chr(codepoint))
+            index = match.end()
+            continue
+        decoded.append(character)
+        index += 1
+    return "".join(decoded)
+
+
+def _parse_markdown_table_row(line: str) -> tuple[str, ...]:
+    """Parse one canonical generated row without production rendering code."""
+    return tuple(
+        _decode_generated_cell(cell)
+        for cell in _split_markdown_table_row(line)
+    )
+
+
+def _encode_expected_markdown_text(value: str) -> str:
+    """Independently specify the only plain-text spelling accepted by the map."""
+    encoded: list[str] = []
+    for character in value:
+        if character == "\\":
+            encoded.append("\\\\")
+        elif character == "|":
+            encoded.append("\\|")
+        elif character in string.punctuation:
+            encoded.append(f"&#{ord(character)};")
+        else:
+            encoded.append(character)
+    return "".join(encoded)
+
+
+def _encode_expected_mapping_cell(mapping: dict[str, str]) -> str:
+    return (
+        f"`{_encode_expected_markdown_text(mapping['competencyId'])}` "
+        f"{_encode_expected_markdown_text(mapping['competencyName'])} "
+        f"({_encode_expected_markdown_text(mapping['alignment'])})"
+    )
 
 
 def _map_section(
@@ -640,6 +703,9 @@ def _assert_generated_map_contract(
         _parse_markdown_table_row(line)
         for line in framework_lines
     )
+    framework_raw_rows = tuple(
+        _split_markdown_table_row(line) for line in framework_lines
+    )
     expected_framework_rows = tuple(
         (
             framework,
@@ -651,6 +717,19 @@ def _assert_generated_map_contract(
     )
     if framework_rows != expected_framework_rows:
         raise AssertionError("generated map framework baseline is not canonical")
+    expected_framework_raw_rows = tuple(
+        (
+            framework,
+            _encode_expected_markdown_text(
+                FRAMEWORK_SOURCES[framework]["version"]
+            ),
+            f"[{framework}]({FRAMEWORK_SOURCES[framework]['officialUrl']})",
+            FRAMEWORK_SOURCES[framework]["verifiedAt"],
+        )
+        for framework in FRAMEWORKS
+    )
+    if framework_raw_rows != expected_framework_raw_rows:
+        raise AssertionError("generated map framework encoding is not canonical")
 
     gate_lines = _map_table_rows(
         block,
@@ -664,6 +743,9 @@ def _assert_generated_map_contract(
         _parse_markdown_table_row(line)
         for line in gate_lines
     )
+    gate_raw_rows = tuple(
+        _split_markdown_table_row(line) for line in gate_lines
+    )
     expected_gate_rows = tuple(
         (
             str(order),
@@ -676,6 +758,18 @@ def _assert_generated_map_contract(
     )
     if gate_rows != expected_gate_rows:
         raise AssertionError("generated map mastery gates are not canonical")
+    expected_gate_raw_rows = tuple(
+        (
+            str(order),
+            f"`{gate['id']}`",
+            str(gate["after"]),
+            _encode_expected_markdown_text(gate["artifact"]),
+            _encode_expected_markdown_text(gate["review"]),
+        )
+        for order, gate in enumerate(EXPECTED_MASTERY_GATES, start=1)
+    )
+    if gate_raw_rows != expected_gate_raw_rows:
+        raise AssertionError("generated map mastery gate encoding drifted")
 
     lesson_documents = {
         lesson_id: json.loads(
@@ -793,6 +887,25 @@ def _assert_generated_map_contract(
             raise AssertionError(
                 f"generated map capstone ownership drifted: {lesson_id}"
             )
+        expected_framework_raw_cells = tuple(
+            _encode_expected_mapping_cell(mappings[(lesson_id, framework)])
+            for framework in FRAMEWORKS
+        )
+        expected_raw_cells = (
+            str(ordinal),
+            f"`{lesson_id}`<br>"
+            f"{_encode_expected_markdown_text(lesson['title'])}",
+            f"{_encode_expected_markdown_text(lesson['track'])} / "
+            f"{lesson['stage']}",
+            expected_prerequisite_cell,
+            f"`{expected_gate}`",
+            *expected_framework_raw_cells,
+            expected_capstone_cell,
+        )
+        if _split_markdown_table_row(_line) != expected_raw_cells:
+            raise AssertionError(
+                f"generated map lesson encoding drifted: {lesson_id}"
+            )
     if len(mapping_cells) != 90:
         raise AssertionError("generated map must expose exactly 90 mapping cells")
 
@@ -816,6 +929,9 @@ def _assert_generated_map_contract(
     capstone_rows = tuple(
         _parse_markdown_table_row(line) for line in capstone_lines
     )
+    capstone_raw_rows = tuple(
+        _split_markdown_table_row(line) for line in capstone_lines
+    )
     expected_capstone_rows = tuple(
         (
             f"`{capstone_id}` — {capstone_documents[capstone_id]['title']}",
@@ -827,6 +943,18 @@ def _assert_generated_map_contract(
     )
     if capstone_rows != expected_capstone_rows:
         raise AssertionError("generated map capstone coverage drifted")
+    expected_capstone_raw_rows = tuple(
+        (
+            f"`{capstone_id}` — "
+            f"{_encode_expected_markdown_text(capstone_documents[capstone_id]['title'])}",
+            str(len(capstone_documents[capstone_id]["lessonIds"])),
+            str(len(capstone_documents[capstone_id]["primaryExercises"])),
+            ", ".join(f"`{kind}`" for kind in CAPSTONE_EVIDENCE_KINDS),
+        )
+        for capstone_id in CAPSTONE_IDS
+    )
+    if capstone_raw_rows != expected_capstone_raw_rows:
+        raise AssertionError("generated map capstone encoding drifted")
 
 
 class ContentAcceptanceTests(unittest.TestCase):
