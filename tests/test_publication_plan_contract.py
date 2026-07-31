@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import os
 from pathlib import Path
 import re
@@ -245,6 +246,70 @@ def assert_private_reporting_contract(
 
 
 class PublicationPlanContractTests(unittest.TestCase):
+    def test_current_tree_has_no_secret_shaped_token_fixture(
+        self,
+    ) -> None:
+        pat_prefixes = (
+            bytes((103, 104, 112, 95)),
+            bytes((103, 105, 116, 104, 117, 98, 95, 112, 97, 116, 95)),
+        )
+        secret_shaped = tuple(
+            re.compile(re.escape(prefix) + rb"[A-Za-z0-9_]{20,}")
+            for prefix in pat_prefixes
+        )
+
+        def folded_constant(node: ast.AST) -> str | bytes | None:
+            if isinstance(node, ast.Constant) and isinstance(
+                node.value,
+                (str, bytes),
+            ):
+                return node.value
+            if not isinstance(node, ast.BinOp) or not isinstance(node.op, ast.Add):
+                return None
+            left = folded_constant(node.left)
+            right = folded_constant(node.right)
+            if type(left) is type(right) and isinstance(left, (str, bytes)):
+                return left + right
+            return None
+
+        # Keep the guard effective when a scanner-shaped value is split across
+        # Python literals in an attempt to hide it from a repository text scan.
+        split_prefix_tree = ast.parse('fixture = "g" + "hp_"')
+        self.assertIn(
+            pat_prefixes[0].decode("ascii"),
+            (folded_constant(node) for node in ast.walk(split_prefix_tree)),
+        )
+
+        tracked = subprocess.run(
+            ["git", "-C", str(REPOSITORY_ROOT), "ls-files", "-z"],
+            check=True,
+            capture_output=True,
+        ).stdout.split(b"\0")
+        for encoded_path in tracked:
+            if not encoded_path:
+                continue
+            relative_path = Path(os.fsdecode(encoded_path))
+            contents = (REPOSITORY_ROOT / relative_path).read_bytes()
+            if any(pattern.search(contents) for pattern in secret_shaped):
+                self.fail(f"{relative_path}: secret-shaped GitHub PAT is forbidden")
+            if relative_path.suffix != ".py":
+                continue
+            tree = ast.parse(contents, filename=str(relative_path))
+            for node in ast.walk(tree):
+                value = folded_constant(node)
+                if value is None:
+                    continue
+                encoded_value = (
+                    value
+                    if isinstance(value, bytes)
+                    else value.encode("ascii", errors="ignore")
+                )
+                if any(pattern.search(encoded_value) for pattern in secret_shaped):
+                    self.fail(
+                        f"{relative_path}: reconstructed secret-shaped GitHub PAT "
+                        "is forbidden"
+                    )
+
     def test_public_plans_do_not_disclose_private_paths_or_personal_email(self) -> None:
         for path in PUBLIC_PLAN_DOCUMENTS:
             with self.subTest(path=path.name):
