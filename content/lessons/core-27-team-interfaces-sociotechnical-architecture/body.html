@@ -1,0 +1,450 @@
+<section id="team-why">
+  <h2>なぜ重要か</h2>
+  <p>software architectureはmoduleだけで決まらない。誰がどのcapabilityを所有し、どのteamへ依存し、どれだけのcognitive loadを引き受け、どのSLOを約束するかが、変更速度とreliabilityを同時に制約する。</p>
+  <p>Conwayが示したcommunication structureとsystem designの関係は、組織図をそのままcodeへ写す命令ではなく、望むarchitectureに合うinteractionを意図的に設計する問いである。DORAのloosely coupled teamsは、他teamとの細かな調整なしにtest、deploy、変更できる境界を重視する。Team Topologiesはownership、cognitive load、team interactionを具体化する語彙を提供する。</p>
+  <p>したがってteam interfaceは担当者一覧ではない。owned capability、dependency、期待値、観測値、SLO、enablement actionを別teamがreviewできる社会技術的な契約である。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> このlessonのteamとlatencyはsimulated fixtureである。実組織のperformanceや個人能力を断定せず、delivery data、incident、support load、変更履歴、当事者の定性証拠で更新する。</p>
+  </aside>
+</section>
+<section id="team-mental-model">
+  <h2>メンタルモデル</h2>
+  <p>team interfaceを、ownerが提供するcapability、receiving teamが持つdependency、双方が観測するSLO、変更を理解するためのcognitive load、境界を改善するenablementの組として捉える。</p>
+  <figure>
+    <figcaption>team ownershipからdependency SLOとcontributor enablementへ至る社会技術interface</figcaption>
+    <ol>
+      <li><strong>Ownership:</strong> checkout teamがcheckout capabilityのdecision rightを持つ。</li>
+      <li><strong>Dependency:</strong> checkoutはplatform capabilityへ依存する。</li>
+      <li><strong>Cognitive load:</strong> assigned領域をcapacityと比較し、過負荷を個人努力へ隠さない。</li>
+      <li><strong>SLO:</strong> dependency latencyのtargetとobservedを同じ単位で評価する。</li>
+      <li><strong>Enablement:</strong> platformが観測方法とescalationを公開し、checkoutの自律判断を増やす。</li>
+    </ol>
+  </figure>
+  <p>dependencyをゼロにすることが目的ではない。同期調整が必要な箇所を小さくし、残る依存を観測可能な契約へ変える。cognitive loadがcapacity内でもSLO breachならdeliveryは止まり得るため、teamとserviceの両方を同時に見る。</p>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>checkoutからplatformへのdependency latencyを再評価する</h3>
+  <dl>
+    <dt>前提</dt>
+    <dd>checkout、platformの2 teamからなるlesson-defined simulated snapshotを使う。実組織のreporting lineやperformance評価ではない。</dd>
+    <dt>入力</dt>
+    <dd>canonical team order、owned capability、dependency、assigned/capacity、dependency latency 200ms、SLO target 300msを与える。</dd>
+    <dt>操作</dt>
+    <dd>checkoutのteam interfaceを作り、latencyとtargetからSLO statusを計算する。transferではdependency latencyだけを450msへ変える。</dd>
+    <dt>観測</dt>
+    <dd>baselineはhealthy、transferはbreachedになる。team ownership、dependency、cognitive load snapshotは同じなので、変化をlatencyへ限定できる。</dd>
+    <dt>結論</dt>
+    <dd>report生成というcommand successと、自律的deliveryを支えるsystem outcomeは別である。breachを観測し、ownerとreceiving teamがenablement actionをreviewできて初めてteam interfaceが働く。</dd>
+  </dl>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+import json
+
+HARNESS = "team_interface_lab_v1"
+TEAM_ORDER = ("checkout", "platform")
+BASELINE_TEAM_CONTEXT = {
+    "dependency_latency_ms": 200,
+    "slo_target_ms": 300,
+}
+TRANSFER_TEAM_CONTEXT = {
+    "dependency_latency_ms": 450,
+    "slo_target_ms": 300,
+}
+TEAMS = [
+    {
+        "team_id": "checkout",
+        "owned_capability": "checkout",
+        "dependencies": ["platform"],
+        "cognitive_load": {
+            "assigned": 3,
+            "capacity": 4,
+        },
+        "enablement_action": "consume published latency evidence",
+    },
+    {
+        "team_id": "platform",
+        "owned_capability": "runtime-platform",
+        "dependencies": [],
+        "cognitive_load": {
+            "assigned": 2,
+            "capacity": 4,
+        },
+        "enablement_action": "publish latency evidence and escalation path",
+    },
+]
+COMMAND_INPUT = {"exit_code": 0}
+
+def is_nonempty_text(value):
+    return type(value) is str and bool(value)
+
+def context_difference(baseline, transferred):
+    return [
+        field
+        for field in sorted(set(baseline) | set(transferred))
+        if (
+            field not in baseline
+            or field not in transferred
+            or baseline[field] != transferred[field]
+        )
+    ]
+
+def validate_team_contexts():
+    allowed_fields = {"dependency_latency_ms", "slo_target_ms"}
+    for context in (
+        BASELINE_TEAM_CONTEXT,
+        TRANSFER_TEAM_CONTEXT,
+    ):
+        if (
+            type(context) is not dict
+            or set(context) != allowed_fields
+            or type(context["dependency_latency_ms"]) is not int
+            or context["dependency_latency_ms"] &lt; 0
+            or type(context["slo_target_ms"]) is not int
+            or context["slo_target_ms"] &lt;= 0
+        ):
+            raise AssertionError(
+                "team-interface-transfer-invariant: "
+                "invalid dependency context schema"
+            )
+    if context_difference(
+        BASELINE_TEAM_CONTEXT,
+        TRANSFER_TEAM_CONTEXT,
+    ) != ["dependency_latency_ms"]:
+        raise AssertionError(
+            "team-interface-transfer-invariant: "
+            "transfer changed wrong field"
+        )
+
+def validate_team_snapshot(teams):
+    team_fields = {
+        "team_id",
+        "owned_capability",
+        "dependencies",
+        "cognitive_load",
+        "enablement_action",
+    }
+    basic_shape = (
+        type(teams) is list
+        and bool(teams)
+        and all(
+            type(team) is dict
+            and set(team) == team_fields
+            for team in teams
+        )
+    )
+    team_ids = (
+        [team["team_id"] for team in teams]
+        if basic_shape
+        else []
+    )
+    known_team_ids = set(team_ids)
+    valid = (
+        basic_shape
+        and all(
+            is_nonempty_text(team["team_id"])
+            and is_nonempty_text(team["owned_capability"])
+            and type(team["dependencies"]) is list
+            and len(set(team["dependencies"]))
+            == len(team["dependencies"])
+            and all(
+                is_nonempty_text(dependency)
+                and dependency in known_team_ids
+                and dependency != team["team_id"]
+                for dependency in team["dependencies"]
+            )
+            and type(team["cognitive_load"]) is dict
+            and set(team["cognitive_load"])
+            == {"assigned", "capacity"}
+            and type(team["cognitive_load"]["assigned"]) is int
+            and team["cognitive_load"]["assigned"] &gt;= 0
+            and type(team["cognitive_load"]["capacity"]) is int
+            and team["cognitive_load"]["capacity"] &gt; 0
+            and team["cognitive_load"]["assigned"]
+            &lt;= team["cognitive_load"]["capacity"]
+            and is_nonempty_text(team["enablement_action"])
+            for team in teams
+        )
+    )
+    if (
+        not valid
+        or tuple(team_ids) != TEAM_ORDER
+        or len(set(team_ids)) != len(team_ids)
+    ):
+        raise AssertionError(
+            "team-interface-input-invariant: invalid team snapshot"
+        )
+
+def validate_all_inputs():
+    if TEAM_ORDER != ("checkout", "platform"):
+        raise AssertionError(
+            "team-interface-input-invariant: invalid canonical team order"
+        )
+    validate_team_contexts()
+    validate_team_snapshot(TEAMS)
+    if (
+        type(COMMAND_INPUT) is not dict
+        or set(COMMAND_INPUT) != {"exit_code"}
+        or type(COMMAND_INPUT["exit_code"]) is not int
+    ):
+        raise AssertionError(
+            "team-interface-input-invariant: invalid command input"
+        )
+
+def independent_snapshot(value):
+    # baselineとtransferを別のfull snapshotにして、片側の変更が
+    # ownershipやcognitive loadへ漏れるfalse comparisonを防ぐ。
+    return json.loads(json.dumps(value, ensure_ascii=False))
+
+def evaluate_slo(dependency_latency_ms, slo_target_ms):
+    if dependency_latency_ms &lt;= slo_target_ms:
+        return "healthy"
+    return "breached"
+
+def build_team_interface(teams, context):
+    owner = next(
+        team
+        for team in teams
+        if team["team_id"] == "checkout"
+    )
+    dependency_latency_ms = context["dependency_latency_ms"]
+    slo_target_ms = context["slo_target_ms"]
+    slo_status = evaluate_slo(dependency_latency_ms, slo_target_ms)
+    return {
+        "owner": owner["team_id"],
+        "owned_capability": owner["owned_capability"],
+        "dependencies": list(owner["dependencies"]),
+        "cognitive_load": independent_snapshot(
+            owner["cognitive_load"]
+        ),
+        "slo": {
+            "target": slo_target_ms,
+            "observed": dependency_latency_ms,
+            "status": slo_status,
+        },
+    }
+
+def build_contributor_enablement(
+    teams,
+    team_interface,
+):
+    platform = next(
+        team
+        for team in teams
+        if team["team_id"] == "platform"
+    )
+    return {
+        "other_contributor": team_interface["owner"],
+        "receiving_team": team_interface["owner"],
+        "enabling_team": platform["team_id"],
+        "action": platform["enablement_action"],
+        "review_evidence": {
+            "dependency": team_interface["dependencies"][0],
+            "observed_ms": team_interface["slo"]["observed"],
+            "target_ms": team_interface["slo"]["target"],
+            "status": team_interface["slo"]["status"],
+        },
+    }
+
+def main():
+    validate_all_inputs()
+    baseline_context = independent_snapshot(BASELINE_TEAM_CONTEXT)
+    transferred_context = independent_snapshot(
+        TRANSFER_TEAM_CONTEXT
+    )
+    baseline_teams = independent_snapshot(TEAMS)
+    transferred_teams = independent_snapshot(TEAMS)
+    validate_team_snapshot(baseline_teams)
+    validate_team_snapshot(transferred_teams)
+    if (
+        baseline_teams is transferred_teams
+        or baseline_teams[0] is transferred_teams[0]
+        or baseline_teams != transferred_teams
+    ):
+        raise AssertionError(
+            "team-interface-transfer-invariant: team snapshots drifted"
+        )
+    baseline_interface = build_team_interface(
+        baseline_teams,
+        baseline_context,
+    )
+    transferred_interface = build_team_interface(
+        transferred_teams,
+        transferred_context,
+    )
+    if (
+        baseline_interface["slo"]["status"] != "healthy"
+        or transferred_interface["slo"]["status"] != "breached"
+        or baseline_interface["slo"]["status"]
+        == transferred_interface["slo"]["status"]
+    ):
+        raise AssertionError(
+            "team-interface-slo-invariant: SLO not input-derived"
+        )
+    changed_fields = context_difference(
+        baseline_context,
+        transferred_context,
+    )
+    contributor_enablement = build_contributor_enablement(
+        baseline_teams,
+        baseline_interface,
+    )
+    report = {
+        "harness": HARNESS,
+        "team_interface": baseline_interface,
+        "contributor_enablement": contributor_enablement,
+        "dependency_latency_transfer": {
+            "changed_fields": changed_fields,
+            "same_team_snapshot": baseline_teams
+            == transferred_teams,
+            "baseline_context": baseline_context,
+            "transferred_context": transferred_context,
+            "baseline_slo_status": baseline_interface["slo"][
+                "status"
+            ],
+            "transferred_slo_status": transferred_interface["slo"][
+                "status"
+            ],
+            "transferred_interface": transferred_interface,
+        },
+        "input_derived_evidence": {
+            "ownership": baseline_interface["owner"],
+            "dependency": baseline_interface["dependencies"],
+            "cognitive_load": baseline_interface[
+                "cognitive_load"
+            ],
+            "slo": baseline_interface["slo"],
+        },
+        "fixture_metadata": {
+            "kind": "simulated",
+            "provenance": "lesson-defined checkout/platform fixture",
+            "limitations": (
+                "実組織のdelivery、support、incidentを観測しない"
+            ),
+            "synthetic_or_observed_explicit": True,
+        },
+        "runtime_bound": {
+            "records": len(TEAMS) * 2,
+            "subprocesses": 0,
+            "maximum_iterations": len(TEAMS),
+        },
+        "external_network_used": False,
+        "command_success_distinction": {
+            "command_completed": COMMAND_INPUT["exit_code"] == 0,
+            "system_outcome_checked": (
+                baseline_interface["slo"]["status"] == "healthy"
+            ),
+            "command_success_equals_system_outcome": False,
+            "outcome_evidence": baseline_interface["slo"],
+        },
+        "mastery_evidence": {
+            "lab_steps": [
+                {"step": 1, "evidence": baseline_teams},
+                {"step": 2, "evidence": baseline_interface},
+                {
+                    "step": 3,
+                    "evidence": baseline_interface["slo"],
+                },
+                {"step": 4, "evidence": contributor_enablement},
+                {"step": 5, "evidence": transferred_interface},
+            ],
+            "assessments": [
+                {
+                    "assessment": 1,
+                    "evidence": contributor_enablement,
+                },
+                {
+                    "assessment": 2,
+                    "evidence": baseline_interface,
+                },
+            ],
+            "rubric_dimensions": [
+                "technical-correctness",
+                "judgment",
+                "evidence",
+                "communication",
+            ],
+            "transfer": {
+                "task": (
+                    "依存サービスのlatencyだけを変え、同じteam "
+                    "ownershipとcognitive load境界でSLOと"
+                    "enablement判断を再評価する"
+                ),
+                "changed_assumption": "dependency-latency",
+                "evidence": {
+                    "changed_fields": changed_fields,
+                    "baseline": baseline_interface["slo"]["status"],
+                    "transferred": transferred_interface["slo"][
+                        "status"
+                    ],
+                },
+            },
+            "contributor_enablement": contributor_enablement,
+        },
+    }
+    print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+
+if __name__ == "__main__":
+    try:
+        main()
+    except AssertionError as error:
+        raise SystemExit(str(error)) from None
+PY</code></pre>
+</section>
+<section id="team-tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <table>
+    <caption>dependency SLOとcognitive loadに限定したteam interface decision table</caption>
+    <thead>
+      <tr>
+        <th scope="col">観測</th>
+        <th scope="col">判断</th>
+        <th scope="col">interaction</th>
+        <th scope="col">残す証拠</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row">SLO healthy、loadはcapacity内</th>
+        <td>interfaceを維持する</td>
+        <td>serviceとして利用</td>
+        <td>target、observed、owner</td>
+      </tr>
+      <tr>
+        <th scope="row">SLO breached、ownership明確</th>
+        <td>個人評価にしない</td>
+        <td>期限付きcollaboration</td>
+        <td>dependency latency、impact、escalation</td>
+      </tr>
+      <tr>
+        <th scope="row">loadがcapacity超過</th>
+        <td>境界または責務を減らす</td>
+        <td>facilitatingで移管</td>
+        <td>assigned領域、interrupt、学習時間</td>
+      </tr>
+      <tr>
+        <th scope="row">ownerが複数でdecision right不明</th>
+        <td>interfaceを再設計する</td>
+        <td>単一のcapability ownerを合意</td>
+        <td>決定者、support、release境界</td>
+      </tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><strong>誤診:</strong> checkoutのdeliveryが遅いのでcheckout memberの生産性が低い。<strong>反証:</strong> dependency latency、SLO breach、ownership、handoff、cognitive loadを同じteam interfaceで確認する。</li>
+    <li><strong>誤診:</strong> service ownershipを全員へ割り当てればbottleneckは消える。<strong>反証:</strong> capabilityごとのdecision right、support boundary、SLO、escalationを一意にし、receiving teamが自律判断できるか観測する。</li>
+  </ul>
+</section>
+<section id="team-knowledge-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>Conwayの観点を「現在の組織図を固定する法則」と誤解すると何が起きるか。</li>
+    <li>DORAのloosely coupledをdependencyゼロではなく自律的deliveryとして測るには何を見るか。</li>
+    <li>cognitive loadのassignedとcapacityを、個人の能力評価からどう分離するか。</li>
+    <li>SLO breach後にteam interfaceを更新するowner、evidence、終了条件を挙げよ。</li>
+  </ol>
+</section>
+<section id="team-sources-next">
+  <h2>出典と次の学習</h2>
+  <p>DORA Capability: Loosely coupled teams、ConwayのHow Do Committees Invent?、Team Topologies: Key concepts、ISO/IEC/IEEE 42010:2022を、delivery autonomy、communication structure、team interaction、architecture descriptionの根拠として用いた。</p>
+  <p>次は自分のdelivery flowからteam間dependencyを一つ選び、owner、owned capability、cognitive load、SLO targetとobserved、enablement actionを同じteam interfaceへ書く。別teamとreviewし、latencyだけを変えたとき判断が更新されるか検証する。</p>
+</section>

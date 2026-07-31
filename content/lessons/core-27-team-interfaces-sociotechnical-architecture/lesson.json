@@ -1,0 +1,174 @@
+{
+  "version": 1,
+  "id": "core-27-team-interfaces-sociotechnical-architecture",
+  "title": "チームインターフェースで社会技術アーキテクチャを設計する",
+  "summary": "ownership、dependency、cognitive load、SLOを明示したteam interfaceを作り、組織構造とsoftware境界が互いへ与える影響を観測可能にする。",
+  "track": "lead",
+  "stage": 5,
+  "difficulty": "advanced",
+  "estimatedMinutes": 300,
+  "prerequisiteIds": [
+    "core-08-modularity-evolutionary-architecture",
+    "core-19-technical-communication-design-docs",
+    "core-26-code-review-collaborative-quality"
+  ],
+  "objectives": [
+    {
+      "id": "obj-team-interface",
+      "statement": "team ownership、owned capability、dependency、SLOを一つのinterfaceへ記述できる",
+      "evidenceIds": ["team-interface", "assessment"]
+    },
+    {
+      "id": "obj-cognitive-load",
+      "statement": "assigned cognitive loadをcapacityと比較し、境界変更かenablementかを判断できる",
+      "evidenceIds": ["team-interface", "teach-back"]
+    },
+    {
+      "id": "obj-sociotechnical-transfer",
+      "statement": "dependency latencyだけを変え、同じteam snapshotからSLOとenablement判断を再評価できる",
+      "evidenceIds": ["team-interface", "transfer"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "team-interface",
+      "kind": "artifact",
+      "description": "所有権、依存、認知負荷、SLOを含むチームインターフェース"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "Conway、DORA、Team Topologiesを組織図ではなくdelivery境界へ結ぶ5分発表"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "曖昧なownershipと過剰なcognitive loadを個人努力で補わない設計判断"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "dependency latencyだけを変えた同一team snapshotのSLO再評価"
+    }
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "team、capability、dependency、SLO、cognitive loadの境界を識別できる",
+      "evidenceIds": ["team-interface"]
+    },
+    {
+      "level": "explain",
+      "criterion": "communication pathとsoftware構造が相互に制約するConwayの観点を説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "owner、依存先、期待値、観測値、enablement actionをteam interfaceへ結べる",
+      "evidenceIds": ["team-interface"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "共有ownership、同期依存、認知負荷超過、SLO不在を個人の遅さと誤診せず反証できる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "別teamが自律的にdeliveryできるdependency契約とenablementを共同運営できる",
+      "evidenceIds": ["transfer"]
+    }
+  ],
+  "lab": {
+    "title": "checkoutとplatformのteam interfaceをSLOで再評価する",
+    "artifact": "所有権、依存、認知負荷、SLOを含むチームインターフェース",
+    "steps": [
+      "simulated team snapshot、canonical team order、dependency contextのschemaと限界を固定する",
+      "checkoutのowner、owned capability、platform dependency、cognitive loadを可視化する",
+      "dependency latencyとSLO targetからbaselineのstatusを導く",
+      "receiving teamを助けるplatformのenablement actionとreview evidenceを記録する",
+      "dependency latencyだけを変えて同じteam snapshotのSLO statusとenablement判断を再評価する"
+    ]
+  },
+  "teachBack": "5分で、DORAのloosely coupled teams、Conwayのcommunication structure、Team Topologiesのteam interactionとcognitive loadを、変更可能なteam interfaceへどう結ぶか説明する。",
+  "assessment": [
+    {
+      "prompt": "checkoutのdeliveryがplatform待ちで遅い。checkout memberの速度だけを改善すべきか。",
+      "expectedEvidence": "ownership、dependency latency、SLO、interaction mode、cognitive load、enablement action"
+    },
+    {
+      "prompt": "全員が共有serviceを所有しているのでhandoffはないという主張を評価せよ。",
+      "expectedEvidence": "明示的owner、decision rights、support boundary、SLO、escalation、system outcome"
+    }
+  ],
+  "transferTask": "依存サービスのlatencyだけを変え、同じteam ownershipとcognitive load境界でSLOとenablement判断を再評価する",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "team名とservice名だけを並べる",
+        "developing": "ownershipとdependencyはあるがcognitive load、SLO、観測値が結び付かない",
+        "proficient": "team snapshotとcontextからowner、dependency、load、SLO statusを一貫して導く",
+        "exemplary": "schema、順序、重複、snapshot drift、causal bypassをfail closedで検出できる"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "遅延を個人の生産性問題と断定する",
+        "developing": "組織課題を挙げるが境界変更かenablementかを選ばない",
+        "proficient": "dependency、load、SLO、変更頻度、可逆性からinteractionを選ぶ",
+        "exemplary": "一時的collaborationから長期API境界へ移る条件と終了条件を設計する"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "組織図だけをarchitecture evidenceにする",
+        "developing": "SLO targetはあるがobserved latencyとteam snapshotの出自がない",
+        "proficient": "固定入力、ownership、load、target、observed、status、transferを監査可能に残す",
+        "exemplary": "deliveryとreliabilityの実績でteam interfaceを継続校正できる"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "担当者へ個別に聞くことをinterfaceとする",
+        "developing": "窓口はあるが期待値、期限、escalationが曖昧である",
+        "proficient": "owner、capability、dependency、SLO、enablement actionを一つの契約として伝える",
+        "exemplary": "別teamが同期meetingなしで安全に変更とreviewを進められる"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "DORA Capability: Loosely coupled teams (accessed 2026-07-31)",
+      "url": "https://dora.dev/capabilities/loosely-coupled-teams/",
+      "kind": "primary"
+    },
+    {
+      "title": "How Do Committees Invent? (1968)",
+      "url": "https://www.melconway.com/Home/Committees_Paper.html",
+      "kind": "primary"
+    },
+    {
+      "title": "Team Topologies: Key concepts (accessed 2026-07-31)",
+      "url": "https://teamtopologies.com/key-concepts",
+      "kind": "primary"
+    },
+    {
+      "title": "ISO/IEC/IEEE 42010:2022 - Software, systems and enterprise — Architecture description",
+      "url": "https://www.iso.org/standard/74393.html",
+      "kind": "standard"
+    }
+  ],
+  "review": {
+    "intervalDays": [1, 7, 30, 90],
+    "prompts": [
+      "ownershipを担当者名ではなくcapability境界で示す理由は何か",
+      "cognitive loadがcapacity以下でもdependencyがdeliveryを止める例は何か",
+      "SLO statusが変わったときteam interfaceのどこを再評価するか"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}
