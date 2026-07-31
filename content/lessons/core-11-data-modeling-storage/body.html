@@ -1,0 +1,408 @@
+<section id="why">
+  <h2>なぜ重要か</h2>
+  <p>data modelの選択は製品カテゴリ当てではない。利用者がどのdataを一緒に読み、どの不変条件を一度に守り、どこで更新が競合し、件数がどう増えるかを明示して初めて、storageの適合性を比較できる。初期のqueryには合う設計も、主要なaccess patternが変われば最適ではなくなる。</p>
+  <p>ADRの役割は永久に正しい製品を宣言することではなく、判断時のworkload、同じ比較基準、負の帰結、確認方法を残すことである。logical model、indexやpartition keyなどのphysical design、製品固有機能を分けると、前提変更時にどこから再評価すべきかを追跡できる。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> document databaseをschema-lessとは扱わない。applicationと保存dataには構造と移行責任がある。single-table設計が常に勝つわけでも、partition追加だけで全queryが速くなるわけでもない。query shape、分布、constraint、write amplification、運用、復旧を測って判断する。</p>
+  </aside>
+</section>
+<section id="mental-model">
+  <h2>メンタルモデル</h2>
+  <p>最初にdomainのentity、value、relationship、不変条件を記述し、次にquery shapeへ「頻度」と「同時に読むdata」を付ける。さらに更新競合と成長予測を加えれば、access pathの局所最適化が整合性や復旧を壊さないかを比較できる。</p>
+  <figure>
+    <figcaption>workload証拠からstorage ADRを再計算するmechanism</figcaption>
+    <ol>
+      <li><strong>domain:</strong> 注文番号の一意性、合計額と明細合計の一致、注文状態遷移を不変条件にする。</li>
+      <li><strong>workload:</strong> 顧客履歴、注文detail、商品・期間検索、状態更新を一意なquery IDと時間当たり頻度で表す。</li>
+      <li><strong>growth:</strong> 現在件数と月間増加から12か月後を計算し、synthetic projectionである限界を残す。</li>
+      <li><strong>comparison:</strong> relational、document、key-valueをaccess fit、constraint、capacity、operations、recoveryの同じweightで採点する。</li>
+      <li><strong>ADR:</strong> winnerだけでなく、負の帰結、移行境界、confirmationを記録する。</li>
+      <li><strong>mutation:</strong> 商品・期間検索が主要queryになったらfrequencyとratingを変え、scoreとwinnerを再計算する。</li>
+    </ol>
+  </figure>
+  <table>
+    <caption>注文履歴workloadを比較するdecision table</caption>
+    <thead>
+      <tr><th scope="col">model</th><th scope="col">access fit</th><th scope="col">constraint</th><th scope="col">operations・recovery</th><th scope="col">主な負の帰結</th></tr>
+    </thead>
+    <tbody>
+      <tr><th scope="row">relational</th><td>顧客履歴とad-hoc条件をindex・joinで扱う</td><td>一意性・参照・transaction境界を宣言する</td><td>migration、backup、point-in-time recoveryを演習する</td><td>join、index維持、scale-up上限を測る必要</td></tr>
+      <tr><th scope="row">document</th><td>注文aggregateを一緒に読むqueryへ適合</td><td>validationとapplication invariantを併用</td><td>document肥大、index、restoreを監視する</td><td>重複と部分更新競合、横断queryの追加index</td></tr>
+      <tr><th scope="row">key-value</th><td>既知keyの固定queryを低いfan-outで読む</td><td>複数key不変条件の責任を明示する</td><td>hot key、再構築、backup復旧を演習する</td><td>二次access pathと再同期の複雑性</td></tr>
+    </tbody>
+  </table>
+  <p><strong>vendor scope:</strong> relationalの例はPostgreSQL 18のdata definition、documentの例はMongoDB 8.0のdata modeling、key-valueの機構は2007年Dynamo論文modelに限定する。製品version間の機能差やmanaged serviceのSLAを一般化しない。</p>
+  <p><strong>fixtureの由来:</strong> 注文件数、query frequency、rating evidenceはlesson用に作ったsynthetic scenarioであり、production traceや実vendor benchmarkではない。実判断では匿名化したquery log、cardinality、latency分位、更新競合、backup・restore演習で置き換える。</p>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>顧客中心から商品・期間中心へADRを更新する</h3>
+  <dl>
+    <dt>前提</dt>
+    <dd>現在500,000注文、月50,000件増、12か月予測のsynthetic workloadを使う。baselineでは顧客履歴が主要queryであり、商品・期間検索は毎時48回以上ある。</dd>
+    <dt>入力</dt>
+    <dd>4つのquery shape、3つの不変条件、2つの更新競合と、合計weight 1.0の5 criteriaを入力する。三モデルには同じcriteria IDで1〜5のratingを与える。</dd>
+    <dt>操作</dt>
+    <dd>各ratingとweightの積を合計し、baseline winnerをADRへ記録する。その後、顧客履歴を毎時24回、商品・期間検索を毎時480回へ変え、access fitを再評価して同じ式でscoreを求める。</dd>
+    <dt>観測</dt>
+    <dd>baselineではrelationalが最大scoreとなる。変更後は固定された商品・期間keyのread modelに適合するkey-valueが最大となり、winnerが変わる。constraint、hot key、再構築、dual-read照合は未解決の運用責任として残る。</dd>
+    <dt>結論</dt>
+    <dd>変更後winnerを即時置換の指示にしない。source of truth、secondary read model、backfill、dual-read差分、rollback、restore演習をADR confirmationにして段階的に検証する。</dd>
+  </dl>
+  <p>次のPython 3.13 harnessは標準libraryの固定値だけを使い、network、secret、shell、filesystemへアクセスしない。access pattern mutationを同じcriteriaと計算式で再評価する。</p>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+import json
+
+HARNESS = "storage_decision_lab_v1"
+EXPECTED_PRODUCT_WINDOW_FREQUENCY = 48
+QUERY_FREQUENCIES = {
+    "get_customer_history": 120,
+    "get_order_detail": 360,
+    "list_product_window": 48,
+    "update_order_state": 90,
+}
+
+QUERY_DEFINITIONS = [
+    {
+        "id": "get_customer_history",
+        "accessed_together": ["order_id", "placed_at", "total", "status"],
+    },
+    {
+        "id": "get_order_detail",
+        "accessed_together": ["order", "line_items", "payment_summary"],
+    },
+    {
+        "id": "list_product_window",
+        "accessed_together": ["product_id", "placed_at", "order_id", "quantity"],
+    },
+    {
+        "id": "update_order_state",
+        "accessed_together": ["order_id", "current_state", "next_state", "version"],
+    },
+]
+
+WORKLOAD = {
+    "query_shapes": [
+        {
+            **definition,
+            "frequency_per_hour": QUERY_FREQUENCIES[definition["id"]],
+        }
+        for definition in QUERY_DEFINITIONS
+    ],
+    "invariants": [
+        "order_id is unique",
+        "order total equals the sum of line item amounts",
+        "order state follows the allowed transition graph",
+    ],
+    "update_conflicts": [
+        "payment confirmation and cancellation update the same order version",
+        "shipment allocation and line cancellation update overlapping line items",
+    ],
+}
+
+GROWTH_FORECAST = {
+    "current_records": 500_000,
+    "monthly_growth": 50_000,
+    "months": 12,
+    "projected_records": 1_100_000,
+    "evidence_kind": "synthetic-projection",
+}
+
+CRITERIA = {
+    "access_fit": {
+        "weight": 0.45,
+        "question": "Do primary query shapes have bounded read fan-out?",
+    },
+    "constraint_coverage": {
+        "weight": 0.20,
+        "question": "Where are uniqueness, references, and transitions enforced?",
+    },
+    "capacity": {
+        "weight": 0.15,
+        "question": "Does the model have a tested path to projected volume?",
+    },
+    "operations": {
+        "weight": 0.10,
+        "question": "Can the team migrate, observe, and operate it?",
+    },
+    "recovery": {
+        "weight": 0.10,
+        "question": "Can backup, restore, and reconstruction meet the target?",
+    },
+}
+
+BASELINE_INPUTS = [
+    {
+        "id": "relational",
+        "ratings": {
+            "access_fit": 5,
+            "constraint_coverage": 5,
+            "capacity": 4,
+            "operations": 4,
+            "recovery": 5,
+        },
+        "constraint_evidence": [
+            "synthetic DDL maps order uniqueness, references, and state checks",
+        ],
+        "capacity_evidence": [
+            "projected 1.1M rows fit the lab capacity envelope; measure indexes in production",
+        ],
+        "operations_evidence": [
+            "team rehearsal covers online index creation and reversible migration",
+        ],
+        "recovery_evidence": [
+            "point-in-time restore and constraint validation are confirmation steps",
+        ],
+    },
+    {
+        "id": "document",
+        "ratings": {
+            "access_fit": 4,
+            "constraint_coverage": 3,
+            "capacity": 4,
+            "operations": 3,
+            "recovery": 3,
+        },
+        "constraint_evidence": [
+            "document validation covers shape; cross-document invariants need explicit ownership",
+        ],
+        "capacity_evidence": [
+            "order documents need growth and index-size limits before adoption",
+        ],
+        "operations_evidence": [
+            "schema versioning and rolling migration are not yet rehearsed",
+        ],
+        "recovery_evidence": [
+            "restore must also validate denormalized fields and index rebuild",
+        ],
+    },
+    {
+        "id": "key-value",
+        "ratings": {
+            "access_fit": 3,
+            "constraint_coverage": 2,
+            "capacity": 5,
+            "operations": 2,
+            "recovery": 4,
+        },
+        "constraint_evidence": [
+            "single-key conditions are local; multi-key invariants need a tested protocol",
+        ],
+        "capacity_evidence": [
+            "synthetic partition distribution stays bounded at projected volume",
+        ],
+        "operations_evidence": [
+            "secondary access path rebuild and hot-key response are not rehearsed",
+        ],
+        "recovery_evidence": [
+            "reconstruction is deterministic but requires source snapshot retention",
+        ],
+    },
+]
+
+MUTATED_RATINGS = {
+    "relational": {
+        "access_fit": 2,
+        "constraint_coverage": 5,
+        "capacity": 4,
+        "operations": 4,
+        "recovery": 5,
+    },
+    "document": {
+        "access_fit": 4,
+        "constraint_coverage": 3,
+        "capacity": 4,
+        "operations": 3,
+        "recovery": 3,
+    },
+    "key-value": {
+        "access_fit": 5,
+        "constraint_coverage": 2,
+        "capacity": 5,
+        "operations": 3,
+        "recovery": 4,
+    },
+}
+
+def score_options(option_inputs, rating_overrides=None):
+    options = []
+    for option_input in option_inputs:
+        ratings = (
+            option_input["ratings"]
+            if rating_overrides is None
+            else rating_overrides[option_input["id"]]
+        )
+        score = sum(
+            rating * CRITERIA[criterion_id]["weight"]
+            for criterion_id, rating in ratings.items()
+        )
+        options.append(
+            {
+                **option_input,
+                "ratings": dict(ratings),
+                "score": round(score, 6),
+            }
+        )
+    return options
+
+def selected_option(options):
+    return max(options, key=lambda option: option["score"])["id"]
+
+def mutate_access_pattern(workload):
+    changed_frequencies = {
+        **{
+            query["id"]: query["frequency_per_hour"]
+            for query in workload["query_shapes"]
+        },
+        "get_customer_history": 24,
+        "list_product_window": 480,
+    }
+    return {
+        **workload,
+        "query_shapes": [
+            {
+                **query,
+                "frequency_per_hour": changed_frequencies[query["id"]],
+            }
+            for query in workload["query_shapes"]
+        ],
+    }
+
+query_ids = [query["id"] for query in WORKLOAD["query_shapes"]]
+assert len(query_ids) == len(set(query_ids))
+assert all(
+    query["frequency_per_hour"] &gt; 0 and query["accessed_together"]
+    for query in WORKLOAD["query_shapes"]
+)
+# The lesson scenario requires this secondary query to be material before
+# mutation; lowering it makes the stated ADR comparison a different workload.
+assert QUERY_FREQUENCIES["list_product_window"] == EXPECTED_PRODUCT_WINDOW_FREQUENCY
+assert abs(sum(item["weight"] for item in CRITERIA.values()) - 1.0) &lt; 1e-9
+assert GROWTH_FORECAST["projected_records"] == (
+    GROWTH_FORECAST["current_records"]
+    + GROWTH_FORECAST["monthly_growth"] * GROWTH_FORECAST["months"]
+)
+
+baseline_options = score_options(BASELINE_INPUTS)
+baseline_winner = selected_option(baseline_options)
+mutated_workload = mutate_access_pattern(WORKLOAD)
+mutated_options = score_options(BASELINE_INPUTS, MUTATED_RATINGS)
+mutated_winner = selected_option(mutated_options)
+
+assert baseline_winner == "relational"
+assert mutated_winner == "key-value"
+assert mutated_winner != baseline_winner
+assert next(
+    query["frequency_per_hour"]
+    for query in mutated_workload["query_shapes"]
+    if query["id"] == "list_product_window"
+) == 480
+
+report = {
+    "fixture": "order-history-workload-v1",
+    "fixture_metadata": {
+        "kind": "synthetic",
+        "provenance": "lesson-authored deterministic order-history scenario",
+        "limitations": [
+            "not a production query trace",
+            "not a vendor benchmark or availability claim",
+            "ratings require replacement with measured workload and restore evidence",
+        ],
+    },
+    "workload": WORKLOAD,
+    "growth_forecast": GROWTH_FORECAST,
+    "criteria": CRITERIA,
+    "baseline": {
+        "workload_profile": "customer-history-dominant",
+        "options": baseline_options,
+        "selected_option": baseline_winner,
+    },
+    "adr": {
+        "status": "accepted-for-lab",
+        "context": "customer-history queries dominate the synthetic baseline",
+        "decision": baseline_winner,
+        "negative_consequences": [
+            "secondary indexes add write and migration cost",
+            "joins and index growth require measured latency and capacity evidence",
+        ],
+        "confirmation": [
+            "validate invariants with generated conflicting updates",
+            "measure query latency at projected records",
+            "complete backup restore and reversible migration rehearsal",
+        ],
+    },
+    "access_pattern_mutation": {
+        "changed_assumption": "access-pattern",
+        "workload": mutated_workload,
+        "options": mutated_options,
+        "selected_option": mutated_winner,
+        "decision_recomputed": mutated_winner != baseline_winner,
+        "migration_evidence": [
+            "backfill the product-window read model from an immutable snapshot",
+            "compare dual-read result sets before routing traffic",
+            "retain relational source and replay cursor for rollback",
+        ],
+    },
+    "vendor_scope": {
+        "PostgreSQL": "18",
+        "MongoDB": "8.0",
+        "Dynamo": "2007-paper-model",
+    },
+    "mastery_evidence": {
+        "lab_steps": [
+            {"step": 1, "evidence": "four unique query shapes, invariants, and update conflicts"},
+            {"step": 2, "evidence": "synthetic 12-month projected record calculation"},
+            {"step": 3, "evidence": "five weighted criteria and evidence for all three models"},
+            {"step": 4, "evidence": "computed baseline scores, winner, and ADR confirmation"},
+            {"step": 5, "evidence": "mutated workload, recomputed ratings, winner, and migration evidence"},
+        ],
+        "assessments": [
+            {"assessment": 1, "evidence": "document growth, conflict, constraint, index, and restore rebuttal"},
+            {"assessment": 2, "evidence": "frequency, score, dual-read, backfill, and rollback update"},
+        ],
+        "rubric_dimensions": [
+            "technical-correctness",
+            "judgment",
+            "evidence",
+            "communication",
+        ],
+        "transfer": {
+            "task": "注文検索が顧客中心から商品・期間中心へ変わるアクセスパターン変更でストレージADRを再評価する",
+            "changed_assumption": "access-pattern",
+            "evidence": "winner changes only after workload and all option scores are recomputed",
+        },
+    },
+    "external_network_used": False,
+}
+
+print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+PY</code></pre>
+</section>
+<section id="tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <ul>
+    <li><strong>誤診:</strong> document databaseならschema設計もmigrationも不要である。<strong>反証:</strong> 保存documentのfield、型、version、validation、reader互換性は変化する。古いversionを含むfixtureでrolling migrationとrollbackを実行し、未知fieldと欠損fieldの扱いを観測する。</li>
+    <li><strong>誤診:</strong> key-valueのsingle-tableへ統合すれば、すべてのaccess patternが常に最速になる。<strong>反証:</strong> 既知key以外のqueryは二次index、fan-out、複製read modelが必要になりうる。queryごとのread数、hot key分布、write amplification、再構築時間を測る。</li>
+    <li><strong>誤診:</strong> relational tableをpartitionすれば、成長後の全queryが自動的に速くなる。<strong>反証:</strong> predicateがpartition keyを絞らなければpruningできず、partition数やglobal constraintが運用費を増やす。実query planと分位latency、maintenance時間を変更前後で比較する。</li>
+    <li><strong>constraintの局所化:</strong> 一つのaggregateで守れる不変条件と、複数record・keyをまたぐ不変条件を分ける。後者をapplicationへ移すなら、競合時のprotocolとreconciliationをtestする。</li>
+    <li><strong>容量の錯覚:</strong> 総record数だけではhot partition、index size、document肥大、write burstを説明できない。分布と増加率を含む複数scenarioで安全余裕を決める。</li>
+    <li><strong>運用・回復:</strong> backupが存在することと、要求時間内に整合した状態へrestoreできることは別である。schema version、secondary index、read modelを含めて定期的に復旧を演習する。</li>
+  </ul>
+</section>
+<section id="knowledge-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>product名を挙げる前に、query shapeへ最低限どの情報を付けるべきか。</li>
+    <li>relational、document、key-valueを同じcriteriaとweightで比べる理由は何か。</li>
+    <li>document modelで「schemaがない」という主張を、どのartifactとtestで反証できるか。</li>
+    <li>projected recordsが同じでも、query分布の変更でwinnerが変わるのはなぜか。</li>
+    <li>商品・期間read modelへ移す際、backfill完了だけを成功条件にできない理由は何か。</li>
+    <li>ADR confirmationへconstraint、capacity、operations、recoveryの証拠を一つずつ挙げる。</li>
+  </ol>
+</section>
+<section id="sources-next">
+  <h2>出典と次の学習</h2>
+  <p>relational modelの原理はCoddの論文、PostgreSQL固有のdata definitionはversion 18の公式資料、document modelingはMongoDB 8.0の公式資料、key-valueの機構は2007年Dynamo論文で確認する。本文中に外部resourceを埋め込まず、完全なtitle、URL、kindはlesson metadataへ分離した。</p>
+  <p>次は「トランザクション・分離・整合性」で、同じ不変条件が並行実行時にどう破れるかを決定的scheduleで再現する。その後「性能・容量設計」でsynthetic projectionを負荷曲線、bottleneck証拠、安全容量へ接続する。</p>
+  <p><strong>復習:</strong> 1日後にquery shapeと不変条件、7日後に三モデルの比較、30日後にaccess pattern mutation、90日後に実projectのADRを同じcriteriaで再評価する。</p>
+</section>

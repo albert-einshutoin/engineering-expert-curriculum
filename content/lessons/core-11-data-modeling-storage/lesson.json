@@ -1,0 +1,172 @@
+{
+  "version": 1,
+  "id": "core-11-data-modeling-storage",
+  "title": "アクセスパターンと制約からストレージADRを再計算する",
+  "summary": "query shape、不変条件、更新競合、成長予測を証拠に、relational・document・key-valueモデルを同じ基準で比較する。",
+  "track": "data-scale",
+  "stage": 3,
+  "difficulty": "intermediate",
+  "estimatedMinutes": 300,
+  "prerequisiteIds": [
+    "core-06-requirements-domain-modeling"
+  ],
+  "objectives": [
+    {
+      "id": "obj-workload",
+      "statement": "query shape、同時に読むdata、頻度、不変条件、更新競合、成長予測を、ストレージ製品とは独立したworkload契約として記述できる",
+      "evidenceIds": ["storage-adr", "teach-back"]
+    },
+    {
+      "id": "obj-compare",
+      "statement": "relational・document・key-valueモデルをaccess fit、constraint、capacity、operations、recoveryの同じ加重基準で比較し、観測証拠からscoreを再計算できる",
+      "evidenceIds": ["storage-adr", "assessment"]
+    },
+    {
+      "id": "obj-recompute",
+      "statement": "アクセスパターンの前提変更で選択肢のratingとwinnerを再計算し、負の帰結と確認方法を含むADRを更新できる",
+      "evidenceIds": ["assessment", "transfer"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "storage-adr",
+      "kind": "artifact",
+      "description": "query shape、不変条件、更新競合、成長予測、同一criteriaでの三モデル比較、負の帰結、confirmationを含む機械可読ストレージADR"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "data modelを製品名やschemaの有無だけで選べない理由を説明する6分間の解説"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "constraint・capacity・operations・recoveryの証拠を用いてratingを反証し、access pattern変更後のscoreを再計算する判断記録"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "注文検索を顧客中心から商品・期間中心へ変え、変更した前提、再計算結果、移行と回復条件を記録したADR"
+    }
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "entity、value、relationship、query shape、不変条件、更新競合、成長予測を識別できる",
+      "evidenceIds": ["storage-adr"]
+    },
+    {
+      "level": "explain",
+      "criterion": "論理data modelと物理配置を分け、relational・document・key-valueの適合条件と限界を説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "同じweightとcriteriaで三モデルを評価し、constraint、capacity、operations、recoveryの証拠をADRへ接続できる",
+      "evidenceIds": ["storage-adr"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "schema-lessや単一table、partitionを万能解とする誤診を、workloadと運用証拠から反証できる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "access pattern変更時にrating、winner、移行境界、confirmationを再評価するreviewを主導できる",
+      "evidenceIds": ["transfer"]
+    }
+  ],
+  "lab": {
+    "title": "注文履歴workloadから三モデルのADRを更新する",
+    "artifact": "アクセスパターン、整合性、成長予測を含むストレージADR",
+    "steps": [
+      "synthetic注文履歴fixtureについて、一意なquery shape ID、頻度、同時に読むdata、不変条件、更新競合を記述する",
+      "現在件数、月間増加、予測月数からprojected recordsを計算し、synthetic projectionの由来と限界を記録する",
+      "access fit、constraint coverage、capacity、operations、recoveryのweightを固定し、relational・document・key-valueへ観測可能なrating evidenceを付ける",
+      "同じcriteriaから三案の加重score、winner、負の帰結、confirmationを計算し、ストレージADRを生成する",
+      "注文検索を顧客中心から商品・期間中心へ変更し、query frequency、rating、winner、移行・回復条件を再計算する"
+    ]
+  },
+  "teachBack": "6分で、document databaseがschema-lessではない理由、single-table設計が常に勝つわけではない理由、partition追加だけで全queryが速くならない理由を、query shape、不変条件、運用、回復の証拠から説明する。",
+  "assessment": [
+    {
+      "prompt": "注文detailを一つのdocumentへ埋め込めばjoinが消えて常に速い、という提案をどう評価するか。",
+      "expectedEvidence": "同時に読むdata、document成長上限、部分更新競合、重複、constraint、index、実測latency、回復手順による反証"
+    },
+    {
+      "prompt": "商品・期間中心の検索頻度が顧客履歴を上回った。既存ADRのどこを更新し、移行をどう安全に確認するか。",
+      "expectedEvidence": "access-pattern前提、query frequency、同一criteriaのratingとscore、winner、dual-read照合、backfill、rollback、confirmationの再計算"
+    }
+  ],
+  "transferTask": "注文検索が顧客中心から商品・期間中心へ変わるアクセスパターン変更でストレージADRを再評価する",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "製品カテゴリだけを選び、query shape、不変条件、更新競合を記述しない",
+        "developing": "アクセスパターンはあるが、成長予測またはconstraint・回復境界が抜ける",
+        "proficient": "query shape、不変条件、更新競合、成長予測を論理modelと物理配置へ対応付ける",
+        "exemplary": "index、partition key、二次access path、移行中の整合性、復旧演習まで検証可能にする"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "schema-less、join不要、single-tableなど一つの標語だけで選ぶ",
+        "developing": "複数案は比較するが、criteriaのweightやrating evidenceが揃わない",
+        "proficient": "三案を同じ基準で比較し、負の帰結と前提変更時の再評価条件を残す",
+        "exemplary": "可逆性、teamの運用能力、vendor差、将来の不確実性を段階移行へ反映する"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "benchmark名や平均値だけを示し、fixtureとworkloadが不明である",
+        "developing": "synthetic結果はあるが、由来、限界、constraint、recoveryの証拠が不足する",
+        "proficient": "固定fixtureからquery、成長、score、winner、ADRを決定的に再生成する",
+        "exemplary": "production query trace、容量傾向、restore演習を匿名化し、ADR confirmationへ継続接続する"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "製品名だけを結論にし、対象versionと判断範囲を示さない",
+        "developing": "選択理由はあるが、代替案、負の帰結、owner、再評価条件が曖昧である",
+        "proficient": "前提、criteria、選択肢、score、帰結、confirmation、vendor scopeを一つのADRで追える",
+        "exemplary": "domain・開発・運用・security担当が同じ証拠から移行と撤退条件を合意できる"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "A Relational Model of Data for Large Shared Data Banks",
+      "url": "https://doi.org/10.1145/362384.362685",
+      "kind": "peer-reviewed"
+    },
+    {
+      "title": "Chapter 5. Data Definition",
+      "url": "https://www.postgresql.org/docs/18/ddl.html",
+      "kind": "primary"
+    },
+    {
+      "title": "Data Modeling in MongoDB",
+      "url": "https://www.mongodb.com/docs/v8.0/data-modeling/",
+      "kind": "primary"
+    },
+    {
+      "title": "Dynamo: Amazon’s Highly Available Key-value Store",
+      "url": "https://doi.org/10.1145/1294261.1294281",
+      "kind": "peer-reviewed"
+    }
+  ],
+  "review": {
+    "intervalDays": [1, 7, 30, 90],
+    "prompts": [
+      "query shape一つについて、同時に読むdata、頻度、不変条件、更新競合を列挙する",
+      "三モデルを同じcriteriaで比べ、最有力案の負の帰結とconfirmationを示す",
+      "access pattern変更でratingとwinnerを再計算し、移行とrollback条件を説明する"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}
