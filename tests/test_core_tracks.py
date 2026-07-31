@@ -1559,6 +1559,20 @@ class CoreTrackTests(unittest.TestCase):
         self.assertEqual(report["after"]["cycles"], [])
         self.assertEqual(report["after"]["direction_violations"], [])
         self.assertEqual(
+            report["fixture_metadata"]["kind"],
+            "synthetic",
+        )
+        self.assertTrue(report["fixture_metadata"]["purpose"])
+        self.assertEqual(
+            report["fixture_metadata"]["provenance"],
+            "lesson-defined synthetic scenario",
+        )
+        self.assertTrue(report["fixture_metadata"]["limitations"])
+        architecture_body = self.body_path(
+            "core-08-modularity-evolutionary-architecture"
+        ).read_text(encoding="utf-8")
+        self.assertIn("lesson-defined synthetic scenario", architecture_body)
+        self.assertEqual(
             set(report["after"]["modules"]),
             {
                 "pricing-domain",
@@ -1582,7 +1596,10 @@ class CoreTrackTests(unittest.TestCase):
             1.0,
         )
         for criterion in criteria.values():
-            self.assertEqual(set(criterion["scale"]), {"1", "3", "5"})
+            self.assertEqual(
+                set(criterion["scale"]),
+                {"1", "2", "3", "4", "5"},
+            )
             self.assertTrue(all(criterion["scale"].values()))
         self.assertEqual(len(report["options"]), 3)
         for option in report["options"]:
@@ -1591,6 +1608,14 @@ class CoreTrackTests(unittest.TestCase):
             denominator = 0.0
             for criterion_id, rating in option["ratings"].items():
                 self.assertIn(rating["rating"], range(1, 6))
+                self.assertIn(
+                    str(rating["rating"]),
+                    criteria[criterion_id]["scale"],
+                )
+                self.assertEqual(
+                    rating["evidence_kind"],
+                    "synthetic-fixture-observation",
+                )
                 self.assertTrue(rating["evidence"])
                 weight = criteria[criterion_id]["weight"]
                 numerator += rating["rating"] * weight
@@ -1616,28 +1641,58 @@ class CoreTrackTests(unittest.TestCase):
         impact = report["change_impact"]
         self.assertEqual(impact["target"], "pricing-domain")
         self.assertEqual(
-            set(impact["impacted_modules"]),
+            set(impact["actual_impacted_modules"]),
             {
                 "pricing-domain",
                 "pricing-application",
                 "pricing-adapters",
             },
         )
-        self.assertEqual(impact["unrelated_modules_changed"], 0)
+        self.assertEqual(
+            impact["expected_impacted_modules"],
+            impact["actual_impacted_modules"],
+        )
+        self.assertEqual(impact["unexpected_impacted_modules"], [])
+        self.assertEqual(impact["missing_expected_modules"], [])
+        self.assertEqual(impact["unexpected_count"], 0)
+        self.assertEqual(impact["missing_count"], 0)
+        self.assertNotIn("unrelated_modules_changed", impact)
         mutations = report["impact_mutations"]
         self.assertEqual(
             set(mutations),
             {"edge_removed", "target_changed"},
         )
+        expected = set(impact["expected_impacted_modules"])
         for mutation in mutations.values():
-            self.assertNotEqual(
-                mutation["impacted_modules"],
-                impact["impacted_modules"],
+            actual = set(mutation["actual_impacted_modules"])
+            unexpected = actual - expected
+            missing = expected - actual
+            self.assertEqual(
+                set(mutation["unexpected_impacted_modules"]),
+                unexpected,
             )
-            self.assertGreater(
-                mutation["unrelated_modules_changed"],
-                impact["unrelated_modules_changed"],
+            self.assertEqual(
+                set(mutation["missing_expected_modules"]),
+                missing,
             )
+            self.assertEqual(mutation["unexpected_count"], len(unexpected))
+            self.assertEqual(mutation["missing_count"], len(missing))
+        self.assertEqual(
+            mutations["edge_removed"]["unexpected_impacted_modules"],
+            [],
+        )
+        self.assertEqual(
+            set(mutations["edge_removed"]["missing_expected_modules"]),
+            {"pricing-application", "pricing-adapters"},
+        )
+        self.assertEqual(
+            set(mutations["target_changed"]["unexpected_impacted_modules"]),
+            {"reporting"},
+        )
+        self.assertEqual(
+            set(mutations["target_changed"]["missing_expected_modules"]),
+            expected,
+        )
         self.assertEqual(
             adr["decision"],
             report["selected_option"],
