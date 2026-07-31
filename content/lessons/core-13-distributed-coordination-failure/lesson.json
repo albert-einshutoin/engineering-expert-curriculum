@@ -1,0 +1,173 @@
+{
+  "version": 1,
+  "id": "core-13-distributed-coordination-failure",
+  "title": "重複・順序・分断を再現し復旧境界を設計する",
+  "summary": "決定的event simulatorでat-least-once配信、順序入替、network分断、回復を再現し、永続dedupeと冪等な状態遷移を検証する。",
+  "track": "data-scale",
+  "stage": 3,
+  "difficulty": "advanced",
+  "estimatedMinutes": 320,
+  "prerequisiteIds": [
+    "core-05-networks-latency-failure",
+    "core-12-transactions-isolation-consistency"
+  ],
+  "objectives": [
+    {
+      "id": "obj-failure-model",
+      "statement": "delay、duplicate、reorder、network partition、recoveryを、model assumptionと観測可能なevent traceへ分解できる",
+      "evidenceIds": ["coordination-simulation", "teach-back"]
+    },
+    {
+      "id": "obj-idempotency",
+      "statement": "stableなdedupe key、永続結果、許可された状態遷移を結び、at-least-once retryで副作用を一度だけ適用して結果を再利用できる",
+      "evidenceIds": ["coordination-simulation", "assessment"]
+    },
+    {
+      "id": "obj-recovery",
+      "statement": "分断期間を変更してreplayし、回復deadline、残留message、dedupe保持、利用者へ返す結果を再評価できる",
+      "evidenceIds": ["assessment", "transfer"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "coordination-simulation",
+      "kind": "artifact",
+      "description": "固定seedで重複、順序入替、分断、回復を再現し、永続dedupeと結果再利用を検証する決定的event trace"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "FLPの非同期consensus範囲、実用protocolの仮定、retryとexactly-onceの違いを説明する7分間の解説"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "message deliveryと状態遷移を分け、duplicate、reorder、長期分断で不変条件と復旧結果を反証する判断記録"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "拠点間network分断を長期化し、dedupe retention、replay、reconciliation、利用者結果を更新した障害分析"
+    }
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "message loss、delay、duplicate、reorder、partition、process recoveryを異なるfailure modeとして識別できる",
+      "evidenceIds": ["coordination-simulation"]
+    },
+    {
+      "level": "explain",
+      "criterion": "FLPが扱う非同期consensusのscopeと、timeout・leader・quorumを使う実用protocolの仮定を区別して説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "stable dedupe key、永続結果、冪等な状態遷移によりat-least-once retryを安全に処理できる",
+      "evidenceIds": ["coordination-simulation"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "同じ固定seedでevent traceをreplayし、duplicate effect、順序依存、分断中の不確実な結果を切り分けられる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "failure model、復旧deadline、dedupe retention、reconciliation、利用者契約を合意するreviewを主導できる",
+      "evidenceIds": ["transfer"]
+    }
+  ],
+  "lab": {
+    "title": "注文確定commandを部分障害下で決定的にreplayする",
+    "artifact": "重複、順序、部分障害を再現する決定的シミュレーション",
+    "steps": [
+      "固定seed 20260731とsimulated fixtureの由来・限界を記録し、deliver、duplicate、partition start・endのevent列を定義する",
+      "logical sequenceと実delivery順を別々に記録し、network分断中のmessageをbufferして順序入替を再現する",
+      "stable dedupe keyと永続resultを使い、duplicate commandで状態遷移を再適用せず最初のresultを返す",
+      "同じseedとfixtureを二回replayしてtrace一致を確認し、短い分断後のrecovery outcomeを記録する",
+      "分断終了をrecovery deadline後へ移し、outcome、dedupe保持、残留message、reconciliation判断を再評価する"
+    ]
+  },
+  "teachBack": "7分で、FLPが完全非同期modelで一つの停止故障がある決定的consensusの終了保証を制限する結果でありCAPの言い換えでも実用consensus不可能の宣言でもないこと、retryはexactly-onceを作らずat-least-once配信をstable dedupeと冪等処理で扱うことを説明する。",
+  "assessment": [
+    {
+      "prompt": "注文確定APIがtimeoutし、clientが同じcommandを再送した。二重確定を防ぎつつ同じ応答を返すには何を永続化するか。",
+      "expectedEvidence": "request scopeを含むstable dedupe key、入力fingerprint、状態遷移結果、response、retention、atomic commit、key衝突時のreject"
+    },
+    {
+      "prompt": "拠点間分断が5分から2時間へ延びた。短い分断向けの回復設計の何を再評価するか。",
+      "expectedEvidence": "recovery deadline、queue上限、dedupe retention、stale command、順序、不変条件、reconciliation、利用者へ返す不確実性、replay trace"
+    }
+  ],
+  "transferTask": "拠点間ネットワーク分断が長期化する条件へ変え、重複排除と復旧結果を再評価する",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "timeoutを失敗確定とみなし、retry回数だけを増やす",
+        "developing": "dedupe keyはあるが、永続resultまたは状態遷移とのatomicityがない",
+        "proficient": "duplicate、reorder、partition、recoveryで状態遷移一回と同一result再利用を検証する",
+        "exemplary": "retention、key scope、入力fingerprint、stale command、reconciliationまで不変条件として検証する"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "exactly-onceまたは完全な可用性を前提として設計する",
+        "developing": "部分障害を認めるが、利用者結果と復旧deadlineを定義しない",
+        "proficient": "safety、liveness、latency、可用性、運用費を明示し、長期分断の再評価条件を残す",
+        "exemplary": "businessの重複許容度とreconciliation責任をprotocol・product契約へ接続する"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "一度成功したhappy pathだけを示す",
+        "developing": "障害注入はあるが、seed、event trace、model assumptionが不足する",
+        "proficient": "固定fixtureの二回replay、duplicate result、reorder、partition mutationを決定的に示す",
+        "exemplary": "production incidentの匿名traceとchaos rehearsalを同じ不変条件へ接続し、simulationとの差を記録する"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "FLP、CAP、exactly-onceを標語として混同する",
+        "developing": "protocolを説明するが、仮定、非保証、利用者影響が曖昧である",
+        "proficient": "failure model、保証範囲、retry semantics、回復結果、残留riskを分けて説明する",
+        "exemplary": "開発、運用、product担当がfailure budgetと利用者契約を一つのtraceから合意できる"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "Impossibility of Distributed Consensus with One Faulty Process",
+      "url": "https://doi.org/10.1145/3149.214121",
+      "kind": "peer-reviewed"
+    },
+    {
+      "title": "In Search of an Understandable Consensus Algorithm",
+      "url": "https://raft.github.io/raft.pdf",
+      "kind": "primary"
+    },
+    {
+      "title": "RFC 9110: HTTP Semantics",
+      "url": "https://www.rfc-editor.org/rfc/rfc9110.html",
+      "kind": "standard"
+    },
+    {
+      "title": "FoundationDB: A Distributed Unbundled Transactional Key Value Store",
+      "url": "https://doi.org/10.1145/3448016.3457559",
+      "kind": "peer-reviewed"
+    }
+  ],
+  "review": {
+    "intervalDays": [1, 7, 30, 90],
+    "prompts": [
+      "timeout後retryで同じresultを返すために永続化する情報を列挙する",
+      "FLPのmodel assumptionと実用consensus protocolが追加する仮定を区別する",
+      "分断期間を延ばし、recovery deadline、dedupe retention、reconciliationを再評価する"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}
