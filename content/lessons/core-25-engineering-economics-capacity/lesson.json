@@ -1,0 +1,174 @@
+{
+  "version": 1,
+  "id": "core-25-engineering-economics-capacity",
+  "title": "engineering economicsで信頼性と容量へ投資する",
+  "summary": "直接費だけでなく機会費用、運用時間、信頼性損失、容量制約を同じ入力へ結び、unit economicsと感度分析から投資判断を再現する。",
+  "track": "sustain",
+  "stage": 4,
+  "difficulty": "advanced",
+  "estimatedMinutes": 320,
+  "prerequisiteIds": [
+    "core-14-performance-capacity",
+    "core-15-reliability-observability-slo",
+    "core-24-delivery-ci-release-safety"
+  ],
+  "objectives": [
+    {
+      "id": "obj-economics",
+      "statement": "直接費、機会費用、運用費、信頼性損失から比較可能なtotal costを導ける",
+      "evidenceIds": ["investment-comparison", "assessment"]
+    },
+    {
+      "id": "obj-capacity",
+      "statement": "需要、容量、headroom、constraint breachをunit economicsへ結べる",
+      "evidenceIds": ["investment-comparison", "teach-back"]
+    },
+    {
+      "id": "obj-sensitivity",
+      "statement": "一つの仮定だけを変える感度分析で選択が変わる境界を説明できる",
+      "evidenceIds": ["investment-comparison", "transfer"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "investment-comparison",
+      "kind": "artifact",
+      "description": "機会費用、運用時間、信頼性、容量を含む投資比較"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "安価、低unit cost、容量適合、事業価値の違いを説明する5分発表"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "価格精度と入力限界を明示した投資判断"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "demand growthだけを変えた選択の感度分析"
+    }
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "請求額、engineering時間、運用時間、reliability loss、capacityを別のcost driverとして識別できる",
+      "evidenceIds": ["investment-comparison"]
+    },
+    {
+      "level": "explain",
+      "criterion": "最小direct costが最良の事業判断とは限らない理由をunit economicsで説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "固定入力からtotal cost、unit cost、capacity headroomを再計算できる",
+      "evidenceIds": ["investment-comparison"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "価格精度の誇張、埋没費用、二重計上、需要予測の単一点依存を反証できる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "product、finance、reliability、capacityのownerと感度範囲を合意できる",
+      "evidenceIds": ["transfer"]
+    }
+  ],
+  "lab": {
+    "title": "二つのcapacity投資をunit economicsで比較する",
+    "artifact": "機会費用、運用時間、信頼性、容量を含む投資比較",
+    "steps": [
+      "価格ではなくlesson-defined synthetic inputsであることと限界を記録する",
+      "各候補のdirect cost、engineering hours、operations hours、reliability inputsを固定する",
+      "需要からrequired capacity、headroom、constraint breachを導く",
+      "total costとserved unitあたりcostを計算してbaselineを選ぶ",
+      "demand growthだけを変え同じ候補を感度分析して選択を再評価する"
+    ]
+  },
+  "teachBack": "5分で、FinOps Frameworkのunit economics、AWSとGoogle Cloudのcost guidanceを価格表としてではなく事業価値とworkload制約を結ぶ判断枠として使う理由を説明する。",
+  "assessment": [
+    {
+      "prompt": "direct costが最小の候補に運用時間とincident riskが集中する。比較式をどう直すか。",
+      "expectedEvidence": "opportunity cost、operations cost、reliability cost、二重計上防止、入力owner"
+    },
+    {
+      "prompt": "provider価格を確認せずにこのfixtureからproduction予算を断定できるか。",
+      "expectedEvidence": "synthetic fixture、currencyと期間、地域と契約、価格更新日、sensitivity range"
+    }
+  ],
+  "transferTask": "demand growthだけを変え、同じ投資候補のunit economicsと選択を感度分析で再評価する",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "direct costだけを比較する",
+        "developing": "複数costはあるが単位、期間、capacity constraintが一致しない",
+        "proficient": "全cost driver、served units、headroom、constraint breachを同じ入力から導く",
+        "exemplary": "二重計上、uncertainty、option value、需要分布でも式の境界を維持する"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "最安値を自動的に選ぶ",
+        "developing": "信頼性を挙げるが事業影響へ換算しない",
+        "proficient": "cost、reliability、capacity、可逆性、時間軸から選ぶ",
+        "exemplary": "投資を小さなoptionへ分け、観測に応じて中止または拡大できる"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "金額だけを示し入力出自がない",
+        "developing": "計算表はあるが価格時点とsynthetic限界がない",
+        "proficient": "入力、式、単位、結果、制約、感度、限界を再実行可能に残す",
+        "exemplary": "実績との差を継続校正し、仮定変更が選択へ伝播する証拠を持つ"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "安いまたは高いとだけ報告する",
+        "developing": "total costはあるが事業単位とtrade-offが読めない",
+        "proficient": "どの仮定、cost driver、制約が選択を決めたか説明する",
+        "exemplary": "engineering、finance、product、operationsが同じ感度表で異議を検証できる"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "FinOps Framework Capability: Unit Economics (accessed 2026-07-31)",
+      "url": "https://www.finops.org/framework/capabilities/unit-economics/",
+      "kind": "primary"
+    },
+    {
+      "title": "FinOps Framework Capability: Architecting & Workload Placement (accessed 2026-07-31)",
+      "url": "https://www.finops.org/framework/capabilities/architecting-workload-placement/",
+      "kind": "primary"
+    },
+    {
+      "title": "AWS Well-Architected Framework: Cost Optimization Pillar (June 27, 2024)",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/cost-optimization-pillar/welcome.html",
+      "kind": "primary"
+    },
+    {
+      "title": "Google Cloud Well-Architected Framework: Cost optimization pillar (accessed 2026-07-31)",
+      "url": "https://docs.cloud.google.com/architecture/framework/cost-optimization",
+      "kind": "primary"
+    }
+  ],
+  "review": {
+    "intervalDays": [1, 7, 30, 90],
+    "prompts": [
+      "opportunity costをdirect costと分ける理由は何か",
+      "capacity constraintをunit costより先に評価する条件は何か",
+      "価格精度を誇張せず投資判断を更新するには何を記録するか"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}
