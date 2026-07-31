@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from datetime import date
 from html.parser import HTMLParser
 import json
@@ -556,6 +557,128 @@ HUMAN_PRODUCT_SOURCES = {
         ),
     ),
 }
+SUSTAIN_SOURCES = {
+    "core-21-legacy-systems-maintenance": (
+        (
+            "Guide to the Software Engineering Body of Knowledge "
+            "(SWEBOK Guide), Version 4.0a, September 2025",
+            "https://ieeecs-media.computer.org/media/education/"
+            "swebok/swebok-v4.pdf",
+            "standard",
+        ),
+        (
+            "ISO/IEC/IEEE 14764:2022 - Software engineering — "
+            "Software life cycle processes — Maintenance",
+            "https://www.iso.org/standard/80710.html",
+            "standard",
+        ),
+        (
+            "Software maintenance and evolution: a roadmap (2000)",
+            "https://doi.org/10.1145/336512.336534",
+            "peer-reviewed",
+        ),
+        (
+            "Comprehension strategies and difficulties in maintaining "
+            "object-oriented systems: An explorative study (2007)",
+            "https://doi.org/10.1016/j.jss.2006.10.041",
+            "peer-reviewed",
+        ),
+    ),
+    "core-22-database-schema-migration": (
+        (
+            "DORA Capability: Database change management "
+            "(accessed 2026-07-31)",
+            "https://dora.dev/capabilities/database-change-management/",
+            "primary",
+        ),
+        (
+            "PostgreSQL 18 Documentation: ALTER TABLE",
+            "https://www.postgresql.org/docs/18/sql-altertable.html",
+            "primary",
+        ),
+        (
+            "PostgreSQL 18 Documentation: Restrictions",
+            "https://www.postgresql.org/docs/18/"
+            "logical-replication-restrictions.html",
+            "primary",
+        ),
+    ),
+    "core-23-incident-response-learning": (
+        (
+            "NIST SP 800-61 Rev. 3: Incident Response Recommendations "
+            "and Considerations for Cybersecurity Risk Management "
+            "(April 2025)",
+            "https://doi.org/10.6028/NIST.SP.800-61r3",
+            "standard",
+        ),
+        (
+            "Google SRE Workbook: Incident Response",
+            "https://sre.google/workbook/incident-response/",
+            "primary",
+        ),
+        (
+            "Google SRE Workbook: Postmortem Culture — "
+            "Learning from Failure",
+            "https://sre.google/workbook/postmortem-culture/",
+            "primary",
+        ),
+    ),
+    "core-24-delivery-ci-supply-chain": (
+        (
+            "SLSA Specification Version 1.2 (Approved)",
+            "https://slsa.dev/spec/v1.2/",
+            "standard",
+        ),
+        (
+            "DORA's software delivery performance metrics "
+            "(updated January 5, 2026)",
+            "https://dora.dev/guides/dora-metrics/",
+            "primary",
+        ),
+        (
+            "DORA Capability: Continuous delivery "
+            "(accessed 2026-07-31)",
+            "https://dora.dev/capabilities/continuous-delivery/",
+            "primary",
+        ),
+        (
+            "NIST SP 800-218: Secure Software Development Framework "
+            "Version 1.1 (February 2022)",
+            "https://doi.org/10.6028/NIST.SP.800-218",
+            "standard",
+        ),
+    ),
+    "core-25-engineering-economics": (
+        (
+            "FinOps Framework Capability: Unit Economics "
+            "(accessed 2026-07-31)",
+            "https://www.finops.org/framework/capabilities/"
+            "unit-economics/",
+            "primary",
+        ),
+        (
+            "FinOps Framework Capability: Architecting & Workload "
+            "Placement (accessed 2026-07-31)",
+            "https://www.finops.org/framework/capabilities/"
+            "architecting-workload-placement/",
+            "primary",
+        ),
+        (
+            "AWS Well-Architected Framework: Cost Optimization Pillar "
+            "(June 27, 2024)",
+            "https://docs.aws.amazon.com/wellarchitected/latest/"
+            "cost-optimization-pillar/welcome.html",
+            "primary",
+        ),
+        (
+            "Google Cloud Well-Architected Framework: "
+            "Cost optimization pillar (accessed 2026-07-31)",
+            "https://docs.cloud.google.com/architecture/framework/"
+            "cost-optimization",
+            "primary",
+        ),
+    ),
+}
 FOUNDATIONS = {
     "core-01-systems-tradeoffs": {
         "prerequisites": (),
@@ -758,6 +881,104 @@ HUMAN_PRODUCT_ASSUMPTIONS = {
     "core-18-product-discovery-experiments": "guardrail-threshold",
     "core-19-technical-communication-design-docs": "audience",
     "core-20-ethics-privacy-societal-impact": "affected-population",
+}
+SUSTAIN = {
+    "core-21-legacy-systems-maintenance": {
+        "prerequisites": (
+            "core-08-modularity-evolutionary-architecture",
+            "core-09-test-strategy-tdd",
+        ),
+        "artifact": (
+            "実行経路、変更理由、未知領域を示すシステム地図と特性テスト"
+        ),
+        "transfer": (
+            "割引率変更から税丸め変更へchange requestだけを変え、"
+            "同じlegacy fixtureの影響経路、未知領域、特性テストを再構成する"
+        ),
+    },
+    "core-22-database-schema-migration": {
+        "prerequisites": (
+            "core-08-modularity-evolutionary-architecture",
+            "core-12-transactions-isolation-consistency",
+            "core-21-legacy-systems-maintenance",
+        ),
+        "artifact": (
+            "expand-contract段階、観測、停止、ロールバックを含む移行計画"
+        ),
+        "transfer": (
+            "backfill error rateだけを変え、同じ移行計画の継続・停止・"
+            "ロールバック判断を再評価する"
+        ),
+    },
+    "core-23-incident-response-learning": {
+        "prerequisites": (
+            "core-15-reliability-observability-slo",
+            "core-21-legacy-systems-maintenance",
+        ),
+        "artifact": (
+            "影響、意思決定、証拠、寄与要因、検証可能な対策を含むレビュー"
+        ),
+        "transfer": (
+            "検知遅延だけを変え、同じincident evidenceから影響時間と"
+            "学習行動を再評価する"
+        ),
+    },
+    "core-24-delivery-ci-supply-chain": {
+        "prerequisites": (
+            "core-09-test-strategy-tdd",
+            "core-15-reliability-observability-slo",
+        ),
+        "artifact": (
+            "失敗を閉じるCI、段階配信、来歴、ロールバックの実行証拠"
+        ),
+        "transfer": (
+            "canary error rateだけを変え、同じartifactとprovenanceで"
+            "段階配信のadvance・rollback判断を再評価する"
+        ),
+    },
+    "core-25-engineering-economics": {
+        "prerequisites": (
+            "core-14-performance-capacity",
+            "core-15-reliability-observability-slo",
+            "core-24-delivery-ci-supply-chain",
+        ),
+        "artifact": (
+            "機会費用、運用時間、信頼性、容量を含む投資比較"
+        ),
+        "transfer": (
+            "demand growthだけを変え、同じ投資候補のunit economicsと"
+            "選択を感度分析で再評価する"
+        ),
+    },
+}
+SUSTAIN_ASSUMPTIONS = {
+    "core-21-legacy-systems-maintenance": "change-request",
+    "core-22-database-schema-migration": "backfill-error-rate",
+    "core-23-incident-response-learning": "detection-delay",
+    "core-24-delivery-ci-supply-chain": "canary-error-rate",
+    "core-25-engineering-economics": "demand-growth",
+}
+SUSTAIN_HARNESSES = {
+    "core-21-legacy-systems-maintenance": (
+        "legacy_comprehension_lab_v1",
+        "synthetic",
+    ),
+    "core-22-database-schema-migration": (
+        "migration_state_machine_lab_v1",
+        "simulated",
+    ),
+    "core-23-incident-response-learning": (
+        "incident_learning_review_lab_v1",
+        "simulated",
+    ),
+    "core-24-delivery-ci-supply-chain": (
+        "delivery_safety_lab_v1",
+        "simulated",
+    ),
+    "core-25-engineering-economics": (
+        "engineering_economics_lab_v1",
+        "synthetic",
+    ),
 }
 
 
@@ -1207,6 +1428,110 @@ class CoreTrackTests(unittest.TestCase):
         self.assertFalse(report["external_network_used"])
         self.assert_human_product_mastery_evidence(report, lesson_id)
 
+    def assert_sustain_mastery_evidence(
+        self,
+        report: dict[str, object],
+        lesson_id: str,
+    ) -> None:
+        metadata_path = self.body_path(lesson_id).with_name("lesson.json")
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        mastery = report["mastery_evidence"]
+
+        self.assertEqual(
+            [item["step"] for item in mastery["lab_steps"]],
+            list(range(1, len(metadata["lab"]["steps"]) + 1)),
+        )
+        self.assertTrue(
+            all(item["evidence"] for item in mastery["lab_steps"]),
+        )
+        self.assertEqual(
+            [item["assessment"] for item in mastery["assessments"]],
+            list(range(1, len(metadata["assessment"]) + 1)),
+        )
+        self.assertTrue(
+            all(item["evidence"] for item in mastery["assessments"]),
+        )
+        self.assertEqual(
+            set(mastery["rubric_dimensions"]),
+            {item["dimension"] for item in metadata["rubric"]},
+        )
+        transfer = mastery["transfer"]
+        self.assertEqual(transfer["task"], metadata["transferTask"])
+        self.assertEqual(
+            transfer["changed_assumption"],
+            SUSTAIN_ASSUMPTIONS[lesson_id],
+        )
+        self.assertTrue(transfer["evidence"])
+
+    def assert_sustain_harness_contract(
+        self,
+        report: dict[str, object],
+        lesson_id: str,
+        expected_kind: str,
+    ) -> None:
+        metadata = report["fixture_metadata"]
+        self.assertEqual(metadata["kind"], expected_kind)
+        self.assertTrue(metadata["provenance"])
+        self.assertTrue(metadata["limitations"])
+        self.assertTrue(metadata["synthetic_or_observed_explicit"])
+
+        runtime_bound = report["runtime_bound"]
+        self.assertGreater(runtime_bound["records"], 0)
+        self.assertLessEqual(runtime_bound["records"], 1_000)
+        self.assertEqual(runtime_bound["subprocesses"], 0)
+        self.assertLessEqual(runtime_bound["maximum_iterations"], 1_000)
+        self.assertFalse(report["external_network_used"])
+
+        distinction = report["command_success_distinction"]
+        self.assertTrue(distinction["command_completed"])
+        self.assertTrue(distinction["system_outcome_checked"])
+        self.assertFalse(
+            distinction["command_success_equals_system_outcome"],
+        )
+        self.assertTrue(distinction["outcome_evidence"])
+        self.assert_sustain_mastery_evidence(report, lesson_id)
+
+    def assert_sustain_harness_source_is_safe(
+        self,
+        lesson_id: str,
+        marker: str,
+    ) -> None:
+        source = self.python_harness_source(lesson_id, marker)
+        tree = ast.parse(source)
+        allowed_modules = {"hashlib", "json", "math", "statistics"}
+        forbidden_calls = {
+            "compile",
+            "eval",
+            "exec",
+            "input",
+            "open",
+            "__import__",
+        }
+        imported_modules: set[str] = set()
+        called_names: set[str] = set()
+        for node in ast.walk(tree):
+            self.assertNotIsInstance(
+                node,
+                ast.While,
+                f"{lesson_id}: unbounded while loop",
+            )
+            if isinstance(node, ast.Import):
+                imported_modules.update(
+                    alias.name.partition(".")[0]
+                    for alias in node.names
+                )
+            elif isinstance(node, ast.ImportFrom):
+                imported_modules.add((node.module or "").partition(".")[0])
+            elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                called_names.add(node.func.id)
+
+        self.assertLessEqual(imported_modules, allowed_modules)
+        self.assertTrue(called_names.isdisjoint(forbidden_calls))
+        self.assertNotRegex(
+            source,
+            r"\b(?:os|pathlib|socket|subprocess|urllib|requests)\b",
+        )
+
     def assert_harness_source_mutation_fails(
         self,
         lesson_id: str,
@@ -1396,6 +1721,13 @@ class CoreTrackTests(unittest.TestCase):
             source_contract=HUMAN_PRODUCT_SOURCES,
         )
 
+    def test_sustain(self) -> None:
+        self.assert_track(
+            SUSTAIN,
+            expected_track="sustain",
+            source_contract=SUSTAIN_SOURCES,
+        )
+
     def test_foundation_bodies_follow_semantic_contract(self) -> None:
         for lesson_id in FOUNDATIONS:
             with self.subTest(lesson_id=lesson_id):
@@ -1419,6 +1751,94 @@ class CoreTrackTests(unittest.TestCase):
             with self.subTest(lesson_id=lesson_id):
                 body = self.body_path(lesson_id).read_text(encoding="utf-8")
                 self.assert_body_contract(body, lesson_id)
+
+    def test_sustain_bodies_follow_semantic_contract(self) -> None:
+        for lesson_id in SUSTAIN:
+            with self.subTest(lesson_id=lesson_id):
+                body = self.body_path(lesson_id).read_text(encoding="utf-8")
+                self.assert_body_contract(body, lesson_id)
+
+    def test_sustain_bodies_scope_standards_and_system_outcomes(
+        self,
+    ) -> None:
+        required_markers = {
+            "core-21-legacy-systems-maintenance": (
+                "SWEBOK Guide Version 4.0a",
+                "ISO/IEC/IEEE 14764:2022",
+                "program comprehension",
+                "characterization test",
+                "unknown",
+            ),
+            "core-22-database-schema-migration": (
+                "expand",
+                "dual write",
+                "backfill",
+                "dual read",
+                "contract",
+                "stop",
+                "rollback",
+            ),
+            "core-23-incident-response-learning": (
+                "NIST SP 800-61 Rev. 3",
+                "evidence timeline",
+                "contributing factor",
+                "non-blaming",
+                "verifiable action",
+            ),
+            "core-24-delivery-ci-supply-chain": (
+                "SLSA v1.2",
+                "Approved",
+                "NIST SSDF 1.1",
+                "five metrics",
+                "fail-closed",
+                "provenance presence alone",
+                "rollback outcome",
+            ),
+            "core-25-engineering-economics": (
+                "FinOps Framework",
+                "unit economics",
+                "opportunity cost",
+                "operations hours",
+                "reliability",
+                "capacity",
+                "sensitivity",
+                "price accuracy",
+            ),
+        }
+        for lesson_id, markers in required_markers.items():
+            with self.subTest(lesson_id=lesson_id):
+                body = self.body_path(lesson_id).read_text(encoding="utf-8")
+                for marker in markers:
+                    self.assertIn(marker, body, f"{lesson_id}: {marker}")
+                self.assertIn(
+                    "command success",
+                    body,
+                    f"{lesson_id}: command/system distinction",
+                )
+                self.assertIn(
+                    "system outcome",
+                    body,
+                    f"{lesson_id}: command/system distinction",
+                )
+
+    def test_sustain_bodies_are_static_and_harnesses_are_safe(
+        self,
+    ) -> None:
+        for lesson_id, (marker, _) in SUSTAIN_HARNESSES.items():
+            with self.subTest(lesson_id=lesson_id):
+                body = self.body_path(lesson_id).read_text(encoding="utf-8")
+                self.assertNotIn("http://", body)
+                self.assertNotIn("https://", body)
+                self.assertNotRegex(body, r"(?i)<\s*(?:script|style)\b")
+                self.assertNotRegex(body, r"(?i)\sstyle\s*=")
+                self.assertNotRegex(
+                    body,
+                    r"(?i)(?:javascript|data)\s*:",
+                )
+                self.assert_sustain_harness_source_is_safe(
+                    lesson_id,
+                    marker,
+                )
 
     def test_human_product_bodies_scope_standards_and_practice(
         self,
@@ -4559,4 +4979,276 @@ class CoreTrackTests(unittest.TestCase):
                 '        "owner": "deletion-control-owner",'
             ),
             "ethics-lifecycle-policy-invariant",
+        )
+
+    def test_sustain_harnesses_are_bounded_offline_and_auditable(
+        self,
+    ) -> None:
+        for lesson_id, (marker, expected_kind) in SUSTAIN_HARNESSES.items():
+            with self.subTest(lesson_id=lesson_id):
+                report = self.run_python_harness(lesson_id, marker)
+                self.assertEqual(report["harness"], marker)
+                self.assert_sustain_harness_contract(
+                    report,
+                    lesson_id,
+                    expected_kind,
+                )
+
+    def test_legacy_harness_maps_change_before_editing(self) -> None:
+        lesson_id = "core-21-legacy-systems-maintenance"
+        report = self.run_python_harness(
+            lesson_id,
+            "legacy_comprehension_lab_v1",
+        )
+
+        system_map = report["system_map"]
+        analysis = report["change_analysis"]
+        self.assertEqual(
+            system_map["execution_path"],
+            analysis["affected_path"],
+        )
+        self.assertEqual(
+            system_map["change_reason"],
+            analysis["change_request"],
+        )
+        self.assertGreaterEqual(len(system_map["unknowns"]), 1)
+        self.assertGreaterEqual(len(report["characterization_tests"]), 2)
+        for test in report["characterization_tests"]:
+            self.assertEqual(test["actual"], test["expected"])
+            self.assertTrue(test["passed"])
+            self.assertTrue(test["observed_path"])
+        transfer = report["change_request_transfer"]
+        self.assertEqual(transfer["changed_assumption"], "change-request")
+        self.assertEqual(transfer["changed_fields"], ["change_request"])
+        self.assertTrue(transfer["same_legacy_fixture"])
+        self.assertNotEqual(
+            transfer["baseline_affected_path"],
+            transfer["transferred_affected_path"],
+        )
+        self.assertNotEqual(
+            transfer["baseline_characterization_tests"],
+            transfer["transferred_characterization_tests"],
+        )
+
+    def test_legacy_harness_rejects_affected_path_bypass(self) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-21-legacy-systems-maintenance",
+            "legacy_comprehension_lab_v1",
+            "affected_path = trace_execution(FIXTURE, change_request)",
+            "affected_path = []",
+            "maintenance-comprehension-invariant",
+        )
+
+    def test_migration_harness_models_expand_contract_state_machine(
+        self,
+    ) -> None:
+        lesson_id = "core-22-database-schema-migration"
+        report = self.run_python_harness(
+            lesson_id,
+            "migration_state_machine_lab_v1",
+        )
+
+        phases = report["migration_plan"]["phases"]
+        self.assertEqual(
+            [phase["name"] for phase in phases],
+            ["expand", "dual-write", "backfill", "dual-read", "contract"],
+        )
+        for phase in phases:
+            self.assertTrue(phase["compatibility"])
+            self.assertTrue(phase["observation"])
+            self.assertTrue(phase["stop_condition"])
+            self.assertTrue(phase["rollback"])
+        self.assertTrue(report["compatibility"]["old_reader_supported"])
+        self.assertTrue(report["compatibility"]["new_reader_supported"])
+        self.assertTrue(report["compatibility"]["dual_write_verified"])
+        transfer = report["backfill_error_rate_transfer"]
+        self.assertEqual(
+            transfer["changed_assumption"],
+            "backfill-error-rate",
+        )
+        self.assertEqual(
+            transfer["changed_fields"],
+            ["backfill_error_rate"],
+        )
+        self.assertTrue(transfer["same_migration_plan"])
+        self.assertEqual(transfer["baseline_decision"], "continue")
+        self.assertEqual(transfer["transferred_decision"], "rollback")
+
+    def test_migration_harness_rejects_stop_decision_bypass(self) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-22-database-schema-migration",
+            "migration_state_machine_lab_v1",
+            "decision = decide_migration(observation, thresholds)",
+            'decision = "continue"',
+            "migration-causal-invariant",
+        )
+
+    def test_incident_harness_builds_non_blaming_evidence_review(
+        self,
+    ) -> None:
+        lesson_id = "core-23-incident-response-learning"
+        report = self.run_python_harness(
+            lesson_id,
+            "incident_learning_review_lab_v1",
+        )
+
+        timeline = report["evidence_timeline"]
+        self.assertEqual(
+            [event["minute"] for event in timeline],
+            sorted(event["minute"] for event in timeline),
+        )
+        evidence_ids = {event["evidence_id"] for event in timeline}
+        self.assertGreater(report["impact"]["duration_minutes"], 0)
+        self.assertGreater(report["impact"]["affected_requests"], 0)
+        for decision in report["decisions"]:
+            self.assertLessEqual(set(decision["evidence_ids"]), evidence_ids)
+        self.assertGreaterEqual(len(report["contributing_factors"]), 2)
+        self.assertTrue(
+            all(
+                factor["system_condition"]
+                and not factor["individual_blame"]
+                for factor in report["contributing_factors"]
+            ),
+        )
+        for action in report["verifiable_actions"]:
+            self.assertTrue(action["owner"])
+            self.assertTrue(action["due"])
+            self.assertTrue(action["verification"])
+            self.assertLessEqual(set(action["evidence_ids"]), evidence_ids)
+        transfer = report["detection_delay_transfer"]
+        self.assertEqual(transfer["changed_assumption"], "detection-delay")
+        self.assertEqual(transfer["changed_fields"], ["detection_minute"])
+        self.assertTrue(transfer["same_incident_evidence"])
+        self.assertGreater(
+            transfer["transferred_impact_minutes"],
+            transfer["baseline_impact_minutes"],
+        )
+
+    def test_incident_harness_rejects_impact_derivation_bypass(
+        self,
+    ) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-23-incident-response-learning",
+            "incident_learning_review_lab_v1",
+            "impact_minutes = recovery_minute - detection_minute",
+            "impact_minutes = recovery_minute",
+            "incident-causal-invariant",
+        )
+
+    def test_delivery_harness_fails_closed_and_verifies_provenance(
+        self,
+    ) -> None:
+        lesson_id = "core-24-delivery-ci-supply-chain"
+        report = self.run_python_harness(
+            lesson_id,
+            "delivery_safety_lab_v1",
+        )
+
+        self.assertEqual(report["ci"]["failure_policy"], "fail-closed")
+        self.assertTrue(report["ci"]["all_required_checks_observed"])
+        self.assertEqual(
+            set(report["dora_five_metrics"]),
+            {
+                "change_lead_time",
+                "deployment_frequency",
+                "failed_deployment_recovery_time",
+                "change_fail_rate",
+                "deployment_rework_rate",
+            },
+        )
+        provenance = report["provenance_verification"]
+        self.assertTrue(provenance["present"])
+        self.assertTrue(provenance["subject_digest_matches"])
+        self.assertTrue(provenance["builder_trusted"])
+        self.assertTrue(provenance["verified"])
+        self.assertFalse(provenance["presence_alone_is_trusted"])
+        self.assertEqual(
+            report["staged_delivery"]["decision"],
+            "advance",
+        )
+        rollback = report["rollback_outcome"]
+        self.assertTrue(rollback["executed"])
+        self.assertTrue(rollback["system_outcome_verified"])
+        self.assertTrue(rollback["service_restored"])
+        transfer = report["canary_error_rate_transfer"]
+        self.assertEqual(transfer["changed_assumption"], "canary-error-rate")
+        self.assertEqual(transfer["changed_fields"], ["canary_error_rate"])
+        self.assertTrue(transfer["same_artifact"])
+        self.assertTrue(transfer["same_provenance"])
+        self.assertEqual(transfer["baseline_decision"], "advance")
+        self.assertEqual(transfer["transferred_decision"], "rollback")
+
+    def test_delivery_harness_rejects_provenance_presence_bypass(
+        self,
+    ) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-24-delivery-ci-supply-chain",
+            "delivery_safety_lab_v1",
+            (
+                "provenance_verified = "
+                "verify_provenance(PROVENANCE, artifact_digest)"
+            ),
+            "provenance_verified = bool(PROVENANCE)",
+            "delivery-provenance-invariant",
+        )
+
+    def test_economics_harness_compares_input_derived_investments(
+        self,
+    ) -> None:
+        lesson_id = "core-25-engineering-economics"
+        report = self.run_python_harness(
+            lesson_id,
+            "engineering_economics_lab_v1",
+        )
+
+        comparisons = report["investment_comparison"]
+        self.assertGreaterEqual(len(comparisons), 2)
+        for option in comparisons:
+            expected_total = (
+                option["direct_cost"]
+                + option["opportunity_cost"]
+                + option["operations_cost"]
+                + option["reliability_cost"]
+            )
+            self.assertEqual(option["total_cost"], expected_total)
+            self.assertEqual(
+                option["unit_cost"],
+                option["total_cost"] / option["served_units"],
+            )
+            self.assertEqual(
+                option["capacity_headroom"],
+                option["capacity"] - option["required_capacity"],
+            )
+            self.assertGreaterEqual(option["operations_hours"], 0)
+        selected = min(
+            comparisons,
+            key=lambda option: (
+                option["constraint_breaches"],
+                option["unit_cost"],
+            ),
+        )
+        self.assertEqual(report["decision"]["selected_option"], selected["id"])
+        self.assertFalse(report["price_claim"]["current_price_claimed"])
+        self.assertTrue(report["price_claim"]["fixture_only"])
+        self.assertTrue(report["price_claim"]["accuracy_limitation"])
+        transfer = report["demand_growth_transfer"]
+        self.assertEqual(transfer["changed_assumption"], "demand-growth")
+        self.assertEqual(transfer["changed_fields"], ["demand_growth"])
+        self.assertTrue(transfer["same_investment_candidates"])
+        self.assertNotEqual(
+            transfer["baseline_selected_option"],
+            transfer["transferred_selected_option"],
+        )
+        self.assertTrue(transfer["sensitivity_recomputed"])
+
+    def test_economics_harness_rejects_total_cost_bypass(self) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-25-engineering-economics",
+            "engineering_economics_lab_v1",
+            (
+                "total_cost = direct_cost + opportunity_cost + "
+                "operations_cost + reliability_cost"
+            ),
+            "total_cost = direct_cost",
+            "economics-causal-invariant",
         )
