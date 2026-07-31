@@ -17,7 +17,7 @@
       <li><strong>Dependency:</strong> checkoutはplatform capabilityへ依存する。</li>
       <li><strong>Cognitive load:</strong> assigned領域をcapacityと比較し、過負荷を個人努力へ隠さない。</li>
       <li><strong>SLO:</strong> dependency latencyのtargetとobservedを同じ単位で評価する。</li>
-      <li><strong>Enablement:</strong> platformが観測方法とescalationを公開し、checkoutの自律判断を増やす。</li>
+      <li><strong>Enablement:</strong> 各interface snapshotから判断を再計算し、healthyならmonitor、breachedならescalateとしてcheckoutの自律判断を増やす。</li>
     </ol>
   </figure>
   <p>dependencyをゼロにすることが目的ではない。同期調整が必要な箇所を小さくし、残る依存を観測可能な契約へ変える。cognitive loadがcapacity内でもSLO breachならdeliveryは止まり得るため、teamとserviceの両方を同時に見る。</p>
@@ -31,11 +31,11 @@
     <dt>入力</dt>
     <dd>canonical team order、owned capability、dependency、assigned/capacity、dependency latency 200ms、SLO target 300msを与える。</dd>
     <dt>操作</dt>
-    <dd>checkoutのteam interfaceを作り、latencyとtargetからSLO statusを計算する。transferではdependency latencyだけを450msへ変える。</dd>
+    <dd>baselineとtransferで独立したteam snapshotからdependency、cognitive load、SLO、enablementを全て再計算する。transferではdependency latencyだけを450msへ変える。</dd>
     <dt>観測</dt>
-    <dd>baselineはhealthy、transferはbreachedになる。team ownership、dependency、cognitive load snapshotは同じなので、変化をlatencyへ限定できる。</dd>
+    <dd>baselineはhealthyかつmonitor、transferはbreachedかつescalateになる。team ownership、dependency、cognitive load snapshotは同じなので、判断変化をlatencyへ限定できる。</dd>
     <dt>結論</dt>
-    <dd>report生成というcommand successと、自律的deliveryを支えるsystem outcomeは別である。breachを観測し、ownerとreceiving teamがenablement actionをreviewできて初めてteam interfaceが働く。</dd>
+    <dd>report生成というcommand successと、自律的deliveryを支えるsystem outcomeは別である。各snapshotから再計算したinterfaceと、独立invariantで照合したmonitor/escalate判断をownerとreceiving teamがreviewできて初めてteam interfaceが働く。</dd>
   </dl>
   <pre><code>python3.13 - &lt;&lt;'PY'
 import json
@@ -223,6 +223,15 @@ def build_team_interface(teams, context):
         },
     }
 
+def evaluate_enablement_decision(team_interface):
+    if (
+        team_interface["slo"]["status"] == "healthy"
+        and team_interface["cognitive_load"]["assigned"]
+        &lt;= team_interface["cognitive_load"]["capacity"]
+    ):
+        return "monitor"
+    return "escalate"
+
 def build_contributor_enablement(
     teams,
     team_interface,
@@ -232,11 +241,17 @@ def build_contributor_enablement(
         for team in teams
         if team["team_id"] == "platform"
     )
+    enablement_decision = evaluate_enablement_decision(team_interface)
     return {
         "other_contributor": team_interface["owner"],
         "receiving_team": team_interface["owner"],
         "enabling_team": platform["team_id"],
-        "action": platform["enablement_action"],
+        "decision": enablement_decision,
+        "action": (
+            enablement_decision
+            + ": "
+            + platform["enablement_action"]
+        ),
         "review_evidence": {
             "dependency": team_interface["dependencies"][0],
             "observed_ms": team_interface["slo"]["observed"],
@@ -244,6 +259,32 @@ def build_contributor_enablement(
             "status": team_interface["slo"]["status"],
         },
     }
+
+def validate_enablement_recomputation(
+    team_interface,
+    enablement,
+):
+    expected_decision = (
+        "monitor"
+        if team_interface["slo"]["status"] == "healthy"
+        else "escalate"
+    )
+    evidence = enablement["review_evidence"]
+    if (
+        enablement["decision"] != expected_decision
+        or evidence["dependency"]
+        != team_interface["dependencies"][0]
+        or evidence["observed_ms"]
+        != team_interface["slo"]["observed"]
+        or evidence["target_ms"]
+        != team_interface["slo"]["target"]
+        or evidence["status"]
+        != team_interface["slo"]["status"]
+    ):
+        raise AssertionError(
+            "team-interface-enablement-invariant: "
+            "enablement not independently derived"
+        )
 
 def main():
     validate_all_inputs()
@@ -284,14 +325,34 @@ def main():
         baseline_context,
         transferred_context,
     )
-    contributor_enablement = build_contributor_enablement(
+    baseline_enablement = build_contributor_enablement(
         baseline_teams,
         baseline_interface,
     )
+    transferred_enablement = build_contributor_enablement(
+        transferred_teams,
+        transferred_interface,
+    )
+    validate_enablement_recomputation(
+        baseline_interface,
+        baseline_enablement,
+    )
+    validate_enablement_recomputation(
+        transferred_interface,
+        transferred_enablement,
+    )
+    if (
+        baseline_enablement["decision"] != "monitor"
+        or transferred_enablement["decision"] != "escalate"
+    ):
+        raise AssertionError(
+            "team-interface-enablement-invariant: "
+            "decision did not change with SLO"
+        )
     report = {
         "harness": HARNESS,
         "team_interface": baseline_interface,
-        "contributor_enablement": contributor_enablement,
+        "contributor_enablement": baseline_enablement,
         "dependency_latency_transfer": {
             "changed_fields": changed_fields,
             "same_team_snapshot": baseline_teams
@@ -304,7 +365,10 @@ def main():
             "transferred_slo_status": transferred_interface["slo"][
                 "status"
             ],
+            "baseline_interface": baseline_interface,
             "transferred_interface": transferred_interface,
+            "baseline_enablement": baseline_enablement,
+            "transferred_enablement": transferred_enablement,
         },
         "input_derived_evidence": {
             "ownership": baseline_interface["owner"],
@@ -344,13 +408,19 @@ def main():
                     "step": 3,
                     "evidence": baseline_interface["slo"],
                 },
-                {"step": 4, "evidence": contributor_enablement},
-                {"step": 5, "evidence": transferred_interface},
+                {"step": 4, "evidence": baseline_enablement},
+                {
+                    "step": 5,
+                    "evidence": {
+                        "interface": transferred_interface,
+                        "enablement": transferred_enablement,
+                    },
+                },
             ],
             "assessments": [
                 {
                     "assessment": 1,
-                    "evidence": contributor_enablement,
+                    "evidence": baseline_enablement,
                 },
                 {
                     "assessment": 2,
@@ -378,7 +448,7 @@ def main():
                     ],
                 },
             },
-            "contributor_enablement": contributor_enablement,
+            "contributor_enablement": baseline_enablement,
         },
     }
     print(json.dumps(report, ensure_ascii=False, sort_keys=True))
@@ -405,14 +475,14 @@ PY</code></pre>
     <tbody>
       <tr>
         <th scope="row">SLO healthy、loadはcapacity内</th>
-        <td>interfaceを維持する</td>
-        <td>serviceとして利用</td>
+        <td>monitor</td>
+        <td>serviceとして利用し観測を継続</td>
         <td>target、observed、owner</td>
       </tr>
       <tr>
         <th scope="row">SLO breached、ownership明確</th>
-        <td>個人評価にしない</td>
-        <td>期限付きcollaboration</td>
+        <td>escalate</td>
+        <td>個人評価にせず期限付きcollaboration</td>
         <td>dependency latency、impact、escalation</td>
       </tr>
       <tr>
