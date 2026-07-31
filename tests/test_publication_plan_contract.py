@@ -408,9 +408,28 @@ gh pr view "$PUBLIC_PR_URL" --repo "wrong/project" # --repo "$PUBLIC_REPOSITORY_
             "PUBLIC_HTTPS_EVIDENCE_SOURCE",
             "public HTTPS smoke: PASS",
             "tested commit: $PUBLIC_MERGE_SHA",
+            "PUBLIC_HTTPS_REVIEWER_KIND",
+            "human|ai-assisted",
+            "reviewerKind: $PUBLIC_HTTPS_REVIEWER_KIND",
+            'grep -Fqx "$check: PASS"',
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, pages)
+        for check in (
+            "navigation",
+            "viewport-320",
+            "viewport-1280",
+            "zoom-200-percent",
+            "keyboard-focus",
+            "voiceover-headings",
+            "voiceover-landmarks",
+            "voiceover-links",
+            "high-contrast",
+            "forced-colors",
+            "print",
+        ):
+            with self.subTest(check=check):
+                self.assertIn(check, pages)
 
         release = publication.split(
             "**Step 5: Materialize release metadata through a PR, then publish**",
