@@ -701,11 +701,16 @@ gh pr view "$PUBLIC_PR_URL" --repo "wrong/project" # --repo "$PUBLIC_REPOSITORY_
             for match in re.finditer(re.escape(freshness_check), release)
         ]
         merge = release.index("gh pr merge --merge")
+        workflow_loop = release.index(
+            'for workflow_name in "Validate" "CodeQL" "Gitleaks" '
+            '"Deploy GitHub Pages"'
+        )
+        workflow_done = release.index("done", workflow_loop)
         tag = release.index("tag -a v0.1.0")
 
         self.assertGreaterEqual(len(checks), 2)
         self.assertTrue(any(check < merge for check in checks))
-        self.assertTrue(any(merge < check < tag for check in checks))
+        self.assertTrue(any(workflow_done < check < tag for check in checks))
 
     def test_public_https_evidence_schema_is_exact_and_single_valued(self) -> None:
         valid = ("\n".join(_VALID_EVIDENCE_LINES) + "\n").encode("utf-8")
