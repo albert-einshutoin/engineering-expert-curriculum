@@ -620,6 +620,10 @@ def _encode_expected_mapping_cell(mapping: dict[str, str]) -> str:
     )
 
 
+def _encode_expected_table_row(cells: tuple[str, ...]) -> str:
+    return "| " + " | ".join(cells) + " |"
+
+
 def _map_section(
     block: str,
     heading: str,
@@ -703,9 +707,6 @@ def _assert_generated_map_contract(
         _parse_markdown_table_row(line)
         for line in framework_lines
     )
-    framework_raw_rows = tuple(
-        _split_markdown_table_row(line) for line in framework_lines
-    )
     expected_framework_rows = tuple(
         (
             framework,
@@ -728,7 +729,10 @@ def _assert_generated_map_contract(
         )
         for framework in FRAMEWORKS
     )
-    if framework_raw_rows != expected_framework_raw_rows:
+    if framework_lines != tuple(
+        _encode_expected_table_row(row)
+        for row in expected_framework_raw_rows
+    ):
         raise AssertionError("generated map framework encoding is not canonical")
 
     gate_lines = _map_table_rows(
@@ -742,9 +746,6 @@ def _assert_generated_map_contract(
     gate_rows = tuple(
         _parse_markdown_table_row(line)
         for line in gate_lines
-    )
-    gate_raw_rows = tuple(
-        _split_markdown_table_row(line) for line in gate_lines
     )
     expected_gate_rows = tuple(
         (
@@ -768,7 +769,9 @@ def _assert_generated_map_contract(
         )
         for order, gate in enumerate(EXPECTED_MASTERY_GATES, start=1)
     )
-    if gate_raw_rows != expected_gate_raw_rows:
+    if gate_lines != tuple(
+        _encode_expected_table_row(row) for row in expected_gate_raw_rows
+    ):
         raise AssertionError("generated map mastery gate encoding drifted")
 
     lesson_documents = {
@@ -902,7 +905,7 @@ def _assert_generated_map_contract(
             *expected_framework_raw_cells,
             expected_capstone_cell,
         )
-        if _split_markdown_table_row(_line) != expected_raw_cells:
+        if _line != _encode_expected_table_row(expected_raw_cells):
             raise AssertionError(
                 f"generated map lesson encoding drifted: {lesson_id}"
             )
@@ -929,9 +932,6 @@ def _assert_generated_map_contract(
     capstone_rows = tuple(
         _parse_markdown_table_row(line) for line in capstone_lines
     )
-    capstone_raw_rows = tuple(
-        _split_markdown_table_row(line) for line in capstone_lines
-    )
     expected_capstone_rows = tuple(
         (
             f"`{capstone_id}` — {capstone_documents[capstone_id]['title']}",
@@ -953,7 +953,10 @@ def _assert_generated_map_contract(
         )
         for capstone_id in CAPSTONE_IDS
     )
-    if capstone_raw_rows != expected_capstone_raw_rows:
+    if capstone_lines != tuple(
+        _encode_expected_table_row(row)
+        for row in expected_capstone_raw_rows
+    ):
         raise AssertionError("generated map capstone encoding drifted")
 
 
