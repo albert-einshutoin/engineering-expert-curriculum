@@ -13,7 +13,7 @@
     <figcaption>assetから攻撃経路、control、verification、残余riskを結ぶtrace</figcaption>
     <ol>
       <li><strong>asset:</strong> customer data、deployment credential、audit logの価値と安全性目標を定義する。</li>
-      <li><strong>actorとboundary:</strong> external customer、operations contractor、platform adminの権限と越境点を分ける。</li>
+      <li><strong>actorとboundary:</strong> external customer、operations contractor、platform adminをID・type・scopeを持つentityとして定義し、flowの起点と越境点へ参照させる。</li>
       <li><strong>threat:</strong> 意図ではなく、credential再利用、誤ったbulk export、audit停止など観測可能な行為で表す。</li>
       <li><strong>control:</strong> prevent、detect、recoverを型として区別し、各threatへ三種類すべてを重ねる。</li>
       <li><strong>verification:</strong> 具体的なtest ID、control ID、resultをthreatへ接続する。</li>
@@ -41,15 +41,16 @@
     <dt>入力</dt>
     <dd>外部credential悪用、委託者の誤bulk export、委託credential悪用の3脅威をharmlessなIDと関係だけで表す。</dd>
     <dt>操作</dt>
-    <dd>各脅威からasset、flow、prevent・detect・recover control、verification、残余riskへIDを接続し、空集合、欠落参照、failed result、owner空欄、control型欠落を検査する。</dd>
+    <dd>各脅威からactor、asset、flow、prevent・detect・recover control、verification、残余riskへIDを接続し、actorとflow起点の整合、一意ID、canonical ISO date、空集合、欠落参照、failed result、owner空欄、control型欠落を検査する。</dd>
     <dt>観測</dt>
-    <dd>外部・内部者の両actor typeが存在し、全脅威に三種類のcontrolと各controlのpassed verificationがあり、残余riskにthreat ID、decision、uncertainty、owner、review dateがある。5種の壊れたmodelはすべてrejectされる。</dd>
+    <dd>外部・内部者の両actor typeが存在し、全flowのfromが既知actor、toが既知zoneを参照する。全脅威に三種類のcontrolと各controlのpassed verificationがあり、残余riskに一意ID、threat ID、decision、uncertainty、owner、canonical review dateがある。13種の壊れたmodelはすべてrejectされる。</dd>
     <dt>結論</dt>
     <dd>modelは安全の証明ではなく、現在の仮説と検証範囲を可視化する。変更、incident、test失敗ごとに再評価する。</dd>
   </dl>
   <p>次のPython 3.13 harnessは固定JSON相当の関係だけを検査し、攻撃codeを実行せず、networkや秘密情報へアクセスしない。</p>
   <pre><code>python3.13 - &lt;&lt;'PY'
 import copy
+from datetime import date
 import json
 
 HARNESS = "threat_model_lab_v1"
@@ -62,9 +63,21 @@ assets = [
     {"id": "audit-log", "goal": "integrity-and-availability"},
 ]
 actors = [
-    "external-customer",
-    "operations-contractor",
-    "platform-admin",
+    {
+        "id": "external-customer",
+        "type": "external",
+        "scope": ["self-service-login"],
+    },
+    {
+        "id": "operations-contractor",
+        "type": "insider",
+        "scope": ["approved-export", "approved-deployment-window"],
+    },
+    {
+        "id": "platform-admin",
+        "type": "insider",
+        "scope": ["platform-administration"],
+    },
 ]
 trust_boundaries = [
     {"id": "internet-edge", "from": "internet", "to": "operations-zone"},
@@ -85,7 +98,7 @@ cross_boundary_flows = [
     },
     {
         "id": "flow-deploy",
-        "from": "platform-admin",
+        "from": "operations-contractor",
         "to": "production",
         "crosses": ["production-edge"],
     },
@@ -93,6 +106,7 @@ cross_boundary_flows = [
 threats = [
     {
         "id": "T-EXT-CREDENTIAL",
+        "actor_id": "external-customer",
         "actor_type": "external",
         "asset_id": "customer-data",
         "flow_id": "flow-login",
@@ -100,6 +114,7 @@ threats = [
     },
     {
         "id": "T-IN-BULK-ERROR",
+        "actor_id": "operations-contractor",
         "actor_type": "insider",
         "asset_id": "customer-data",
         "flow_id": "flow-export",
@@ -107,6 +122,7 @@ threats = [
     },
     {
         "id": "T-IN-CREDENTIAL",
+        "actor_id": "operations-contractor",
         "actor_type": "insider",
         "asset_id": "deployment-credential",
         "flow_id": "flow-deploy",
@@ -273,6 +289,7 @@ def validate_model(model):
     errors = set()
     required_collections = (
         "assets",
+        "actors",
         "trust_boundaries",
         "cross_boundary_flows",
         "threats",
@@ -297,7 +314,19 @@ def validate_model(model):
                 result[item_id] = item
         return result
 
+    def require_unique_field(items, field, label):
+        seen = set()
+        for item in items:
+            value = str(item.get(field, "")).strip()
+            if not value:
+                errors.add(f"missing-id:{label}")
+            elif value in seen:
+                errors.add(f"duplicate-id:{label}:{value}")
+            else:
+                seen.add(value)
+
     asset_by_id = indexed(model.get("assets", []), "asset")
+    actor_by_id = indexed(model.get("actors", []), "actor")
     boundary_by_id = indexed(
         model.get("trust_boundaries", []),
         "boundary",
@@ -308,13 +337,39 @@ def validate_model(model):
     )
     threat_by_id = indexed(model.get("threats", []), "threat")
     control_by_id = indexed(model.get("controls", []), "control")
+    require_unique_field(
+        model.get("verification_links", []),
+        "verification_id",
+        "verification",
+    )
+    require_unique_field(
+        model.get("residual_risks", []),
+        "id",
+        "residual-risk",
+    )
+
+    for actor_id, actor in actor_by_id.items():
+        if actor.get("type") not in {"external", "insider"}:
+            errors.add(f"invalid-actor-type:{actor_id}")
+        if not actor.get("scope"):
+            errors.add(f"missing-actor-scope:{actor_id}")
 
     for control_id, control in control_by_id.items():
         control_type = control.get("type")
         if control_type not in REQUIRED_CONTROL_TYPES:
             errors.add(f"invalid-control-type:{control_id}")
 
+    known_zones = {
+        zone
+        for boundary in boundary_by_id.values()
+        for zone in (boundary.get("from"), boundary.get("to"))
+        if zone
+    }
     for flow_id, flow in flow_by_id.items():
+        if flow.get("from") not in actor_by_id:
+            errors.add(f"unknown-flow-actor:{flow_id}")
+        if flow.get("to") not in known_zones:
+            errors.add(f"unknown-flow-zone:{flow_id}")
         crossed = flow.get("crosses", [])
         if not crossed:
             errors.add(f"missing-boundary-crossing:{flow_id}")
@@ -327,6 +382,15 @@ def validate_model(model):
             errors.add(f"unknown-asset:{threat_id}")
         if threat.get("flow_id") not in flow_by_id:
             errors.add(f"unknown-flow:{threat_id}")
+        actor_id = threat.get("actor_id")
+        actor = actor_by_id.get(actor_id)
+        if actor is None:
+            errors.add(f"unknown-threat-actor:{threat_id}:{actor_id}")
+        elif actor.get("type") != threat.get("actor_type"):
+            errors.add(f"actor-type-mismatch:{threat_id}")
+        flow = flow_by_id.get(threat.get("flow_id"))
+        if flow is not None and flow.get("from") != actor_id:
+            errors.add(f"actor-flow-mismatch:{threat_id}")
         if threat.get("actor_type") not in {"external", "insider"}:
             errors.add(f"invalid-actor-type:{threat_id}")
 
@@ -385,6 +449,18 @@ def validate_model(model):
             errors.add(f"blank-risk-owner:{risk.get('id', 'unknown')}")
         if not risk.get("review_date"):
             errors.add(f"missing-risk-review:{risk.get('id', 'unknown')}")
+        else:
+            review_date = risk.get("review_date")
+            try:
+                parsed_review_date = date.fromisoformat(review_date)
+            except (TypeError, ValueError):
+                errors.add(f"invalid-risk-review:{risk.get('id', 'unknown')}")
+            else:
+                if parsed_review_date.isoformat() != review_date:
+                    errors.add(
+                        f"noncanonical-risk-review:"
+                        f"{risk.get('id', 'unknown')}"
+                    )
         if risk.get("decision") not in ALLOWED_RISK_DECISIONS:
             errors.add(f"invalid-risk-decision:{risk.get('id', 'unknown')}")
         if not str(risk.get("uncertainty", "")).strip():
@@ -429,6 +505,34 @@ mutation_models["blank_owner"] = copy.deepcopy(model)
 mutation_models["blank_owner"]["residual_risks"][0]["owner"] = " "
 mutation_models["missing_control_type"] = copy.deepcopy(model)
 del mutation_models["missing_control_type"]["controls"][0]["type"]
+mutation_models["empty_actors"] = copy.deepcopy(model)
+mutation_models["empty_actors"]["actors"] = []
+mutation_models["unknown_actor"] = copy.deepcopy(model)
+mutation_models["unknown_actor"]["threats"][0]["actor_id"] = "unknown-actor"
+mutation_models["actor_flow_mismatch"] = copy.deepcopy(model)
+mutation_models["actor_flow_mismatch"]["cross_boundary_flows"][0][
+    "from"
+] = "platform-admin"
+mutation_models["blank_verification_id"] = copy.deepcopy(model)
+mutation_models["blank_verification_id"]["verification_links"][0][
+    "verification_id"
+] = " "
+mutation_models["duplicate_verification_id"] = copy.deepcopy(model)
+mutation_models["duplicate_verification_id"]["verification_links"][1][
+    "verification_id"
+] = mutation_models["duplicate_verification_id"]["verification_links"][0][
+    "verification_id"
+]
+mutation_models["blank_risk_id"] = copy.deepcopy(model)
+mutation_models["blank_risk_id"]["residual_risks"][0]["id"] = ""
+mutation_models["duplicate_risk_id"] = copy.deepcopy(model)
+mutation_models["duplicate_risk_id"]["residual_risks"][1][
+    "id"
+] = mutation_models["duplicate_risk_id"]["residual_risks"][0]["id"]
+mutation_models["invalid_review_date"] = copy.deepcopy(model)
+mutation_models["invalid_review_date"]["residual_risks"][0][
+    "review_date"
+] = "2026-02-30"
 
 negative_mutations = {}
 for name, mutated_model in mutation_models.items():
@@ -449,6 +553,7 @@ report = {
     "attack_paths": [
         {
             "threat_id": threat["id"],
+            "actor_id": threat["actor_id"],
             "flow_id": threat["flow_id"],
             "asset_id": threat["asset_id"],
         }
@@ -457,6 +562,7 @@ report = {
     "model_validation": {
         "valid": not validation_errors,
         "errors": validation_errors,
+        "actor_count": len(actors),
         "threat_count": len(threats),
         "control_count": len(controls),
         "verification_count": len(verification_links),
