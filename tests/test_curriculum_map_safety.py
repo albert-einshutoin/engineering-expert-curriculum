@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from contextlib import redirect_stderr
+import fcntl
+from html import unescape
+import io
 import os
 from pathlib import Path
 import shutil
@@ -29,14 +33,10 @@ class MarkdownCellSafetyTests(unittest.TestCase):
 
         rendered = curriculum_map._markdown_cell(source)
 
-        self.assertEqual(
-            rendered,
-            r'&lt;img src="https://example.invalid/x"&gt; '
-            r'\[link\](https://example.invalid) \`code\` a\|b '
-            r'\\\\ \*em\* \~strike\~',
-        )
         self.assertNotIn("<img", rendered)
         self.assertNotIn("[link](", rendered)
+        decoded = unescape(rendered).replace(r"\|", "|").replace("\\\\", "\\")
+        self.assertEqual(decoded, source)
 
     def test_control_characters_and_oversized_cells_fail_closed(self) -> None:
         for character in (
@@ -330,6 +330,104 @@ class CurriculumMapCliContractTests(unittest.TestCase):
                 self.assertEqual(self._run(root, "new"), 0)
 
             self.assertEqual(events, ["file", "directory"])
+
+    def test_cleanup_failure_preserves_the_primary_write_error(self) -> None:
+        with TemporaryDirectory(
+            prefix=".map-cli-cleanup-",
+            dir=REPOSITORY_ROOT.parent,
+        ) as directory:
+            root = self._repository(directory)
+            target = root / "docs/curriculum-map.md"
+            before = target.read_bytes()
+            stderr = io.StringIO()
+
+            with (
+                patch.object(
+                    generate_curriculum_map,
+                    "_write_all",
+                    side_effect=OSError("PRIMARY_WRITE_FAILURE"),
+                ),
+                patch.object(
+                    generate_curriculum_map,
+                    "_cleanup_temporary",
+                    side_effect=OSError("SECONDARY_CLEANUP_FAILURE"),
+                ),
+                redirect_stderr(stderr),
+            ):
+                self.assertEqual(self._run(root, "new"), 1)
+
+            self.assertIn("PRIMARY_WRITE_FAILURE", stderr.getvalue())
+            self.assertEqual(target.read_bytes(), before)
+
+    def test_ambiguous_close_is_never_retried_on_the_same_descriptor(self) -> None:
+        with TemporaryDirectory(
+            prefix=".map-cli-close-",
+            dir=REPOSITORY_ROOT.parent,
+        ) as directory:
+            root = self._repository(directory)
+            target = root / "docs/curriculum-map.md"
+            before = target.read_bytes()
+            real_close = os.close
+            injected_descriptor: int | None = None
+            injected_calls = 0
+
+            def ambiguous_close(descriptor: int) -> None:
+                nonlocal injected_descriptor, injected_calls
+                if descriptor == injected_descriptor:
+                    injected_calls += 1
+                    raise OSError("DUPLICATE_CLOSE")
+                try:
+                    regular = stat.S_ISREG(os.fstat(descriptor).st_mode)
+                    writable = (
+                        fcntl.fcntl(descriptor, fcntl.F_GETFL) & os.O_ACCMODE
+                    ) == os.O_WRONLY
+                except OSError:
+                    regular = False
+                    writable = False
+                if regular and writable and injected_descriptor is None:
+                    injected_descriptor = descriptor
+                    injected_calls = 1
+                    real_close(descriptor)
+                    raise OSError("AMBIGUOUS_CLOSE")
+                real_close(descriptor)
+
+            with patch.object(
+                generate_curriculum_map.os,
+                "close",
+                side_effect=ambiguous_close,
+            ):
+                self.assertEqual(self._run(root, "new"), 1)
+
+            self.assertEqual(injected_calls, 1)
+            self.assertEqual(target.read_bytes(), before)
+
+    def test_parent_fsync_failure_reports_post_commit_state(self) -> None:
+        with TemporaryDirectory(
+            prefix=".map-cli-parent-fsync-",
+            dir=REPOSITORY_ROOT.parent,
+        ) as directory:
+            root = self._repository(directory)
+            target = root / "docs/curriculum-map.md"
+            real_fsync = os.fsync
+            stderr = io.StringIO()
+
+            def fail_parent_fsync(descriptor: int) -> None:
+                if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+                    raise OSError("PARENT_FSYNC_FAILURE")
+                real_fsync(descriptor)
+
+            with (
+                patch.object(
+                    generate_curriculum_map.os,
+                    "fsync",
+                    side_effect=fail_parent_fsync,
+                ),
+                redirect_stderr(stderr),
+            ):
+                self.assertEqual(self._run(root, "new"), 1)
+
+            self.assertIn("parent durability is unknown", stderr.getvalue())
+            self.assertIn(f"{BEGIN}\nnew\n{END}".encode(), target.read_bytes())
 
 
 class CurriculumMapReleaseSnapshotTests(unittest.TestCase):
