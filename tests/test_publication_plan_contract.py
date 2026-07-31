@@ -13,6 +13,13 @@ PUBLICATION_PLAN = (
     / "plans"
     / "2026-07-30-oss-publication.md"
 )
+DESIGN_SPEC = (
+    REPOSITORY_ROOT
+    / "docs"
+    / "superpowers"
+    / "specs"
+    / "2026-07-30-static-oss-curriculum-design.md"
+)
 PUBLIC_PLAN_DOCUMENTS = (
     PUBLICATION_PLAN,
     REPOSITORY_ROOT
@@ -128,6 +135,61 @@ class PublicationPlanContractTests(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, publication)
 
+    def test_public_identity_and_noreply_address_are_derived_and_exact(self) -> None:
+        publication = _read(PUBLICATION_PLAN)
+        for phrase in (
+            "PUBLIC_ACCOUNT_ID",
+            'PUBLIC_REPOSITORY_SLUG="${PUBLIC_OWNER}/engineering-expert-curriculum"',
+            'EXPECTED_NOREPLY_EMAIL="${PUBLIC_ACCOUNT_ID}+${PUBLIC_OWNER}@users.noreply.github.com"',
+            'test "$PUBLIC_NOREPLY_EMAIL" = "$EXPECTED_NOREPLY_EMAIL"',
+            '"nameWithOwner":"$PUBLIC_REPOSITORY_SLUG"',
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, publication)
+
+    def test_every_repository_scoped_gh_command_uses_the_verified_slug(self) -> None:
+        publication = _read(PUBLICATION_PLAN).replace("\\\n", " ")
+        commands = (
+            "gh pr create",
+            "gh pr view",
+            "gh pr checks",
+            "gh pr diff",
+            "gh pr merge",
+            "gh run list",
+            "gh run watch",
+            "gh release create",
+            "gh release view",
+            "gh label create",
+            "gh label list",
+        )
+        for line in publication.splitlines():
+            stripped = line.strip()
+            for command in commands:
+                if command in stripped:
+                    with self.subTest(command=stripped):
+                        self.assertIn('--repo "$PUBLIC_REPOSITORY_SLUG"', stripped)
+            if stripped.startswith("gh api") and " user" not in stripped:
+                with self.subTest(command=stripped):
+                    self.assertIn('repos/$PUBLIC_REPOSITORY_SLUG', stripped)
+
+    def test_private_reporting_and_labels_are_verified_before_first_push(self) -> None:
+        publication = _read(PUBLICATION_PLAN)
+        push = publication.index(
+            'git -C "$PUBLICATION_CLONE" push --set-upstream public'
+        )
+        for phrase in (
+            'gh api --method PUT "repos/$PUBLIC_REPOSITORY_SLUG/private-vulnerability-reporting"',
+            'gh api "repos/$PUBLIC_REPOSITORY_SLUG/private-vulnerability-reporting"',
+            'gh label create code --repo "$PUBLIC_REPOSITORY_SLUG"',
+            'gh label create content --repo "$PUBLIC_REPOSITORY_SLUG"',
+            'gh label create correction --repo "$PUBLIC_REPOSITORY_SLUG"',
+            'gh label create framework-update --repo "$PUBLIC_REPOSITORY_SLUG"',
+            'gh label list --repo "$PUBLIC_REPOSITORY_SLUG"',
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, publication)
+                self.assertLess(publication.index(phrase), push)
+
     def test_sanitized_history_is_verified_before_any_public_push(self) -> None:
         publication = _read(PUBLICATION_PLAN)
         verification = publication.split(
@@ -137,8 +199,9 @@ class PublicationPlanContractTests(unittest.TestCase):
         required_verification = (
             "for-each-ref",
             " log \\",
-            " grep -n -E",
-            "gitleaks git",
+            "git grep --quiet",
+            "/tmp/gitleaks-publication/gitleaks git",
+            "b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5",
             "python3.13 -m unittest discover -s tests -v",
         )
         push_command = 'git -C "$PUBLICATION_CLONE" push --set-upstream public'
@@ -148,6 +211,26 @@ class PublicationPlanContractTests(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, verification)
         self.assertLess(publication.index(verification), push_index)
+        self.assertIn("set -euo pipefail", verification)
+        self.assertNotIn("|| true", publication)
+        self.assertNotIn(
+            '"$(git -C "$PUBLICATION_CLONE" rev-list',
+            verification,
+        )
+
+    def test_current_site_checker_cli_is_used_everywhere(self) -> None:
+        publication = _read(PUBLICATION_PLAN)
+        self.assertNotRegex(publication, re.compile(r"tools/check_site\.py site(?:\s|$)"))
+        self.assertIn(
+            "tools/check_site.py --root site --require-current-release",
+            publication,
+        )
+
+    def test_link_audit_is_described_as_optional_and_not_implemented(self) -> None:
+        design = _read(DESIGN_SPEC)
+        self.assertIn("optional planned scheduled link audit", design)
+        self.assertIn("not implemented in v0.1.0", design)
+        self.assertNotIn("checked by scheduled link audits", design)
 
     def test_plan_forbids_broad_or_source_checkout_publication(self) -> None:
         publication = _read(PUBLICATION_PLAN)
@@ -185,6 +268,11 @@ class PublicationPlanContractTests(unittest.TestCase):
             "analysis",
             "review",
             "secret-scan",
+            "required_approving_review_count=0",
+            "required_review_thread_resolution=true",
+            "Model B",
+            "authenticated Maintainer",
+            "reviewerKind",
             "gh pr merge --merge --delete-branch",
             '"state":"MERGED"',
             "2 parents",
@@ -193,6 +281,24 @@ class PublicationPlanContractTests(unittest.TestCase):
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, publication)
+
+    def test_release_metadata_is_materialized_by_a_second_reviewed_pr(self) -> None:
+        publication = _read(PUBLICATION_PLAN)
+        for phrase in (
+            "release metadata branch",
+            "date-released",
+            "[0.1.0] - ${RELEASE_DATE}",
+            "release metadata PR",
+            "gh pr create",
+            "gh pr merge --merge --delete-branch",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, publication)
+        metadata_pr = publication.find("release metadata PR")
+        tag = publication.find('tag -a v0.1.0')
+        self.assertGreaterEqual(metadata_pr, 0)
+        self.assertGreaterEqual(tag, 0)
+        self.assertLess(metadata_pr, tag)
 
 
 if __name__ == "__main__":

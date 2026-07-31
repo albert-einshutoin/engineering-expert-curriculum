@@ -123,17 +123,17 @@ class RepositoryContractTests(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, readme)
 
-    def test_citation_metadata_identifies_the_release_and_repository(self) -> None:
+    def test_citation_metadata_identifies_the_upcoming_release_without_claiming_it_exists(self) -> None:
         citation = read("CITATION.cff")
         for line in (
             'cff-version: "1.2.0"',
             'version: "0.1.0"',
-            "date-released: 2026-07-31",
             "license: MIT",
             'repository-code: "https://github.com/albert-einshutoin/engineering-expert-curriculum"',
         ):
             with self.subTest(line=line):
                 self.assertIn(line, citation)
+        self.assertNotIn("date-released:", citation)
 
     def test_contributing_defines_github_flow_tdd_and_review_accountability(self) -> None:
         contributing = read("CONTRIBUTING.md")
@@ -149,11 +149,17 @@ class RepositoryContractTests(unittest.TestCase):
             "human",
             "ai-assisted",
             "automated",
+            "Model B",
+            "authenticated Maintainer",
+            "merge commit",
+            "未解決thread",
             "ローカルとリモートのマージ済みブランチを削除",
         )
         for phrase in phrases:
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, contributing)
+        self.assertNotIn("squash merge", contributing)
+        self.assertNotIn("独立した承認を置き換えません", contributing)
 
     def test_governance_defines_roles_conflicts_appeals_and_continuity(self) -> None:
         governance = read("GOVERNANCE.md")
@@ -168,6 +174,9 @@ class RepositoryContractTests(unittest.TestCase):
             "impact matrix",
             "mapping PR",
             "release note",
+            "Model B",
+            "authenticated Maintainer",
+            "独立human approvalがない",
         )
         for phrase in phrases:
             with self.subTest(phrase=phrase):
@@ -205,10 +214,12 @@ class RepositoryContractTests(unittest.TestCase):
             errata,
         )
 
-    def test_changelog_has_unreleased_and_initial_release_sections(self) -> None:
+    def test_changelog_keeps_initial_release_content_unreleased_until_tag_exists(self) -> None:
         changelog = read("CHANGELOG.md")
         self.assertIn("## [Unreleased]", changelog)
-        self.assertIn("## [0.1.0] - 2026-07-31", changelog)
+        self.assertIn("1,140項目", changelog)
+        self.assertNotRegex(changelog, re.compile(r"^## \[0\.1\.0\] - ", re.MULTILINE))
+        self.assertNotIn("/releases/tag/v0.1.0", changelog)
 
     def test_gitignore_covers_generated_and_root_local_legacy_paths(self) -> None:
         ignored = set(read(".gitignore").splitlines())
