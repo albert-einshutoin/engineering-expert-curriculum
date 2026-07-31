@@ -1463,7 +1463,7 @@ and must reject a roadmap or release build that omits or duplicates any one of
 them. Keep this exact-count release requirement out of the Task 2 loader so
 incremental authoring and the meaningful empty state remain available.
 
-- [ ] **Step 1: Write the complete roadmap acceptance test**
+- [x] **Step 1: Write the complete roadmap acceptance test**
 
 ```python
 # tests/test_roadmap_acceptance.py
@@ -1498,17 +1498,17 @@ class RoadmapAcceptanceTests(unittest.TestCase):
         self.assertTrue(all(gate["artifact"] and gate["review"] for gate in raw["masteryGates"]))
 ```
 
-- [ ] **Step 2: Run the roadmap test and verify RED**
+- [x] **Step 2: Run the roadmap test and verify RED**
 
 Run:
 
 ```bash
-python3 -m unittest tests.test_roadmap_acceptance -v
+python3.13 -m unittest tests.test_roadmap_acceptance -v
 ```
 
 Expected: failure because the placeholder roadmap has four non-lesson nodes.
 
-- [ ] **Step 3: Write the canonical roadmap**
+- [x] **Step 3: Write the canonical roadmap**
 
 Populate `content/roadmap.json` with the exact prerequisites from Tasks 3–8 and
 six mastery gates:
@@ -1528,24 +1528,56 @@ six mastery gates:
 
 Each node also includes `id`, `title`, `track`, and `prerequisiteIds`.
 
-- [ ] **Step 4: Render and test the full roadmap**
+- [x] **Step 4: Render and test the full roadmap**
 
 Run:
 
 ```bash
-python3 -m unittest tests.test_graph tests.test_roadmap_acceptance -v
-python3 tools/build.py
+python3.13 -m unittest tests.test_graph tests.test_roadmap_acceptance -v
+python3.13 tools/build.py
 ```
 
 Expected: all roadmap tests pass and the generated page links all 30 lessons.
 
-- [ ] **Step 5: Commit the prerequisite and mastery roadmap**
+- [x] **Step 5: Commit the prerequisite and mastery roadmap**
 
 ```bash
 git add content/roadmap.json curriculum_builder/build.py \
   tests/test_core_tracks.py tests/test_roadmap_acceptance.py
 git commit -m "feat: connect thirty lessons through mastery gates"
 ```
+
+#### Task 9 verification evidence
+
+- The tests-only RED commit `cb64ede` introduced the independent 30-lesson
+  projection oracle, strict release-schema mutations, exact mastery gates,
+  partial-release rejection, and static-link acceptance. The focused run
+  produced one projection failure and seven missing-feature errors while the
+  already-authored DAG oracle passed. Commit `2249839` supplied the minimal
+  canonical roadmap, immutable parser, release binding, static rendering, and
+  explicit `require_complete_curriculum` release mode.
+- A second RED commit, `c8b6b57`, proved that ordinary topological completion
+  alone still allowed an independent second root. Commit `d74a9d1` now requires
+  `core-01-systems-tradeoffs` to be the only release root, so every other
+  lesson is reachable from the curriculum entry point.
+- Authoring remains incremental: the lesson collection loader and the default
+  `build_site` API still accept an absent, empty, or partial lesson tree.
+  `tools/build.py` opts into the release contract, where exactly 30 complete
+  lessons, unique ordinals 1–30, the canonical metadata projection, and all
+  six ordered mastery gates are mandatory before publication.
+- The roadmap, graph, build, lesson-rendering, and stylesheet gate passes all
+  110 tests. The complete repository suite passes all 484 tests. Two
+  consecutive clean release builds each contain 35 regular artifacts, 34 HTML
+  files, one CSS file, zero JavaScript files, zero symbolic links, and
+  1,155,439 bytes. Both produce canonical aggregate SHA-256
+  `29360f57b961b73887d4ce8c7bc722526b72209bdab0dd856cc23f204d76bafe`.
+- Gitleaks 8.30.1 scanned all four Task 9 implementation commits from
+  `5ddb8da..d74a9d1` and found no leaks. `git diff --check` is clean.
+  The catalog remains exactly 1,140 unique items with SHA-256
+  `4f38b5f63931a7f06e13f90f5d9ef90a0a435f30dae5d4fe70720d730a057473`.
+  The private prototype archive remains unchanged and independently
+  verifiable: 1,194 files, 16,805,630 bytes, and zero missing, extra,
+  hash-mismatched, symbolic-link, or special-node entries.
 
 ### Task 10: Add the versioned competency matrix
 
