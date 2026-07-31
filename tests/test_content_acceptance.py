@@ -528,6 +528,72 @@ def _extract_generated_map(document: str) -> str:
     return document[start : end + len(END_GENERATED_MAP)]
 
 
+_MAP_H1 = "Engineering Expert Curriculum Map"
+_MAP_H2 = ("地図の読み方", "推奨する進み方", "更新方法")
+_MAP_REQUIRED_GUIDANCE = {
+    None: (
+        "データ表はsource of truthから "
+        "機械生成し、学び方と解釈上の注意は人が保守する。"
+    ),
+    _MAP_H2[0]: "資格、職位、SFIA責任level の認定ではない。",
+    _MAP_H2[1]: (
+        "artifact、teach-back、assessment reasoning、transferを "
+        "揃えてからmastery gateへ進む。"
+    ),
+    _MAP_H2[2]: "生成表を直接編集してはならない。",
+}
+_MAP_ATX_HEADING = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*$")
+_MAP_FENCE_OPEN = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+_MAP_SETEXT_UNDERLINE = re.compile(r"^ {0,3}(?:=+|-+)[ \t]*$")
+_MAP_RAW_HTML = re.compile(
+    r"</?(?:pre|code|template|h[1-6])(?:[ \t][^>]*)?>",
+    re.IGNORECASE,
+)
+
+
+def _visible_handwritten_map_lines(document: str) -> tuple[str, ...]:
+    """Return only reviewable handwritten prose outside the generated sentinels."""
+    generated = _extract_generated_map(document)
+    start = document.index(generated)
+    handwritten = document[:start] + "\n" + document[start + len(generated) :]
+    # Normative prose must never rely on renderer-dependent HTML comment rules.
+    if "<!--" in handwritten or "-->" in handwritten:
+        raise AssertionError("curriculum map handwritten comments are forbidden")
+
+    visible: list[str] = []
+    fence_character: str | None = None
+    fence_width = 0
+    for line in handwritten.splitlines():
+        if fence_character is not None:
+            if re.fullmatch(
+                rf" {{0,3}}{re.escape(fence_character)}{{{fence_width},}}[ \t]*",
+                line,
+            ):
+                fence_character = None
+                fence_width = 0
+            continue
+
+        opening = _MAP_FENCE_OPEN.fullmatch(line)
+        if opening is not None:
+            delimiter, info = opening.groups()
+            if delimiter[0] == "`" and "`" in info:
+                raise AssertionError(
+                    "curriculum map has an invalid backtick fence info string"
+                )
+            fence_character = delimiter[0]
+            fence_width = len(delimiter)
+            continue
+        if re.match(r"^(?: {4}|\t)", line) or re.match(r"^ {0,3}>", line):
+            continue
+        if _MAP_RAW_HTML.search(line):
+            raise AssertionError("curriculum map contains forbidden raw HTML")
+        visible.append(line)
+
+    if fence_character is not None:
+        raise AssertionError("curriculum map contains an unclosed code fence")
+    return tuple(visible)
+
+
 _CANONICAL_DECIMAL_ENTITY = re.compile(r"&#([0-9]{1,3});")
 _ENTITY_PUNCTUATION = frozenset(string.punctuation) - {"\\", "|"}
 
@@ -626,40 +692,50 @@ def _encode_expected_table_row(cells: tuple[str, ...]) -> str:
 
 def _assert_handwritten_learning_contract(document: str) -> None:
     """Keep learning guidance independently reviewable from generated data."""
-    block = _extract_generated_map(document)
-    start = document.index(block)
-    handwritten_parts = (
-        document[:start],
-        document[start + len(block) :],
-    )
-    handwritten_lines = tuple(
-        line
-        for part in handwritten_parts
-        for line in part.splitlines()
-    )
+    lines = _visible_handwritten_map_lines(document)
+    for index, line in enumerate(lines):
+        if (
+            index > 0
+            and lines[index - 1].strip()
+            and _MAP_SETEXT_UNDERLINE.fullmatch(line)
+        ):
+            raise AssertionError("curriculum map headings must use ATX Markdown")
 
-    required_headings = (
-        "# Engineering Expert Curriculum Map",
-        "## 地図の読み方",
-        "## 推奨する進み方",
-        "## 更新方法",
-    )
-    for heading in required_headings:
-        if handwritten_lines.count(heading) != 1:
-            raise AssertionError(
-                f"curriculum map needs one handwritten {heading} heading"
-            )
+    first_content = next((line for line in lines if line.strip()), "")
+    if first_content != f"# {_MAP_H1}":
+        raise AssertionError("curriculum map must begin with the exact H1")
 
-    required_guidance = (
-        "データ表はsource of truthから\n"
-        "機械生成し、学び方と解釈上の注意は人が保守する。",
-        "資格、職位、SFIA責任level\nの認定ではない。",
-        "artifact、teach-back、assessment reasoning、transferを\n"
-        "揃えてからmastery gateへ進む。",
-        "生成表を直接編集してはならない。",
-    )
-    for guidance in required_guidance:
-        if sum(part.count(guidance) for part in handwritten_parts) != 1:
+    h1: list[str] = []
+    h2: list[str] = []
+    sections: dict[str | None, list[str]] = {None: []}
+    active_section: str | None = None
+    for line in lines:
+        heading = _MAP_ATX_HEADING.fullmatch(line)
+        if heading is not None:
+            level = len(heading.group(1))
+            title = re.sub(r"[ \t]+#+[ \t]*$", "", heading.group(2)).strip()
+            if level == 1:
+                h1.append(title)
+                active_section = None
+            elif level == 2:
+                h2.append(title)
+                sections.setdefault(title, [])
+                active_section = title
+            else:
+                raise AssertionError("curriculum map has an unexpected heading")
+            continue
+        sections.setdefault(active_section, []).append(line)
+
+    if tuple(h1) != (_MAP_H1,):
+        raise AssertionError("curriculum map must have one exact H1")
+    if tuple(h2) != _MAP_H2:
+        raise AssertionError("curriculum map H2 order must be exact")
+    if set(sections) != {None, *_MAP_H2}:
+        raise AssertionError("curriculum map sections must be exact")
+
+    for section, guidance in _MAP_REQUIRED_GUIDANCE.items():
+        prose = " ".join(" ".join(sections[section]).split())
+        if prose.count(guidance) != 1:
             raise AssertionError(
                 "curriculum map handwritten learning guidance drifted"
             )
@@ -1413,6 +1489,11 @@ class ContentAcceptanceTests(unittest.TestCase):
             "extra H2": document.replace(
                 "## 地図の読み方",
                 "## 追加方針\n\nこの節は許可されない。\n\n## 地図の読み方",
+                1,
+            ),
+            "raw HTML heading": document.replace(
+                "## 地図の読み方",
+                "<h3>隠れた方針</h3>\n\n## 地図の読み方",
                 1,
             ),
             "reordered H2": document.replace(

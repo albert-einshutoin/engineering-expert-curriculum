@@ -131,10 +131,13 @@ EXPECTED_REVIEW_TABLE = (
 )
 
 _ATX_HEADING = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*$")
-_OPEN_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(?:[^`~]*)$")
+_OPEN_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 _CHECKBOX = re.compile(r"^\s*[-*+]\s+\[ \]\s+(.+?)\s*$")
 _SETEXT_UNDERLINE = re.compile(r"^ {0,3}(?:=+|-+)[ \t]*$")
-_RAW_HTML_HEADING = re.compile(r"^ {0,3}<h[12](?:[ \t][^>]*)?>", re.IGNORECASE)
+_RAW_HTML = re.compile(
+    r"</?(?:pre|code|template|h[1-6])(?:[ \t][^>]*)?>",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,57 +149,41 @@ class _StandardDocument:
 
 def _visible_lines(source: str) -> tuple[str, ...]:
     """Return prose lines while excluding Markdown's hidden code/comment text."""
+    # This normative document has no legitimate hidden commentary. Rejecting
+    # comment delimiters avoids parser ambiguity around nesting and truncation.
+    if "<!--" in source or "-->" in source:
+        raise AssertionError("required clause cannot be hidden in HTML comments")
+
     visible: list[str] = []
     fence_character: str | None = None
     fence_width = 0
-    in_comment = False
-    for raw_line in source.splitlines():
+    for line in source.splitlines():
         if fence_character is not None:
             if re.fullmatch(
                 rf" {{0,3}}{re.escape(fence_character)}{{{fence_width},}}[ \t]*",
-                raw_line,
+                line,
             ):
                 fence_character = None
                 fence_width = 0
             continue
 
-        fragments: list[str] = []
-        position = 0
-        while position <= len(raw_line):
-            if in_comment:
-                closing = raw_line.find("-->", position)
-                if closing < 0:
-                    break
-                in_comment = False
-                position = closing + 3
-                continue
-
-            opening_comment = raw_line.find("<!--", position)
-            unexpected_close = raw_line.find("-->", position)
-            if unexpected_close >= 0 and (
-                opening_comment < 0 or unexpected_close < opening_comment
-            ):
-                raise AssertionError("content standard contains an unmatched comment")
-            if opening_comment < 0:
-                fragments.append(raw_line[position:])
-                break
-            fragments.append(raw_line[position:opening_comment])
-            in_comment = True
-            position = opening_comment + 4
-
-        line = "".join(fragments)
         opening = _OPEN_FENCE.fullmatch(line)
         if opening is not None:
-            fence_character = opening.group(1)[0]
-            fence_width = len(opening.group(1))
+            delimiter, info = opening.groups()
+            if delimiter[0] == "`" and "`" in info:
+                raise AssertionError(
+                    "content standard has an invalid backtick fence info string"
+                )
+            fence_character = delimiter[0]
+            fence_width = len(delimiter)
             continue
         if re.match(r"^(?: {4}|\t)", line) or re.match(r"^ {0,3}>", line):
             continue
+        if _RAW_HTML.search(line):
+            raise AssertionError("content standard contains forbidden raw HTML")
         visible.append(line)
     if fence_character is not None:
         raise AssertionError("content standard contains an unclosed code fence")
-    if in_comment:
-        raise AssertionError("content standard contains an unclosed HTML comment")
     return tuple(visible)
 
 
@@ -211,8 +198,6 @@ def _parse_standard(source: str) -> _StandardDocument:
     active_section: str | None = None
     visible = _visible_lines(source)
     for index, line in enumerate(visible):
-        if _RAW_HTML_HEADING.match(line):
-            raise AssertionError("content standard headings must use ATX Markdown")
         if (
             index > 0
             and visible[index - 1].strip()
@@ -460,6 +445,20 @@ class ContentStandardContractTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             _assert_content_standard(mutated)
 
+    def test_tilde_fence_info_may_contain_a_backtick(self) -> None:
+        valid = _valid_standard()
+        next_heading = f"## {EXPECTED_H2[1]}"
+        with_valid_fence = valid.replace(
+            next_heading,
+            "~~~language`variant\n"
+            "This fenced example is not normative prose.\n"
+            "~~~\n\n"
+            f"{next_heading}",
+            1,
+        )
+
+        _assert_content_standard(with_valid_fence)
+
     def test_setext_and_raw_html_extra_headings_are_rejected(self) -> None:
         valid = _valid_standard()
         insert_at = f"## {EXPECTED_H2[1]}"
@@ -480,6 +479,16 @@ class ContentStandardContractTests(unittest.TestCase):
                 1,
             ),
         }
+        mutations.update(
+            {
+                f"raw HTML H{level}": valid.replace(
+                    insert_at,
+                    f"<h{level}>Hidden policy</h{level}>\n\n{insert_at}",
+                    1,
+                )
+                for level in range(1, 7)
+            }
+        )
         for label, mutated in mutations.items():
             with self.subTest(label=label), self.assertRaises(AssertionError):
                 _assert_content_standard(mutated)

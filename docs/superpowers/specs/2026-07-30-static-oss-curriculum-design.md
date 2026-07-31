@@ -196,7 +196,7 @@ Each `lesson.json` contains:
 5. Knowledge checks
 6. Sources and further study
 
-`lesson.json` provides the structured lab, teach-back, assessment, transfer, review schedule, rubric, and sources that the renderer generates outside the authored body.
+`lesson.json` has exactly nine structured responsibilities that the renderer generates outside the authored body: objectives, capability progression, lab, teach-back, assessment, transfer, review, rubric, and sources.
 
 The validator rejects scriptable or embedding elements, inline event handlers,
 unsafe URL schemes, forms, and inline styles in lesson bodies. Authored body
@@ -217,8 +217,12 @@ satisfies all of these conditions:
 - Assessment answers include reasoning, not only the correct option.
 - The rubric distinguishes incomplete, developing, proficient, and exemplary
   work using observable evidence.
-- Sources are relevant, reachable HTTPS links, and include primary or
-  standards-based material where available.
+- Sources have valid metadata and at least two syntactically valid, distinct
+  HTTPS URLs, and include primary or standards-based material where available.
+
+The dependency-free validator checks source metadata and the syntax and distinctness of at least two HTTPS URLs; it does not make network requests or guarantee reachability.
+
+Source reachability is an editorial responsibility checked by scheduled link audits, not a dependency-free build or CI guarantee.
 
 CI treats any lesson marked complete but failing this contract as an error.
 
