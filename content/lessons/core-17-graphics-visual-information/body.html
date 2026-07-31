@@ -157,6 +157,29 @@ UNSAFE_CSS_TOKENS = (
     "&lt;!--",
     "--&gt;",
 )
+ARTIFACT_TAG_ATTRIBUTES = {
+    "section": {"class"},
+    "figure": {"class"},
+    "figcaption": set(),
+    "ol": {"class"},
+    "li": {"id", "data-from", "data-to"},
+    "span": set(),
+    "table": set(),
+    "caption": set(),
+    "thead": set(),
+    "tbody": set(),
+    "tr": set(),
+    "th": {"scope"},
+    "td": set(),
+    "meter": {
+        "class",
+        "data-id",
+        "data-raw-value",
+        "min",
+        "max",
+        "value",
+    },
+}
 
 class ArtifactParser(HTMLParser):
     def __init__(self):
@@ -182,6 +205,19 @@ class ArtifactParser(HTMLParser):
             for name, value in attrs
         }
         self.tags.append(normalized_tag)
+        allowed_attributes = ARTIFACT_TAG_ATTRIBUTES.get(normalized_tag)
+        if allowed_attributes is None:
+            self.unsafe.append(f"tag:{normalized_tag}")
+        else:
+            supplied_attributes = {
+                name.casefold()
+                for name, _ in attrs
+            }
+            if (
+                len(supplied_attributes) != len(attrs)
+                or not supplied_attributes &lt;= allowed_attributes
+            ):
+                self.unsafe.append(f"attributes:{normalized_tag}")
         if values.get("id"):
             self.ids.append(values["id"])
         if normalized_tag == "section":
