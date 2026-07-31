@@ -16,7 +16,6 @@ import unicodedata
 
 from .catalog import strict_json_loads
 from .errors import CurriculumValidationError
-from .lessons import load_lesson
 
 
 MAX_CAPSTONE_BYTES: Final = 256 * 1024
@@ -633,29 +632,56 @@ def _validate_lexical_path(path: Path) -> Path:
 def load_capstones(path: Path) -> tuple[Capstone, ...]:
     """Load repository capstones and bind references to complete lessons."""
     absolute = _validate_lexical_path(path)
-    lessons_root = absolute.parent / "lessons"
-    lesson_ids: list[str] = []
     try:
-        lesson_paths = tuple(sorted(lessons_root.glob("core-*/lesson.json")))
+        recorded_parent = os.lstat(absolute.parent)
     except OSError:
-        raise _validation("lessons cannot be discovered for capstones") from None
-    for lesson_path in lesson_paths:
-        lesson = load_lesson(lesson_path)
-        if lesson.status != "complete":
-            raise _validation("draft lessons cannot be referenced by capstones")
-        lesson_ids.append(lesson.id)
-    expected = frozenset(lesson_ids)
-    if expected != frozenset(_PRIMARY_OWNER):
-        raise _validation("capstones require the complete lesson release")
+        raise _validation("capstone parent cannot be inspected") from None
+    if not stat.S_ISDIR(recorded_parent.st_mode):
+        raise _validation("capstone parent must be a directory")
 
     parent = absolute.parent
     parent_fd: int | None = None
     try:
         parent_fd = os.open(parent, _DIRECTORY_FLAGS)
-        return load_capstones_from_content_fd(
+        opened_parent = os.fstat(parent_fd)
+        if _directory_signature(opened_parent) != _directory_signature(
+            recorded_parent
+        ):
+            raise _validation("capstone parent changed while opening")
+
+        # Reuse the release lesson loader through the same pinned content
+        # descriptor. This binds draft/reference validation to the snapshot
+        # used for capstones instead of reopening sibling pathnames.
+        from .lesson_rendering import load_lessons_from_root
+
+        try:
+            lesson_snapshot = load_lessons_from_root(parent_fd)
+        except CurriculumValidationError as error:
+            if "draft lessons cannot be published" in str(error):
+                raise _validation(
+                    "draft lessons cannot be referenced by capstones"
+                ) from None
+            raise
+        expected = frozenset(
+            item.lesson.id for item in lesson_snapshot.lessons
+        )
+        if expected != frozenset(_PRIMARY_OWNER):
+            raise _validation("capstones require the complete lesson release")
+        result = load_capstones_from_content_fd(
             parent_fd,
             expected_lesson_ids=expected,
         )
+        if lesson_snapshot != load_lessons_from_root(parent_fd):
+            raise _validation("lessons changed while loading capstones")
+        current_parent = os.lstat(parent)
+        if (
+            _directory_signature(os.fstat(parent_fd))
+            != _directory_signature(opened_parent)
+            or _directory_signature(current_parent)
+            != _directory_signature(opened_parent)
+        ):
+            raise _validation("capstone parent changed during read")
+        return result
     except CurriculumValidationError:
         raise
     except OSError:
