@@ -598,6 +598,39 @@ class StyleContractTests(unittest.TestCase):
         self.assertRegex(forced_connector, r"background:\s*CanvasText")
         self.assertNotRegex(self.css, r"(?i)@keyframes\b|animation\s*:|transition\s*:")
 
+    def test_quantitative_chart_has_color_and_monochrome_scale(
+        self,
+    ) -> None:
+        chart = _css_block(self.css, ".quantitative-chart-artifact")
+        self.assertRegex(chart, r"display:\s*grid")
+        self.assertRegex(chart, r"max-inline-size:\s*var\(--measure-reading\)")
+        scale = _css_block(self.css, ".chart-scale")
+        self.assertRegex(scale, r"display:\s*flex")
+        self.assertRegex(scale, r"justify-content:\s*space-between")
+        for percentage in (40, 60, 100):
+            body = _css_block(self.css, f".chart-bar--{percentage}")
+            self.assertRegex(body, rf"inline-size:\s*{percentage}%")
+        color = _css_block(
+            self.css,
+            ".chart-display--color .chart-bar",
+        )
+        self.assertRegex(color, r"background:\s*#245d63")
+        self.assertRegex(color, r"color:\s*#ffffff")
+        monochrome = _css_block(
+            self.css,
+            ".chart-display--monochrome .chart-bar",
+        )
+        self.assertIn("repeating-linear-gradient(", monochrome)
+        self.assertRegex(monochrome, r"border-style:\s*double")
+        self.assertRegex(monochrome, r"color:\s*CanvasText")
+        print_rules = _css_block(self.css, "@media print")
+        print_bar = _css_block(
+            print_rules,
+            ".chart-display--color .chart-bar",
+        )
+        self.assertRegex(print_bar, r"background:\s*transparent")
+        self.assertRegex(print_bar, r"border:\s*2px solid currentColor")
+
     def test_mobile_layout_is_single_column_and_hides_graph_connector(self) -> None:
         mobile = _css_block(self.css, "@media (max-width: 48rem)")
         self.assertRegex(

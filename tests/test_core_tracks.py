@@ -962,6 +962,7 @@ class _StaticArtifactParser(HTMLParser):
         self.tags: list[str] = []
         self.ids: list[str] = []
         self.edge_pairs: list[list[str]] = []
+        self.meter_values: list[dict[str, int | str]] = []
         self.table_header_scopes: list[str] = []
         self.unsafe: list[str] = []
 
@@ -987,6 +988,18 @@ class _StaticArtifactParser(HTMLParser):
             )
         if normalized_tag == "th":
             self.table_header_scopes.append(values.get("scope", ""))
+        if normalized_tag == "meter":
+            self.meter_values.append(
+                {
+                    "id": values.get("data-id", ""),
+                    "min": int(values.get("min", "-1")),
+                    "max": int(values.get("max", "-1")),
+                    "value": int(values.get("value", "-1")),
+                    "raw_value": int(
+                        values.get("data-raw-value", "-1")
+                    ),
+                }
+            )
         if normalized_tag in {
             "script",
             "style",
@@ -3730,6 +3743,13 @@ class CoreTrackTests(unittest.TestCase):
             transfer["baseline_summary"],
             transfer["transferred_summary"],
         )
+        body = self.body_path(lesson_id).read_text(encoding="utf-8")
+        for marker in (
+            "mode別operationとactual",
+            "pointer-primaryは3/4",
+            "keyboard-onlyは2/4",
+        ):
+            self.assertIn(marker, body)
 
     def test_hci_transfer_rejects_input_mode_bypass(self) -> None:
         self.assert_causal_harness_source_mutation_fails(
@@ -3900,6 +3920,94 @@ class CoreTrackTests(unittest.TestCase):
             "chart_html = render_chart_html(chart_data)",
             "chart_html = render_chart_html(chart_data[:-1])",
             "graphics-artifact-invariant",
+        )
+
+    def test_graphics_harness_renders_quantitative_scale_and_modes(
+        self,
+    ) -> None:
+        report = self.run_python_harness(
+            "core-17-graphics-visual-information",
+            "graphics_semantic_equivalence_lab_v1",
+        )
+
+        chart = report["quantitative_chart"]
+        artifact = chart["artifact"]
+        parser = _StaticArtifactParser()
+        parser.feed(artifact["html"])
+        parser.close()
+        raw_max = max(point["value"] for point in chart["data"])
+        expected_meters = [
+            {
+                "id": point["id"],
+                "min": 0,
+                "max": 100,
+                "value": round(point["value"] / raw_max * 100),
+                "raw_value": point["value"],
+            }
+            for point in chart["data"]
+        ]
+        self.assertEqual(parser.meter_values, expected_meters)
+        self.assertEqual(
+            chart["artifact_validation"]["meter_values"],
+            expected_meters,
+        )
+        self.assertIn(".chart-bar", artifact["css"])
+        for point in chart["data"]:
+            self.assertIn(
+                f'{point["label"]}: {point["value"]} hours',
+                artifact["html"],
+            )
+        transfer = report["display_mode_transfer"]
+        baseline = transfer["baseline_artifact"]
+        transferred = transfer["transferred_artifact"]
+        self.assertIn("accent-color: #245d63", baseline["css"])
+        self.assertIn(
+            "accent-color: CanvasText",
+            transferred["css"],
+        )
+        self.assertIn("border-style: double", transferred["css"])
+        self.assertNotEqual(baseline["css"], transferred["css"])
+        self.assertEqual(
+            chart["visual_encoding"],
+            {
+                "mark": "meter-bar",
+                "scale": "normalized-common-zero-to-100",
+                "scale_min": 0,
+                "scale_max": 100,
+                "raw_max": raw_max,
+                "visible_value_labels": True,
+                "non_color_cue": "length-pattern-border-and-text",
+            },
+        )
+        visible_body = self.body_path(
+            "core-17-graphics-visual-information"
+        ).read_text(encoding="utf-8").partition("<pre><code>")[0]
+        for class_name in (
+            "quantitative-chart-artifact",
+            "chart-scale",
+            "chart-display--color",
+            "chart-display--monochrome",
+            "chart-bar--40",
+            "chart-bar--60",
+            "chart-bar--100",
+        ):
+            self.assertIn(class_name, visible_body)
+        for label in (
+            "学習: 12 hours (60%)",
+            "実践: 20 hours (100%)",
+            "復習: 8 hours (40%)",
+        ):
+            self.assertIn(label, visible_body)
+
+    def test_graphics_harness_rejects_incomplete_visual_scale(
+        self,
+    ) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-17-graphics-visual-information",
+            "graphics_semantic_equivalence_lab_v1",
+            "meter_rows = render_meter_rows(chart_data, scale_max)",
+            "meter_rows = render_meter_rows(chart_data[:-1], scale_max)",
+            "graphics-scale-invariant",
         )
 
     def test_experiment_harness_derives_metrics_and_stop_decision(
