@@ -19,6 +19,16 @@ def _identifier_is_safe(value: str) -> bool:
     return _SAFE_IDENTIFIER.fullmatch(value) is not None
 
 
+def _identifier_has_safe_legacy_padding(value: str) -> bool:
+    if len(value) > 128:
+        return False
+    unpadded = value.strip(" ")
+    # Preserve the authoring API's actionable padding diagnostic only for
+    # bounded ASCII spaces. Other whitespace can alter terminal/log structure,
+    # so it must use the fixed non-reflective unsafe-identifier diagnostic.
+    return unpadded != value and _identifier_is_safe(unpadded)
+
+
 def _render_sorted(values: Iterable[object]) -> str:
     rendered: list[str] = []
     for value in values:
@@ -44,7 +54,7 @@ def _validate_node_ids(values: tuple[object, ...]) -> tuple[str, ...]:
     padded = tuple(node_id for node_id in node_ids if node_id != node_id.strip())
     if padded:
         if any(
-            not _identifier_is_safe(node_id.strip())
+            not _identifier_has_safe_legacy_padding(node_id)
             for node_id in padded
         ):
             raise CurriculumValidationError(
@@ -102,7 +112,7 @@ def _validate_dependencies(node_id: str, raw: object) -> tuple[str, ...]:
     )
     if padded:
         if any(
-            not _identifier_is_safe(dependency.strip())
+            not _identifier_has_safe_legacy_padding(dependency)
             for dependency in padded
         ):
             raise CurriculumValidationError(
