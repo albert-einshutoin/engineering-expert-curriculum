@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from html.parser import HTMLParser
 import json
 import os
@@ -1874,16 +1875,65 @@ class CoreTrackTests(unittest.TestCase):
             {asset["id"] for asset in report["assets"]},
             {"customer-data", "deployment-credential", "audit-log"},
         )
-        self.assertIn("operations-contractor", report["actors"])
-        self.assertGreaterEqual(len(report["trust_boundaries"]), 2)
+        actors = {
+            actor["id"]: actor
+            for actor in report["actors"]
+        }
+        self.assertIn("operations-contractor", actors)
         self.assertTrue(
-            all(flow["crosses"] for flow in report["cross_boundary_flows"])
+            all(
+                actor["id"]
+                and actor["type"] in {"external", "insider"}
+                and actor["scope"]
+                for actor in actors.values()
+            )
         )
+        self.assertGreaterEqual(len(report["trust_boundaries"]), 2)
+        boundary_ids = {
+            boundary["id"]
+            for boundary in report["trust_boundaries"]
+        }
+        known_zones = {
+            zone
+            for boundary in report["trust_boundaries"]
+            for zone in (boundary["from"], boundary["to"])
+        }
+        self.assertTrue(
+            all(
+                flow["from"] in actors
+                and flow["to"] in known_zones
+                and set(flow["crosses"]) <= boundary_ids
+                and flow["crosses"]
+                for flow in report["cross_boundary_flows"]
+            )
+        )
+        flows = {
+            flow["id"]: flow
+            for flow in report["cross_boundary_flows"]
+        }
         self.assertEqual(
             {threat["actor_type"] for threat in report["threats"]},
             {"external", "insider"},
         )
         threat_ids = {threat["id"] for threat in report["threats"]}
+        for threat in report["threats"]:
+            actor_id = threat["actor_id"]
+            self.assertIn(actor_id, actors)
+            self.assertEqual(actors[actor_id]["type"], threat["actor_type"])
+            self.assertEqual(flows[threat["flow_id"]]["from"], actor_id)
+        credential_threat = next(
+            threat
+            for threat in report["threats"]
+            if threat["id"] == "T-IN-CREDENTIAL"
+        )
+        self.assertEqual(
+            credential_threat["actor_id"],
+            "operations-contractor",
+        )
+        self.assertEqual(
+            flows[credential_threat["flow_id"]]["from"],
+            "operations-contractor",
+        )
         controls = {
             control["id"]: control
             for control in report["controls"]
@@ -1916,6 +1966,24 @@ class CoreTrackTests(unittest.TestCase):
                 for link in report["verification_links"]
             )
         )
+        verification_ids = [
+            link["verification_id"]
+            for link in report["verification_links"]
+        ]
+        self.assertTrue(all(verification_ids))
+        self.assertEqual(
+            len(verification_ids),
+            len(set(verification_ids)),
+        )
+        residual_risk_ids = [
+            risk["id"]
+            for risk in report["residual_risks"]
+        ]
+        self.assertTrue(all(residual_risk_ids))
+        self.assertEqual(
+            len(residual_risk_ids),
+            len(set(residual_risk_ids)),
+        )
         self.assertTrue(
             all(
                 risk["threat_id"] in threat_ids
@@ -1926,11 +1994,18 @@ class CoreTrackTests(unittest.TestCase):
                 for risk in report["residual_risks"]
             )
         )
+        for risk in report["residual_risks"]:
+            parsed_review_date = date.fromisoformat(risk["review_date"])
+            self.assertEqual(
+                parsed_review_date.isoformat(),
+                risk["review_date"],
+            )
         self.assertEqual(
             report["model_validation"],
             {
                 "valid": True,
                 "errors": [],
+                "actor_count": len(report["actors"]),
                 "threat_count": len(report["threats"]),
                 "control_count": len(report["controls"]),
                 "verification_count": len(report["verification_links"]),
@@ -1946,6 +2021,14 @@ class CoreTrackTests(unittest.TestCase):
                 "failed_verification",
                 "blank_owner",
                 "missing_control_type",
+                "empty_actors",
+                "unknown_actor",
+                "actor_flow_mismatch",
+                "blank_verification_id",
+                "duplicate_verification_id",
+                "blank_risk_id",
+                "duplicate_risk_id",
+                "invalid_review_date",
             },
         )
         for mutation in negative_mutations.values():
