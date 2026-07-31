@@ -37,6 +37,9 @@
     <dd>視覚表現は情報そのものではなくdataのviewである。同等textを同じ変換から生成し、欠落mutationを失敗させることでdriftを検出できる。</dd>
   </dl>
   <pre><code>python3.13 - &lt;&lt;'PY'
+from html import escape
+from html.parser import HTMLParser
+from hashlib import sha256
 import json
 
 HARNESS = "graphics_semantic_equivalence_lab_v1"
@@ -56,6 +59,277 @@ CHART_DATA = [
     {"id": "practice", "label": "実践", "value": 20},
     {"id": "review", "label": "復習", "value": 8},
 ]
+ROADMAP_CSS = (
+    ".roadmap { border: 1px solid currentColor; padding: 1rem; } "
+    ".roadmap-nodes { display: grid; gap: 0.5rem; } "
+    ".roadmap-edges { list-style: none; padding: 0; }"
+)
+CHART_CSS = (
+    ".quantitative-chart { border: 1px solid currentColor; padding: 1rem; } "
+    ".quantitative-chart table { border-collapse: collapse; width: 100%; } "
+    ".quantitative-chart th, .quantitative-chart td { "
+    "border: 1px solid currentColor; padding: 0.25rem; }"
+)
+
+class ArtifactParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.tags = []
+        self.ids = []
+        self.edge_pairs = []
+        self.table_header_scopes = []
+        self.figure_caption_count = 0
+        self.table_caption_count = 0
+        self.table_rows = []
+        self.unsafe = []
+        self.in_tbody = False
+        self.current_row = None
+        self.current_cell = None
+
+    def handle_starttag(self, tag, attrs):
+        normalized_tag = tag.casefold()
+        values = {
+            name.casefold(): value or ""
+            for name, value in attrs
+        }
+        self.tags.append(normalized_tag)
+        if values.get("id"):
+            self.ids.append(values["id"])
+        if normalized_tag == "li" and {
+            "data-from",
+            "data-to",
+        }.issubset(values):
+            self.edge_pairs.append(
+                [values["data-from"], values["data-to"]]
+            )
+        if normalized_tag == "th":
+            self.table_header_scopes.append(values.get("scope", ""))
+        if normalized_tag == "figcaption":
+            self.figure_caption_count += 1
+        if normalized_tag == "caption":
+            self.table_caption_count += 1
+        if normalized_tag == "tbody":
+            self.in_tbody = True
+        if normalized_tag == "tr" and self.in_tbody:
+            self.current_row = []
+        if (
+            normalized_tag in {"th", "td"}
+            and self.current_row is not None
+        ):
+            self.current_cell = []
+        if normalized_tag in {
+            "script",
+            "style",
+            "iframe",
+            "object",
+            "embed",
+        }:
+            self.unsafe.append(normalized_tag)
+        for name, value in attrs:
+            normalized_name = name.casefold()
+            candidate = value or ""
+            if (
+                normalized_name == "style"
+                or normalized_name.startswith("on")
+                or "://" in candidate
+            ):
+                self.unsafe.append(normalized_name)
+
+    def handle_data(self, data):
+        if self.current_cell is not None:
+            self.current_cell.append(data)
+
+    def handle_endtag(self, tag):
+        normalized_tag = tag.casefold()
+        if (
+            normalized_tag in {"th", "td"}
+            and self.current_cell is not None
+            and self.current_row is not None
+        ):
+            self.current_row.append(
+                " ".join("".join(self.current_cell).split())
+            )
+            self.current_cell = None
+        if (
+            normalized_tag == "tr"
+            and self.current_row is not None
+        ):
+            if len(self.current_row) == 3:
+                self.table_rows.append(
+                    {
+                        "id": self.current_row[1],
+                        "label": self.current_row[0],
+                        "value": int(self.current_row[2]),
+                    }
+                )
+            self.current_row = None
+        if normalized_tag == "tbody":
+            self.in_tbody = False
+
+def render_roadmap_html(nodes, edges):
+    node_items = "".join(
+        (
+            f'&lt;li id="{escape(node["id"])}"&gt;'
+            f'{escape(node["label"])}&lt;/li&gt;'
+        )
+        for node in nodes
+    )
+    edge_items = "".join(
+        (
+            f'&lt;li data-from="{escape(edge["from"])}" '
+            f'data-to="{escape(edge["to"])}"&gt;'
+            f'{escape(edge["from"])} to {escape(edge["to"])}'
+            "&lt;/li&gt;"
+        )
+        for edge in edges
+    )
+    return (
+        '&lt;figure class="roadmap"&gt;'
+        "&lt;figcaption&gt;学習roadmapと依存関係&lt;/figcaption&gt;"
+        f'&lt;ol class="roadmap-nodes"&gt;{node_items}&lt;/ol&gt;'
+        f'&lt;ol class="roadmap-edges"&gt;{edge_items}&lt;/ol&gt;'
+        "&lt;/figure&gt;"
+    )
+
+def render_chart_html(chart_data):
+    rows = "".join(
+        (
+            "&lt;tr&gt;"
+            f'&lt;th scope="row"&gt;{escape(point["label"])}&lt;/th&gt;'
+            f'&lt;td&gt;{escape(point["id"])}&lt;/td&gt;'
+            f'&lt;td&gt;{point["value"]}&lt;/td&gt;'
+            "&lt;/tr&gt;"
+        )
+        for point in chart_data
+    )
+    return (
+        '&lt;figure class="quantitative-chart"&gt;'
+        "&lt;figcaption&gt;学習活動の時間比較&lt;/figcaption&gt;"
+        "&lt;table&gt;"
+        "&lt;caption&gt;活動別時間の quantitative chart&lt;/caption&gt;"
+        "&lt;thead&gt;&lt;tr&gt;"
+        '&lt;th scope="col"&gt;活動&lt;/th&gt;'
+        '&lt;th scope="col"&gt;ID&lt;/th&gt;'
+        '&lt;th scope="col"&gt;時間&lt;/th&gt;'
+        "&lt;/tr&gt;&lt;/thead&gt;"
+        f"&lt;tbody&gt;{rows}&lt;/tbody&gt;"
+        "&lt;/table&gt;"
+        "&lt;/figure&gt;"
+    )
+
+def validate_roadmap_artifact(html, node_ids, edge_pairs):
+    parser = ArtifactParser()
+    parser.feed(html)
+    parser.close()
+    valid = (
+        {"figure", "figcaption", "ol", "li"}.issubset(parser.tags)
+        and parser.ids == node_ids
+        and parser.edge_pairs == edge_pairs
+        and parser.figure_caption_count == 1
+        and not parser.unsafe
+    )
+    return {
+        "valid": valid,
+        "node_ids": parser.ids,
+        "edge_pairs": parser.edge_pairs,
+        "unsafe": parser.unsafe,
+    }
+
+def validate_chart_artifact(html, expected_rows):
+    parser = ArtifactParser()
+    parser.feed(html)
+    parser.close()
+    required_tags = {
+        "figure",
+        "figcaption",
+        "table",
+        "caption",
+        "thead",
+        "tbody",
+        "tr",
+        "th",
+        "td",
+    }
+    valid = (
+        required_tags.issubset(parser.tags)
+        and parser.figure_caption_count == 1
+        and parser.table_caption_count == 1
+        and bool(parser.table_header_scopes)
+        and all(
+            scope in {"col", "row"}
+            for scope in parser.table_header_scopes
+        )
+        and parser.table_rows == expected_rows
+        and not parser.unsafe
+    )
+    return {
+        "valid": valid,
+        "table_rows": parser.table_rows,
+        "header_scopes": parser.table_header_scopes,
+        "unsafe": parser.unsafe,
+    }
+
+def artifact_data_fingerprint(nodes, edges, chart_data):
+    # Canonical JSON proves that the transfer changes presentation only,
+    # rather than silently changing the roadmap or quantitative evidence.
+    canonical = json.dumps(
+        {
+            "nodes": nodes,
+            "edges": edges,
+            "chart_data": chart_data,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return sha256(canonical.encode("utf-8")).hexdigest()
+
+def render_display_artifact(
+    display_mode,
+    roadmap_artifact,
+    chart_artifact,
+    data_fingerprint,
+):
+    class_name = f"display-{display_mode}"
+    html = (
+        f'&lt;section class="{class_name}"&gt;'
+        f'{roadmap_artifact["html"]}{chart_artifact["html"]}'
+        "&lt;/section&gt;"
+    )
+    mode_css = (
+        f".{class_name} {{ color: CanvasText; background: Canvas; }} "
+    )
+    if display_mode == "monochrome":
+        mode_css += (
+            ".display-monochrome .roadmap, "
+            ".display-monochrome .quantitative-chart { "
+            "border-style: double; }"
+        )
+    else:
+        mode_css += (
+            ".display-color .roadmap, "
+            ".display-color .quantitative-chart { "
+            "border-style: solid; }"
+        )
+    parser = ArtifactParser()
+    parser.feed(html)
+    parser.close()
+    valid = (
+        not parser.unsafe
+        and parser.figure_caption_count == 2
+        and parser.table_caption_count == 1
+    )
+    return {
+        "display_mode": display_mode,
+        "html": html,
+        "css": (
+            roadmap_artifact["css"]
+            + chart_artifact["css"]
+            + mode_css
+        ),
+        "data_fingerprint": data_fingerprint,
+        "valid": valid,
+    }
 
 def derive_roadmap(nodes, edges):
     node_ids = [node["id"] for node in nodes]
@@ -63,6 +337,13 @@ def derive_roadmap(nodes, edges):
         [edge["from"], edge["to"]]
         for edge in edges
     ]
+    roadmap_html = render_roadmap_html(nodes, edges)
+    artifact_validation = validate_roadmap_artifact(
+        roadmap_html,
+        node_ids,
+        edge_pairs,
+    )
+    assert artifact_validation["valid"], "graphics-artifact-invariant"
     return {
         "data": {
             "nodes": [dict(node) for node in nodes],
@@ -78,6 +359,11 @@ def derive_roadmap(nodes, edges):
             "edge_pairs": edge_pairs,
             "format": "ordered-node-list-and-directed-relations",
         },
+        "artifact": {
+            "html": roadmap_html,
+            "css": ROADMAP_CSS,
+        },
+        "artifact_validation": artifact_validation,
     }
 
 def derive_chart(chart_data):
@@ -91,6 +377,12 @@ def derive_chart(chart_data):
     ]
     text_rows = [dict(point) for point in chart_data]
     assert text_rows == expected_rows, "graphics-causal-invariant"
+    chart_html = render_chart_html(chart_data)
+    artifact_validation = validate_chart_artifact(
+        chart_html,
+        expected_rows,
+    )
+    assert artifact_validation["valid"], "graphics-artifact-invariant"
     maximum = max(chart_data, key=lambda point: point["value"])
     minimum = min(chart_data, key=lambda point: point["value"])
     return {
@@ -115,6 +407,11 @@ def derive_chart(chart_data):
             "color_only": False,
             "unit": "hours",
         },
+        "artifact": {
+            "html": chart_html,
+            "css": CHART_CSS,
+        },
+        "artifact_validation": artifact_validation,
     }
 
 def mastery_evidence():
@@ -149,6 +446,31 @@ def mastery_evidence():
 def main():
     roadmap = derive_roadmap(ROADMAP_NODES, ROADMAP_EDGES)
     chart = derive_chart(CHART_DATA)
+    data_fingerprint = artifact_data_fingerprint(
+        ROADMAP_NODES,
+        ROADMAP_EDGES,
+        CHART_DATA,
+    )
+    baseline_artifact = render_display_artifact(
+        "color",
+        roadmap["artifact"],
+        chart["artifact"],
+        data_fingerprint,
+    )
+    transferred_artifact = render_display_artifact(
+        "monochrome",
+        roadmap["artifact"],
+        chart["artifact"],
+        data_fingerprint,
+    )
+    assert (
+        baseline_artifact["valid"]
+        and transferred_artifact["valid"]
+    ), "graphics-artifact-invariant"
+    assert (
+        baseline_artifact["data_fingerprint"]
+        == transferred_artifact["data_fingerprint"]
+    ), "graphics-artifact-invariant"
     expected_node_ids = [node["id"] for node in ROADMAP_NODES]
     expected_edges = [
         [edge["from"], edge["to"]]
@@ -169,13 +491,18 @@ def main():
             "changed_fields": ["display_mode"],
             "baseline_mode": "color",
             "transferred_mode": "monochrome",
-            "data_unchanged": True,
+            "data_unchanged": (
+                baseline_artifact["data_fingerprint"]
+                == transferred_artifact["data_fingerprint"]
+            ),
             "text_equivalence_preserved": (
                 roadmap["semantic_html"]["node_ids"]
                 == roadmap["text_equivalent"]["node_ids"]
                 and chart["semantic_html"]["table_rows"]
                 == chart["text_equivalent"]["rows"]
             ),
+            "baseline_artifact": baseline_artifact,
+            "transferred_artifact": transferred_artifact,
         },
         "fixture_metadata": {
             "kind": "synthetic",
