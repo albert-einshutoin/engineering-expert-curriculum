@@ -142,6 +142,164 @@ ACTION_INPUTS = [
         "evidence_ids": ["ev-change", "ev-mitigation"],
     },
 ]
+EVENT_FIELDS = {"evidence_id", "minute", "source", "observation"}
+DECISION_FIELDS = {"decision", "minute", "evidence_ids"}
+FACTOR_FIELDS = {
+    "factor_id",
+    "system_condition",
+    "individual_blame",
+    "evidence_ids",
+}
+ACTION_FIELDS = {
+    "action_id",
+    "owner",
+    "due",
+    "verification",
+    "verification_observation",
+    "evidence_ids",
+}
+VERIFICATION_FIELDS = {
+    "observed",
+    "expected_outcome",
+    "actual_outcome",
+}
+
+def valid_string_list(value):
+    return (
+        type(value) is list
+        and bool(value)
+        and all(type(item) is str and item for item in value)
+    )
+
+def validate_incident_source_inputs():
+    valid_events = (
+        type(INCIDENT_EVIDENCE) is list
+        and bool(INCIDENT_EVIDENCE)
+        and all(
+            type(event) is dict
+            and set(event) == EVENT_FIELDS
+            and type(event["evidence_id"]) is str
+            and bool(event["evidence_id"])
+            and type(event["minute"]) is int
+            and event["minute"] &gt;= 0
+            and type(event["source"]) is str
+            and bool(event["source"])
+            and type(event["observation"]) is str
+            and bool(event["observation"])
+            for event in INCIDENT_EVIDENCE
+        )
+    )
+    valid_decisions = (
+        type(DECISION_INPUTS) is list
+        and bool(DECISION_INPUTS)
+        and all(
+            type(decision) is dict
+            and set(decision) == DECISION_FIELDS
+            and type(decision["decision"]) is str
+            and bool(decision["decision"])
+            and type(decision["minute"]) is int
+            and decision["minute"] &gt;= 0
+            and valid_string_list(decision["evidence_ids"])
+            for decision in DECISION_INPUTS
+        )
+    )
+    valid_factors = (
+        type(FACTOR_INPUTS) is list
+        and len(FACTOR_INPUTS) &gt;= 2
+        and all(
+            type(factor) is dict
+            and set(factor) == FACTOR_FIELDS
+            and type(factor["factor_id"]) is str
+            and bool(factor["factor_id"])
+            and type(factor["system_condition"]) is str
+            and bool(factor["system_condition"])
+            and type(factor["individual_blame"]) is bool
+            and valid_string_list(factor["evidence_ids"])
+            for factor in FACTOR_INPUTS
+        )
+    )
+    valid_actions = (
+        type(ACTION_INPUTS) is list
+        and bool(ACTION_INPUTS)
+        and all(
+            type(action) is dict
+            and set(action) == ACTION_FIELDS
+            and all(
+                type(action[field]) is str and action[field]
+                for field in (
+                    "action_id",
+                    "owner",
+                    "due",
+                    "verification",
+                )
+            )
+            and valid_string_list(action["evidence_ids"])
+            and type(action["verification_observation"]) is dict
+            and set(action["verification_observation"])
+            == VERIFICATION_FIELDS
+            and type(
+                action["verification_observation"]["observed"]
+            )
+            is bool
+            and type(
+                action["verification_observation"]["expected_outcome"]
+            )
+            is str
+            and bool(
+                action["verification_observation"]["expected_outcome"]
+            )
+            and type(
+                action["verification_observation"]["actual_outcome"]
+            )
+            is str
+            and bool(
+                action["verification_observation"]["actual_outcome"]
+            )
+            for action in ACTION_INPUTS
+        )
+    )
+    if not valid_events:
+        raise AssertionError(
+            "incident-evidence-invariant: invalid timeline schema"
+        )
+    if not valid_decisions:
+        raise AssertionError(
+            "incident-decision-evidence-invariant: invalid decision schema"
+        )
+    if not valid_factors:
+        raise AssertionError(
+            "incident-causal-invariant: invalid factor schema"
+        )
+    if not valid_actions:
+        raise AssertionError(
+            "incident-action-outcome-invariant: invalid action schema"
+        )
+
+def validate_detection_transfer(baseline, transferred):
+    for assumption in (baseline, transferred):
+        if (
+            type(assumption) is not dict
+            or set(assumption) != {"detection_minute"}
+            or type(assumption["detection_minute"]) is not int
+            or assumption["detection_minute"] &lt; 0
+        ):
+            raise AssertionError(
+                "incident-transfer-invariant: invalid assumption schema"
+            )
+    changed = [
+        field
+        for field in sorted(set(baseline) | set(transferred))
+        if (
+            field not in baseline
+            or field not in transferred
+            or baseline[field] != transferred[field]
+        )
+    ]
+    if changed != ["detection_minute"]:
+        raise AssertionError(
+            "incident-transfer-invariant: transfer changed wrong input"
+        )
+    return changed
 
 def materialize_action(source):
     observation = source["verification_observation"]
@@ -255,6 +413,11 @@ def validate_decision_evidence_time(decisions, timeline):
             )
 
 def main():
+    validate_incident_source_inputs()
+    changed_fields = validate_detection_transfer(
+        BASELINE_ASSUMPTION,
+        TRANSFER_ASSUMPTION,
+    )
     baseline_evidence = fixed_incident_evidence()
     transferred_evidence = fixed_incident_evidence()
     if baseline_evidence != transferred_evidence:
@@ -304,22 +467,6 @@ def main():
         IMPACT_INPUT["recovery_minute"],
         IMPACT_INPUT["affected_requests_per_minute"],
     )
-    changed_fields = [
-        field
-        for field in sorted(
-            set(BASELINE_ASSUMPTION) | set(TRANSFER_ASSUMPTION)
-        )
-        if (
-            field not in BASELINE_ASSUMPTION
-            or field not in TRANSFER_ASSUMPTION
-            or BASELINE_ASSUMPTION[field]
-            != TRANSFER_ASSUMPTION[field]
-        )
-    ]
-    if changed_fields != ["detection_minute"]:
-        raise AssertionError(
-            "incident-transfer-invariant: transfer changed wrong input"
-        )
     if (
         transferred["duration_minutes"]
         &lt;= baseline["duration_minutes"]
