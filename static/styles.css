@@ -963,59 +963,79 @@ footer p {
   }
 
   /*
-   * Chromium can omit a repeated thead after a fragmented table. Each track
-   * therefore owns one table and one landscape page, with its own real header.
+   * Chromium can omit cells from fragmented tables in otherwise valid PDFs.
+   * Print uses labelled block cards so PDF output does not depend on the table
+   * layout engine; the screen document keeps its semantic tables unchanged.
    */
   .competency-matrix + .competency-matrix {
     break-before: page;
   }
 
-  .competency-matrix {
-    min-inline-size: 0;
-    break-inside: avoid;
-    font-size: 7pt;
-    line-height: 1.2;
-    table-layout: fixed;
-  }
-
+  .competency-matrix,
+  .competency-matrix tbody,
+  .competency-matrix tr,
   .competency-matrix th,
   .competency-matrix td {
+    display: block;
     inline-size: auto;
     min-inline-size: 0;
     max-inline-size: none;
-    padding-block: 0.1rem;
-    padding-inline: 0.2rem;
+    overflow: visible;
   }
 
-  .competency-matrix th:first-child,
-  .competency-matrix td:last-child {
-    inline-size: auto;
-    min-inline-size: 0;
-    max-inline-size: none;
+  .competency-matrix {
+    margin-block-end: 0;
+    font-size: 8pt;
+    line-height: 1.25;
   }
 
-  .competency-matrix th:nth-child(1) {
-    inline-size: 18%;
+  .competency-matrix thead {
+    display: none;
   }
 
-  .competency-matrix th:nth-child(2) {
-    inline-size: 7%;
+  .competency-matrix tbody tr {
+    break-inside: avoid;
+    margin-block: 0 0.2rem;
+    padding: 0.18rem 0.25rem;
+    border: 0.0625rem solid var(--color-print-ink);
   }
 
-  .competency-matrix th:nth-child(3) {
-    inline-size: 8%;
+  .competency-matrix tbody th,
+  .competency-matrix tbody td {
+    padding: 0;
+    border: 0;
+    background: #ffffff;
   }
 
-  .competency-matrix th:nth-child(4) {
-    inline-size: 7%;
+  .competency-matrix tbody th::before,
+  .competency-matrix tbody td::before {
+    margin-inline-end: 0.35rem;
+    font-family: var(--font-interface);
+    font-weight: 800;
   }
 
-  .competency-matrix th:nth-child(5) {
-    inline-size: 22%;
+  .competency-matrix tbody th::before {
+    content: "レッスン：";
   }
 
-  .competency-matrix th:nth-child(6) {
-    inline-size: 38%;
+  .competency-matrix tbody td:nth-child(2)::before {
+    content: "フレームワーク：";
+  }
+
+  .competency-matrix tbody td:nth-child(3)::before {
+    content: "版：";
+  }
+
+  .competency-matrix tbody td:nth-child(4)::before {
+    content: "対応強度：";
+  }
+
+  .competency-matrix tbody td:nth-child(5)::before {
+    content: "公式識別子・名称：";
+  }
+
+  .competency-matrix tbody td:nth-child(6)::before {
+    content: "対応根拠：";
   }
 
   .competency-framework,
@@ -1033,16 +1053,6 @@ footer p {
     overflow-wrap: anywhere;
     white-space: normal;
     word-break: normal;
-  }
-
-  .competency-matrix thead,
-  .competency-matrix thead tr,
-  .competency-matrix thead th {
-    break-after: avoid;
-    break-inside: avoid;
-    overflow-wrap: normal;
-    white-space: nowrap;
-    word-break: keep-all;
   }
 
   body:has(.competency-matrix-page) > .site-header,
