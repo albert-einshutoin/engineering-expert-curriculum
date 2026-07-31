@@ -18,7 +18,10 @@ from curriculum_builder.capstones import (
     load_capstones,
     parse_capstone_documents,
 )
-from curriculum_builder.errors import CurriculumValidationError
+from curriculum_builder.errors import (
+    CurriculumValidationError,
+    IncompleteLessonReleaseError,
+)
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -427,9 +430,36 @@ class CapstoneContractTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(
                 CurriculumValidationError,
-                "draft lessons cannot be referenced",
+                "structurally complete lesson release",
             ):
                 load_capstones(root / "capstones")
+
+    def test_loader_catches_only_the_typed_incomplete_lesson_release(
+        self,
+    ) -> None:
+        incomplete = IncompleteLessonReleaseError(
+            "draft lessons cannot form a structurally complete "
+            "curriculum release"
+        )
+        with patch(
+            "curriculum_builder.lesson_rendering.load_lessons_from_root",
+            side_effect=incomplete,
+        ):
+            with self.assertRaisesRegex(
+                CurriculumValidationError,
+                "structurally complete lesson release",
+            ) as context:
+                load_capstones(CAPSTONES)
+        self.assertIsNot(context.exception, incomplete)
+
+        generic = CurriculumValidationError(str(incomplete))
+        with patch(
+            "curriculum_builder.lesson_rendering.load_lessons_from_root",
+            side_effect=generic,
+        ):
+            with self.assertRaises(CurriculumValidationError) as context:
+                load_capstones(CAPSTONES)
+        self.assertIs(context.exception, generic)
 
     def test_loader_rejects_parent_directory_rebinding(self) -> None:
         with TemporaryDirectory() as temporary:

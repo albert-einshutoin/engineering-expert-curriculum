@@ -679,7 +679,7 @@ def _assert_generated_map_contract(
     expected_release_rows = (
         "| 保存カタログ | 1,140 items |",
         f"| カタログ SHA-256 | `{CATALOG_SHA256}` |",
-        "| コアレッスン | 30 complete lessons |",
+        "| コアレッスン | 30 structurally complete lessons |",
         "| コンピテンシー対応 | 90 mappings |",
         "| 統合 Capstone | 3 projects |",
         "| Primary exercise coverage | 30/30 |",

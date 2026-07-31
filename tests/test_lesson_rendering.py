@@ -15,7 +15,10 @@ from unittest.mock import patch
 import curriculum_builder.build as build_module
 import curriculum_builder.lesson_rendering as lesson_rendering
 from curriculum_builder.build import build_site
-from curriculum_builder.errors import CurriculumValidationError
+from curriculum_builder.errors import (
+    CurriculumValidationError,
+    IncompleteLessonReleaseError,
+)
 from curriculum_builder.html_safety import MAX_FRAGMENT_BYTES
 
 
@@ -175,6 +178,26 @@ def _add_lesson(
 
 
 class LessonRenderingTests(unittest.TestCase):
+    def test_draft_lesson_has_a_typed_structural_completion_failure(
+        self,
+    ) -> None:
+        with _site_fixture() as (root, content, templates, static_root):
+            _add_lesson(
+                content,
+                _complete_document(status="draft"),
+            )
+
+            with self.assertRaisesRegex(
+                IncompleteLessonReleaseError,
+                "structurally complete curriculum release",
+            ):
+                build_site(
+                    content,
+                    templates,
+                    static_root,
+                    root / "site",
+                )
+
     def test_build_emits_a_complete_semantic_printable_lesson(self) -> None:
         hostile_title = "システム思考 <script>alert(1)</script>"
         with _site_fixture() as (root, content, templates, static_root):
