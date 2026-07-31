@@ -237,6 +237,23 @@ def validate_evidence_links(items, evidence_ids, item_kind):
                 + " has unknown evidence"
             )
 
+def validate_decision_evidence_time(decisions, timeline):
+    evidence_minute = {
+        event["evidence_id"]: event["minute"]
+        for event in timeline
+    }
+    for decision in decisions:
+        # decision時点より後の証拠を根拠へ混ぜると後知恵になるため、
+        # evidence ownershipを時刻境界でもfail closedにする。
+        if any(
+            evidence_minute[evidence_id] &gt; decision["minute"]
+            for evidence_id in decision["evidence_ids"]
+        ):
+            raise AssertionError(
+                "incident-decision-evidence-invariant: "
+                "decision references future evidence"
+            )
+
 def main():
     baseline_evidence = fixed_incident_evidence()
     transferred_evidence = fixed_incident_evidence()
@@ -253,6 +270,7 @@ def main():
         for event in timeline
     }
     validate_evidence_links(decisions, evidence_ids, "decision")
+    validate_decision_evidence_time(decisions, timeline)
     validate_evidence_links(factors, evidence_ids, "factor")
     validate_evidence_links(actions, evidence_ids, "action")
     if (
