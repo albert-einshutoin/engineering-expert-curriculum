@@ -28,14 +28,25 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Verify generated curriculum map
         run: python tools/generate_curriculum_map.py --check
-      - name: Build verified static artifact
+      - name: Build and compare isolated static artifacts
         run: |
-          python tools/build.py
-          python tools/check_site.py --root site --require-current-release
+          python tools/build.py --output site-first
+          python tools/check_site.py --root site-first --require-current-release
+          (
+            cd site-first
+            LC_ALL=C find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum
+          ) > /tmp/site-first.sha256
+          python tools/build.py --output site-second
+          python tools/check_site.py --root site-second --require-current-release
+          (
+            cd site-second
+            LC_ALL=C find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum
+          ) > /tmp/site-second.sha256
+          diff -u /tmp/site-first.sha256 /tmp/site-second.sha256
       - name: Upload verified Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9
         with:
-          path: site
+          path: site-first
 
   deploy:
     needs: build
