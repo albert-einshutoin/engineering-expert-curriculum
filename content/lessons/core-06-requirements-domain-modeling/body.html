@@ -29,11 +29,11 @@
     <dt>前提</dt>
     <dd>店舗はAssetを検索するCatalog、予約から返却までを扱うRental Operations、保証金と請求を扱うBillingを持つ。担当者は「予約できた機材は貸し出せる」と説明した。</dd>
     <dt>入力</dt>
-    <dd>通常貸出、同じAssetへの競合予約、期限後の返却という3例と、「保証金はいくらなら責任者承認が要るか」という未回答の質問を与える。</dd>
+    <dd>通常貸出、同じAssetへの競合予約、期限切れHold、期限内返却、延滞返却という5例と、「保証金はいくらなら責任者承認が要るか」という未回答の質問を与える。</dd>
     <dt>操作</dt>
     <dd>発言を用語、コマンド、イベント、不変条件、例外へ分解する。各要求の追跡先が空でないことを検査し、保証金閾値を未宣言ルールとして検出した後、業務責任者の決定で解決済みにする。</dd>
     <dt>観測</dt>
-    <dd>5語、3文脈、3シナリオ、2例外をJSONへ出力する。すべての不変条件が通り、曖昧性にはdetectedとresolvedの履歴が残る。</dd>
+    <dd>5語、3文脈、5シナリオ、3例外をJSONへ出力する。返却でAssetが利用可能に戻り、延滞時だけ料金評価eventが生じる。すべての不変条件が通り、曖昧性にはdetectedとresolvedの履歴が残る。</dd>
     <dt>結論</dt>
     <dd>「予約済み」は貸出の十分条件ではない。取置きが有効で、対象Assetが利用可能で、本人確認と保証金条件を満たす必要がある。例外と未確定事項を追跡して初めて、実装可能かつ反証可能な要求になる。</dd>
   </dl>
@@ -121,6 +121,24 @@ SCENARIOS = [
         "event": "CheckoutRejected",
         "expected": "rejected-expired-hold",
     },
+    {
+        "id": "normal-return",
+        "command": "ReturnAsset",
+        "event": "LoanReturned",
+        "due_at": "2026-08-03T10:00:00Z",
+        "returned_at": "2026-08-03T09:30:00Z",
+        "expected": "accepted-on-time",
+        "policy_event": None,
+    },
+    {
+        "id": "overdue-return",
+        "command": "ReturnAsset",
+        "event": "LoanReturned",
+        "due_at": "2026-08-03T10:00:00Z",
+        "returned_at": "2026-08-03T10:30:00Z",
+        "expected": "accepted-overdue",
+        "policy_event": "OverdueChargeAssessmentRequested",
+    },
 ]
 
 def decide_checkout(scenario):
@@ -133,17 +151,45 @@ def decide_checkout(scenario):
         return "rejected-identity"
     return "checked-out"
 
-def main():
-    observed = [
-        {
+def observe_scenario(scenario):
+    if scenario["command"] == "ReturnAsset":
+        # UTC RFC 3339の同形式fixtureなので文字列順が時刻順と一致する。
+        overdue = scenario["returned_at"] > scenario["due_at"]
+        observed = "accepted-overdue" if overdue else "accepted-on-time"
+        policy_event = (
+            "OverdueChargeAssessmentRequested" if overdue else None
+        )
+        return {
             "id": scenario["id"],
             "command": scenario["command"],
             "event": scenario["event"],
             "expected": scenario["expected"],
-            "observed": decide_checkout(scenario),
+            "observed": observed,
+            "due_at": scenario["due_at"],
+            "returned_at": scenario["returned_at"],
+            "policy_event": policy_event,
+            "asset_available_after": True,
         }
-        for scenario in SCENARIOS
-    ]
+    return {
+        "id": scenario["id"],
+        "command": scenario["command"],
+        "event": scenario["event"],
+        "expected": scenario["expected"],
+        "observed": decide_checkout(scenario),
+    }
+
+def main():
+    observed = [observe_scenario(scenario) for scenario in SCENARIOS]
+    scenarios_by_id = {item["id"]: item for item in observed}
+    # Exact fixture identity is part of the lab evidence. The mutation test
+    # proves a removed overdue case cannot leave a false-green report.
+    assert set(scenarios_by_id) == {
+        "normal-checkout",
+        "competing-reservation",
+        "expired-hold",
+        "normal-return",
+        "overdue-return",
+    }
     invariants = [
         {
             "name": "one-active-checkout-per-asset",
@@ -165,6 +211,22 @@ def main():
                 item["observed"] != "checked-out"
                 for item in observed
                 if item["id"] == "competing-reservation"
+            ),
+        },
+        {
+            "name": "return-restores-availability",
+            "passed": all(
+                item["asset_available_after"]
+                for item in observed
+                if item["command"] == "ReturnAsset"
+            ),
+        },
+        {
+            "name": "overdue-return-emits-policy-event",
+            "passed": (
+                scenarios_by_id["overdue-return"]["policy_event"]
+                == "OverdueChargeAssessmentRequested"
+                and scenarios_by_id["normal-return"]["policy_event"] is None
             ),
         },
     ]
@@ -190,6 +252,17 @@ def main():
             "events": ["CheckoutRejected"],
             "invariants": ["unavailable-asset-is-not-checked-out"],
         },
+        {
+            "requirement": (
+                "REQ-04 返却を受理して在庫を戻し、延滞時は料金評価を依頼する"
+            ),
+            "commands": ["ReturnAsset"],
+            "events": ["LoanReturned", "OverdueChargeAssessmentRequested"],
+            "invariants": [
+                "return-restores-availability",
+                "overdue-return-emits-policy-event",
+            ],
+        },
     ]
     assert all(
         item["commands"] and item["events"] and item["invariants"]
@@ -212,6 +285,12 @@ def main():
                 "code": "hold-expired",
                 "event": "CheckoutRejected",
                 "recovery": "在庫を再確認して新しいHoldを要求",
+            },
+            {
+                "code": "overdue-return",
+                "event": "LoanReturned",
+                "policy_event": True,
+                "recovery": "Billingへ延滞料金評価を依頼",
             },
         ],
         "invariants": invariants,
