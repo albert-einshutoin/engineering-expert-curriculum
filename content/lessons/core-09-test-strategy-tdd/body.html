@@ -40,15 +40,15 @@
     <dt>前提</dt>
     <dd>価格は0以上、割引率は0から100まで。合計は入力順に依存せず、価格0を追加しても変わらない。</dd>
     <dt>入力</dt>
-    <dd>150円に10%を適用すると135.0円となる例、境界、順序交換、0追加、consumerの数値契約を五技法へ割り当てる。</dd>
+    <dd>150円に10%を適用すると135.0円となる純粋関数、SQLite repository、provider response、2205件の有限入力、順序交換と0追加を五技法へ割り当てる。</dd>
     <dt>操作</dt>
-    <dd>同一testを未実装、最小実装、入力検証を分離した実装へ順に実行する。続いてseed 11から14と固定時計でflaky fixtureを4回実行し、安全な算術mutantを試す。</dd>
+    <dd>明示した単体test IDをNotImplementedErrorの未実装、最小実装、入力検証を分離した実装へ順に実行する。五技法は別test IDで個別実行し、seed 11から14と固定schedule・時計でflaky fixtureを実行して安全な算術mutantを試す。</dd>
     <dt>観測</dt>
     <dd>REDは非0、GREENとREFACTORは0。後二者のsource SHA-256は異なるがbehavior SHA-256は同じで、mutantは非0になる。</dd>
     <dt>結論</dt>
     <dd>履歴は文字列で自己申告せず、実行command、return code、hash、seedをJSONへ保存する。これによりreviewerが各主張を再実行できる。</dd>
   </dl>
-  <p>次のfixtureは現在の一時directoryだけへ小さな教材fileを書き、shell、外部network、秘密情報を使わない。各subprocessには5秒の上限を設ける。</p>
+  <p>次のfixtureはharness自身が専用の<code>TemporaryDirectory</code>を作り、その配下だけへ教材fileを書く。各subprocessは専用cwdと明示test IDを使うため、呼出元のsymlinkやambient testを発見しない。shell、外部network、秘密情報を使わず、各実行へ5秒の上限を設ける。</p>
   <pre><code>python3.13 - &lt;&lt;'PY'
 import hashlib
 import json
@@ -56,44 +56,140 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from tempfile import TemporaryDirectory
 
 HARNESS = "test_strategy_lab_v1"
+TEST_MODULE = "test_strategy_fixture"
+TEST_IDS = {
+    "unit": f"{TEST_MODULE}.PureUnitTests.test_discount",
+    "integration": (
+        f"{TEST_MODULE}.SQLiteIntegrationTests."
+        "test_repository_round_trip"
+    ),
+    "contract": (
+        f"{TEST_MODULE}.ProviderContractTests."
+        "test_schema_and_semantics"
+    ),
+    "property": (
+        f"{TEST_MODULE}.BoundedPropertyTests."
+        "test_discount_bounds"
+    ),
+    "metamorphic": (
+        f"{TEST_MODULE}.MetamorphicTests."
+        "test_permutation_and_zero_item"
+    ),
+}
 TEST_SOURCE = """
+import sqlite3
 import unittest
-from order_discount import total
+from order_discount import DiscountRepository, provider_response, total
 
-class DiscountTests(unittest.TestCase):
-    def test_unit(self):
-        self.assertEqual(total([100, 50], 0), 150.0)
-
-    def test_integration(self):
+class PureUnitTests(unittest.TestCase):
+    def test_discount(self):
         self.assertEqual(total([100, 50], 10), 135.0)
 
-    def test_contract(self):
-        self.assertIs(type(total([25, 25], 20)), float)
+class SQLiteIntegrationTests(unittest.TestCase):
+    def test_repository_round_trip(self):
+        connection = sqlite3.connect(":memory:")
+        try:
+            repository = DiscountRepository(connection)
+            repository.save("order-1", [100, 50], 10)
+            self.assertEqual(repository.load_total("order-1"), 135.0)
+        finally:
+            connection.close()
 
-    def test_property(self):
-        for prices, rate in [([], 0), ([1], 100), ([30, 70], 25)]:
-            result = total(prices, rate)
-            self.assertGreaterEqual(result, 0)
-            self.assertLessEqual(result, sum(prices))
+class ProviderContractTests(unittest.TestCase):
+    def test_schema_and_semantics(self):
+        response = provider_response("order-1", [100, 50], 10)
+        self.assertEqual(
+            set(response),
+            {"order_id", "total", "currency"},
+        )
+        self.assertIs(type(response["order_id"]), str)
+        self.assertIs(type(response["total"]), float)
+        self.assertEqual(response["currency"], "JPY")
+        self.assertEqual(response["total"], total([100, 50], 10))
 
-    def test_metamorphic(self):
-        self.assertEqual(total([30, 70], 25), total([70, 0, 30], 25))
+class BoundedPropertyTests(unittest.TestCase):
+    def test_discount_bounds(self):
+        for first in range(21):
+            for second in range(21):
+                for rate in (0, 25, 50, 75, 100):
+                    subtotal = first + second
+                    result = total([first, second], rate)
+                    self.assertGreaterEqual(result, 0)
+                    self.assertLessEqual(result, subtotal)
+
+class MetamorphicTests(unittest.TestCase):
+    def test_permutation_and_zero_item(self):
+        for prices, rate in [([30, 70], 25), ([5, 10, 15], 50)]:
+            transformed = list(reversed(prices)) + [0]
+            self.assertEqual(total(prices, rate), total(transformed, rate))
 """
 
 RED_SOURCE = """
+import sqlite3
+
 def total(prices, rate_percent):
-    return float(sum(prices))
+    raise NotImplementedError("total is not implemented")
+
+class DiscountRepository:
+    def __init__(self, connection):
+        self.connection = connection
+
+def provider_response(order_id, prices, rate_percent):
+    raise NotImplementedError("provider response is not implemented")
 """
 
 GREEN_SOURCE = """
+import json
+import sqlite3
+
 def total(prices, rate_percent):
     subtotal = sum(prices)
     return round(subtotal * (100 - rate_percent) / 100, 2)
+
+class DiscountRepository:
+    def __init__(self, connection):
+        self.connection = connection
+        self.connection.execute(
+            "CREATE TABLE IF NOT EXISTS orders "
+            "(order_id TEXT PRIMARY KEY, payload TEXT NOT NULL)"
+        )
+
+    def save(self, order_id, prices, rate_percent):
+        payload = json.dumps(
+            {"prices": prices, "rate_percent": rate_percent},
+            sort_keys=True,
+        )
+        self.connection.execute(
+            "INSERT INTO orders(order_id, payload) VALUES (?, ?)",
+            (order_id, payload),
+        )
+        self.connection.commit()
+
+    def load_total(self, order_id):
+        row = self.connection.execute(
+            "SELECT payload FROM orders WHERE order_id = ?",
+            (order_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError(order_id)
+        payload = json.loads(row[0])
+        return total(payload["prices"], payload["rate_percent"])
+
+def provider_response(order_id, prices, rate_percent):
+    return {
+        "order_id": order_id,
+        "total": total(prices, rate_percent),
+        "currency": "JPY",
+    }
 """
 
 REFACTOR_SOURCE = """
+import json
+import sqlite3
+
 def _validate(prices, rate_percent):
     # Rejecting out-of-contract values here keeps the domain function bounded.
     if any(type(price) not in (int, float) or price &lt; 0 for price in prices):
@@ -105,28 +201,56 @@ def total(prices, rate_percent):
     _validate(prices, rate_percent)
     subtotal = sum(prices)
     return round(subtotal * (1 - rate_percent / 100), 2)
+
+class DiscountRepository:
+    def __init__(self, connection):
+        self.connection = connection
+        self.connection.execute(
+            "CREATE TABLE IF NOT EXISTS orders "
+            "(order_id TEXT PRIMARY KEY, payload TEXT NOT NULL)"
+        )
+
+    def save(self, order_id, prices, rate_percent):
+        _validate(prices, rate_percent)
+        payload = json.dumps(
+            {"prices": list(prices), "rate_percent": rate_percent},
+            sort_keys=True,
+        )
+        self.connection.execute(
+            "INSERT INTO orders(order_id, payload) VALUES (?, ?)",
+            (order_id, payload),
+        )
+        self.connection.commit()
+
+    def load_total(self, order_id):
+        row = self.connection.execute(
+            "SELECT payload FROM orders WHERE order_id = ?",
+            (order_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError(order_id)
+        payload = json.loads(row[0])
+        return total(payload["prices"], payload["rate_percent"])
+
+def provider_response(order_id, prices, rate_percent):
+    return {
+        "order_id": order_id,
+        "total": total(prices, rate_percent),
+        "currency": "JPY",
+    }
 """
 
 MUTANT_SOURCE = REFACTOR_SOURCE.replace(
     "1 - rate_percent / 100",
     "rate_percent / 100",
 )
-TEST_COMMAND = [sys.executable, "-m", "unittest", "-q"]
-BEHAVIOR_COMMAND = [
-    sys.executable,
-    "-c",
-    (
-        "import json; from order_discount import total; "
-        "print(json.dumps([total([100,50],10), total([30,70],25)]))"
-    ),
-]
-
 def sha256_text(text):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
-def execute(command, environment=None):
+def execute(command, workspace, environment=None):
     return subprocess.run(
         command,
+        cwd=workspace,
         check=False,
         capture_output=True,
         text=True,
@@ -134,84 +258,209 @@ def execute(command, environment=None):
         env=environment,
     )
 
-def phase(name, source):
-    Path("order_discount.py").write_text(source, encoding="utf-8")
-    result = execute(TEST_COMMAND)
-    behavior = execute(BEHAVIOR_COMMAND)
-    if behavior.returncode != 0:
+def execute_test(test_id, workspace):
+    command = [sys.executable, "-m", "unittest", "-q", test_id]
+    environment = {
+        "PATH": os.environ.get("PATH", ""),
+        "PYTHONHASHSEED": "0",
+    }
+    return command, execute(command, workspace, environment)
+
+def phase(name, source, workspace):
+    (workspace / "order_discount.py").write_text(
+        source,
+        encoding="utf-8",
+    )
+    test_id = TEST_IDS["unit"]
+    command, result = execute_test(test_id, workspace)
+    behavior_command = [
+        sys.executable,
+        "-c",
+        (
+            "import json; from order_discount import total; "
+            "print(json.dumps([total([100,50],10), "
+            "total([30,70],25)]))"
+        ),
+    ]
+    behavior = execute(behavior_command, workspace)
+    behavior_hash = None
+    if behavior.returncode == 0:
+        behavior_hash = sha256_text(behavior.stdout.strip())
+    elif name != "RED":
         raise RuntimeError(behavior.stderr)
+    failure_reason = result.stderr if result.returncode else ""
     return {
         "name": name,
-        "command": TEST_COMMAND,
+        "test_id": test_id,
+        "command": command,
         "returncode": result.returncode,
         "source_sha256": sha256_text(source),
-        "behavior_sha256": sha256_text(behavior.stdout.strip()),
-        "test_runner_summary": result.stderr.strip().splitlines()[-1],
+        "behavior_sha256": behavior_hash,
+        "failure_reason": failure_reason,
     }
 
-Path("test_order_discount.py").write_text(TEST_SOURCE, encoding="utf-8")
-phases = [
-    phase("RED", RED_SOURCE),
-    phase("GREEN", GREEN_SOURCE),
-    phase("REFACTOR", REFACTOR_SOURCE),
-]
-
 FLAKY_SOURCE = """
+import json
 import os
 import random
-import sys
 
 seed = int(os.environ["FIXTURE_SEED"])
 tick = int(os.environ["FIXED_CLOCK_TICK"])
+order_mode = os.environ["ORDER_MODE"]
 operations = ["reserve", "commit"]
-random.Random(seed).shuffle(operations)
+if order_mode == "seeded":
+    random.Random(seed).shuffle(operations)
+elif order_mode == "reverse":
+    operations.reverse()
+elif order_mode != "correct":
+    raise ValueError("unknown order mode")
 passed = operations == ["reserve", "commit"] and tick % 2 == 0
-print("pass" if passed else "fail")
+print(json.dumps({"order": operations, "outcome": "pass" if passed else "fail"}))
 raise SystemExit(0 if passed else 1)
 """
-Path("flaky_fixture.py").write_text(FLAKY_SOURCE, encoding="utf-8")
-seed_sequence = [11, 12, 13, 14]
-outcomes = []
-for seed in seed_sequence:
-    controlled_environment = {
-        "PATH": os.environ.get("PATH", ""),
-        "FIXTURE_SEED": str(seed),
-        "FIXED_CLOCK_TICK": str(seed),
-    }
-    observed = execute(
-        [sys.executable, "flaky_fixture.py"],
-        controlled_environment,
-    )
-    outcomes.append(observed.stdout.strip())
 
-Path("order_discount.py").write_text(MUTANT_SOURCE, encoding="utf-8")
-mutation_result = execute(TEST_COMMAND)
-green_passed = phases[1]["returncode"] == 0
-report = {
-    "harness": HARNESS,
-    "fixture": "order-discount-v1",
-    "phases": phases,
-    "strategy_evidence": [
-        {
+def execute_schedule(workspace, seed, tick, order_mode):
+    environment = {
+        "PATH": os.environ.get("PATH", ""),
+        "PYTHONHASHSEED": "0",
+        "FIXTURE_SEED": str(seed),
+        "FIXED_CLOCK_TICK": str(tick),
+        "ORDER_MODE": order_mode,
+    }
+    result = execute(
+        [sys.executable, "flaky_fixture.py"],
+        workspace,
+        environment,
+    )
+    observation = json.loads(result.stdout)
+    return {
+        "seed": seed,
+        "clock_tick": tick,
+        "order_mode": order_mode,
+        "order": observation["order"],
+        "outcome": observation["outcome"],
+        "returncode": result.returncode,
+    }
+
+with TemporaryDirectory(prefix="test-strategy-lab-") as workspace_text:
+    workspace = Path(workspace_text).resolve(strict=True)
+    (workspace / f"{TEST_MODULE}.py").write_text(
+        TEST_SOURCE,
+        encoding="utf-8",
+    )
+    phases = [
+        phase("RED", RED_SOURCE, workspace),
+        phase("GREEN", GREEN_SOURCE, workspace),
+        phase("REFACTOR", REFACTOR_SOURCE, workspace),
+    ]
+    assert [item["returncode"] for item in phases] == [1, 0, 0]
+    assert "NotImplementedError: total is not implemented" in (
+        phases[0]["failure_reason"]
+    )
+
+    (workspace / "order_discount.py").write_text(
+        REFACTOR_SOURCE,
+        encoding="utf-8",
+    )
+    boundaries = {
+        "unit": "pure-function",
+        "integration": "stdlib-sqlite-repository-adapter",
+        "contract": "consumer-provider-schema-and-semantics",
+        "property": "bounded-exhaustive",
+        "metamorphic": "input-transformation-relation",
+    }
+    evidence_text = {
+        "unit": "150 at 10 percent produces 135",
+        "integration": "SQLite in-memory repository round trip",
+        "contract": "schema types and semantic total agree",
+        "property": "21x21x5 bounded input combinations",
+        "metamorphic": "permutation and zero item preserve total",
+    }
+    strategy_evidence = []
+    for kind, test_id in TEST_IDS.items():
+        command, result = execute_test(test_id, workspace)
+        item = {
             "kind": kind,
-            "passed": green_passed,
-            "evidence": "DiscountTests.test_" + kind,
+            "test_id": test_id,
+            "command": command,
+            "returncode": result.returncode,
+            "passed": result.returncode == 0,
+            "boundary": boundaries[kind],
+            "evidence": evidence_text[kind],
         }
-        for kind in ("unit", "integration", "contract", "property", "metamorphic")
-    ],
-    "nondeterministic_defect": {
-        "seed_sequence": seed_sequence,
-        "outcomes": outcomes,
-        "root_cause": "order-and-clock-coupling",
-    },
-    "mutation": {
-        "source_sha256": sha256_text(MUTANT_SOURCE),
-        "returncode": mutation_result.returncode,
-        "killed": mutation_result.returncode != 0,
-    },
-    "external_network_used": False,
-}
-print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+        if kind == "property":
+            item["generation"] = "bounded-exhaustive"
+            item["case_count"] = 21 * 21 * 5
+        if kind == "metamorphic":
+            item["relation"] = (
+                "permutation-and-zero-item-preserve-total"
+            )
+        strategy_evidence.append(item)
+    assert all(item["passed"] for item in strategy_evidence)
+
+    (workspace / "flaky_fixture.py").write_text(
+        FLAKY_SOURCE,
+        encoding="utf-8",
+    )
+    seed_sequence = [11, 12, 13, 14]
+    schedules = [
+        execute_schedule(workspace, seed, seed, "seeded")
+        for seed in seed_sequence
+    ]
+    fixed_order_variable_clock = [
+        execute_schedule(workspace, 11, tick, "correct")["outcome"]
+        for tick in (2, 3)
+    ]
+    fixed_clock_variable_order = [
+        execute_schedule(workspace, 11, 2, order_mode)["outcome"]
+        for order_mode in ("correct", "reverse")
+    ]
+
+    (workspace / "order_discount.py").write_text(
+        MUTANT_SOURCE,
+        encoding="utf-8",
+    )
+    mutation_test_id = TEST_IDS["integration"]
+    mutation_command, mutation_result = execute_test(
+        mutation_test_id,
+        workspace,
+    )
+    assert mutation_result.returncode != 0
+    report = {
+        "harness": HARNESS,
+        "fixture": "order-discount-v1",
+        "workspace": {
+            "temporary_directory_used": True,
+            "all_subprocesses_used_workspace_cwd": True,
+            "explicit_test_ids": list(TEST_IDS.values()),
+        },
+        "phases": phases,
+        "strategy_evidence": strategy_evidence,
+        "nondeterministic_defect": {
+            "seed_sequence": seed_sequence,
+            "schedules": schedules,
+            "outcomes": [item["outcome"] for item in schedules],
+            "isolation": {
+                "fixed_order_variable_clock": (
+                    fixed_order_variable_clock
+                ),
+                "fixed_clock_variable_order": (
+                    fixed_clock_variable_order
+                ),
+            },
+            "root_cause": "order-and-clock-coupling",
+        },
+        "mutation": {
+            "source_sha256": sha256_text(MUTANT_SOURCE),
+            "test_id": mutation_test_id,
+            "command": mutation_command,
+            "returncode": mutation_result.returncode,
+            "failure_reason": mutation_result.stderr,
+            "killed": mutation_result.returncode != 0,
+        },
+        "external_network_used": False,
+    }
+    print(json.dumps(report, ensure_ascii=False, sort_keys=True))
 PY</code></pre>
 </section>
 <section id="tradeoffs">

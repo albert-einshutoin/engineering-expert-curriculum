@@ -81,11 +81,11 @@
     "title": "割引計算をREDからmutation killまで証明する",
     "artifact": "RED-GREEN-REFACTOR履歴とリスク別テスト戦略",
     "steps": [
-      "割引要求を単体・統合・契約・性質・メタモルフィックの五テストへ変換し、未実装で失敗するREDをsubprocessで記録する",
-      "最小実装で五テストが成功するGREENを記録し、振る舞い出力のhashを保存する",
-      "入力検証を分離するREFACTOR後も同じbehavior hashと成功を記録する",
-      "固定seedと固定時計を変えた四実行で順序・時刻依存のpassとfailを再現する",
-      "割引式を意図的に変えた安全なmutantを実行し、既存テストが失敗してmutationをkillすることを確認する"
+      "harness自身が作る専用一時workspaceで、明示した単体test IDをNotImplementedErrorの未実装へ実行し、期待したfailure reasonを持つREDを記録する",
+      "最小実装のGREENと入力検証を分離したREFACTORへ同じ単体test IDを個別subprocessで実行し、source hashの差とbehavior hashの一致を保存する",
+      "純粋関数、stdlib SQLite repository adapter、consumer-provider schemaと意味、2205件のbounded exhaustive property、入力変換metamorphic関係を別test ID・別subprocessで実行する",
+      "固定seed・schedule・時計を組み合わせ、順序だけと時計だけを変える対照実験で非決定的障害のpassとfailを切り分ける",
+      "割引式を意図的に変えた安全なproduction mutantをSQLite integration test IDで実行し、AssertionErrorでkillした証拠を記録する"
     ]
   },
   "teachBack": "6分で、REDを先に観測する意味、coverageが正しさを保証しない理由、TDDだけでは契約・統合・運用リスクを覆えない理由を説明する。",
@@ -106,8 +106,8 @@
       "levels": {
         "incomplete": "失敗を観測せず、実装後に常に成功するテストだけを書く",
         "developing": "REDとGREENはあるが、refactor後の振る舞い同一性またはmutation感度を確かめない",
-        "proficient": "三段階を別実行で記録し、五技法とmutationで要求と失敗を検証する",
-        "exemplary": "oracleの限界、flakiness、contract version、実行環境差まで反証条件に含める"
+        "proficient": "未実装REDを確認し、三段階と五つの固有境界を明示test ID・隔離workspaceで別実行し、mutationで感度を検証する",
+        "exemplary": "oracleの限界、ambient discovery、symlink、flakiness、contract version、実行環境差まで反証条件に含める"
       }
     },
     {
@@ -124,7 +124,7 @@
       "levels": {
         "incomplete": "greenという画面だけを示し、実行commandや失敗履歴を残さない",
         "developing": "return codeはあるが、source、振る舞い、再現条件を相関できない",
-        "proficient": "command、return code、source hash、behavior hash、seed、mutation結果を保存する",
+        "proficient": "test ID、専用cwd、command、return code、failure reason、source hash、behavior hash、seed、schedule、mutation結果を保存する",
         "exemplary": "証拠を要求・risk・変更commitへ追跡し、再実行可能なfixtureとして公開する"
       }
     },
