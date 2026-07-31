@@ -10,7 +10,7 @@ ContributorはIssue、教材、コード、出典、翻訳、レビューfinding
 
 ### Reviewer
 
-Reviewerは、技術的正確性、学習設計・証拠、アクセシビリティ、編集・出典のうち、明示された観点を独立して評価します。承認は観点とcommitを限定し、未確認領域を承認したことにしません。各記録で`reviewerKind`を開示し、AI支援または自動結果をhuman approvalとして扱いません。
+Reviewerは、技術的正確性、学習設計・証拠、アクセシビリティ、編集・出典のうち、明示された観点を評価します。別のReviewerが担当した場合だけ独立reviewと呼び、承認は観点とcommitを限定し、未確認領域を承認したことにしません。各記録で`reviewerKind`を開示し、AI支援または自動結果をhuman approvalとして扱いません。
 
 継続的にReviewerとなる候補は、少なくとも3件の受理済み貢献と、finding、author fix、再確認を含む1件の文書化されたレビューを示します。Maintainerは公開Issueで対象観点、根拠、権限範囲を記録して任命します。
 
@@ -18,7 +18,7 @@ Reviewerは、技術的正確性、学習設計・証拠、アクセシビリテ
 
 Maintainerはscope、security、release、governance、役割付与、最終的なmerge判断に責任を持ちます。CI成功だけで公開を決めず、4つのreview dimensions、残余risk、ライセンス、出典、対象commitを確認し、決定理由をPull Requestまたはdecision recordへ残します。
 
-Maintainerは自分の変更を単独で最終承認しません。緊急の安全修正で独立Reviewを待てない場合は、公開範囲を縮小する可逆な措置を選び、理由、期限、事後Reviewを記録します。
+初期運営は単独Maintainerの**Model B**です。別の適格なhuman reviewerを確保できない場合、authenticated Maintainerは自分の変更についても、対象commit、4観点、`reviewerKind`、独立human approvalがない事実、残余risk、未解決threadの解消を公開記録したうえで最終判断できます。存在しない独立承認を偽装しません。複数の適格なMaintainerまたはReviewerが継続参加できる状態になったら、著者以外が最終承認するModel Aへの移行を公開Issueで決定します。
 
 ## 意思決定
 
@@ -26,7 +26,7 @@ Maintainerは自分の変更を単独で最終承認しません。緊急の安�
 
 議論は合理的な期間のlazy consensusを目指します。合意できない場合、担当Maintainerが利用者影響、可逆性、証拠、代替案、反対意見を要約して決定します。決定は将来の証拠で再検討でき、権威だけを根拠に固定しません。
 
-Releaseには、全検証、決定的build、security/accessibility確認、必要なhuman review、変更履歴、Maintainerのcommit単位の公開判断が必要です。構造上の`complete`や`automated`結果だけでは公開できません。
+Releaseには、全検証、決定的build、security/accessibility確認、変更履歴、authenticated Maintainerのcommit単位の公開判断が必要です。Model Bでは独立human approvalの有無と`reviewerKind`を正直に開示し、構造上の`complete`や`automated`結果だけでは公開できません。
 
 ## 利益相反
 

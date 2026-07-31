@@ -18,7 +18,7 @@ Engineering Expert Curriculumへの貢献を歓迎します。小さな誤字修
 
 標準の流れは次のとおりです。
 
-> Issue → feature branch → RED → GREEN → REFACTOR → full validation → self-review → Pull Request → required review/CI → squash merge → branch cleanup
+> Issue → feature branch → RED → GREEN → REFACTOR → full validation → self-review → Pull Request → required review/CI → merge commit → branch cleanup
 
 短く表すと、`Issue → feature branch → RED → GREEN → REFACTOR`を繰り返します。
 
@@ -59,7 +59,7 @@ CS2023、SWEBOK V4.0a、SFIA 9のmappingを変える場合は、対象だけで�
 
 ## 4つのreview dimensions
 
-公開可能性は、次の4観点を独立して確認します。一人が複数観点を担当しても、finding、author fix、再確認結果は観点ごとに記録します。
+公開可能性は、次の4観点を分離して確認します。一人が複数観点を担当しても、finding、author fix、再確認結果は観点ごとに記録します。
 
 | 観点 | 確認する責任 |
 |---|---|
@@ -68,7 +68,9 @@ CS2023、SWEBOK V4.0a、SFIA 9のmappingを変える場合は、対象だけで�
 | アクセシビリティ | semantic HTML、keyboard、読み順、zoom、contrast、print |
 | 編集・出典 | 用語、断定範囲、版、引用、link、Errata履歴 |
 
-各review記録は`reviewerKind`を`human`、`ai-assisted`、`automated`のいずれかで開示します。AI支援または自動レビューはhuman approvalに数えません。著者のself-reviewは必須ですが、4観点の独立した承認を置き換えません。重大な修正後は、修正後のcommitを再評価します。
+各review記録は`reviewerKind`を`human`、`ai-assisted`、`automated`のいずれかで開示します。AI支援または自動レビューをhuman approvalと偽りません。重大な修正後は、修正後のcommitを再評価します。
+
+初期運営は単独Maintainerを前提にした**Model B**です。独立reviewerがいない場合、authenticated Maintainerは対象commit、4観点の結果、`reviewerKind`、独立human approvalがない事実、残余risk、未解決threadが0件であることをPull Requestへ記録して公開判断します。これは独立reviewを受けたという主張ではありません。適格な別のhuman reviewerが参加できる場合は独立reviewを依頼し、得られた範囲だけを記録します。
 
 ## Pull Requestの内容
 
@@ -82,4 +84,4 @@ CS2023、SWEBOK V4.0a、SFIA 9のmappingを変える場合は、対象だけで�
 - 教材なら、出典、evidence、4つのreview dimensions、`reviewerKind`。
 - OSSとして再利用、理解、保守をどう改善するか。
 
-Maintainerによる明示的な公開判断と必須CIが揃うまでmergeしません。承認は対象commitにのみ有効で、後続commitへ自動継承しません。
+authenticated Maintainerによるcommit単位の明示的な公開判断、必須CI、未解決thread 0件が揃うまでmergeしません。Model Bで独立human approvalがない場合は、その不在を明記し、存在しない承認を後続commitへ継承したことにしません。

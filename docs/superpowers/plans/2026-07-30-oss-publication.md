@@ -150,8 +150,12 @@ content status meaning, capstone evidence, contribution links, security route,
 license, and acknowledgement that framework names belong to their respective
 owners.
 
-`CITATION.cff` uses version `0.1.0`, release date `2026-07-30`, MIT license,
-repository title, and `authors: [{name: "Engineering Expert Curriculum contributors"}]`.
+Before the public release exists, `CITATION.cff` identifies the upcoming
+version `0.1.0` without `date-released`; `CHANGELOG.md` keeps the initial
+release notes under `Unreleased`. The release metadata PR in Task 10 adds the
+actual release date immediately before the tag is created. Citation metadata
+also uses the MIT license, repository title, and
+`authors: [{name: "Engineering Expert Curriculum contributors"}]`.
 
 - [ ] **Step 4: Run the focused identity assertions**
 
@@ -204,7 +208,7 @@ def test_operating_docs_define_required_decisions(self) -> None:
         "ERRATA.md": (
             "critical", "substantive", "editorial", "correction history",
         ),
-        "CHANGELOG.md": ("Unreleased", "0.1.0"),
+        "CHANGELOG.md": ("Unreleased", "1,140"),
     }
     for relative, phrases in expectations.items():
         text = Path(relative).read_text(encoding="utf-8")
@@ -239,10 +243,12 @@ It also defines four review roles for a complete lesson:
 4. Editorial and source reviewer
 
 `GOVERNANCE.md` makes maintainers accountable for safety and release decisions,
-reviewers accountable only for the dimension they approve, and contributors
-eligible to become reviewers through three accepted contributions plus a
-documented review. Framework upgrades require an issue, impact matrix, mapping
-PR, and release note.
+uses truthful Model B governance while only one authenticated Maintainer is
+available, makes reviewers accountable only for the dimension they actually
+review, and never represents AI-assisted or automated review as independent
+human approval. Contributors become eligible to be reviewers through three
+accepted contributions plus a documented review. Framework upgrades require
+an issue, impact matrix, mapping PR, and release note.
 
 `SECURITY.md` supports only the latest `main`/release, directs reporters to the
 GitHub Security tab's private advisory flow, prohibits public vulnerability
@@ -258,9 +264,10 @@ an unsafe fixed deadline, and explains that the site stores no learner data.
 - Editorial: wording, typography, or dead link without meaning change; require
   one reviewer.
 
-`CODE_OF_CONDUCT.md` adopts Contributor Covenant 2.1 by reference and names
-GitHub private maintainer contact as the enforcement route. `CHANGELOG.md`
-contains `Unreleased` and `0.1.0` sections following Keep a Changelog structure.
+`CODE_OF_CONDUCT.md` adopts Contributor Covenant 2.1 by reference, truthfully
+states that no confidential project conduct channel exists yet, and identifies
+GitHub Report Abuse as a platform route rather than project enforcement.
+Before release, `CHANGELOG.md` keeps the initial notes under `Unreleased`.
 
 - [ ] **Step 4: Run all repository-contract tests**
 
@@ -559,7 +566,7 @@ Run:
 ```bash
 python3 -m unittest tests.test_site_checker tests.test_accessibility_contract -v
 python3 tools/build.py
-python3 tools/check_site.py site
+python3 tools/check_site.py --root site --require-current-release
 ```
 
 Expected: tests pass and checker exits zero with no output.
@@ -645,7 +652,7 @@ Run:
 ```bash
 python3 -m unittest tests.test_repository_security tests.test_html_safety -v
 python3 tools/build.py
-python3 tools/check_site.py site
+python3 tools/check_site.py --root site --require-current-release
 git status --ignored --short | sed -n '1,80p'
 ```
 
@@ -736,7 +743,7 @@ jobs:
       - name: Build static site
         run: python tools/build.py
       - name: Validate static artifact
-        run: python tools/check_site.py site
+        run: python tools/check_site.py --root site --require-current-release
       - name: Verify reproducible output
         run: |
           find site -type f -exec sha256sum {} + | sort > /tmp/build-1.sha256
@@ -797,8 +804,8 @@ git commit -m "ci: validate curriculum with least privilege"
 def test_pages_workflow_builds_before_upload_and_limits_write_permissions(self) -> None:
     text = Path(".github/workflows/pages.yml").read_text(encoding="utf-8")
     self.assertIn("python -m unittest discover -s tests -v", text)
-    self.assertIn("python tools/check_site.py site", text)
-    self.assertLess(text.index("python tools/check_site.py site"), text.index("upload-pages-artifact"))
+    self.assertIn("python tools/check_site.py --root site --require-current-release", text)
+    self.assertLess(text.index("python tools/check_site.py --root site --require-current-release"), text.index("upload-pages-artifact"))
     self.assertIn("pages: write", text)
     self.assertIn("id-token: write", text)
     self.assertIn("environment:\n      name: github-pages", text)
@@ -889,7 +896,7 @@ git commit -m "ci: deploy only verified static Pages artifact"
 ### Task 8: Perform local release validation and visual/accessibility review
 
 **Files:**
-- Create: `docs/reviews/2026-07-30-release-readiness.md`
+- Create: `docs/reviews/2026-07-31-release-readiness.md`
 
 - [ ] **Step 1: Run the complete clean build**
 
@@ -899,7 +906,7 @@ Run:
 python3 -m compileall -q curriculum_builder tools tests
 python3 -m unittest discover -s tests -v
 python3 tools/build.py
-python3 tools/check_site.py site
+python3 tools/check_site.py --root site --require-current-release
 ```
 
 Expected: every command exits zero.
@@ -935,8 +942,14 @@ Run:
 
 ```bash
 git diff main...HEAD --check
-git grep -nE 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|ghp_|github_pat_|sk-(proj-)?' \
-  -- . ':(exclude)docs/superpowers/plans/*' || true
+if git grep --quiet -E 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|ghp_|github_pat_|sk-(proj-)?' \
+  -- . ':(exclude)docs/superpowers/plans/*'; then
+  echo "potential secret marker found; stop publication" >&2
+  exit 1
+else
+  grep_status=$?
+  test "$grep_status" -eq 1
+fi
 git log --oneline --decorate main..HEAD
 ```
 
@@ -947,7 +960,7 @@ whether every commit is independently understandable.
 - [ ] **Step 5: Commit review evidence and fixes**
 
 ```bash
-git add docs/reviews/2026-07-30-release-readiness.md static templates tests
+git add docs/reviews/2026-07-31-release-readiness.md static templates tests
 git commit -m "docs: record static curriculum release evidence"
 ```
 
@@ -965,9 +978,21 @@ review document.
 Run:
 
 ```bash
+set -euo pipefail
 PUBLIC_OWNER="$(gh api user --jq '.login')"
+PUBLIC_ACCOUNT_ID="$(gh api user --jq '.id | tostring')"
 test -n "$PUBLIC_OWNER"
-gh repo view engineering-expert-curriculum --json nameWithOwner,visibility 2>/dev/null || true
+test -n "$PUBLIC_ACCOUNT_ID"
+PUBLIC_REPOSITORY_SLUG="${PUBLIC_OWNER}/engineering-expert-curriculum"
+test "$PUBLIC_REPOSITORY_SLUG" = "${PUBLIC_OWNER}/engineering-expert-curriculum"
+if REPOSITORY_PROBE="$(gh api --include "repos/$PUBLIC_REPOSITORY_SLUG" 2>&1)"; then
+  echo "repository already exists; inspect it instead of overwriting" >&2
+  exit 1
+else
+  probe_status=$?
+  test "$probe_status" -eq 1
+  printf '%s\n' "$REPOSITORY_PROBE" | grep -Eq '^HTTP/[0-9.]+ 404 Not Found$'
+fi
 ```
 
 Expected: authenticated login is returned; no existing repository is found. If
@@ -986,6 +1011,44 @@ initialize: false
 ```
 
 Expected: one empty public repository owned by the authenticated account.
+Immediately verify its exact identity, enable the only private security-report
+route, and provision the labels referenced by the issue forms. All commands
+are scoped to the previously verified slug; failure of any command stops before
+the first content push.
+
+```bash
+set -euo pipefail
+REPOSITORY_NAME_WITH_OWNER="$(gh api "repos/$PUBLIC_REPOSITORY_SLUG" --jq '.full_name')"
+REPOSITORY_VISIBILITY="$(gh api "repos/$PUBLIC_REPOSITORY_SLUG" --jq '.visibility')"
+REPOSITORY_SIZE="$(gh api "repos/$PUBLIC_REPOSITORY_SLUG" --jq '.size')"
+test "$REPOSITORY_NAME_WITH_OWNER" = "$PUBLIC_REPOSITORY_SLUG"
+test "$REPOSITORY_VISIBILITY" = "public"
+test "$REPOSITORY_SIZE" = "0"
+# The verified response binds nameWithOwner to "$PUBLIC_REPOSITORY_SLUG".
+gh api --method PUT "repos/$PUBLIC_REPOSITORY_SLUG/private-vulnerability-reporting"
+PRIVATE_REPORTING_STATUS="$(gh api --include \
+  "repos/$PUBLIC_REPOSITORY_SLUG/private-vulnerability-reporting")"
+printf '%s\n' "$PRIVATE_REPORTING_STATUS" | \
+  grep -Eq '^HTTP/[0-9.]+ 204 No Content$'
+
+gh label create code --repo "$PUBLIC_REPOSITORY_SLUG" --color 1d76db \
+  --description "Changes to build, validation, or repository code" --force
+gh label create content --repo "$PUBLIC_REPOSITORY_SLUG" --color 0e8a16 \
+  --description "Curriculum content additions or improvements" --force
+gh label create correction --repo "$PUBLIC_REPOSITORY_SLUG" --color d73a4a \
+  --description "Verified corrections and errata" --force
+gh label create framework-update --repo "$PUBLIC_REPOSITORY_SLUG" --color 5319e7 \
+  --description "Versioned CS2023, SWEBOK, or SFIA updates" --force
+PUBLIC_LABELS="$(gh label list --repo "$PUBLIC_REPOSITORY_SLUG" \
+  --limit 100 --json name --jq 'map(.name) | sort | .[]')"
+for required_label in code content correction framework-update; do
+  printf '%s\n' "$PUBLIC_LABELS" | grep -Fqx "$required_label"
+done
+```
+
+Expected: the exact repository is empty and public, private vulnerability
+reporting returns success, and all four template labels exist. Do not continue
+if the security route cannot be verified.
 
 - [ ] **Step 3: Build a sanitized two-ref publication clone**
 
@@ -999,7 +1062,9 @@ REPO_ROOT="${REPO_ROOT:?set REPO_ROOT to the original main checkout}"
 FEATURE_WORKTREE="${FEATURE_WORKTREE:?set FEATURE_WORKTREE to the reviewed feature checkout}"
 PUBLICATION_CLONE="${REPO_ROOT}-public"
 PUBLIC_OWNER="${PUBLIC_OWNER:?set PUBLIC_OWNER to the login verified in Step 1}"
-PUBLIC_REPOSITORY="https://github.com/${PUBLIC_OWNER}/engineering-expert-curriculum.git"
+PUBLIC_ACCOUNT_ID="${PUBLIC_ACCOUNT_ID:?set PUBLIC_ACCOUNT_ID to the id verified in Step 1}"
+PUBLIC_REPOSITORY_SLUG="${PUBLIC_REPOSITORY_SLUG:?set the exact slug verified in Step 2}"
+PUBLIC_REPOSITORY="https://github.com/${PUBLIC_REPOSITORY_SLUG}.git"
 test "$FEATURE_WORKTREE" != "$REPO_ROOT"
 test ! -e "$PUBLICATION_CLONE"
 git clone --no-local --no-checkout --single-branch --branch main "$REPO_ROOT" "$PUBLICATION_CLONE"
@@ -1023,6 +1088,7 @@ rules:
 ```text
 regex:/(?:Volumes)/[^/]+/Developer/engineering-expert-curriculum-worktrees/static-oss-curriculum==>$FEATURE_WORKTREE
 regex:/(?:Volumes)/[^/]+/Developer/engineering-expert-curriculum==>$REPO_ROOT
+regex:/(?:Volumes)/[^/]+/==>$VOLUME_ROOT/
 regex:/(?:Users)/[^/]+/\.pyenv/versions/[0-9.]+/bin/python3\.13==>python3.13
 regex:/(?:Users)/[^/]+/==>$USER_HOME/
 ```
@@ -1035,7 +1101,9 @@ ID or login. Then rewrite exactly the two public refs:
 
 ```bash
 export PUBLIC_AUTHOR_NAME="Engineering Expert Curriculum contributors"
-test -n "$PUBLIC_NOREPLY_EMAIL"
+EXPECTED_NOREPLY_EMAIL="${PUBLIC_ACCOUNT_ID}+${PUBLIC_OWNER}@users.noreply.github.com"
+PUBLIC_NOREPLY_EMAIL="${PUBLIC_NOREPLY_EMAIL:?copy the verified GitHub noreply address}"
+test "$PUBLIC_NOREPLY_EMAIL" = "$EXPECTED_NOREPLY_EMAIL"
 git -C "$PUBLICATION_CLONE" filter-repo --force \
   --refs refs/heads/main refs/heads/feat/static-oss-curriculum \
   --replace-text "$REPLACEMENTS_FILE" \
@@ -1061,6 +1129,7 @@ Perform every gate in the isolated clone before creating or pushing to the
 public repository:
 
 ```bash
+set -euo pipefail
 git -C "$PUBLICATION_CLONE" for-each-ref --format='%(refname)' \
   refs/heads refs/tags refs/remotes
 test "$(git -C "$PUBLICATION_CLONE" for-each-ref --format='%(refname)' \
@@ -1072,15 +1141,38 @@ git -C "$PUBLICATION_CLONE" log \
 test "$(git -C "$PUBLICATION_CLONE" log \
   refs/heads/main refs/heads/feat/static-oss-curriculum \
   --format='%ae%n%ce' | LC_ALL=C sort -u)" = "$PUBLIC_NOREPLY_EMAIL"
-git -C "$PUBLICATION_CLONE" log \
+PRIVATE_TEXT_PATTERN='/(Users)/|/(Volumes)/|[[:alnum:]._%+-]+@[[:alnum:].-]+\.[[:alpha:]]{2,}'
+if git -C "$PUBLICATION_CLONE" log \
   refs/heads/main refs/heads/feat/static-oss-curriculum --format='%B' | \
-  grep -E '/(Users)/|/(Volumes)/Satechi|[[:alnum:]._%+-]+@[[:alnum:].-]+\.[[:alpha:]]{2,}' \
-  && exit 1 || true
-git -C "$PUBLICATION_CLONE" grep -n -E \
-  '/(Users)/|/(Volumes)/Satechi|[[:alnum:]._%+-]+@[[:alnum:].-]+\.[[:alpha:]]{2,}' \
-  "$(git -C "$PUBLICATION_CLONE" rev-list refs/heads/main refs/heads/feat/static-oss-curriculum)" \
-  && exit 1 || true
-gitleaks git --redact --no-banner --exit-code 1 \
+  grep -Eq "$PRIVATE_TEXT_PATTERN"; then
+  echo "private text found in rewritten commit messages" >&2
+  exit 1
+else
+  grep_status=$?
+  test "$grep_status" -eq 1
+fi
+while IFS= read -r commit_sha; do
+  if (cd "$PUBLICATION_CLONE" && git grep --quiet -I -E \
+    "$PRIVATE_TEXT_PATTERN" "$commit_sha" --); then
+    echo "private text found in rewritten history" >&2
+    exit 1
+  else
+    git_grep_status=$?
+    test "$git_grep_status" -eq 1
+  fi
+done < <(git -C "$PUBLICATION_CLONE" rev-list \
+  refs/heads/main refs/heads/feat/static-oss-curriculum)
+
+GITLEAKS_DIR="$(mktemp -d /tmp/gitleaks-publication.XXXXXX)"
+GITLEAKS_ARCHIVE="$GITLEAKS_DIR/gitleaks_8.30.1_darwin_arm64.tar.gz"
+chmod 700 "$GITLEAKS_DIR"
+curl --fail --location --proto '=https' --tlsv1.2 --output "$GITLEAKS_ARCHIVE" \
+  https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_darwin_arm64.tar.gz
+printf '%s  %s\n' \
+  b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5 \
+  "$GITLEAKS_ARCHIVE" | shasum -a 256 -c -
+tar --extract --gzip --file "$GITLEAKS_ARCHIVE" --directory "$GITLEAKS_DIR" gitleaks
+"$GITLEAKS_DIR/gitleaks" git --redact --no-banner --exit-code 1 \
   --log-opts="refs/heads/main refs/heads/feat/static-oss-curriculum" \
   "$PUBLICATION_CLONE"
 git -C "$PUBLICATION_CLONE" switch feat/static-oss-curriculum
@@ -1088,6 +1180,15 @@ git -C "$PUBLICATION_CLONE" switch feat/static-oss-curriculum
 (cd "$PUBLICATION_CLONE" && python3.13 tools/generate_curriculum_map.py --check)
 (cd "$PUBLICATION_CLONE" && python3.13 tools/build.py)
 (cd "$PUBLICATION_CLONE" && python3.13 tools/check_site.py --root site --require-current-release)
+PREFLIGHT_MAIN_SHA="$(git -C "$PUBLICATION_CLONE" rev-parse refs/heads/main)"
+PREFLIGHT_FEATURE_SHA="$(git -C "$PUBLICATION_CLONE" rev-parse \
+  refs/heads/feat/static-oss-curriculum)"
+PREFLIGHT_PAYLOAD="$(printf '%s\n%s' \
+  "refs/heads/main=$PREFLIGHT_MAIN_SHA" \
+  "refs/heads/feat/static-oss-curriculum=$PREFLIGHT_FEATURE_SHA")"
+PUBLICATION_PREFLIGHT_TOKEN="$PUBLICATION_CLONE/.git/publication-preflight-token"
+umask 077
+printf '%s' "$PREFLIGHT_PAYLOAD" > "$PUBLICATION_PREFLIGHT_TOKEN"
 ```
 
 Expected: local heads are exactly `main` and `feat/static-oss-curriculum`, with
@@ -1103,6 +1204,20 @@ Only after the repository-name check, rewrite verification, and public
 repository creation succeed, add the public remote inside the isolated clone:
 
 ```bash
+set -euo pipefail
+PREFLIGHT_MAIN_SHA="$(git -C "$PUBLICATION_CLONE" rev-parse refs/heads/main)"
+PREFLIGHT_FEATURE_SHA="$(git -C "$PUBLICATION_CLONE" rev-parse \
+  refs/heads/feat/static-oss-curriculum)"
+PREFLIGHT_PAYLOAD="$(printf '%s\n%s' \
+  "refs/heads/main=$PREFLIGHT_MAIN_SHA" \
+  "refs/heads/feat/static-oss-curriculum=$PREFLIGHT_FEATURE_SHA")"
+PUBLICATION_PREFLIGHT_TOKEN="$PUBLICATION_CLONE/.git/publication-preflight-token"
+test -f "$PUBLICATION_PREFLIGHT_TOKEN"
+test "$(cat "$PUBLICATION_PREFLIGHT_TOKEN")" = "$PREFLIGHT_PAYLOAD"
+PRIVATE_REPORTING_STATUS="$(gh api --include \
+  "repos/$PUBLIC_REPOSITORY_SLUG/private-vulnerability-reporting")"
+printf '%s\n' "$PRIVATE_REPORTING_STATUS" | \
+  grep -Eq '^HTTP/[0-9.]+ 204 No Content$'
 git -C "$PUBLICATION_CLONE" remote add public "$PUBLIC_REPOSITORY"
 git -C "$PUBLICATION_CLONE" push --set-upstream public \
   refs/heads/main:refs/heads/main \
@@ -1146,6 +1261,16 @@ Python標準ライブラリによる決定的ビルドを採用し、外部依�
 CIで同じ基準を再現できます。
 ```
 
+Save that body as `/tmp/engineering-curriculum-pr.md`, then run:
+
+```bash
+PUBLIC_PR_URL="$(gh pr create --repo "$PUBLIC_REPOSITORY_SLUG" --base main \
+  --head "${PUBLIC_OWNER}:feat/static-oss-curriculum" \
+  --title "feat: publish the static expert curriculum" \
+  --body-file /tmp/engineering-curriculum-pr.md)"
+test -n "$PUBLIC_PR_URL"
+```
+
 Expected: one open PR targeting `main`.
 
 - [ ] **Step 7: Confirm remote state**
@@ -1153,8 +1278,9 @@ Expected: one open PR targeting `main`.
 Run:
 
 ```bash
-gh pr view --json number,url,state,baseRefName,headRefName,isDraft,mergeable
-gh pr checks --watch
+gh pr view "$PUBLIC_PR_URL" --repo "$PUBLIC_REPOSITORY_SLUG" \
+  --json number,url,state,baseRefName,headRefName,isDraft,mergeable
+gh pr checks "$PUBLIC_PR_URL" --repo "$PUBLIC_REPOSITORY_SLUG" --watch
 ```
 
 Expected: PR is open, not draft, targets `main`, and every check is successful.
@@ -1171,8 +1297,10 @@ Expected: PR is open, not draft, targets `main`, and every check is successful.
 Run:
 
 ```bash
-gh pr diff --color=never > /tmp/engineering-curriculum-pr.diff
-gh pr view --json files,commits,reviews,reviewDecision,mergeable,statusCheckRollup
+gh pr diff "$PUBLIC_PR_URL" --repo "$PUBLIC_REPOSITORY_SLUG" --color=never \
+  > /tmp/engineering-curriculum-pr.diff
+gh pr view "$PUBLIC_PR_URL" --repo "$PUBLIC_REPOSITORY_SLUG" \
+  --json files,commits,reviews,reviewDecision,mergeable,statusCheckRollup
 ```
 
 Review the remote diff for content accuracy, test adequacy, source and framework
@@ -1181,6 +1309,40 @@ accessibility, documentation consistency, and OSS value. Fix findings on the
 source feature branch with a failing regression test first, rebuild a fresh
 sanitized publication clone, repush the same two explicit refs, and wait for
 checks.
+
+For Model B, verify the reviewed commit and unresolved threads from the exact
+repository, then publish a truthful authenticated Maintainer decision. Do not
+select `human` unless a human actually performed that review.
+
+```bash
+PR_NUMBER="$(gh pr view "$PUBLIC_PR_URL" --repo "$PUBLIC_REPOSITORY_SLUG" \
+  --json number --jq '.number')"
+PR_HEAD_SHA="$(gh pr view "$PUBLIC_PR_URL" --repo "$PUBLIC_REPOSITORY_SLUG" \
+  --json headRefOid --jq '.headRefOid')"
+test -n "$PR_NUMBER"
+test -n "$PR_HEAD_SHA"
+THREAD_STATE="$(gh api graphql \
+  -F owner="${PUBLIC_REPOSITORY_SLUG%%/*}" \
+  -F name="${PUBLIC_REPOSITORY_SLUG#*/}" -F number="$PR_NUMBER" \
+  -f query='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{isResolved}pageInfo{hasNextPage}}}}}' \
+  --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length | tostring + ":" + (.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage | tostring)')"
+test "$THREAD_STATE" = "0:false"
+REVIEWER_KIND="${REVIEWER_KIND:?set human, ai-assisted, or automated truthfully}"
+case "$REVIEWER_KIND" in human|ai-assisted|automated) ;; *) exit 1 ;; esac
+MAINTAINER_DECISION_FILE="${MAINTAINER_DECISION_FILE:?write the Model B decision record}"
+test -s "$MAINTAINER_DECISION_FILE"
+grep -Fqx "commit: $PR_HEAD_SHA" "$MAINTAINER_DECISION_FILE"
+grep -Fqx "reviewerKind: $REVIEWER_KIND" "$MAINTAINER_DECISION_FILE"
+grep -Fqx "independent human approval: none" "$MAINTAINER_DECISION_FILE"
+grep -Fqx "unresolved threads: 0" "$MAINTAINER_DECISION_FILE"
+for dimension in "technical accuracy" "learning design and evidence" \
+  accessibility "editorial and source quality"; do
+  grep -Fqx "review dimension: $dimension" "$MAINTAINER_DECISION_FILE"
+done
+grep -Eq '^residual risk: .+' "$MAINTAINER_DECISION_FILE"
+gh pr comment "$PUBLIC_PR_URL" --repo "$PUBLIC_REPOSITORY_SLUG" \
+  --body-file "$MAINTAINER_DECISION_FILE"
+```
 
 - [ ] **Step 2: Configure repository metadata and protection**
 
@@ -1203,19 +1365,113 @@ Before merging, configure and verify all of these settings:
   pull request, and sets `required_status_checks` to the actual contexts:
   `full-validation`, `analysis`, `review`, and `secret-scan`. Confirm the names
   from the successful PR check rollup before saving the ruleset.
-- Private vulnerability reporting and automatic deletion of merged public
-  feature branches are enabled. Actions from forks retain read-only tokens.
+- The pull-request rule uses Model B parameters
+  `required_approving_review_count=0` and
+  `required_review_thread_resolution=true`. Zero is deliberate: a one-person
+  repository cannot manufacture independent human approval. The authenticated
+  Maintainer instead records the exact commit, four review dimensions,
+  `reviewerKind`, absence of independent human approval, residual risk, and
+  unresolved-thread count before merge. When a second qualified reviewer is
+  available, governance can migrate to Model A and raise the approval count.
+- Merge commits are enabled; squash and rebase merges are disabled so the
+  public setting matches `CONTRIBUTING.md` and this runbook.
+- Private vulnerability reporting remains enabled, automatic deletion of
+  merged public feature branches is enabled, and Actions from forks retain
+  read-only tokens.
 
 Use the repository settings/API response as evidence. A successful workflow
 alone does not prove these controls are configured.
+
+Save the following exact payload as `/tmp/engineering-curriculum-main-ruleset.json`:
+
+```json
+{
+  "name": "main-protection",
+  "target": "branch",
+  "enforcement": "active",
+  "bypass_actors": [],
+  "conditions": {
+    "ref_name": {"exclude": [], "include": ["~DEFAULT_BRANCH"]}
+  },
+  "rules": [
+    {"type": "deletion"},
+    {"type": "non_fast_forward"},
+    {
+      "type": "pull_request",
+      "parameters": {
+        "allowed_merge_methods": ["merge"],
+        "dismiss_stale_reviews_on_push": false,
+        "require_code_owner_review": false,
+        "require_last_push_approval": false,
+        "required_approving_review_count": 0,
+        "required_review_thread_resolution": true
+      }
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "do_not_enforce_on_create": false,
+        "strict_required_status_checks_policy": true,
+        "required_status_checks": [
+          {"context": "full-validation"},
+          {"context": "analysis"},
+          {"context": "review"},
+          {"context": "secret-scan"}
+        ]
+      }
+    }
+  ]
+}
+```
+
+Create and read back that exact ruleset, then configure and verify the merge
+and branch-cleanup settings:
+
+```bash
+RULESET_ID="$(gh api --method POST \
+  "repos/$PUBLIC_REPOSITORY_SLUG/rulesets" \
+  --input /tmp/engineering-curriculum-main-ruleset.json --jq '.id')"
+test -n "$RULESET_ID"
+test "$(gh api "repos/$PUBLIC_REPOSITORY_SLUG/rulesets/$RULESET_ID" \
+  --jq '[.rules[].type] | contains(["deletion","non_fast_forward","pull_request","required_status_checks"])')" = true
+test "$(gh api "repos/$PUBLIC_REPOSITORY_SLUG/rulesets/$RULESET_ID" \
+  --jq '[.rules[] | select(.type == "pull_request") | .parameters.required_approving_review_count] | unique | .[]')" = 0
+test "$(gh api "repos/$PUBLIC_REPOSITORY_SLUG/rulesets/$RULESET_ID" \
+  --jq '[.rules[] | select(.type == "pull_request") | .parameters.required_review_thread_resolution] | unique | .[]')" = true
+test "$(gh api "repos/$PUBLIC_REPOSITORY_SLUG/rulesets/$RULESET_ID" \
+  --jq '[.rules[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | sort | join(",")')" = \
+  "analysis,full-validation,review,secret-scan"
+gh api --method PATCH "repos/$PUBLIC_REPOSITORY_SLUG" \
+  -F allow_merge_commit=true -F allow_squash_merge=false \
+  -F allow_rebase_merge=false -F delete_branch_on_merge=true
+PRIVATE_REPORTING_STATUS="$(gh api --include \
+  "repos/$PUBLIC_REPOSITORY_SLUG/private-vulnerability-reporting")"
+printf '%s\n' "$PRIVATE_REPORTING_STATUS" | \
+  grep -Eq '^HTTP/[0-9.]+ 204 No Content$'
+gh api "repos/$PUBLIC_REPOSITORY_SLUG" \
+  --jq '{allow_merge_commit,allow_squash_merge,allow_rebase_merge,delete_branch_on_merge}'
+```
+
+Record the verified ruleset JSON and authenticated Maintainer decision in the
+PR. Do not infer protection from a successful workflow alone.
 
 - [ ] **Step 3: Merge only the verified PR**
 
 Run:
 
 ```bash
-gh pr merge --merge --delete-branch
-gh pr view --json state,mergedAt,mergeCommit,url
+gh pr merge --merge --delete-branch --repo "$PUBLIC_REPOSITORY_SLUG" \
+  "$PUBLIC_PR_URL"
+gh pr view "$PUBLIC_PR_URL" --repo "$PUBLIC_REPOSITORY_SLUG" \
+  --json state,mergedAt,mergeCommit,url
+PUBLIC_MERGE_SHA="$(gh pr view "$PUBLIC_PR_URL" \
+  --repo "$PUBLIC_REPOSITORY_SLUG" --json mergeCommit --jq '.mergeCommit.oid')"
+test -n "$PUBLIC_MERGE_SHA"
+git -C "$PUBLICATION_CLONE" fetch public main
+test "$(git -C "$PUBLICATION_CLONE" rev-parse refs/remotes/public/main)" = \
+  "$PUBLIC_MERGE_SHA"
+test "$(git -C "$PUBLICATION_CLONE" rev-list --parents -n 1 \
+  "$PUBLIC_MERGE_SHA" | awk '{print NF}')" -eq 3
 ```
 
 Expected: the JSON contains `"state":"MERGED"`, `mergedAt` and `mergeCommit`
@@ -1229,26 +1485,158 @@ it into a squash commit.
 Run:
 
 ```bash
-gh run list --branch main --limit 10
-gh run watch "$(gh run list --workflow 'Deploy GitHub Pages' --branch main --limit 1 --json databaseId --jq '.[0].databaseId')"
-gh api "repos/{owner}/{repo}/pages" --jq '{status,html_url}'
+gh run list --repo "$PUBLIC_REPOSITORY_SLUG" --branch main --limit 10
+PAGES_RUN_ID="$(gh run list --repo "$PUBLIC_REPOSITORY_SLUG" \
+  --workflow 'Deploy GitHub Pages' --branch main --limit 1 \
+  --json databaseId --jq '.[0].databaseId')"
+test -n "$PAGES_RUN_ID"
+gh run watch "$PAGES_RUN_ID" --repo "$PUBLIC_REPOSITORY_SLUG"
+gh api "repos/$PUBLIC_REPOSITORY_SLUG/pages" --jq '{status,html_url}'
 ```
 
 Expected: Pages workflow succeeds and the returned public URL serves the
 verified site. Open the public URL and repeat the Home → Roadmap → Lesson →
 Catalog smoke journey.
 
-- [ ] **Step 5: Create and verify the public release**
+- [ ] **Step 5: Materialize release metadata through a PR, then publish**
 
-From the isolated publication clone after fetching the verified public merge:
+The initial public PR intentionally contains only `Unreleased` notes and no
+`date-released`. From the isolated publication clone, create a dedicated
+release metadata branch. Materialize the actual UTC date, verify the exact
+`[0.1.0] - ${RELEASE_DATE}` heading and `date-released`, then open a second
+release metadata PR. The tag must not exist before that PR is reviewed and
+merged.
 
 ```bash
+set -euo pipefail
 git -C "$PUBLICATION_CLONE" switch main
 git -C "$PUBLICATION_CLONE" pull --ff-only public main
+RELEASE_DATE="$(date -u +%F)"
+test -n "$RELEASE_DATE"
+git -C "$PUBLICATION_CLONE" switch -c release/v0.1.0-metadata
+(cd "$PUBLICATION_CLONE" && RELEASE_DATE="$RELEASE_DATE" python3.13 - <<'PY'
+from datetime import date
+import os
+from pathlib import Path
+
+release_date = os.environ["RELEASE_DATE"]
+date.fromisoformat(release_date)
+
+citation_path = Path("CITATION.cff")
+citation = citation_path.read_text(encoding="utf-8")
+version_line = 'version: "0.1.0"\n'
+if citation.count(version_line) != 1 or "date-released:" in citation:
+    raise SystemExit("citation is not in the expected unreleased state")
+citation_path.write_text(
+    citation.replace(
+        version_line,
+        f'{version_line}date-released: {release_date}\n',
+        1,
+    ),
+    encoding="utf-8",
+)
+
+changelog_path = Path("CHANGELOG.md")
+changelog = changelog_path.read_text(encoding="utf-8")
+unreleased = "## [Unreleased]\n"
+footer = (
+    "[Unreleased]: https://github.com/albert-einshutoin/"
+    "engineering-expert-curriculum/commits/main\n"
+)
+if changelog.count(unreleased) != 1 or changelog.count(footer) != 1:
+    raise SystemExit("changelog is not in the expected unreleased state")
+body_start = changelog.index("### Added", changelog.index(unreleased))
+body_end = changelog.index(footer)
+release_body = changelog[body_start:body_end].rstrip()
+prefix = changelog[: changelog.index(unreleased) + len(unreleased)]
+released = (
+    f"{prefix}\n- 次回releaseの変更は、検証証拠が確定した時点で追記します。\n\n"
+    f"## [0.1.0] - {release_date}\n\n{release_body}\n\n"
+    "[Unreleased]: https://github.com/albert-einshutoin/"
+    "engineering-expert-curriculum/compare/v0.1.0...HEAD\n"
+    "[0.1.0]: https://github.com/albert-einshutoin/"
+    "engineering-expert-curriculum/releases/tag/v0.1.0\n"
+)
+changelog_path.write_text(released, encoding="utf-8")
+PY
+)
+(cd "$PUBLICATION_CLONE" && python3.13 -m unittest discover -s tests -v)
+(cd "$PUBLICATION_CLONE" && python3.13 tools/build.py)
+(cd "$PUBLICATION_CLONE" && \
+  python3.13 tools/check_site.py --root site --require-current-release)
+git -C "$PUBLICATION_CLONE" add CITATION.cff CHANGELOG.md
+git -C "$PUBLICATION_CLONE" commit -m "docs: materialize v0.1.0 release metadata"
+git -C "$PUBLICATION_CLONE" push --set-upstream public \
+  refs/heads/release/v0.1.0-metadata:refs/heads/release/v0.1.0-metadata
+RELEASE_PR_URL="$(gh pr create --repo "$PUBLIC_REPOSITORY_SLUG" --base main \
+  --head "${PUBLIC_OWNER}:release/v0.1.0-metadata" \
+  --title "docs: materialize v0.1.0 release metadata" \
+  --body "Records the actual release date after the curriculum PR; no tag or release exists yet.")"
+test -n "$RELEASE_PR_URL"
+gh pr checks "$RELEASE_PR_URL" --repo "$PUBLIC_REPOSITORY_SLUG" --watch
+
+RELEASE_PR_NUMBER="$(gh pr view "$RELEASE_PR_URL" \
+  --repo "$PUBLIC_REPOSITORY_SLUG" --json number --jq '.number')"
+RELEASE_HEAD_SHA="$(gh pr view "$RELEASE_PR_URL" \
+  --repo "$PUBLIC_REPOSITORY_SLUG" --json headRefOid --jq '.headRefOid')"
+test -n "$RELEASE_PR_NUMBER"
+test -n "$RELEASE_HEAD_SHA"
+RELEASE_THREAD_STATE="$(gh api graphql \
+  -F owner="${PUBLIC_REPOSITORY_SLUG%%/*}" \
+  -F name="${PUBLIC_REPOSITORY_SLUG#*/}" -F number="$RELEASE_PR_NUMBER" \
+  -f query='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{isResolved}pageInfo{hasNextPage}}}}}' \
+  --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length | tostring + ":" + (.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage | tostring)')"
+test "$RELEASE_THREAD_STATE" = "0:false"
+RELEASE_REVIEWER_KIND="${RELEASE_REVIEWER_KIND:?set the truthful reviewerKind}"
+case "$RELEASE_REVIEWER_KIND" in human|ai-assisted|automated) ;; *) exit 1 ;; esac
+RELEASE_DECISION_FILE="${RELEASE_DECISION_FILE:?write the metadata PR Model B decision}"
+test -s "$RELEASE_DECISION_FILE"
+grep -Fqx "commit: $RELEASE_HEAD_SHA" "$RELEASE_DECISION_FILE"
+grep -Fqx "reviewerKind: $RELEASE_REVIEWER_KIND" "$RELEASE_DECISION_FILE"
+grep -Fqx "independent human approval: none" "$RELEASE_DECISION_FILE"
+grep -Fqx "unresolved threads: 0" "$RELEASE_DECISION_FILE"
+for dimension in "technical accuracy" "learning design and evidence" \
+  accessibility "editorial and source quality"; do
+  grep -Fqx "review dimension: $dimension" "$RELEASE_DECISION_FILE"
+done
+grep -Eq '^residual risk: .+' "$RELEASE_DECISION_FILE"
+gh pr comment "$RELEASE_PR_URL" --repo "$PUBLIC_REPOSITORY_SLUG" \
+  --body-file "$RELEASE_DECISION_FILE"
+```
+
+The release metadata PR now has its own Model B commit, `reviewerKind`,
+four-dimension, residual-risk, and unresolved-thread evidence. Merge it with
+the same history-preserving strategy and verify the result before creating the
+tag:
+
+```bash
+gh pr merge --merge --delete-branch --repo "$PUBLIC_REPOSITORY_SLUG" \
+  "$RELEASE_PR_URL"
+gh pr view "$RELEASE_PR_URL" --repo "$PUBLIC_REPOSITORY_SLUG" \
+  --json state,mergedAt,mergeCommit,url
+RELEASE_MERGE_SHA="$(gh pr view "$RELEASE_PR_URL" \
+  --repo "$PUBLIC_REPOSITORY_SLUG" --json mergeCommit --jq '.mergeCommit.oid')"
+test -n "$RELEASE_MERGE_SHA"
+git -C "$PUBLICATION_CLONE" switch main
+git -C "$PUBLICATION_CLONE" pull --ff-only public main
+test "$(git -C "$PUBLICATION_CLONE" rev-parse HEAD)" = "$RELEASE_MERGE_SHA"
+test "$(git -C "$PUBLICATION_CLONE" rev-list --parents -n 1 \
+  "$RELEASE_MERGE_SHA" | awk '{print NF}')" -eq 3
+test "$(git -C "$PUBLICATION_CLONE" show HEAD:CITATION.cff | \
+  grep -Ec "^date-released: ${RELEASE_DATE}$")" -eq 1
+test "$(git -C "$PUBLICATION_CLONE" show HEAD:CHANGELOG.md | \
+  grep -Ec "^## \[0\.1\.0\] - ${RELEASE_DATE}$")" -eq 1
 git -C "$PUBLICATION_CLONE" tag -a v0.1.0 -m "Engineering Expert Curriculum v0.1.0"
+test "$(git -C "$PUBLICATION_CLONE" rev-list -n 1 v0.1.0)" = \
+  "$RELEASE_MERGE_SHA"
 git -C "$PUBLICATION_CLONE" push public refs/tags/v0.1.0:refs/tags/v0.1.0
-gh release create v0.1.0 --verify-tag --title "Engineering Expert Curriculum v0.1.0" --notes-from-tag
-gh release view v0.1.0 --json tagName,isDraft,isPrerelease,publishedAt,url
+REMOTE_RELEASE_SHA="$(git -C "$PUBLICATION_CLONE" ls-remote public \
+  'refs/tags/v0.1.0^{}' | awk '{print $1}')"
+test "$REMOTE_RELEASE_SHA" = "$RELEASE_MERGE_SHA"
+gh release create v0.1.0 --repo "$PUBLIC_REPOSITORY_SLUG" --verify-tag \
+  --title "Engineering Expert Curriculum v0.1.0" --notes-from-tag
+gh release view v0.1.0 --repo "$PUBLIC_REPOSITORY_SLUG" \
+  --json tagName,isDraft,isPrerelease,publishedAt,url,targetCommitish
 ```
 
 Expected: tag `v0.1.0` points at the verified public merge commit and the
@@ -1261,6 +1649,7 @@ Run:
 ```bash
 git -C "$PUBLICATION_CLONE" fetch public --prune
 git -C "$PUBLICATION_CLONE" branch -d feat/static-oss-curriculum
+git -C "$PUBLICATION_CLONE" branch -d release/v0.1.0-metadata
 git -C "$PUBLICATION_CLONE" branch -vv
 git -C "$PUBLICATION_CLONE" status --short --branch
 ```

@@ -576,8 +576,10 @@ class ContentStandardContractTests(unittest.TestCase):
             "The dependency-free validator checks source metadata and the syntax "
             "and distinctness of at least two HTTPS URLs; it does not make network "
             "requests or guarantee reachability.",
-            "Source reachability is an editorial responsibility checked by scheduled "
-            "link audits, not a dependency-free build or CI guarantee.",
+            "Source reachability remains an editorial responsibility.",
+            "An optional planned scheduled link audit is not implemented in v0.1.0, "
+            "so neither the dependency-free build nor current CI claims network "
+            "reachability.",
         )
         for clause in clauses:
             with self.subTest(clause=clause):

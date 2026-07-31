@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 import re
 import unittest
@@ -20,6 +21,7 @@ PUBLIC_FILES = (
     "CHANGELOG.md",
     ".gitignore",
 )
+PRIVATE_VOLUME_PREFIX = "/" + "Volumes" + "/"
 
 MIT_LICENSE = """MIT License
 
@@ -52,6 +54,19 @@ def read(relative: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def changelog_section(changelog: str, heading_pattern: str) -> str | None:
+    """Return one level-two changelog section without accepting duplicates."""
+    headings = list(re.finditer(heading_pattern, changelog, re.MULTILINE))
+    if not headings:
+        return None
+    if len(headings) != 1:
+        raise AssertionError(f"duplicate changelog section: {heading_pattern}")
+    start = headings[0].end()
+    next_heading = re.search(r"^## \[", changelog[start:], re.MULTILINE)
+    end = start + next_heading.start() if next_heading else len(changelog)
+    return changelog[start:end]
+
+
 class RepositoryContractTests(unittest.TestCase):
     def test_required_public_files_exist_and_are_substantial(self) -> None:
         for relative in PUBLIC_FILES:
@@ -67,7 +82,7 @@ class RepositoryContractTests(unittest.TestCase):
                 text = read(relative)
                 self.assertNotRegex(text, re.compile(r"\b(?:TODO|TBD)\b", re.IGNORECASE))
                 self.assertNotIn("/Users/", text)
-                self.assertNotIn("/Volumes/", text)
+                self.assertNotIn(PRIVATE_VOLUME_PREFIX, text)
                 self.assertNotRegex(
                     text,
                     re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE),
@@ -123,7 +138,7 @@ class RepositoryContractTests(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, readme)
 
-    def test_citation_metadata_identifies_the_upcoming_release_without_claiming_it_exists(self) -> None:
+    def test_citation_and_changelog_release_state_are_consistent(self) -> None:
         citation = read("CITATION.cff")
         for line in (
             'cff-version: "1.2.0"',
@@ -133,7 +148,71 @@ class RepositoryContractTests(unittest.TestCase):
         ):
             with self.subTest(line=line):
                 self.assertIn(line, citation)
-        self.assertNotIn("date-released:", citation)
+        release_date_fields = re.findall(
+            r"^date-released:\s*(?P<value>.*)$",
+            citation,
+            re.MULTILINE,
+        )
+        self.assertLessEqual(len(release_date_fields), 1)
+
+        changelog = read("CHANGELOG.md")
+        unreleased = changelog_section(changelog, r"^## \[Unreleased\]$")
+        self.assertIsNotNone(unreleased)
+        assert unreleased is not None
+        release_sections = list(
+            re.finditer(r"^## \[0\.1\.0\] - (?P<date>\S+)$", changelog, re.MULTILINE)
+        )
+        self.assertLessEqual(len(release_sections), 1)
+
+        initial_release_marker = "1,140項目"
+        if not release_date_fields:
+            self.assertIn(initial_release_marker, unreleased)
+            self.assertEqual(changelog.count(initial_release_marker), 1)
+            self.assertEqual(len(release_sections), 0)
+            self.assertNotRegex(
+                changelog,
+                re.compile(r"^## \[0\.1\.0\] - ", re.MULTILINE),
+            )
+            self.assertEqual(
+                changelog.count(
+                    "[Unreleased]: https://github.com/albert-einshutoin/"
+                    "engineering-expert-curriculum/commits/main"
+                ),
+                1,
+            )
+            self.assertNotIn("compare/v0.1.0...HEAD", changelog)
+            self.assertNotIn("[0.1.0]:", changelog)
+        else:
+            raw_date = release_date_fields[0]
+            self.assertRegex(raw_date, r"^\d{4}-\d{2}-\d{2}$")
+            parsed_date = date.fromisoformat(raw_date)
+            self.assertEqual(raw_date, parsed_date.isoformat())
+            self.assertEqual(len(release_sections), 1)
+            self.assertEqual(release_sections[0].group("date"), raw_date)
+            release = changelog_section(
+                changelog,
+                rf"^## \[0\.1\.0\] - {re.escape(raw_date)}$",
+            )
+            self.assertIsNotNone(release)
+            assert release is not None
+            self.assertNotIn(initial_release_marker, unreleased)
+            self.assertIn(initial_release_marker, release)
+            self.assertEqual(changelog.count(initial_release_marker), 1)
+            self.assertEqual(
+                changelog.count(
+                    "[Unreleased]: https://github.com/albert-einshutoin/"
+                    "engineering-expert-curriculum/compare/v0.1.0...HEAD"
+                ),
+                1,
+            )
+            self.assertEqual(
+                changelog.count(
+                    "[0.1.0]: https://github.com/albert-einshutoin/"
+                    "engineering-expert-curriculum/releases/tag/v0.1.0"
+                ),
+                1,
+            )
+            self.assertNotIn("engineering-expert-curriculum/commits/main", changelog)
 
     def test_contributing_defines_github_flow_tdd_and_review_accountability(self) -> None:
         contributing = read("CONTRIBUTING.md")
@@ -213,13 +292,6 @@ class RepositoryContractTests(unittest.TestCase):
             "| 日付 | リリース/commit | 重大度 | 対象 | 旧記述 | 新記述 | 理由 | 検証 |",
             errata,
         )
-
-    def test_changelog_keeps_initial_release_content_unreleased_until_tag_exists(self) -> None:
-        changelog = read("CHANGELOG.md")
-        self.assertIn("## [Unreleased]", changelog)
-        self.assertIn("1,140項目", changelog)
-        self.assertNotRegex(changelog, re.compile(r"^## \[0\.1\.0\] - ", re.MULTILINE))
-        self.assertNotIn("/releases/tag/v0.1.0", changelog)
 
     def test_gitignore_covers_generated_and_root_local_legacy_paths(self) -> None:
         ignored = set(read(".gitignore").splitlines())

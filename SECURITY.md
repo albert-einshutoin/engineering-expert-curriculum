@@ -7,7 +7,7 @@ Engineering Expert Curriculumは、HTMLとCSSだけの公開サイトと、Pytho
 | 対象 | サポート |
 |---|---|
 | `main`の最新commit | 対象 |
-| 最新リリース | 対象 |
+| 最新リリース（存在する場合） | 対象 |
 | 過去リリース、fork、変更済み配布物 | 原則対象外 |
 
 報告時点の最新リリースと`main`を調査し、必要に応じて双方へ修正します。古い版だけに存在する問題は、影響と修正可能性を評価して対応を決めます。
@@ -15,6 +15,8 @@ Engineering Expert Curriculumは、HTMLとCSSだけの公開サイトと、Pytho
 ## 非公開で報告する
 
 脆弱性の疑いは、対象repositoryの**Security**タブから**Advisories**を開き、**Privately report a vulnerability**を選択してGitHub Security Advisoryを作成してください。これが本プロジェクトで指定する唯一の非公開脆弱性報告経路です。
+
+この経路は、空のpublic repositoryを作成した直後、最初のcontent pushより前に有効化してAPIで確認します。有効化または確認に失敗した場合はcontentを公開しません。
 
 公開Issueを作成しないでください。実証コード、秘密情報、攻撃可能なURL、未修正の詳細をDiscussion、Pull Request、commitへ投稿しないでください。非公開報告機能が表示されない場合は、公開の場へ詳細を移さず、機能が利用可能になるまで報告情報を保持してください。
 

@@ -48,6 +48,9 @@ _EMAIL = re.compile(
     r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b",
     re.IGNORECASE | re.ASCII,
 )
+PRIVATE_VOLUME_NAME = "/" + "Volumes" + "/Satechi"
+_BASH_BLOCK = re.compile(r"```bash\n(?P<body>.*?)\n```", re.DOTALL)
+_GH_INVOCATION = re.compile(r"(?<![A-Za-z0-9_-])gh\s+(?P<group>[A-Za-z][A-Za-z0-9-]*)\b")
 
 
 def _read(path: Path) -> str:
@@ -56,13 +59,71 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _bash_lines(markdown: str) -> list[str]:
+    blocks = (match.group("body").replace("\\\n", " ") for match in _BASH_BLOCK.finditer(markdown))
+    return [line.strip() for block in blocks for line in block.splitlines() if line.strip()]
+
+
+def _repo_values(invocation: str) -> list[str]:
+    values = re.findall(
+        r"--repo(?:=|\s+)(?P<value>\"[^\"]*\"|'[^']*'|[^\s)#]+)",
+        invocation,
+    )
+    return [value.strip("\"'") for value in values]
+
+
+def assert_gh_invocations_are_scoped(test: unittest.TestCase, markdown: str) -> None:
+    """Fail closed unless each shell-visible gh invocation has an exact scope."""
+    seen = 0
+    for line in _bash_lines(markdown):
+        matches = list(_GH_INVOCATION.finditer(line))
+        for index, match in enumerate(matches):
+            seen += 1
+            end = matches[index + 1].start() if index + 1 < len(matches) else len(line)
+            invocation = line[match.start():end]
+            group = match.group("group")
+            if group == "api":
+                if re.match(r"gh\s+api\s+user\b", invocation):
+                    test.assertNotIn("--repo", invocation, line)
+                elif re.match(r"gh\s+api\s+graphql\b", invocation):
+                    test.assertEqual(
+                        invocation.count('owner="${PUBLIC_REPOSITORY_SLUG%%/*}"'),
+                        1,
+                        line,
+                    )
+                    test.assertEqual(
+                        invocation.count('name="${PUBLIC_REPOSITORY_SLUG#*/}"'),
+                        1,
+                        line,
+                    )
+                else:
+                    endpoints = re.findall(
+                        r"(?:\"|')?(repos/[^\s\"')]+)",
+                        invocation,
+                    )
+                    test.assertEqual(len(endpoints), 1, line)
+                    test.assertTrue(
+                        endpoints[0].startswith("repos/$PUBLIC_REPOSITORY_SLUG"),
+                        line,
+                    )
+            elif group in {"label", "pr", "release", "run"}:
+                test.assertEqual(
+                    _repo_values(invocation),
+                    ["$PUBLIC_REPOSITORY_SLUG"],
+                    line,
+                )
+            else:
+                test.fail(f"unclassified gh command group {group!r}: {line}")
+    test.assertGreater(seen, 0)
+
+
 class PublicationPlanContractTests(unittest.TestCase):
     def test_public_plans_do_not_disclose_private_paths_or_personal_email(self) -> None:
         for path in PUBLIC_PLAN_DOCUMENTS:
             with self.subTest(path=path.name):
                 text = _read(path)
                 self.assertNotIn("/Users/", text)
-                self.assertNotIn("/Volumes/Satechi", text)
+                self.assertNotIn(PRIVATE_VOLUME_NAME, text)
                 self.assertIsNone(_EMAIL.search(text))
 
     def test_publication_action_ledger_exactly_matches_workflows(self) -> None:
@@ -127,6 +188,7 @@ class PublicationPlanContractTests(unittest.TestCase):
             "git filter-repo",
             "--refs refs/heads/main refs/heads/feat/static-oss-curriculum",
             '--replace-text "$REPLACEMENTS_FILE"',
+            'regex:/(?:Volumes)/[^/]+/==>$VOLUME_ROOT/',
             "commit.author_email",
             "commit.committer_email",
             "PUBLIC_NOREPLY_EMAIL",
@@ -148,30 +210,23 @@ class PublicationPlanContractTests(unittest.TestCase):
                 self.assertIn(phrase, publication)
 
     def test_every_repository_scoped_gh_command_uses_the_verified_slug(self) -> None:
-        publication = _read(PUBLICATION_PLAN).replace("\\\n", " ")
-        commands = (
-            "gh pr create",
-            "gh pr view",
-            "gh pr checks",
-            "gh pr diff",
-            "gh pr merge",
-            "gh pr comment",
-            "gh run list",
-            "gh run watch",
-            "gh release create",
-            "gh release view",
-            "gh label create",
-            "gh label list",
-        )
-        for line in publication.splitlines():
-            stripped = line.strip()
-            for command in commands:
-                if command in stripped:
-                    with self.subTest(command=stripped):
-                        self.assertIn('--repo "$PUBLIC_REPOSITORY_SLUG"', stripped)
-            if stripped.startswith("gh api") and " user" not in stripped:
-                with self.subTest(command=stripped):
-                    self.assertIn('repos/$PUBLIC_REPOSITORY_SLUG', stripped)
+        assert_gh_invocations_are_scoped(self, _read(PUBLICATION_PLAN))
+
+    def test_gh_scope_validation_rejects_wrapped_or_misdirected_commands(self) -> None:
+        wrapped_valid = """```bash
+RESULT="$(gh api "repos/$PUBLIC_REPOSITORY_SLUG" --jq '.id')"
+gh pr view "$PUBLIC_PR_URL" --repo "$PUBLIC_REPOSITORY_SLUG"
+```
+"""
+        assert_gh_invocations_are_scoped(self, wrapped_valid)
+
+        wrong_repo = """```bash
+RESULT="$(gh api "repos/wrong/project" --jq '.id')" # repos/$PUBLIC_REPOSITORY_SLUG
+gh pr view "$PUBLIC_PR_URL" --repo "wrong/project" # --repo "$PUBLIC_REPOSITORY_SLUG"
+```
+"""
+        with self.assertRaises(AssertionError):
+            assert_gh_invocations_are_scoped(self, wrong_repo)
 
     def test_private_reporting_and_labels_are_verified_before_first_push(self) -> None:
         publication = _read(PUBLICATION_PLAN)
@@ -209,7 +264,7 @@ class PublicationPlanContractTests(unittest.TestCase):
             "for-each-ref",
             " log \\",
             "git grep --quiet",
-            "/tmp/gitleaks-publication/gitleaks git",
+            '"$GITLEAKS_DIR/gitleaks" git',
             "b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5",
             "python3.13 -m unittest discover -s tests -v",
         )
@@ -219,6 +274,16 @@ class PublicationPlanContractTests(unittest.TestCase):
         for phrase in required_verification:
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, verification)
+        normalized_verification = verification.replace("\\\n", " ")
+        self.assertRegex(
+            normalized_verification,
+            re.compile(
+                r'(?m)^[ \t]*"\$GITLEAKS_DIR/gitleaks" git\b'
+                r'(?=[^\n]*--log-opts="refs/heads/main '
+                r'refs/heads/feat/static-oss-curriculum")'
+                r'(?=[^\n]*"\$PUBLICATION_CLONE"(?:\s|$))[^\n]*$',
+            ),
+        )
         self.assertLess(publication.index(verification), push_index)
         self.assertIn("set -euo pipefail", verification)
         self.assertNotIn("|| true", publication)

@@ -222,7 +222,7 @@ satisfies all of these conditions:
 
 The dependency-free validator checks source metadata and the syntax and distinctness of at least two HTTPS URLs; it does not make network requests or guarantee reachability.
 
-Source reachability is an editorial responsibility checked by scheduled link audits, not a dependency-free build or CI guarantee.
+Source reachability remains an editorial responsibility. An optional planned scheduled link audit is not implemented in v0.1.0, so neither the dependency-free build nor current CI claims network reachability.
 
 CI treats any lesson marked complete but failing this contract as an error.
 
@@ -231,6 +231,8 @@ Review evidence covers four dimensions: technical accuracy, learning design and 
 `reviewerKind` is one of `human`, `ai-assisted`, or `automated`; AI-assisted and automated reviews never count as human approval.
 
 Publishability is decided per commit from PR and release evidence plus an explicit decision by an authenticated maintainer.
+
+Initial governance uses Model B for one authenticated maintainer. The decision record discloses the commit, all four review dimensions, each `reviewerKind`, unresolved-thread state, residual risk, and whether independent human approval exists. AI-assisted or automated evidence is never relabeled as independent human approval. Model A, where another qualified human gives the final approval, becomes enforceable only after the project has enough maintainers or reviewers to satisfy it honestly.
 
 Starting with `v0.1.0`, this disclosure policy applies prospectively and does not infer or retroactively grant human approval to existing content.
 
