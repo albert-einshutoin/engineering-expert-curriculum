@@ -6,21 +6,25 @@
 
 **Architecture:** Pull requests run a dependency-free validation workflow that builds the complete static artifact and fails closed. Merges to `main` run the same gate before a separate least-privilege Pages deployment job; OSS documentation and templates make content decisions, corrections, security reports, and contributor expectations reviewable without private context.
 
-**Tech Stack:** GitHub, GitHub Actions pinned to immutable SHAs, Python 3.12 standard library, GitHub Pages, Markdown, HTML5/CSS3
+**Tech Stack:** GitHub, GitHub Actions pinned to immutable SHAs, Python 3.13 standard library, GitHub Pages, Markdown, HTML5/CSS3
 
 ---
 
-## Immutable action revisions
+## Current workflow ledger
 
-Verified with `git ls-remote` on 2026-07-30:
+This ledger is copied from the checked-in workflows, not from mutable release
+tags. `tests/test_publication_plan_contract.py` fails whenever this table and
+the complete set of `uses:` references drift in either direction.
 
-| Action | Tag | Immutable revision |
-|---|---|---|
-| `actions/checkout` | `v4.2.2` | `11bd71901bbe5b1630ceea73d27597364c9af683` |
-| `actions/setup-python` | `v5.6.0` | `a26af69be951a213d495a4c3e4e4022e16d87065` |
-| `actions/upload-pages-artifact` | `v3` | `56afc609e74202658d3ffba0e8f6dda462b719fa` |
-| `actions/deploy-pages` | `v4` | `d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e` |
-| `github/codeql-action` | `v3` | `3b0bd1d116c0bde30213346b22d4f634d96a2fb0` |
+| Action | Immutable revision |
+|---|---|
+| `actions/checkout` | `3d3c42e5aac5ba805825da76410c181273ba90b1` |
+| `actions/dependency-review-action` | `a1d282b36b6f3519aa1f3fc636f609c47dddb294` |
+| `actions/deploy-pages` | `cd2ce8fcbc39b97be8ca5fce6e763baed58fa128` |
+| `actions/setup-python` | `5fda3b95a4ea91299a34e894583c3862153e4b97` |
+| `actions/upload-pages-artifact` | `fc324d3547104276b827a68afc52ff2a11cc49c9` |
+| `github/codeql-action/analyze` | `f205ea1c3313d32999d8d6a48b4f6530d4437b38` |
+| `github/codeql-action/init` | `f205ea1c3313d32999d8d6a48b4f6530d4437b38` |
 
 ## File map
 
@@ -41,9 +45,12 @@ Verified with `git ls-remote` on 2026-07-30:
 | `.github/workflows/validate.yml` | Pull-request and branch validation |
 | `.github/workflows/pages.yml` | Verified artifact deployment |
 | `.github/workflows/codeql.yml` | Python build-tool static analysis |
+| `.github/workflows/dependency-review.yml` | Pull-request dependency policy |
+| `.github/workflows/gitleaks.yml` | Official Gitleaks CLI full-history scan |
 | `.github/dependabot.yml` | Monthly GitHub Actions revision review |
 | `tests/test_repository_contract.py` | Required OSS files and metadata |
 | `tests/test_repository_security.py` | Secret patterns, workflow permissions, and static artifact contract |
+| `tests/test_publication_plan_contract.py` | Privacy-safe, two-ref publication runbook contract |
 | `tests/test_accessibility_contract.py` | Generated semantic and WCAG-oriented contracts |
 | `tools/check_site.py` | Link, markup, static-file, and deterministic artifact validation |
 
@@ -221,7 +228,7 @@ Expected: missing-file failures.
 
 ```text
 Issue → feature branch → failing test → minimal change → full validation
-→ self-review → PR → required review/CI → squash merge → branch deletion
+→ self-review → PR → required review/CI → merge commit → public branch deletion
 ```
 
 It also defines four review roles for a complete lesson:
@@ -652,11 +659,13 @@ git add .gitignore tests/test_repository_security.py
 git commit -m "test: guard public repository against secret leakage"
 ```
 
-### Task 6: Add least-privilege validation, CodeQL, and dependency review
+### Task 6: Add least-privilege validation, CodeQL, dependency review, and secret scanning
 
 **Files:**
 - Create: `.github/workflows/validate.yml`
 - Create: `.github/workflows/codeql.yml`
+- Create: `.github/workflows/dependency-review.yml`
+- Create: `.github/workflows/gitleaks.yml`
 - Create: `.github/dependabot.yml`
 - Modify: `tests/test_repository_security.py`
 
@@ -667,6 +676,8 @@ def test_pull_request_workflows_are_read_only_and_sha_pinned(self) -> None:
     for relative in (
         ".github/workflows/validate.yml",
         ".github/workflows/codeql.yml",
+        ".github/workflows/dependency-review.yml",
+        ".github/workflows/gitleaks.yml",
     ):
         text = Path(relative).read_text(encoding="utf-8")
         self.assertIn("permissions:\n  contents: read", text)
@@ -709,13 +720,15 @@ concurrency:
 
 jobs:
   full-validation:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          python-version: "3.12"
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.13"
       - name: Compile build tools
         run: python -m compileall -q curriculum_builder tools tests
       - name: Run complete test suite
@@ -734,18 +747,31 @@ jobs:
 
 Add `codeql.yml` with `contents: read`, `security-events: write` only at the job
 that uploads results, Python language analysis, and the pinned checkout and
-CodeQL revision from the table. Add `.github/dependabot.yml` with monthly
+CodeQL revisions from the current workflow ledger. Add
+`dependency-review.yml` using
+`actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294`
+on `pull_request` only. Add `.github/dependabot.yml` with monthly
 `github-actions` checks targeting `main`, a limit of five open PRs, and
 `labels: ["dependencies", "github-actions"]`.
+
+Add `.github/workflows/gitleaks.yml` on `pull_request` and pushes to `main`.
+It checks out complete history without retained credentials, downloads the
+official `gitleaks_8.30.1_linux_x64.tar.gz`, verifies SHA-256
+`551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb`,
+then runs the verified `gitleaks git` binary with redaction and a nonzero exit
+on findings. Do not replace this CLI verification with a floating third-party
+Action.
 
 - [ ] **Step 4: Run workflow contracts and inspect YAML**
 
 Run:
 
 ```bash
-python3 -m unittest tests.test_repository_security -v
+python3.13 -m unittest tests.test_repository_security -v
 sed -n '1,220p' .github/workflows/validate.yml
 sed -n '1,220p' .github/workflows/codeql.yml
+sed -n '1,160p' .github/workflows/dependency-review.yml
+sed -n '1,180p' .github/workflows/gitleaks.yml
 ```
 
 Expected: tests pass; no action uses a floating tag.
@@ -754,6 +780,7 @@ Expected: tests pass; no action uses a floating tag.
 
 ```bash
 git add .github/workflows/validate.yml .github/workflows/codeql.yml \
+  .github/workflows/dependency-review.yml .github/workflows/gitleaks.yml \
   .github/dependabot.yml tests/test_repository_security.py
 git commit -m "ci: validate curriculum with least privilege"
 ```
@@ -797,8 +824,7 @@ name: Deploy GitHub Pages
 
 on:
   push:
-    branches: [main]
-  workflow_dispatch:
+    branches: ["main"]
 
 permissions:
   contents: read
@@ -809,23 +835,27 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          python-version: "3.12"
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.13"
       - run: python -m unittest discover -s tests -v
+      - run: python tools/generate_curriculum_map.py --check
       - run: python tools/build.py
-      - run: python tools/check_site.py site
-      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa
+      - run: python tools/check_site.py --root site --require-current-release
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9
         with:
           path: site
 
   deploy:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       pages: write
       id-token: write
@@ -835,7 +865,7 @@ jobs:
     steps:
       - name: Deploy verified artifact
         id: deployment
-        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128
 ```
 
 - [ ] **Step 4: Run all workflow permission tests**
@@ -843,7 +873,7 @@ jobs:
 Run:
 
 ```bash
-python3 -m unittest tests.test_repository_security -v
+python3.13 -m unittest tests.test_repository_security -v
 ```
 
 Expected: all tests pass; Pages write permissions appear only in the deployment
@@ -935,7 +965,8 @@ review document.
 Run:
 
 ```bash
-gh api user --jq '.login'
+PUBLIC_OWNER="$(gh api user --jq '.login')"
+test -n "$PUBLIC_OWNER"
 gh repo view engineering-expert-curriculum --json nameWithOwner,visibility 2>/dev/null || true
 ```
 
@@ -956,22 +987,132 @@ initialize: false
 
 Expected: one empty public repository owned by the authenticated account.
 
-- [ ] **Step 3: Add the remote and push both branches**
+- [ ] **Step 3: Build a sanitized two-ref publication clone**
 
-Run from the implementation worktree after substituting only the verified login:
+Never add the public remote to `$REPO_ROOT` or `$FEATURE_WORKTREE`. Resolve both
+trusted source checkouts and create one fresh sibling clone. A mirror clone,
+broad ref publication, or push from either source checkout is outside this
+runbook.
 
 ```bash
-git remote add origin "$PRIVATE_EMAIL:albert-einshutoin/engineering-expert-curriculum.git"
-git -C $REPO_ROOT remote add origin \
-  "$PRIVATE_EMAIL:albert-einshutoin/engineering-expert-curriculum.git"
-git -C $REPO_ROOT push -u origin main
-git push -u origin feat/static-oss-curriculum
+REPO_ROOT="${REPO_ROOT:?set REPO_ROOT to the original main checkout}"
+FEATURE_WORKTREE="${FEATURE_WORKTREE:?set FEATURE_WORKTREE to the reviewed feature checkout}"
+PUBLICATION_CLONE="${REPO_ROOT}-public"
+PUBLIC_OWNER="${PUBLIC_OWNER:?set PUBLIC_OWNER to the login verified in Step 1}"
+PUBLIC_REPOSITORY="https://github.com/${PUBLIC_OWNER}/engineering-expert-curriculum.git"
+test "$FEATURE_WORKTREE" != "$REPO_ROOT"
+test ! -e "$PUBLICATION_CLONE"
+git clone --no-local --no-checkout --single-branch --branch main "$REPO_ROOT" "$PUBLICATION_CLONE"
+git -C "$PUBLICATION_CLONE" fetch --no-tags "$FEATURE_WORKTREE" \
+  "refs/heads/feat/static-oss-curriculum:refs/heads/feat/static-oss-curriculum"
+test "$(git -C "$PUBLICATION_CLONE" rev-parse refs/heads/main)" = \
+  "$(git -C "$REPO_ROOT" rev-parse refs/heads/main)"
+test "$(git -C "$PUBLICATION_CLONE" rev-parse refs/heads/feat/static-oss-curriculum)" = \
+  "$(git -C "$FEATURE_WORKTREE" rev-parse HEAD)"
+git -C "$PUBLICATION_CLONE" remote remove origin
 ```
 
-Expected: `main` and the feature branch exist remotely; `main` remains the
-default release branch.
+The clone imports only `main` through the single-branch clone and the one
+explicit feature ref through the exact refspec above. Confirm `main` resolves
+to the source `main` SHA and the feature ref resolves to the reviewed
+`$FEATURE_WORKTREE` HEAD before rewriting history.
 
-- [ ] **Step 4: Open a context-complete pull request**
+Prepare a private replace-text file whose specific rules run before its generic
+rules:
+
+```text
+regex:/(?:Volumes)/[^/]+/Developer/engineering-expert-curriculum-worktrees/static-oss-curriculum==>$FEATURE_WORKTREE
+regex:/(?:Volumes)/[^/]+/Developer/engineering-expert-curriculum==>$REPO_ROOT
+regex:/(?:Users)/[^/]+/\.pyenv/versions/[0-9.]+/bin/python3\.13==>python3.13
+regex:/(?:Users)/[^/]+/==>$USER_HOME/
+```
+
+Set `REPLACEMENTS_FILE` to that mode-`0600` file. Obtain the verified public
+account's GitHub noreply address from GitHub settings, export it as
+`PUBLIC_NOREPLY_EMAIL`, and require it to match the documented
+`<account-id>+<login>@users.noreply.github.com` form. Do not guess the account
+ID or login. Then rewrite exactly the two public refs:
+
+```bash
+export PUBLIC_AUTHOR_NAME="Engineering Expert Curriculum contributors"
+test -n "$PUBLIC_NOREPLY_EMAIL"
+git -C "$PUBLICATION_CLONE" filter-repo --force \
+  --refs refs/heads/main refs/heads/feat/static-oss-curriculum \
+  --replace-text "$REPLACEMENTS_FILE" \
+  --replace-message "$REPLACEMENTS_FILE" \
+  --commit-callback '
+import os
+public_name = os.environ["PUBLIC_AUTHOR_NAME"].encode()
+public_email = os.environ["PUBLIC_NOREPLY_EMAIL"].encode()
+commit.author_name = public_name
+commit.author_email = public_email
+commit.committer_name = public_name
+commit.committer_email = public_email
+'
+```
+
+`git filter-repo` changes both author and committer identity to the verified
+noreply identity and replaces historical private path text. The source
+repository and feature worktree are read-only inputs and remain unchanged.
+
+- [ ] **Step 4: Verify rewritten refs, identity, paths, secrets, and tests**
+
+Perform every gate in the isolated clone before creating or pushing to the
+public repository:
+
+```bash
+git -C "$PUBLICATION_CLONE" for-each-ref --format='%(refname)' \
+  refs/heads refs/tags refs/remotes
+test "$(git -C "$PUBLICATION_CLONE" for-each-ref --format='%(refname)' \
+  refs/heads refs/tags refs/remotes)" = \
+  "$(printf '%s\n' refs/heads/feat/static-oss-curriculum refs/heads/main)"
+git -C "$PUBLICATION_CLONE" log \
+  refs/heads/main refs/heads/feat/static-oss-curriculum \
+  --format='%H%x09%an%x09%ae%x09%cn%x09%ce'
+test "$(git -C "$PUBLICATION_CLONE" log \
+  refs/heads/main refs/heads/feat/static-oss-curriculum \
+  --format='%ae%n%ce' | LC_ALL=C sort -u)" = "$PUBLIC_NOREPLY_EMAIL"
+git -C "$PUBLICATION_CLONE" log \
+  refs/heads/main refs/heads/feat/static-oss-curriculum --format='%B' | \
+  grep -E '/(Users)/|/(Volumes)/Satechi|[[:alnum:]._%+-]+@[[:alnum:].-]+\.[[:alpha:]]{2,}' \
+  && exit 1 || true
+git -C "$PUBLICATION_CLONE" grep -n -E \
+  '/(Users)/|/(Volumes)/Satechi|[[:alnum:]._%+-]+@[[:alnum:].-]+\.[[:alpha:]]{2,}' \
+  "$(git -C "$PUBLICATION_CLONE" rev-list refs/heads/main refs/heads/feat/static-oss-curriculum)" \
+  && exit 1 || true
+gitleaks git --redact --no-banner --exit-code 1 \
+  --log-opts="refs/heads/main refs/heads/feat/static-oss-curriculum" \
+  "$PUBLICATION_CLONE"
+git -C "$PUBLICATION_CLONE" switch feat/static-oss-curriculum
+(cd "$PUBLICATION_CLONE" && python3.13 -m unittest discover -s tests -v)
+(cd "$PUBLICATION_CLONE" && python3.13 tools/generate_curriculum_map.py --check)
+(cd "$PUBLICATION_CLONE" && python3.13 tools/build.py)
+(cd "$PUBLICATION_CLONE" && python3.13 tools/check_site.py --root site --require-current-release)
+```
+
+Expected: local heads are exactly `main` and `feat/static-oss-curriculum`, with
+no tags; every author and committer uses the one verified noreply identity;
+private paths and other email addresses are absent from every reachable blob;
+the official Gitleaks CLI and all tests/build checks pass. If any gate fails,
+discard only the publication clone, correct the source feature through TDD,
+and restart from a fresh sibling clone.
+
+- [ ] **Step 5: Push exactly the reviewed public refs**
+
+Only after the repository-name check, rewrite verification, and public
+repository creation succeed, add the public remote inside the isolated clone:
+
+```bash
+git -C "$PUBLICATION_CLONE" remote add public "$PUBLIC_REPOSITORY"
+git -C "$PUBLICATION_CLONE" push --set-upstream public \
+  refs/heads/main:refs/heads/main \
+  refs/heads/feat/static-oss-curriculum:refs/heads/feat/static-oss-curriculum
+```
+
+Expected: only `main` and the reviewed feature ref exist publicly; `main`
+remains the default release branch. Never broaden the refspec.
+
+- [ ] **Step 6: Open a context-complete pull request**
 
 Create a PR whose body contains:
 
@@ -1007,7 +1148,7 @@ CIで同じ基準を再現できます。
 
 Expected: one open PR targeting `main`.
 
-- [ ] **Step 5: Confirm remote state**
+- [ ] **Step 7: Confirm remote state**
 
 Run:
 
@@ -1018,12 +1159,12 @@ gh pr checks --watch
 
 Expected: PR is open, not draft, targets `main`, and every check is successful.
 
-### Task 10: Review, merge, enable Pages, and clean branches
+### Task 10: Harden settings, merge with history, publish, and clean the public feature
 
 **Files:**
 - External state: PR review and merge
-- External state: repository settings, Pages, branch protection, topics
-- Local state: Git worktree and merged feature branch removal
+- External state: repository settings, Pages, environment, ruleset, topics, release
+- Local state: isolated publication clone only
 
 - [ ] **Step 1: Perform final PR self-review against remote diff**
 
@@ -1037,7 +1178,9 @@ gh pr view --json files,commits,reviews,reviewDecision,mergeable,statusCheckRoll
 Review the remote diff for content accuracy, test adequacy, source and framework
 versioning, unsafe HTML, secret leakage, broken relative paths, CI permissions,
 accessibility, documentation consistency, and OSS value. Fix findings on the
-feature branch with a failing regression test first, push, and wait for checks.
+source feature branch with a failing regression test first, rebuild a fresh
+sanitized publication clone, repush the same two explicit refs, and wait for
+checks.
 
 - [ ] **Step 2: Configure repository metadata and protection**
 
@@ -1048,21 +1191,38 @@ computer-science, curriculum, engineering, learning, oss, static-site,
 software-engineering, textbook
 ```
 
-Enable private vulnerability reporting, automatic feature-branch deletion, and
-`main` protection requiring the `full-validation` and CodeQL checks with no
-force pushes or branch deletion.
+Before merging, configure and verify all of these settings:
+
+- Actions default workflow permissions are read-only
+  (`default_workflow_permissions=read`) and Actions cannot approve pull
+  requests. Enable **Require actions to be pinned to a full-length commit SHA**.
+- Pages uses GitHub Actions (`build_type=workflow`), not a branch directory.
+- The `github-pages` environment permits deployments from `main` only and has
+  no unreviewed custom branch policy.
+- A `main` repository ruleset blocks force pushes and deletions, requires a
+  pull request, and sets `required_status_checks` to the actual contexts:
+  `full-validation`, `analysis`, `review`, and `secret-scan`. Confirm the names
+  from the successful PR check rollup before saving the ruleset.
+- Private vulnerability reporting and automatic deletion of merged public
+  feature branches are enabled. Actions from forks retain read-only tokens.
+
+Use the repository settings/API response as evidence. A successful workflow
+alone does not prove these controls are configured.
 
 - [ ] **Step 3: Merge only the verified PR**
 
 Run:
 
 ```bash
-gh pr merge --squash --delete-branch
+gh pr merge --merge --delete-branch
 gh pr view --json state,mergedAt,mergeCommit,url
 ```
 
-Expected: state is `MERGED`, `mergedAt` is non-null, and the remote feature
-branch is absent.
+Expected: the JSON contains `"state":"MERGED"`, `mergedAt` and `mergeCommit`
+are non-null, and the public remote feature branch is absent. Fetch public
+`main` into `$PUBLICATION_CLONE` and verify the merge commit has exactly
+`2 parents`; this preserves the reviewed feature history instead of collapsing
+it into a squash commit.
 
 - [ ] **Step 4: Verify Pages deployment and public site**
 
@@ -1078,21 +1238,34 @@ Expected: Pages workflow succeeds and the returned public URL serves the
 verified site. Open the public URL and repeat the Home → Roadmap → Lesson →
 Catalog smoke journey.
 
-- [ ] **Step 5: Update local main and remove merged branch/worktree**
+- [ ] **Step 5: Create and verify the public release**
+
+From the isolated publication clone after fetching the verified public merge:
+
+```bash
+git -C "$PUBLICATION_CLONE" switch main
+git -C "$PUBLICATION_CLONE" pull --ff-only public main
+git -C "$PUBLICATION_CLONE" tag -a v0.1.0 -m "Engineering Expert Curriculum v0.1.0"
+git -C "$PUBLICATION_CLONE" push public refs/tags/v0.1.0:refs/tags/v0.1.0
+gh release create v0.1.0 --verify-tag --title "Engineering Expert Curriculum v0.1.0" --notes-from-tag
+gh release view v0.1.0 --json tagName,isDraft,isPrerelease,publishedAt,url
+```
+
+Expected: tag `v0.1.0` points at the verified public merge commit and the
+release is published, not a draft or prerelease.
+
+- [ ] **Step 6: Clean only the merged public feature branch**
 
 Run:
 
 ```bash
-git -C $REPO_ROOT pull --ff-only origin main
-git -C $REPO_ROOT worktree remove \
-  $FEATURE_WORKTREE
-git -C $REPO_ROOT branch -d \
-  feat/static-oss-curriculum
-git -C $REPO_ROOT fetch --prune
-git -C $REPO_ROOT branch -vv
-git -C $REPO_ROOT status --short --branch
+git -C "$PUBLICATION_CLONE" fetch public --prune
+git -C "$PUBLICATION_CLONE" branch -d feat/static-oss-curriculum
+git -C "$PUBLICATION_CLONE" branch -vv
+git -C "$PUBLICATION_CLONE" status --short --branch
 ```
 
-Expected: local `main` matches `origin/main`; the feature worktree and local and
-remote feature branches are gone; the local checksum-verified `.archive/`
-remains ignored and recoverable.
+Expected: public `main` and `v0.1.0` remain, and only the merged public feature
+branch has been cleaned. 元リポジトリ、元feature branch、元worktree、非公開archiveは削除しない。
+They remain intact and recoverable until a separately authorized retention
+decision; this publication runbook never removes or rewrites them.

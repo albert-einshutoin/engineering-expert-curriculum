@@ -732,8 +732,7 @@ git commit -m "content: connect software design to trustworthy evidence"
 
 **Task 4 review correction evidence (2026-07-31):**
 
-- All commands ran with CPython 3.13.5 at
-  `python3.13` on Darwin 25.5.0
+- All commands ran with CPython 3.13.5 via `python3.13` on Darwin 25.5.0
   arm64. The formal Task 4 RED and quality commands above intentionally name
   `python3.13`; an unversioned interpreter is not an accepted condition.
 - Review RED commits `8e3c63b`, `8897795`, and `a572593` first exposed the

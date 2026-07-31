@@ -76,6 +76,14 @@ class PublicationPlanContractTests(unittest.TestCase):
             for match in _LEDGER_ROW.finditer(_read(PUBLICATION_PLAN))
         }
         self.assertEqual(publication_ledger, workflow_ledger)
+        for match in _ACTION_REFERENCE.finditer(_read(PUBLICATION_PLAN)):
+            action = match.group("action")
+            with self.subTest(action=action):
+                self.assertEqual(
+                    match.group("revision"),
+                    workflow_ledger[action],
+                    f"{action} example drifted from the workflow ledger",
+                )
 
     def test_release_automation_is_review_only_and_pages_is_main_push_only(self) -> None:
         workflows = "\n".join(
@@ -122,10 +130,14 @@ class PublicationPlanContractTests(unittest.TestCase):
 
     def test_sanitized_history_is_verified_before_any_public_push(self) -> None:
         publication = _read(PUBLICATION_PLAN)
+        verification = publication.split(
+            "**Step 4: Verify rewritten refs, identity, paths, secrets, and tests**",
+            maxsplit=1,
+        )[1].split("**Step 5: Push exactly the reviewed public refs**", maxsplit=1)[0]
         required_verification = (
-            "git for-each-ref",
-            "git log",
-            "git grep",
+            "for-each-ref",
+            " log \\",
+            " grep -n -E",
             "gitleaks git",
             "python3.13 -m unittest discover -s tests -v",
         )
@@ -134,8 +146,8 @@ class PublicationPlanContractTests(unittest.TestCase):
         push_index = publication.index(push_command)
         for phrase in required_verification:
             with self.subTest(phrase=phrase):
-                self.assertIn(phrase, publication)
-                self.assertLess(publication.index(phrase), push_index)
+                self.assertIn(phrase, verification)
+        self.assertLess(publication.index(verification), push_index)
 
     def test_plan_forbids_broad_or_source_checkout_publication(self) -> None:
         publication = _read(PUBLICATION_PLAN)
@@ -176,7 +188,7 @@ class PublicationPlanContractTests(unittest.TestCase):
             "gh pr merge --merge --delete-branch",
             '"state":"MERGED"',
             "2 parents",
-            "git tag -a v0.1.0",
+            'git -C "$PUBLICATION_CLONE" tag -a v0.1.0',
             "gh release create v0.1.0",
         ):
             with self.subTest(phrase=phrase):

@@ -467,7 +467,7 @@ Run:
 
 ```bash
 python3.13 tools/import_catalog.py \
-  --input $REPO_ROOT/data/curriculum.json \
+  --input "$REPO_ROOT/data/curriculum.json" \
   --output content/catalog.json
 python3.13 -m unittest tests.test_import_catalog tests.test_catalog -v
 ```
@@ -1263,12 +1263,14 @@ git commit -m "feat: build static curriculum atlas atomically"
 Run:
 
 ```bash
+REPO_ROOT="${REPO_ROOT:?set REPO_ROOT to the original repository checkout}"
+export REPO_ROOT
 python3.13 - <<'PY'
 import os
 import stat
 from pathlib import Path
 
-repository = Path("$REPO_ROOT")
+repository = Path(os.environ["REPO_ROOT"])
 if not repository.is_absolute():
     raise RuntimeError("repository path must be absolute")
 if not hasattr(os, "O_NOFOLLOW"):
@@ -1364,8 +1366,8 @@ Run:
 
 ```bash
 python3.13 tools/migrate_prototype.py \
-  --source $REPO_ROOT \
-  --archive $REPO_ROOT/.archive/prototype-v1
+  --source "$REPO_ROOT" \
+  --archive "$REPO_ROOT/.archive/prototype-v1"
 ```
 
 Expected: JSON containing `"status": "preserved"` and a positive `fileCount`.
@@ -1375,11 +1377,12 @@ Expected: JSON containing `"status": "preserved"` and a positive `fileCount`.
 Run:
 
 ```bash
+FEATURE_WORKTREE="${FEATURE_WORKTREE:?set FEATURE_WORKTREE to the implementation checkout}"
 python3.13 -m json.tool \
-  $REPO_ROOT/.archive/prototype-v1/manifest.json \
+  "$REPO_ROOT/.archive/prototype-v1/manifest.json" \
   >/dev/null
-git -C $REPO_ROOT status --short --branch
-git status --short --branch
+git -C "$REPO_ROOT" status --short --branch
+git -C "$FEATURE_WORKTREE" status --short --branch
 ```
 
 Expected: the original worktree retains `.git`, `.superpowers`, `.archive`, and
