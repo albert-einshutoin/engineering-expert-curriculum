@@ -80,6 +80,105 @@ PRICE_CONTEXT = {
     ),
 }
 COMMAND_INPUT = {"exit_code": 0}
+ASSUMPTION_FIELDS = {
+    "demand_growth",
+    "engineering_hour_value",
+    "operations_hour_cost",
+    "loss_per_incident_hour",
+}
+CANDIDATE_FIELDS = {
+    "id",
+    "direct_cost",
+    "engineering_hours",
+    "operations_hours",
+    "failure_probability",
+    "expected_incident_hours",
+    "capacity",
+}
+
+def is_number(value):
+    return type(value) in {int, float} and type(value) is not bool
+
+def validate_assumption_transfer(baseline, transferred):
+    for assumptions in (baseline, transferred):
+        if (
+            type(assumptions) is not dict
+            or set(assumptions) != ASSUMPTION_FIELDS
+            or not all(
+                is_number(value) and value &gt;= 0
+                for value in assumptions.values()
+            )
+        ):
+            raise AssertionError(
+                "economics-transfer-invariant: invalid assumption schema"
+            )
+    changed = [
+        field
+        for field in sorted(set(baseline) | set(transferred))
+        if (
+            field not in baseline
+            or field not in transferred
+            or baseline[field] != transferred[field]
+        )
+    ]
+    if changed != ["demand_growth"]:
+        raise AssertionError(
+            "economics-transfer-invariant: transfer changed wrong input"
+        )
+    return changed
+
+def validate_candidate_snapshot(candidates):
+    valid = (
+        type(candidates) is list
+        and bool(candidates)
+        and all(
+            type(candidate) is dict
+            and set(candidate) == CANDIDATE_FIELDS
+            and type(candidate["id"]) is str
+            and bool(candidate["id"])
+            and all(
+                is_number(candidate[field])
+                and candidate[field] &gt;= 0
+                for field in CANDIDATE_FIELDS - {"id"}
+            )
+            and candidate["capacity"] &gt; 0
+            and candidate["failure_probability"] &lt;= 1
+            for candidate in candidates
+        )
+        and len({candidate["id"] for candidate in candidates})
+        == len(candidates)
+    )
+    if not valid:
+        raise AssertionError(
+            "economics-candidate-invariant: invalid candidate schema"
+        )
+
+def fixed_candidate_snapshot():
+    # JSON値から別々のfull snapshotを作り、ID一致だけでnested costや
+    # capacityのdriftを見逃さない。
+    return json.loads(
+        json.dumps(INVESTMENT_CANDIDATES, ensure_ascii=False)
+    )
+
+def validate_economics_context():
+    if (
+        not is_number(BASE_DEMAND)
+        or BASE_DEMAND &lt;= 0
+        or type(PRICE_CONTEXT) is not dict
+        or set(PRICE_CONTEXT)
+        != {"kind", "claim_current_market_prices", "limitation"}
+        or type(PRICE_CONTEXT["kind"]) is not str
+        or not PRICE_CONTEXT["kind"]
+        or type(PRICE_CONTEXT["claim_current_market_prices"]) is not bool
+        or type(PRICE_CONTEXT["limitation"]) is not str
+        or not PRICE_CONTEXT["limitation"]
+        or type(COMMAND_INPUT) is not dict
+        or set(COMMAND_INPUT) != {"exit_code"}
+        or type(COMMAND_INPUT["exit_code"]) is not int
+    ):
+        raise AssertionError(
+            "economics-candidate-invariant: invalid context schema"
+        )
 
 def compare_investment(candidate, assumptions):
     required_capacity = round(
@@ -119,10 +218,10 @@ def compare_investment(candidate, assumptions):
         "constraint_breaches": constraint_breaches,
     }
 
-def compare_all(assumptions):
+def compare_all(candidates, assumptions):
     return [
         compare_investment(candidate, assumptions)
-        for candidate in INVESTMENT_CANDIDATES
+        for candidate in candidates
     ]
 
 def select_investment(comparisons):
@@ -135,22 +234,27 @@ def select_investment(comparisons):
     )["id"]
 
 def main():
-    baseline = compare_all(BASELINE_ASSUMPTIONS)
-    transferred = compare_all(TRANSFER_ASSUMPTIONS)
-    changed_fields = [
-        field
-        for field in sorted(
-            set(BASELINE_ASSUMPTIONS) | set(TRANSFER_ASSUMPTIONS)
-        )
-        if (
-            BASELINE_ASSUMPTIONS.get(field)
-            != TRANSFER_ASSUMPTIONS.get(field)
-        )
-    ]
-    if changed_fields != ["demand_growth"]:
+    validate_economics_context()
+    changed_fields = validate_assumption_transfer(
+        BASELINE_ASSUMPTIONS,
+        TRANSFER_ASSUMPTIONS,
+    )
+    baseline_candidates = fixed_candidate_snapshot()
+    transferred_candidates = fixed_candidate_snapshot()
+    validate_candidate_snapshot(baseline_candidates)
+    validate_candidate_snapshot(transferred_candidates)
+    baseline = compare_all(
+        baseline_candidates,
+        BASELINE_ASSUMPTIONS,
+    )
+    if baseline_candidates != transferred_candidates:
         raise AssertionError(
-            "economics-transfer-invariant: transfer changed wrong input"
+            "economics-candidate-invariant: candidate snapshots drifted"
         )
+    transferred = compare_all(
+        transferred_candidates,
+        TRANSFER_ASSUMPTIONS,
+    )
     for option in baseline + transferred:
         component_sum = (
             option["direct_cost"]
@@ -172,9 +276,7 @@ def main():
 
     baseline_selected = select_investment(baseline)
     transferred_selected = select_investment(transferred)
-    baseline_ids = [option["id"] for option in baseline]
-    transferred_ids = [option["id"] for option in transferred]
-    same_candidates = baseline_ids == transferred_ids
+    same_candidates = baseline_candidates == transferred_candidates
     sensitivity_recomputed = (
         baseline[0]["required_capacity"]
         != transferred[0]["required_capacity"]
@@ -204,6 +306,8 @@ def main():
             "baseline_assumptions": dict(BASELINE_ASSUMPTIONS),
             "transferred_assumptions": dict(TRANSFER_ASSUMPTIONS),
             "same_investment_candidates": same_candidates,
+            "baseline_candidate_snapshot": baseline_candidates,
+            "transferred_candidate_snapshot": transferred_candidates,
             "baseline_selected_option": baseline_selected,
             "transferred_selected_option": transferred_selected,
             "baseline_demand_growth": BASELINE_ASSUMPTIONS[
@@ -234,7 +338,7 @@ def main():
                 * len([BASELINE_ASSUMPTIONS, TRANSFER_ASSUMPTIONS])
             ),
             "subprocesses": 0,
-            "maximum_iterations": len(INVESTMENT_CANDIDATES),
+            "maximum_iterations": len(baseline_candidates),
         },
         "external_network_used": False,
         "command_success_distinction": {
@@ -262,7 +366,7 @@ def main():
                 for index, evidence in enumerate(
                     [
                         PRICE_CONTEXT,
-                        INVESTMENT_CANDIDATES,
+                        baseline_candidates,
                         [
                             option["capacity_headroom"]
                             for option in baseline
