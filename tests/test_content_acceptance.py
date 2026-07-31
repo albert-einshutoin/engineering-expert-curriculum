@@ -1155,6 +1155,9 @@ class ContentAcceptanceTests(unittest.TestCase):
             _assert_generated_map_contract(tampered_total)
 
         mutations = (
+            ("V4&#46;0a", r"V4\.0a"),
+            ("V4&#46;0a", "V4&period;0a"),
+            ("V4&#46;0a", "V4&#x2e;0a"),
             (
                 "`core-01-systems-tradeoffs`<br>システム思考",
                 "`core-01-systems-tradeoffs`<br>\\システム思考",
@@ -1206,10 +1209,8 @@ class ContentAcceptanceTests(unittest.TestCase):
             _parse_markdown_table_row(r"| 1 | boundary a\|b | final |"),
             ("1", "boundary a|b", "final"),
         )
-        self.assertEqual(
-            _parse_markdown_table_row(r"| \literal |"),
-            (r"\literal",),
-        )
+        with self.assertRaisesRegex(AssertionError, "unsupported escape"):
+            _parse_markdown_table_row(r"| \literal |")
 
     def test_two_fresh_builds_have_exact_deterministic_static_inventory(self) -> None:
         with TemporaryDirectory(
