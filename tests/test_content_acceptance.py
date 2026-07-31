@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 import hashlib
+from html import unescape
 from html.parser import HTMLParser
 import json
 from pathlib import Path, PurePosixPath
@@ -527,7 +528,53 @@ def _extract_generated_map(document: str) -> str:
     return document[start : end + len(END_GENERATED_MAP)]
 
 
-def _assert_generated_map_contract(document: str) -> None:
+def _parse_markdown_table_row(line: str) -> tuple[str, ...]:
+    """Parse one generated table row without sharing production rendering."""
+    if not line.startswith("|") or not line.endswith("|"):
+        raise AssertionError("generated map row must start and end with a pipe")
+    cells: list[str] = []
+    current: list[str] = []
+    index = 1
+    while index < len(line) - 1:
+        character = line[index]
+        if character == "\\":
+            index += 1
+            if index >= len(line) - 1:
+                raise AssertionError("generated map row has a dangling escape")
+            current.append(line[index])
+        elif character == "|":
+            cells.append(unescape("".join(current).strip()))
+            current = []
+        else:
+            current.append(character)
+        index += 1
+    cells.append(unescape("".join(current).strip()))
+    return tuple(cells)
+
+
+def _map_section(
+    block: str,
+    heading: str,
+    next_heading: str | None,
+) -> tuple[str, ...]:
+    start_marker = f"### {heading}\n"
+    if block.count(start_marker) != 1:
+        raise AssertionError(f"generated map needs one {heading} section")
+    section = block.split(start_marker, maxsplit=1)[1]
+    if next_heading is not None:
+        end_marker = f"\n### {next_heading}\n"
+        if section.count(end_marker) != 1:
+            raise AssertionError(
+                f"generated map needs one {next_heading} section boundary"
+            )
+        section = section.split(end_marker, maxsplit=1)[0]
+    return tuple(section.splitlines())
+
+
+def _assert_generated_map_contract(
+    document: str,
+    repository_root: Path = REPOSITORY_ROOT,
+) -> None:
     block = _extract_generated_map(document)
     expected_release_rows = (
         "| 保存カタログ | 1,140 items |",
@@ -541,45 +588,162 @@ def _assert_generated_map_contract(document: str) -> None:
         if block.count(row) != 1:
             raise AssertionError(f"missing or duplicated release row: {row}")
 
+    framework_lines = _map_section(
+        block,
+        "Framework baseline",
+        "Mastery gates",
+    )
+    framework_rows = tuple(
+        _parse_markdown_table_row(line)
+        for line in framework_lines
+        if any(line.startswith(f"| {framework} |") for framework in FRAMEWORKS)
+    )
+    expected_framework_rows = tuple(
+        (
+            framework,
+            FRAMEWORK_SOURCES[framework]["version"],
+            f"[{framework}]({FRAMEWORK_SOURCES[framework]['officialUrl']})",
+            FRAMEWORK_SOURCES[framework]["verifiedAt"],
+        )
+        for framework in FRAMEWORKS
+    )
+    if framework_rows != expected_framework_rows:
+        raise AssertionError("generated map framework baseline is not canonical")
+
+    gate_lines = _map_section(block, "Mastery gates", "30-lesson release map")
+    gate_rows = tuple(
+        _parse_markdown_table_row(line)
+        for line in gate_lines
+        if re.match(r"^\| [1-6] \| `", line)
+    )
+    expected_gate_rows = tuple(
+        (
+            str(order),
+            f"`{gate['id']}`",
+            str(gate["after"]),
+            gate["artifact"],
+            gate["review"],
+        )
+        for order, gate in enumerate(EXPECTED_MASTERY_GATES, start=1)
+    )
+    if gate_rows != expected_gate_rows:
+        raise AssertionError("generated map mastery gates are not canonical")
+
+    lesson_documents = {
+        lesson_id: json.loads(
+            (
+                repository_root
+                / "content/lessons"
+                / lesson_id
+                / "lesson.json"
+            ).read_bytes()
+        )
+        for lesson_id in LESSON_IDS
+    }
+    competency_document = json.loads(
+        (repository_root / "content/competencies.json").read_bytes()
+    )
+    mappings = {
+        (mapping["targetId"], mapping["framework"]): mapping
+        for mapping in competency_document["mappings"]
+    }
+    capstone_documents = {
+        capstone_id: json.loads(
+            (
+                repository_root
+                / "content/capstones"
+                / f"{capstone_id}.json"
+            ).read_bytes()
+        )
+        for capstone_id in CAPSTONE_IDS
+    }
+
+    lesson_lines = _map_section(
+        block,
+        "30-lesson release map",
+        "Capstone coverage",
+    )
     lesson_rows = tuple(
-        (match, line)
-        for line in block.splitlines()
+        (match, line, _parse_markdown_table_row(line))
+        for line in lesson_lines
         if (match := _LESSON_MAP_ROW.match(line)) is not None
     )
     if len(lesson_rows) != 30:
         raise AssertionError("generated map must contain exactly 30 lesson rows")
-    if tuple(match.group("lesson") for match, _line in lesson_rows) != LESSON_IDS:
+    if tuple(
+        match.group("lesson") for match, _line, _cells in lesson_rows
+    ) != LESSON_IDS:
         raise AssertionError("generated map lesson IDs do not match the release")
-    if tuple(int(match.group("ordinal")) for match, _line in lesson_rows) != tuple(
-        range(1, 31)
-    ):
+    if tuple(
+        int(match.group("ordinal"))
+        for match, _line, _cells in lesson_rows
+    ) != tuple(range(1, 31)):
         raise AssertionError("generated map lesson ordinals are not canonical")
 
     mapping_cells: list[str] = []
-    for match, line in lesson_rows:
-        cells = tuple(cell.strip() for cell in line[1:-1].split("|"))
+    for match, _line, cells in lesson_rows:
         if len(cells) != 9:
             raise AssertionError("lesson rows must contain exactly nine cells")
-        framework_cells = cells[5:8]
-        if any(
-            re.fullmatch(
-                r"`[^`]+` .+ \((?:direct|foundational|partial)\)",
-                cell,
-            )
-            is None
-            for cell in framework_cells
+        lesson_id = match.group("lesson")
+        ordinal = int(match.group("ordinal"))
+        lesson = lesson_documents[lesson_id]
+        expected_prerequisites = EXPECTED_PREREQUISITES[lesson_id]
+        expected_prerequisite_cell = "<br>".join(
+            f"`{value}`" for value in expected_prerequisites
+        ) or "—"
+        expected_gate = next(
+            gate["id"]
+            for gate in EXPECTED_MASTERY_GATES
+            if ordinal <= gate["after"]
+        )
+        if cells[:5] != (
+            str(ordinal),
+            f"`{lesson_id}`<br>{lesson['title']}",
+            f"{lesson['track']} / {lesson['stage']}",
+            expected_prerequisite_cell,
+            f"`{expected_gate}`",
         ):
-            raise AssertionError("framework cells must carry code and alignment")
+            raise AssertionError(
+                f"generated map lesson identity, prerequisite, or gate drifted: "
+                f"{lesson_id}"
+            )
+        framework_cells = cells[5:8]
+        expected_framework_cells = tuple(
+            (
+                f"`{mappings[(lesson_id, framework)]['competencyId']}` "
+                f"{mappings[(lesson_id, framework)]['competencyName']} "
+                f"({mappings[(lesson_id, framework)]['alignment']})"
+            )
+            for framework in FRAMEWORKS
+        )
+        if framework_cells != expected_framework_cells:
+            raise AssertionError(
+                f"generated map framework mapping drifted: {lesson_id}"
+            )
         mapping_cells.extend(framework_cells)
-        expected_owner = EXPECTED_PRIMARY_OWNER[match.group("lesson")]
-        if f"Primary: `{expected_owner}`" not in cells[8]:
-            raise AssertionError("generated map has the wrong primary owner")
+        expected_owner = EXPECTED_PRIMARY_OWNER[lesson_id]
+        supporting = tuple(
+            capstone_id
+            for capstone_id in CAPSTONE_IDS
+            if lesson_id in capstone_documents[capstone_id]["lessonIds"]
+            and capstone_id != expected_owner
+        )
+        expected_capstone_cell = f"Primary: `{expected_owner}`"
+        if supporting:
+            expected_capstone_cell += "<br>Supporting: " + ", ".join(
+                f"`{value}`" for value in supporting
+            )
+        if cells[8] != expected_capstone_cell:
+            raise AssertionError(
+                f"generated map capstone ownership drifted: {lesson_id}"
+            )
     if len(mapping_cells) != 90:
         raise AssertionError("generated map must expose exactly 90 mapping cells")
 
+    capstone_lines = _map_section(block, "Capstone coverage", None)
     capstone_rows = tuple(
-        line
-        for line in block.splitlines()
+        _parse_markdown_table_row(line)
+        for line in capstone_lines
         if re.match(
             r"^\| `(?:global-service|legacy-evolution|oss-launch)` — ",
             line,
@@ -587,11 +751,17 @@ def _assert_generated_map_contract(document: str) -> None:
     )
     if len(capstone_rows) != 3:
         raise AssertionError("generated map must contain three capstone rows")
-    capstone_ids = tuple(
-        row.split("`", maxsplit=2)[1] for row in capstone_rows
+    expected_capstone_rows = tuple(
+        (
+            f"`{capstone_id}` — {capstone_documents[capstone_id]['title']}",
+            str(len(capstone_documents[capstone_id]["lessonIds"])),
+            str(len(capstone_documents[capstone_id]["primaryExercises"])),
+            ", ".join(f"`{kind}`" for kind in CAPSTONE_EVIDENCE_KINDS),
+        )
+        for capstone_id in CAPSTONE_IDS
     )
-    if capstone_ids != CAPSTONE_IDS:
-        raise AssertionError("generated map capstone IDs do not match the release")
+    if capstone_rows != expected_capstone_rows:
+        raise AssertionError("generated map capstone coverage drifted")
 
 
 class ContentAcceptanceTests(unittest.TestCase):
@@ -918,6 +1088,43 @@ class ContentAcceptanceTests(unittest.TestCase):
         self.assertNotEqual(tampered_total, document)
         with self.assertRaisesRegex(AssertionError, "release row"):
             _assert_generated_map_contract(tampered_total)
+
+        mutations = (
+            (
+                "`core-01-systems-tradeoffs` | `foundation`",
+                "`core-30-evidence-based-technical-leadership` | `foundation`",
+            ),
+            ("| 1 | `foundation` | 5 |", "| 1 | `foundation` | 4 |"),
+            ("| CS2023 | Final Report |", "| CS2023 | Draft Report |"),
+            (
+                "`SF` Systems Fundamentals (direct)",
+                "`AL` Systems Fundamentals (direct)",
+            ),
+            (
+                "Primary: `global-service`<br>Supporting: "
+                "`legacy-evolution`, `oss-launch`",
+                "Primary: `global-service`<br>Supporting: `legacy-evolution`",
+            ),
+            (
+                "`global-service` — 多地域の医療予約サービスを設計・運用する | 27 |",
+                "`global-service` — 多地域の医療予約サービスを設計・運用する | 26 |",
+            ),
+            (
+                "`build`, `operate`, `explain`, `review` |",
+                "`build`, `operate`, `explain`, `audit` |",
+            ),
+        )
+        for original, replacement in mutations:
+            tampered = document.replace(original, replacement, 1)
+            self.assertNotEqual(tampered, document)
+            with self.assertRaises(AssertionError):
+                _assert_generated_map_contract(tampered)
+
+    def test_independent_markdown_parser_accepts_an_escaped_pipe(self) -> None:
+        self.assertEqual(
+            _parse_markdown_table_row(r"| 1 | boundary a\|b | final |"),
+            ("1", "boundary a|b", "final"),
+        )
 
     def test_two_fresh_builds_have_exact_deterministic_static_inventory(self) -> None:
         with TemporaryDirectory(
