@@ -686,6 +686,27 @@ gh pr view "$PUBLIC_PR_URL" --repo "wrong/project" # --repo "$PUBLIC_REPOSITORY_
         self.assertLess(evidence, metadata_branch)
         self.assertLess(metadata_branch, tag)
 
+    def test_release_date_is_rechecked_before_merge_and_tag(self) -> None:
+        publication = _read(PUBLICATION_PLAN)
+        release = publication.split(
+            "**Step 5: Materialize release metadata through a PR, then publish**",
+            maxsplit=1,
+        )[1].split(
+            "**Step 6: Clean only the merged public feature branch**",
+            maxsplit=1,
+        )[0]
+        freshness_check = 'test "$(date -u +%F)" = "$RELEASE_DATE"'
+        checks = [
+            match.start()
+            for match in re.finditer(re.escape(freshness_check), release)
+        ]
+        merge = release.index("gh pr merge --merge")
+        tag = release.index("tag -a v0.1.0")
+
+        self.assertGreaterEqual(len(checks), 2)
+        self.assertTrue(any(check < merge for check in checks))
+        self.assertTrue(any(merge < check < tag for check in checks))
+
     def test_public_https_evidence_schema_is_exact_and_single_valued(self) -> None:
         valid = ("\n".join(_VALID_EVIDENCE_LINES) + "\n").encode("utf-8")
         mutations = {
