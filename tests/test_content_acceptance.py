@@ -1329,6 +1329,42 @@ class ContentAcceptanceTests(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 _assert_generated_map_contract(tampered)
 
+    def test_curriculum_map_requires_the_handwritten_learning_contract(self) -> None:
+        document = CURRICULUM_MAP.read_text(encoding="utf-8")
+        generated_only = _extract_generated_map(document)
+        with self.assertRaises(AssertionError):
+            _assert_generated_map_contract(generated_only)
+
+        mutations = (
+            ("# Engineering Expert Curriculum Map", "# Generated Data"),
+            ("## 地図の読み方", "## 表の読み方"),
+            ("## 推奨する進み方", "## 進み方"),
+            ("## 更新方法", "## 再生成"),
+            (
+                "データ表はsource of truthから\n機械生成し、学び方と解釈上の注意は人が保守する。",
+                "データ表は機械生成する。",
+            ),
+            (
+                "資格、職位、SFIA責任level\nの認定ではない。",
+                "SFIAの認定として利用できる。",
+            ),
+            (
+                "artifact、teach-back、assessment reasoning、transferを\n"
+                "揃えてからmastery gateへ進む。",
+                "読了後すぐmastery gateへ進む。",
+            ),
+            (
+                "生成表を直接編集してはならない。",
+                "生成表を直接編集する。",
+            ),
+        )
+        for original, replacement in mutations:
+            with self.subTest(original=original):
+                tampered = document.replace(original, replacement, 1)
+                self.assertNotEqual(tampered, document)
+                with self.assertRaises(AssertionError):
+                    _assert_generated_map_contract(tampered)
+
         for injected in (
             "| unexpected | generated | row |",
             '<img src="https://example.invalid/tracker">',

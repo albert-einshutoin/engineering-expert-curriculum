@@ -171,6 +171,37 @@ class CurriculumMapCliContractTests(unittest.TestCase):
             self.assertEqual(second_stat.st_ino, first_stat.st_ino)
             self.assertEqual(second_stat.st_mtime_ns, first_stat.st_mtime_ns)
 
+    def test_update_preserves_distinctive_handwritten_prefix_and_suffix_bytes(
+        self,
+    ) -> None:
+        with TemporaryDirectory(
+            prefix=".map-cli-authored-",
+            dir=REPOSITORY_ROOT.parent,
+        ) as directory:
+            root = self._repository(directory)
+            target = root / "docs/curriculum-map.md"
+            prefix = (
+                "# 固有の手書き地図\n\n"
+                "  全角・絵文字 🧭 と trailing spaces  \n\n"
+            ).encode("utf-8")
+            suffix = (
+                "\n\n## 手書きの更新方法\n\n"
+                "改行と `literal` をそのまま保存する。  \n"
+            ).encode("utf-8")
+            target.write_bytes(
+                prefix + f"{BEGIN}\nold\n{END}".encode("utf-8") + suffix
+            )
+
+            self.assertEqual(self._run(root, "new"), 0)
+
+            updated = target.read_bytes()
+            self.assertTrue(updated.startswith(prefix))
+            self.assertTrue(updated.endswith(suffix))
+            self.assertEqual(
+                updated,
+                prefix + f"{BEGIN}\nnew\n{END}".encode("utf-8") + suffix,
+            )
+
     def test_invalid_marker_counts_fail_without_changing_the_document(self) -> None:
         invalid_documents = (
             "# no markers\n",

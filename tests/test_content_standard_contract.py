@@ -306,6 +306,130 @@ class ContentStandardContractTests(unittest.TestCase):
             ):
                 _assert_content_standard(mutated)
 
+    def test_hidden_normative_prose_and_unclosed_comments_are_rejected(
+        self,
+    ) -> None:
+        valid = _valid_standard()
+        clause = REQUIRED_CLAUSES[EXPECTED_H2[1]][0]
+        mutations = {
+            "unclosed HTML comment": valid.replace(
+                clause,
+                f"<!-- {clause}",
+                1,
+            ),
+            "four-space indented code": valid.replace(
+                clause,
+                f"    {clause}",
+                1,
+            ),
+            "blockquote": valid.replace(
+                clause,
+                f"> {clause}",
+                1,
+            ),
+        }
+        for label, mutated in mutations.items():
+            with self.subTest(label=label), self.assertRaises(AssertionError):
+                _assert_content_standard(mutated)
+
+    def test_setext_and_raw_html_extra_headings_are_rejected(self) -> None:
+        valid = _valid_standard()
+        insert_at = f"## {EXPECTED_H2[1]}"
+        mutations = {
+            "Setext H1": valid.replace(
+                insert_at,
+                f"Hidden policy\n=============\n\n{insert_at}",
+                1,
+            ),
+            "Setext H2": valid.replace(
+                insert_at,
+                f"Hidden policy\n-------------\n\n{insert_at}",
+                1,
+            ),
+            "raw HTML H2": valid.replace(
+                insert_at,
+                f"<h2>Hidden policy</h2>\n\n{insert_at}",
+                1,
+            ),
+        }
+        for label, mutated in mutations.items():
+            with self.subTest(label=label), self.assertRaises(AssertionError):
+                _assert_content_standard(mutated)
+
+    def test_evidence_and_review_tables_have_exact_semantic_rows(self) -> None:
+        standard = CONTENT_STANDARD.read_text(encoding="utf-8")
+        mutations = {
+            "extra evidence row": standard.replace(
+                "| Review | 時間を空けて再現・説明・修正する | "
+                "1/7/30/90日後のpromptとrubric再評価 |",
+                "| Review | 時間を空けて再現・説明・修正する | "
+                "1/7/30/90日後のpromptとrubric再評価 |\n"
+                "| Observe | 読む | ページ表示 |",
+                1,
+            ),
+            "extra review role": standard.replace(
+                "| 編集・出典 | 用語、断定範囲、version、引用、link、Errata履歴 |",
+                "| 編集・出典 | 用語、断定範囲、version、引用、link、Errata履歴 |\n"
+                "| AI承認 | human approvalを代行する |",
+                1,
+            ),
+        }
+        for label, mutated in mutations.items():
+            self.assertNotEqual(mutated, standard)
+            with self.subTest(label=label), self.assertRaises(AssertionError):
+                _assert_content_standard(mutated)
+
+    def test_ai_never_human_and_prospective_policy_are_direct_contracts(
+        self,
+    ) -> None:
+        valid = _valid_standard()
+        mutations = {
+            "AI counts as human": valid.replace(
+                "AI支援または自動生成のreviewを `human` approvalとして扱わない",
+                "AI支援または自動生成のreviewを `human` approvalとして扱う",
+                1,
+            ),
+            "retroactive v0.1.0 approval": valid.replace(
+                "`v0.1.0` から発効するこの開示方針を、既存contentへ遡及してhuman approvalを"
+                "推定または付与するために使わない",
+                "`v0.1.0` から発効するこの開示方針を、既存contentへ遡及してhuman approvalを"
+                "付与するために使う",
+                1,
+            ),
+        }
+        for label, mutated in mutations.items():
+            self.assertNotEqual(mutated, valid)
+            with self.subTest(label=label), self.assertRaises(AssertionError):
+                _assert_content_standard(mutated)
+
+    def test_design_spec_defines_six_authored_and_seven_generated_sections(
+        self,
+    ) -> None:
+        source = DESIGN_SPEC.read_text(encoding="utf-8")
+        authored_contract = (
+            "`body.html` is an authored semantic fragment. It must contain exactly "
+            "these six sections in order:\n\n"
+            "1. Why this matters\n"
+            "2. Mental model\n"
+            "3. Worked example\n"
+            "4. Trade-offs and failure modes\n"
+            "5. Knowledge checks\n"
+            "6. Sources and further study"
+        )
+        generated_contract = (
+            "`lesson.json` provides the structured lab, teach-back, assessment, "
+            "transfer, review schedule, rubric, and sources that the renderer "
+            "generates outside the authored body."
+        )
+        self.assertIn(authored_contract, source)
+        self.assertIn(generated_contract, source)
+        authored_region = source.split(
+            "`body.html` is an authored semantic fragment.", 1
+        )[1].split("The validator rejects", 1)[0]
+        for contradictory_heading in ("Practical lab", "Transfer task", "Rubric"):
+            with self.subTest(heading=contradictory_heading):
+                self.assertNotIn(contradictory_heading, authored_region)
+
     def test_weakened_normative_or_reversed_completion_claims_fail(self) -> None:
         valid = _valid_standard()
         normative = REQUIRED_CLAUSES[EXPECTED_H2[0]][0]
