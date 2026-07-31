@@ -3,12 +3,15 @@ from __future__ import annotations
 from contextlib import contextmanager
 import os
 from pathlib import Path
+import stat
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from curriculum_builder.build import build_site
+import tools.check_site as check_site_module
 from tools.check_site import (
     CURRENT_RELEASE_INVENTORY,
     MAX_ISSUES,
@@ -187,6 +190,71 @@ class SiteCheckerFilesystemTests(unittest.TestCase):
                 )
             )
 
+    def test_regular_file_close_failure_is_reported_without_retry(self) -> None:
+        with _fixture() as root:
+            real_close = os.close
+            failed_descriptor: int | None = None
+            failure_attempts = 0
+
+            def close_then_fail_once(descriptor: int) -> None:
+                nonlocal failed_descriptor, failure_attempts
+                try:
+                    mode = os.fstat(descriptor).st_mode
+                except OSError:
+                    if descriptor == failed_descriptor:
+                        failure_attempts += 1
+                    raise
+                real_close(descriptor)
+                if failed_descriptor is None and stat.S_ISREG(mode):
+                    failed_descriptor = descriptor
+                    failure_attempts += 1
+                    raise OSError("REGULAR_CLOSE_FAILURE")
+
+            with patch.object(
+                check_site_module.os,
+                "close",
+                side_effect=close_then_fail_once,
+            ):
+                issues = check_site(root)
+
+            self.assertEqual(failure_attempts, 1)
+            self.assertTrue(
+                any("could not be closed safely" in issue for issue in issues)
+            )
+
+    def test_read_failure_remains_visible_when_file_close_also_fails(self) -> None:
+        with _fixture() as root:
+            real_close = os.close
+            injected_close = False
+
+            def close_then_fail_once(descriptor: int) -> None:
+                nonlocal injected_close
+                mode = os.fstat(descriptor).st_mode
+                real_close(descriptor)
+                if not injected_close and stat.S_ISREG(mode):
+                    injected_close = True
+                    raise OSError("REGULAR_CLOSE_FAILURE")
+
+            with (
+                patch.object(
+                    check_site_module.os,
+                    "read",
+                    side_effect=OSError("REGULAR_READ_FAILURE"),
+                ),
+                patch.object(
+                    check_site_module.os,
+                    "close",
+                    side_effect=close_then_fail_once,
+                ),
+            ):
+                issues = check_site(root)
+
+            self.assertTrue(injected_close)
+            self.assertTrue(any("unreadable" in issue for issue in issues))
+            self.assertTrue(
+                any("could not be closed safely" in issue for issue in issues)
+            )
+
     def test_exact_inventory_reports_missing_and_unexpected_paths(self) -> None:
         with _fixture() as root:
             issues = check_site(
@@ -321,6 +389,62 @@ class SiteCheckerHtmlTests(unittest.TestCase):
                     )
                 )
 
+    def test_rejects_inert_semantic_contracts(self) -> None:
+        required = (
+            '<a class="skip-link" href="#main">本文へ移動</a>\n'
+            '  <main id="main"><h1>検証ページ</h1>'
+        )
+        for wrapper in ("template", "div hidden", "div inert"):
+            document = _page().replace(
+                required,
+                f"<{wrapper}>{required}",
+                1,
+            ).replace("</main>", f"</main></{wrapper.split()[0]}>", 1)
+            with self.subTest(wrapper=wrapper):
+                self.assertTrue(
+                    any("inert" in issue for issue in self._issues_for(document))
+                )
+
+    def test_requires_nonempty_ordered_headings(self) -> None:
+        mutations = (
+            _page().replace("<h1>検証ページ</h1>", "<h1></h1>"),
+            _page().replace(
+                "<h1>検証ページ</h1>",
+                "<h1>検証ページ</h1><h3>飛び級</h3>",
+            ),
+        )
+        for document in mutations:
+            with self.subTest(document=document[-80:]):
+                self.assertTrue(
+                    any("heading" in issue for issue in self._issues_for(document))
+                )
+
+    def test_skip_link_must_target_the_actual_main_element(self) -> None:
+        document = _page().replace(
+            '<main id="main">',
+            '<div id="main"></div><main id="content">',
+            1,
+        )
+        self.assertTrue(
+            any("skip link target" in issue for issue in self._issues_for(document))
+        )
+
+    def test_requires_exactly_one_utf8_charset_declaration(self) -> None:
+        mutations = (
+            _page().replace('  <meta charset="utf-8">\n', "", 1),
+            _page().replace('charset="utf-8"', 'charset="shift_jis"', 1),
+            _page().replace(
+                '  <meta charset="utf-8">',
+                '  <meta charset="utf-8"><meta charset="utf-8">',
+                1,
+            ),
+        )
+        for document in mutations:
+            with self.subTest(document=document[:100]):
+                self.assertTrue(
+                    any("charset" in issue for issue in self._issues_for(document))
+                )
+
     def test_rejects_forbidden_active_elements(self) -> None:
         for tag in ("script", "iframe", "object", "embed", "form", "base"):
             with self.subTest(tag=tag):
@@ -404,6 +528,18 @@ class SiteCheckerCssAndCliTests(unittest.TestCase):
             b"@import 'https://example.com/a.css';",
             b"body { background: url(https://example.com/a.png); }",
             b"@font-face { src: url(font.woff2); }",
+        )
+        for payload in payloads:
+            with self.subTest(payload=payload), _fixture() as root:
+                (root / "styles.css").write_bytes(payload)
+                issues = check_site(root)
+                self.assertTrue(any("CSS" in issue for issue in issues))
+
+    def test_css_comments_cannot_reconstruct_resource_syntax(self) -> None:
+        payloads = (
+            b"body { background: url/**/(https://example.com/a.png); }",
+            b'@im/**/port "https://example.com/a.css";',
+            b"@font-/**/face { src: url/**/(font.woff2); }",
         )
         for payload in payloads:
             with self.subTest(payload=payload), _fixture() as root:

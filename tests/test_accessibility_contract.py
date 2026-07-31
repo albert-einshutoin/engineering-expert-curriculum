@@ -141,6 +141,22 @@ class AccessibilityContractTests(unittest.TestCase):
                 self.assertEqual(parser.active_content, [])
                 self.assertEqual(parser.event_attributes, [])
 
+    def test_release_checker_rejects_semantics_hidden_in_template(self) -> None:
+        page = next(iter(sorted(self.site.rglob("*.html"))))
+        original = page.read_text(encoding="utf-8")
+        mutated = original.replace(
+            '<a class="skip-link" href="#main">',
+            '<template><a class="skip-link" href="#main">',
+            1,
+        ).replace("</main>", "</main></template>", 1)
+        page.write_text(mutated, encoding="utf-8")
+        try:
+            self.assertTrue(
+                any("inert" in issue for issue in check_site(self.site))
+            )
+        finally:
+            page.write_text(original, encoding="utf-8")
+
     def test_print_css_preserves_content_and_hides_only_navigation_helpers(
         self,
     ) -> None:

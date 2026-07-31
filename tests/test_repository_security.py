@@ -548,7 +548,22 @@ class RepositorySecurityTests(unittest.TestCase):
             if "python tools/check_site.py" in str(step.get("run", ""))
         )
         self.assertLess(checker_index, upload_index)
-        self.assertEqual(build_steps[upload_index].get("with"), {"path": "site"})
+        runs = "\n".join(
+            run
+            for step in build_steps
+            if isinstance((run := step.get("run")), str)
+        )
+        self.assertEqual(runs.count("python tools/build.py --output"), 2)
+        self.assertEqual(
+            runs.count("python tools/check_site.py --root "),
+            2,
+        )
+        self.assertIn("sha256sum", runs)
+        self.assertIn("diff -u", runs)
+        self.assertEqual(
+            build_steps[upload_index].get("with"),
+            {"path": "site-first"},
+        )
 
 
 if __name__ == "__main__":
