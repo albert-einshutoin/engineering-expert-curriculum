@@ -2054,7 +2054,11 @@ git commit -m "content: prove expertise through integrated capstones"
   ownership, incomplete evidence/rubric sets, and incomplete review cycles fail
   closed. A malformed release input leaves the previously published site byte
   unchanged.
-- All 12 focused capstone tests and the complete 521-test repository suite pass
+- Security self-review added independent RED cases for parent-directory
+  rebinding, mistyped document-map keys, and platforms without effective
+  no-follow directory support. Commits `0501157`, `dc97b11`, and `fc6bf5b`
+  make each boundary fail closed before any capstone is accepted.
+- All 14 focused capstone tests and the complete 523-test repository suite pass
   with CPython 3.13. Two repository-external builds each contain 40 artifacts,
   39 HTML files, four capstone pages, and zero JavaScript files; both have the
   canonical aggregate SHA-256
@@ -2065,7 +2069,7 @@ git commit -m "content: prove expertise through integrated capstones"
   `4f38b5f63931a7f06e13f90f5d9ef90a0a435f30dae5d4fe70720d730a057473`.
   The private prototype payload remains 1,194 files and 16,805,630 bytes; its
   separate 157,542-byte manifest makes the observed archive total 1,195 files.
-  Gitleaks scanned all five Task 11 commits and reported no leaks.
+  Gitleaks scanned the complete Task 11 commit range and reported no leaks.
 
 ### Task 12: Run the complete learning-quality gate
 
