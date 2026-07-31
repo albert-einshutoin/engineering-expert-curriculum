@@ -5094,6 +5094,72 @@ class CoreTrackTests(unittest.TestCase):
             "maintenance-comprehension-invariant",
         )
 
+    def test_legacy_harness_rejects_invalid_nested_fixture_schema(
+        self,
+    ) -> None:
+        cases = (
+            (
+                '    "fixture_id": "legacy-invoice-v1",',
+                (
+                    '    "fixture_id": "legacy-invoice-v1",\n'
+                    '    "unreviewed_owner": "nobody",'
+                ),
+            ),
+            (
+                '            "owner": "billing-intake",',
+                (
+                    '            "owner": "billing-intake",\n'
+                    '            "unreviewed_side_effect": True,'
+                ),
+            ),
+            (
+                (
+                    '            "tax_basis_points": 0,\n'
+                    '            "tax_rounding_increment": 1,\n'
+                    '            "observed_output_cents": 9000,'
+                ),
+                (
+                    '            "tax_basis_points": 0,\n'
+                    '            "observed_output_cents": 9000,'
+                ),
+            ),
+            (
+                (
+                    '            "change_requests": ['
+                    '"discount-rate-change", "tax-rounding-change"],'
+                ),
+                '            "change_requests": "discount-rate-change",',
+            ),
+            (
+                '            "id": "lookup-discount",',
+                '            "id": "receive-invoice",',
+            ),
+        )
+        for original, replacement in cases:
+            with self.subTest(replacement=replacement):
+                self.assert_causal_harness_source_mutation_fails(
+                    "core-21-maintenance-legacy-comprehension",
+                    "legacy_comprehension_lab_v1",
+                    original,
+                    replacement,
+                    "maintenance-comprehension-invariant",
+                )
+
+    def test_legacy_harness_rejects_invalid_change_schema(
+        self,
+    ) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-21-maintenance-legacy-comprehension",
+            "legacy_comprehension_lab_v1",
+            (
+                "BASELINE_CHANGE = {\n"
+                '    "change_request": "discount-rate-change",\n'
+                "}"
+            ),
+            "BASELINE_CHANGE = {}",
+            "maintenance-comprehension-invariant",
+        )
+
     def test_legacy_harness_rejects_characterization_behavior_drift(
         self,
     ) -> None:
@@ -5242,6 +5308,29 @@ class CoreTrackTests(unittest.TestCase):
                     original,
                     replacement,
                     "migration-transfer-invariant",
+                )
+
+    def test_migration_harness_rejects_noncanonical_phase_sequence(
+        self,
+    ) -> None:
+        cases = (
+            (
+                "]\nTHRESHOLDS = {",
+                "]\nPHASE_INPUTS.reverse()\nTHRESHOLDS = {",
+            ),
+            (
+                '        "name": "dual-write",',
+                '        "name": "expand",',
+            ),
+        )
+        for original, replacement in cases:
+            with self.subTest(replacement=replacement):
+                self.assert_causal_harness_source_mutation_fails(
+                    "core-22-evolution-safe-migrations",
+                    "migration_state_machine_lab_v1",
+                    original,
+                    replacement,
+                    "migration-plan-invariant",
                 )
 
     def test_migration_harness_rejects_plan_snapshot_drift(
@@ -5427,6 +5516,73 @@ class CoreTrackTests(unittest.TestCase):
                     "incident-transfer-invariant",
                 )
 
+    def test_incident_harness_rejects_invalid_impact_schema(
+        self,
+    ) -> None:
+        cases = (
+            (
+                '    "affected_requests_per_minute": 24,',
+                (
+                    '    "affected_requests_per_minute": 24,\n'
+                    '    "unreviewed_impact_weight": 2,'
+                ),
+            ),
+            (
+                (
+                    '    "recovery_minute": 48,\n'
+                    '    "affected_requests_per_minute": 24,'
+                ),
+                '    "recovery_minute": 48,',
+            ),
+            (
+                '    "affected_requests_per_minute": 24,',
+                '    "affected_requests_per_minute": True,',
+            ),
+            (
+                '    "affected_requests_per_minute": 24,',
+                '    "affected_requests_per_minute": -1,',
+            ),
+        )
+        for original, replacement in cases:
+            with self.subTest(replacement=replacement):
+                self.assert_causal_harness_source_mutation_fails(
+                    "core-23-incident-response-learning",
+                    "incident_learning_review_lab_v1",
+                    original,
+                    replacement,
+                    "incident-causal-invariant",
+                )
+
+    def test_incident_harness_rejects_duplicate_evidence_ids(
+        self,
+    ) -> None:
+        cases = (
+            (
+                '        "evidence_id": "ev-mitigation",',
+                '        "evidence_id": "ev-recovery",',
+                "incident-evidence-invariant",
+            ),
+            (
+                '        "factor_id": "factor-change-guard",',
+                '        "factor_id": "factor-alert-routing",',
+                "incident-causal-invariant",
+            ),
+            (
+                '        "action_id": "action-canary-pool",',
+                '        "action_id": "action-route-alert",',
+                "incident-action-outcome-invariant",
+            ),
+        )
+        for original, replacement, diagnostic in cases:
+            with self.subTest(replacement=replacement):
+                self.assert_causal_harness_source_mutation_fails(
+                    "core-23-incident-response-learning",
+                    "incident_learning_review_lab_v1",
+                    original,
+                    replacement,
+                    diagnostic,
+                )
+
     def test_delivery_harness_fails_closed_and_verifies_provenance(
         self,
     ) -> None:
@@ -5603,6 +5759,48 @@ class CoreTrackTests(unittest.TestCase):
                     original,
                     replacement,
                     "delivery-transfer-invariant",
+                )
+
+    def test_delivery_harness_rejects_invalid_raw_input_collections(
+        self,
+    ) -> None:
+        cases = (
+            (
+                'ARTIFACT_BYTES = "curriculum-release-24"',
+                "ARTIFACT_BYTES = []",
+            ),
+            (
+                (
+                    "BASELINE_CANARY = {\n"
+                    '    "canary_error_rate": 0.01,\n'
+                    '    "maximum_error_rate": 0.02,\n'
+                    "}\n"
+                    "TRANSFER_CANARY = {"
+                ),
+                (
+                    "BASELINE_CANARY = {\n"
+                    '    "canary_error_rate": 0.01,\n'
+                    '    "maximum_error_rate": 0.02,\n'
+                    "}\n"
+                    "BASELINE_CANARY = []\n"
+                    "TRANSFER_CANARY = {"
+                ),
+            ),
+            (
+                (
+                    'TRUSTED_BUILDERS = ["builder://curriculum/release"]'
+                ),
+                "TRUSTED_BUILDERS = []",
+            ),
+        )
+        for original, replacement in cases:
+            with self.subTest(replacement=replacement):
+                self.assert_causal_harness_source_mutation_fails(
+                    "core-24-delivery-ci-release-safety",
+                    "delivery_safety_lab_v1",
+                    original,
+                    replacement,
+                    "delivery-input-invariant",
                 )
 
     def test_economics_harness_compares_input_derived_investments(
@@ -5797,3 +5995,58 @@ class CoreTrackTests(unittest.TestCase):
                     replacement,
                     "economics-candidate-invariant",
                 )
+
+    def test_economics_harness_rejects_invalid_raw_assumptions(
+        self,
+    ) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-25-engineering-economics-capacity",
+            "engineering_economics_lab_v1",
+            (
+                "BASELINE_ASSUMPTIONS = {\n"
+                '    "demand_growth": 0.0,\n'
+                '    "engineering_hour_value": 100,\n'
+                '    "operations_hour_cost": 80,\n'
+                '    "loss_per_incident_hour": 10000,\n'
+                "}\n"
+                "TRANSFER_ASSUMPTIONS = {"
+            ),
+            (
+                "BASELINE_ASSUMPTIONS = {\n"
+                '    "demand_growth": 0.0,\n'
+                '    "engineering_hour_value": 100,\n'
+                '    "operations_hour_cost": 80,\n'
+                '    "loss_per_incident_hour": 10000,\n'
+                "}\n"
+                "BASELINE_ASSUMPTIONS = []\n"
+                "TRANSFER_ASSUMPTIONS = {"
+            ),
+            "economics-transfer-invariant",
+        )
+
+    def test_sustain_harnesses_defer_raw_derivation_until_main(
+        self,
+    ) -> None:
+        contracts = {
+            "core-24-delivery-ci-release-safety": (
+                "delivery_safety_lab_v1",
+                (
+                    "**BASELINE_CANARY",
+                    'TRANSFER_CANARY["',
+                    'BASELINE_CANARY["',
+                    "ARTIFACT_BYTES.encode",
+                    "TRUSTED_BUILDERS[0]",
+                ),
+            ),
+            "core-25-engineering-economics-capacity": (
+                "engineering_economics_lab_v1",
+                ("**BASELINE_ASSUMPTIONS",),
+            ),
+        }
+        for lesson_id, (marker, forbidden) in contracts.items():
+            with self.subTest(lesson_id=lesson_id):
+                source = self.python_harness_source(lesson_id, marker)
+                before_main, separator, _ = source.partition("def main():")
+                self.assertTrue(separator)
+                for expression in forbidden:
+                    self.assertNotIn(expression, before_main)
