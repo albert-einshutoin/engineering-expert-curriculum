@@ -140,22 +140,39 @@ class SiteCheckerFilesystemTests(unittest.TestCase):
             root_file.write_text(_page(), encoding="utf-8")
             link = parent / "site-link"
             link.symlink_to(parent, target_is_directory=True)
-            self.assertTrue(any("directory" in issue for issue in check_site(root_file)))
+            self.assertTrue(
+                any("directory" in issue for issue in check_site(root_file))
+            )
             self.assertTrue(any("symbolic link" in issue for issue in check_site(link)))
 
     def test_rejects_casefolded_unexpected_extension(self) -> None:
         with _fixture() as root:
             (root / "payload.JS").write_text("alert(1)", encoding="utf-8")
             issues = check_site(root)
-            self.assertTrue(any("payload.JS" in issue and "file type" in issue for issue in issues))
+            self.assertTrue(
+                any(
+                    "payload.JS" in issue and "file type" in issue
+                    for issue in issues
+                )
+            )
 
     def test_rejects_symbolic_and_hard_links(self) -> None:
         with _fixture() as root:
             (root / "linked.html").symlink_to(root / "index.html")
             os.link(root / "styles.css", root / "hardlink.css")
             issues = check_site(root)
-            self.assertTrue(any("linked.html" in issue and "symbolic" in issue for issue in issues))
-            self.assertTrue(any("hardlink.css" in issue and "hard link" in issue for issue in issues))
+            self.assertTrue(
+                any(
+                    "linked.html" in issue and "symbolic" in issue
+                    for issue in issues
+                )
+            )
+            self.assertTrue(
+                any(
+                    "hardlink.css" in issue and "hard link" in issue
+                    for issue in issues
+                )
+            )
 
     def test_rejects_fifo_and_special_files_without_blocking(self) -> None:
         if not hasattr(os, "mkfifo"):
@@ -163,7 +180,12 @@ class SiteCheckerFilesystemTests(unittest.TestCase):
         with _fixture() as root:
             os.mkfifo(root / "stream.css")
             issues = check_site(root)
-            self.assertTrue(any("stream.css" in issue and "regular" in issue for issue in issues))
+            self.assertTrue(
+                any(
+                    "stream.css" in issue and "regular" in issue
+                    for issue in issues
+                )
+            )
 
     def test_exact_inventory_reports_missing_and_unexpected_paths(self) -> None:
         with _fixture() as root:
@@ -171,13 +193,17 @@ class SiteCheckerFilesystemTests(unittest.TestCase):
                 root,
                 expected_entrypoints={"index.html", "missing/index.html"},
             )
-            self.assertTrue(any("missing expected entrypoint" in issue for issue in issues))
+            self.assertTrue(
+                any("missing expected entrypoint" in issue for issue in issues)
+            )
             self.assertTrue(any("unexpected entrypoint" in issue for issue in issues))
 
     def test_invalid_expected_inventory_raises_typed_error(self) -> None:
         with _fixture() as root:
             for invalid in ({"../index.html"}, {"/index.html"}, {"index.html#main"}):
-                with self.subTest(invalid=invalid), self.assertRaises(SiteValidationError):
+                with self.subTest(invalid=invalid), self.assertRaises(
+                    SiteValidationError
+                ):
                     check_site(root, expected_entrypoints=invalid)
             with self.assertRaises(SiteValidationError):
                 check_site(
@@ -238,7 +264,8 @@ class SiteCheckerLinkTests(unittest.TestCase):
                 root,
                 '<a href="http://example.com" rel="noreferrer">http</a>'
                 '<a href="https://example.com" rel="noopener">missing rel</a>'
-                '<a href="https://user@example.com" rel="noopener noreferrer">creds</a>',
+                '<a href="https://user@example.com" '
+                'rel="noopener noreferrer">creds</a>',
             )
             self.assertTrue(any("HTTPS" in issue for issue in issues))
             self.assertTrue(any("noreferrer" in issue for issue in issues))
@@ -267,29 +294,58 @@ class SiteCheckerHtmlTests(unittest.TestCase):
             _page() + "<div",
         ):
             with self.subTest(mutation=mutation[-30:]):
-                self.assertTrue(any("malformed HTML" in issue for issue in self._issues_for(mutation)))
+                self.assertTrue(
+                    any(
+                        "malformed HTML" in issue
+                        for issue in self._issues_for(mutation)
+                    )
+                )
 
     def test_requires_ja_nonempty_title_exactly_one_main_h1_and_skip_link(self) -> None:
         mutations = {
             "lang": _page(lang="en"),
-            "title": _page().replace("<title>検証ページ</title>", "<title> </title>"),
+            "title": _page().replace(
+                "<title>検証ページ</title>",
+                "<title> </title>",
+            ),
             "main": _page().replace("</main>", "</main><main></main>"),
             "h1": _page().replace("</main>", "<h1>重複</h1></main>"),
             "skip": _page().replace("skip-link", "ordinary-link"),
         }
         for expected, document in mutations.items():
             with self.subTest(expected=expected):
-                self.assertTrue(any(expected in issue for issue in self._issues_for(document)))
+                self.assertTrue(
+                    any(
+                        expected in issue
+                        for issue in self._issues_for(document)
+                    )
+                )
 
     def test_rejects_forbidden_active_elements(self) -> None:
         for tag in ("script", "iframe", "object", "embed", "form", "base"):
             with self.subTest(tag=tag):
                 issues = self._issues_for(_page(body=f"<{tag}></{tag}>"))
-                self.assertTrue(any(tag in issue and "forbidden" in issue for issue in issues))
+                self.assertTrue(
+                    any(
+                        tag in issue and "forbidden" in issue
+                        for issue in issues
+                    )
+                )
 
     def test_rejects_meta_refresh_inline_handlers_and_inline_style(self) -> None:
         mutations = (
-            _page(head='<meta http-equiv="refresh" content="0;url=https://example.com">'),
+            _page(
+                head=(
+                    '<meta http-equiv="refresh" '
+                    'content="0;url=https://example.com">'
+                )
+            ),
+            _page(
+                head=(
+                    '<meta http-equiv=" refresh " '
+                    'content="0;url=https://example.com">'
+                )
+            ),
             _page().replace("<main id=", "<main onclick=\"run()\" id=", 1),
             _page().replace("<main id=", "<main style=\"color:red\" id=", 1),
         )
@@ -304,11 +360,18 @@ class SiteCheckerHtmlTests(unittest.TestCase):
             '<img src="https://example.com/a.png">',
             '<video src="https://example.com/a.mp4"></video>',
             '<audio src="//example.com/a.mp3"></audio>',
+            '<a href="#main" ping="https://example.com/audit">ping</a>',
+            '<div background="https://example.com/a.png">background</div>',
         )
         for body in mutations:
             with self.subTest(body=body):
                 issues = self._issues_for(_page(body=body))
-                self.assertTrue(any("unsafe URL" in issue or "remote resource" in issue for issue in issues))
+                self.assertTrue(
+                    any(
+                        "unsafe URL" in issue or "remote resource" in issue
+                        for issue in issues
+                    )
+                )
 
     def test_allows_only_one_local_stylesheet(self) -> None:
         mutations = (
@@ -324,6 +387,7 @@ class SiteCheckerHtmlTests(unittest.TestCase):
         mutations = (
             _page(csp=CSP.replace("script-src 'none'; ", "")),
             _page(csp=CSP + "; media-src https:"),
+            _page(csp=CSP.replace("; ", ";  ", 1)),
             _page().replace("Content-Security-Policy", "content-security-policy", 1)
             + '<meta http-equiv="Content-Security-Policy" content="' + CSP + '">',
         )
@@ -336,6 +400,7 @@ class SiteCheckerCssAndCliTests(unittest.TestCase):
         payloads = (
             b"",
             b"\xff",
+            b"body { color: red; }\x00",
             b"@import 'https://example.com/a.css';",
             b"body { background: url(https://example.com/a.png); }",
             b"@font-face { src: url(font.woff2); }",
