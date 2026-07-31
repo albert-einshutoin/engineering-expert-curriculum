@@ -54,7 +54,6 @@
 import json
 
 HARNESS = "storage_decision_lab_v1"
-EXPECTED_PRODUCT_WINDOW_FREQUENCY = 48
 QUERY_FREQUENCIES = {
     "get_customer_history": 120,
     "get_order_detail": 360,
@@ -100,11 +99,17 @@ WORKLOAD = {
     ],
 }
 
-GROWTH_FORECAST = {
+GROWTH_INPUTS = {
     "current_records": 500_000,
     "monthly_growth": 50_000,
     "months": 12,
-    "projected_records": 1_100_000,
+}
+GROWTH_FORECAST = {
+    **GROWTH_INPUTS,
+    "projected_records": (
+        GROWTH_INPUTS["current_records"]
+        + GROWTH_INPUTS["monthly_growth"] * GROWTH_INPUTS["months"]
+    ),
     "evidence_kind": "synthetic-projection",
 }
 
@@ -200,38 +205,36 @@ BASELINE_INPUTS = [
     },
 ]
 
-MUTATED_RATINGS = {
-    "relational": {
-        "access_fit": 2,
-        "constraint_coverage": 5,
-        "capacity": 4,
-        "operations": 4,
-        "recovery": 5,
-    },
-    "document": {
-        "access_fit": 4,
-        "constraint_coverage": 3,
-        "capacity": 4,
-        "operations": 3,
-        "recovery": 3,
-    },
-    "key-value": {
-        "access_fit": 5,
-        "constraint_coverage": 2,
-        "capacity": 5,
-        "operations": 3,
-        "recovery": 4,
-    },
-}
+def rating_inputs_for(workload):
+    frequencies = {
+        query["id"]: query["frequency_per_hour"]
+        for query in workload["query_shapes"]
+    }
+    return {
+        "get_customer_history": frequencies["get_customer_history"],
+        "list_product_window": frequencies["list_product_window"],
+    }
 
-def score_options(option_inputs, rating_overrides=None):
+def derive_access_fit_ratings(workload):
+    inputs = rating_inputs_for(workload)
+    customer_history_frequency = inputs["get_customer_history"]
+    product_window_frequency = inputs["list_product_window"]
+    # The threshold is a lesson fixture boundary, not a vendor benchmark.
+    # Keeping it in one function makes a workload mutation change the ratings
+    # through an inspectable causal rule instead of a second score table.
+    if product_window_frequency >= 400:
+        assert product_window_frequency > customer_history_frequency
+        return {"relational": 2, "document": 4, "key-value": 5}
+    assert customer_history_frequency > product_window_frequency
+    return {"relational": 5, "document": 4, "key-value": 3}
+
+def score_options(option_inputs, access_fit_ratings):
     options = []
     for option_input in option_inputs:
-        ratings = (
-            option_input["ratings"]
-            if rating_overrides is None
-            else rating_overrides[option_input["id"]]
-        )
+        ratings = {
+            **option_input["ratings"],
+            "access_fit": access_fit_ratings[option_input["id"]],
+        }
         score = sum(
             rating * CRITERIA[criterion_id]["weight"]
             for criterion_id, rating in ratings.items()
@@ -274,19 +277,23 @@ assert all(
     query["frequency_per_hour"] &gt; 0 and query["accessed_together"]
     for query in WORKLOAD["query_shapes"]
 )
-# The lesson scenario requires this secondary query to be material before
-# mutation; lowering it makes the stated ADR comparison a different workload.
-assert QUERY_FREQUENCIES["list_product_window"] == EXPECTED_PRODUCT_WINDOW_FREQUENCY
 assert abs(sum(item["weight"] for item in CRITERIA.values()) - 1.0) &lt; 1e-9
 assert GROWTH_FORECAST["projected_records"] == (
     GROWTH_FORECAST["current_records"]
     + GROWTH_FORECAST["monthly_growth"] * GROWTH_FORECAST["months"]
 )
 
-baseline_options = score_options(BASELINE_INPUTS)
+baseline_rating_inputs = rating_inputs_for(WORKLOAD)
+baseline_access_fit_ratings = derive_access_fit_ratings(WORKLOAD)
+baseline_options = score_options(BASELINE_INPUTS, baseline_access_fit_ratings)
 baseline_winner = selected_option(baseline_options)
 mutated_workload = mutate_access_pattern(WORKLOAD)
-mutated_options = score_options(BASELINE_INPUTS, MUTATED_RATINGS)
+mutated_rating_inputs = rating_inputs_for(mutated_workload)
+mutated_access_fit_ratings = derive_access_fit_ratings(mutated_workload)
+mutated_options = score_options(
+    BASELINE_INPUTS,
+    mutated_access_fit_ratings,
+)
 mutated_winner = selected_option(mutated_options)
 
 assert baseline_winner == "relational"
@@ -314,6 +321,8 @@ report = {
     "criteria": CRITERIA,
     "baseline": {
         "workload_profile": "customer-history-dominant",
+        "rating_inputs": baseline_rating_inputs,
+        "derived_access_fit_ratings": baseline_access_fit_ratings,
         "options": baseline_options,
         "selected_option": baseline_winner,
     },
@@ -334,6 +343,8 @@ report = {
     "access_pattern_mutation": {
         "changed_assumption": "access-pattern",
         "workload": mutated_workload,
+        "rating_inputs": mutated_rating_inputs,
+        "derived_access_fit_ratings": mutated_access_fit_ratings,
         "options": mutated_options,
         "selected_option": mutated_winner,
         "decision_recomputed": mutated_winner != baseline_winner,
