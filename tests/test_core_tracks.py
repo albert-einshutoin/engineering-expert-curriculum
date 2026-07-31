@@ -326,7 +326,7 @@ DATA_SCALE_SOURCES = {
             "peer-reviewed",
         ),
         (
-            "PostgreSQL 18 Documentation: 13.2. Transaction Isolation",
+            "13.2. Transaction Isolation",
             "https://www.postgresql.org/docs/18/transaction-iso.html",
             "primary",
         ),
