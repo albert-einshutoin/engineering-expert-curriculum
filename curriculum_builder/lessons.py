@@ -818,6 +818,46 @@ def _parse_rubric(
             RUBRIC_LEVEL_NAMES,
             f"rubric levels {index + 1}",
         )
+        parsed_levels = RubricLevels(
+            incomplete=_require_text(
+                levels["incomplete"],
+                "rubric incomplete",
+                maximum=1_000,
+            ),
+            developing=_require_text(
+                levels["developing"],
+                "rubric developing",
+                maximum=1_000,
+            ),
+            proficient=_require_text(
+                levels["proficient"],
+                "rubric proficient",
+                maximum=1_000,
+            ),
+            exemplary=_require_text(
+                levels["exemplary"],
+                "rubric exemplary",
+                maximum=1_000,
+            ),
+        )
+        descriptions = (
+            parsed_levels.incomplete,
+            parsed_levels.developing,
+            parsed_levels.proficient,
+            parsed_levels.exemplary,
+        )
+        # Visual Unicode variants and whitespace must not disguise one copied
+        # criterion as four observable progression levels.
+        normalized_descriptions = {
+            " ".join(
+                unicodedata.normalize("NFKC", description).casefold().split()
+            )
+            for description in descriptions
+        }
+        if len(normalized_descriptions) != len(descriptions):
+            raise CurriculumValidationError(
+                "rubric level descriptions must be distinct after normalization"
+            )
         rubric.append(
             Rubric(
                 dimension=_require_choice(
@@ -825,28 +865,7 @@ def _parse_rubric(
                     RUBRIC_DIMENSIONS,
                     "rubric dimension",
                 ),
-                levels=RubricLevels(
-                    incomplete=_require_text(
-                        levels["incomplete"],
-                        "rubric incomplete",
-                        maximum=1_000,
-                    ),
-                    developing=_require_text(
-                        levels["developing"],
-                        "rubric developing",
-                        maximum=1_000,
-                    ),
-                    proficient=_require_text(
-                        levels["proficient"],
-                        "rubric proficient",
-                        maximum=1_000,
-                    ),
-                    exemplary=_require_text(
-                        levels["exemplary"],
-                        "rubric exemplary",
-                        maximum=1_000,
-                    ),
-                ),
+                levels=parsed_levels,
             )
         )
     dimensions = tuple(item.dimension for item in rubric)
