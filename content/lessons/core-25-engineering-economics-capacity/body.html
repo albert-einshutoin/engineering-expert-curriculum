@@ -420,7 +420,10 @@ def main():
     }
     print(json.dumps(report, ensure_ascii=False, sort_keys=True))
 
-main()
+try:
+    main()
+except AssertionError as error:
+    raise SystemExit(str(error)) from None
 PY</code></pre>
 </section>
 <section id="tradeoffs">
