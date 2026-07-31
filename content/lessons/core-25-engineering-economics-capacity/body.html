@@ -137,6 +137,20 @@ def select_investment(comparisons):
 def main():
     baseline = compare_all(BASELINE_ASSUMPTIONS)
     transferred = compare_all(TRANSFER_ASSUMPTIONS)
+    changed_fields = [
+        field
+        for field in sorted(
+            set(BASELINE_ASSUMPTIONS) | set(TRANSFER_ASSUMPTIONS)
+        )
+        if (
+            BASELINE_ASSUMPTIONS.get(field)
+            != TRANSFER_ASSUMPTIONS.get(field)
+        )
+    ]
+    if changed_fields != ["demand_growth"]:
+        raise AssertionError(
+            "economics-transfer-invariant: transfer changed wrong input"
+        )
     for option in baseline + transferred:
         component_sum = (
             option["direct_cost"]
@@ -186,7 +200,9 @@ def main():
         "sensitivity_comparison": transferred,
         "demand_growth_transfer": {
             "changed_assumption": "demand-growth",
-            "changed_fields": ["demand_growth"],
+            "changed_fields": changed_fields,
+            "baseline_assumptions": dict(BASELINE_ASSUMPTIONS),
+            "transferred_assumptions": dict(TRANSFER_ASSUMPTIONS),
             "same_investment_candidates": same_candidates,
             "baseline_selected_option": baseline_selected,
             "transferred_selected_option": transferred_selected,
