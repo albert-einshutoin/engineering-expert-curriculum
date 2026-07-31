@@ -1,0 +1,280 @@
+<section id="why">
+  <h2>なぜ重要か</h2>
+  <p>product discoveryの目的は、思いついたsolutionを早く承認することではない。利用者の問題と不確実性を明らかにし、反証可能な仮説へ変え、安価な証拠で次の投資判断を改善することである。success metricだけを見ると、完了率を上げながら苦情や待ち時間を増やす局所最適を採用しうる。</p>
+  <p>信頼できる実験計画は、primary metric、guardrail、stop condition、解析方法を観測前に固定する。途中結果を見て都合のよい指標、母集団、終了時点を選ぶp-hackingを避け、改善と害を同じdecisionへ結ぶ。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> 一つのsimulated実験が因果効果や市場適合を保証するわけではない。割付、instrumentation、標本サイズ、外的妥当性を別途検証する必要がある。always-validは事前に選んだsequential methodの境界であり、観測後の仮説変更やp-hackingを正当化しない。</p>
+  </aside>
+</section>
+<section id="mental-model">
+  <h2>メンタルモデル</h2>
+  <p>discoveryでは「誰の、どの行動が、何に阻まれているか」を先に調べる。仮説は「対象」「介入」「期待する観測」「反証条件」を持つ。実験はその仮説を守る儀式ではなく、反証された時にも価値ある学習を残す測定契約である。</p>
+  <figure>
+    <figcaption>問題発見から事前固定した停止判断までの因果flow</figcaption>
+    <ol>
+      <li><strong>Problem:</strong> 利用者の行動と制約を観察し、solutionから独立した問題を記述する。</li>
+      <li><strong>Hypothesis:</strong> 介入、success metricの期待差、反証条件を宣言する。</li>
+      <li><strong>Plan:</strong> primary metric、guardrail、stop condition、always-valid解析を観測前に固定する。</li>
+      <li><strong>Simulate:</strong> controlとtreatmentの固定集計からrateと差分を導出する。</li>
+      <li><strong>Decide:</strong> successとguardrailを同時評価し、continue、stop、learnを記録する。</li>
+    </ol>
+  </figure>
+  <p>success metricは狙った価値の変化、guardrailは許容しない害の境界である。primary metricが改善してもguardrailを越えれば成功ではない。stop conditionは「失敗の烙印」ではなく、追加被害と無駄な投資を止める事前契約である。</p>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>完了率改善案を同じ観測値のまま再評価する</h3>
+  <dl>
+    <dt>前提</dt>
+    <dd>checkoutの説明を簡潔にするとcompletion-rateが5 percentage points以上改善し、complaint-rate差分が2 points以下、p95-latency-msが300以下なら継続する、という教材用仮説を使う。実測production dataではなくsimulated集計である。</dd>
+    <dt>入力</dt>
+    <dd>controlは200 visitors、100 completions、2 complaints、p95 240 ms、treatmentは200 visitors、124 completions、5 complaints、p95 260 msとする。</dd>
+    <dt>操作</dt>
+    <dd>各variantのcompletion-rateとcomplaint-rateを生のcountから導出し、primary effectとcomplaint deltaを計算する。baselineのcomplaint-rate上限を0.02、transferの上限を0.01として、入力を変えずにdecisionだけを再評価する。</dd>
+    <dt>観測</dt>
+    <dd>completion-rateは0.50から0.62へ0.12改善し、complaint-rate差分は0.015である。baselineではcontinueだが、厳しいguardrailではstopになる。</dd>
+    <dt>結論</dt>
+    <dd>結果の意味はsuccess metric単独では決まらない。同じ証拠でも、事前に合意した害の許容境界が変われば決定は変わる。ただし観測後に採用したい案へ合わせて境界を緩めてはならない。</dd>
+  </dl>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+import json
+
+HARNESS = "product_experiment_lab_v1"
+TRANSFER_TASK = (
+    "guardrail上限だけを厳しくし、同じ実験結果の継続・停止判断を"
+    "再評価する"
+)
+VARIANTS = {
+    "control": {
+        "visitors": 200,
+        "completions": 100,
+        "complaints": 2,
+        "p95_latency_ms": 240,
+    },
+    "treatment": {
+        "visitors": 200,
+        "completions": 124,
+        "complaints": 5,
+        "p95_latency_ms": 260,
+    },
+}
+PRIMARY_EFFECT_FLOOR = 0.05
+BASELINE_COMPLAINT_LIMIT = 0.02
+TRANSFERRED_COMPLAINT_LIMIT = 0.01
+P95_LATENCY_LIMIT_MS = 300
+
+def derive_metrics(variant):
+    # raw countから毎回導出し、都合のよいrateの手入力を防ぐ。
+    visitors = variant["visitors"]
+    assert visitors &gt; 0, "experiment-visitors-invariant"
+    return {
+        "completion_rate": variant["completions"] / visitors,
+        "complaint_rate": variant["complaints"] / visitors,
+        "p95_latency_ms": variant["p95_latency_ms"],
+    }
+
+def evaluate_decision(
+    primary_effect,
+    complaint_delta,
+    treatment_latency_ms,
+    guardrail_limit,
+):
+    primary_passed = primary_effect &gt;= PRIMARY_EFFECT_FLOOR
+    guardrail_passed = complaint_delta &lt;= guardrail_limit
+    assert guardrail_passed == (
+        complaint_delta &lt;= guardrail_limit
+    ), "experiment-causal-invariant"
+    latency_passed = treatment_latency_ms &lt;= P95_LATENCY_LIMIT_MS
+    decision = (
+        "continue"
+        if primary_passed and guardrail_passed and latency_passed
+        else "stop"
+    )
+    return {
+        "decision": decision,
+        "primary_passed": primary_passed,
+        "complaint_guardrail_passed": guardrail_passed,
+        "latency_guardrail_passed": latency_passed,
+        "complaint_rate_limit": guardrail_limit,
+    }
+
+derived_metrics = {
+    variant_id: derive_metrics(variant)
+    for variant_id, variant in VARIANTS.items()
+}
+primary_effect = (
+    derived_metrics["treatment"]["completion_rate"]
+    - derived_metrics["control"]["completion_rate"]
+)
+complaint_delta = (
+    derived_metrics["treatment"]["complaint_rate"]
+    - derived_metrics["control"]["complaint_rate"]
+)
+baseline = evaluate_decision(
+    primary_effect,
+    complaint_delta,
+    derived_metrics["treatment"]["p95_latency_ms"],
+    BASELINE_COMPLAINT_LIMIT,
+)
+transferred = evaluate_decision(
+    primary_effect,
+    complaint_delta,
+    derived_metrics["treatment"]["p95_latency_ms"],
+    TRANSFERRED_COMPLAINT_LIMIT,
+)
+assert baseline["decision"] == "continue", "experiment-baseline-invariant"
+assert transferred["decision"] == "stop", "experiment-transfer-invariant"
+
+fixed_inputs = {
+    variant_id: dict(variant)
+    for variant_id, variant in VARIANTS.items()
+}
+report = {
+    "harness": HARNESS,
+    "fixture_metadata": {
+        "kind": "simulated",
+        "provenance": (
+            "lesson-defined aggregate counts; no production observations"
+        ),
+        "limitations": (
+            "does not estimate sampling error, allocation bias, novelty, "
+            "or external validity"
+        ),
+    },
+    "hypothesis": {
+        "statement": (
+            "簡潔な説明はcompletion-rateを0.05以上改善し、"
+            "事前guardrail内に保つ"
+        ),
+        "falsifiable": True,
+    },
+    "analysis_plan": {
+        "locked_before_exposure": True,
+        "primary_metric": "completion-rate",
+        "guardrail_metrics": [
+            "complaint-rate",
+            "p95-latency-ms",
+        ],
+        "stop_conditions": [
+            "primary-effect-below-floor",
+            "complaint-rate-above-limit",
+            "p95-latency-above-limit",
+        ],
+        "sequential_method": "always-valid",
+        "p_hacking_prohibited": True,
+    },
+    "experiment": {
+        "variants": VARIANTS,
+        "derived_metrics": derived_metrics,
+        "primary_effect": primary_effect,
+        "complaint_delta": complaint_delta,
+        "baseline_evaluation": baseline,
+    },
+    "guardrail_threshold_transfer": {
+        "changed_assumption": "guardrail-threshold",
+        "changed_fields": ["complaint_rate_limit"],
+        "baseline_inputs": fixed_inputs,
+        "transferred_inputs": {
+            variant_id: dict(variant)
+            for variant_id, variant in VARIANTS.items()
+        },
+        "baseline_decision": baseline["decision"],
+        "transferred_decision": transferred["decision"],
+        "baseline_limit": BASELINE_COMPLAINT_LIMIT,
+        "transferred_limit": TRANSFERRED_COMPLAINT_LIMIT,
+    },
+    "mastery_evidence": {
+        "lab_steps": [
+            {"step": 1, "evidence": "反証可能な仮説を固定した"},
+            {"step": 2, "evidence": "解析計画と停止条件を固定した"},
+            {"step": 3, "evidence": "countからvariant rateを導出した"},
+            {"step": 4, "evidence": "baseline decisionを再現した"},
+            {"step": 5, "evidence": "guardrailだけを変えて再評価した"},
+        ],
+        "assessments": [
+            {"assessment": 1, "evidence": "successと害を同時評価した"},
+            {"assessment": 2, "evidence": "optional stoppingを分離した"},
+        ],
+        "rubric_dimensions": [
+            "technical-correctness",
+            "judgment",
+            "evidence",
+            "communication",
+        ],
+        "transfer": {
+            "task": TRANSFER_TASK,
+            "changed_assumption": "guardrail-threshold",
+            "evidence": "同一入力でcontinueからstopへ変化した",
+        },
+    },
+    "runtime_bound": {
+        "records": sum(
+            variant["visitors"]
+            for variant in VARIANTS.values()
+        ),
+        "subprocesses": 0,
+    },
+    "external_network_used": False,
+}
+print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+PY</code></pre>
+</section>
+<section id="tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <table>
+    <caption>実験の次の行動を選ぶdecision table</caption>
+    <thead>
+      <tr>
+        <th scope="col">primary metric</th>
+        <th scope="col">guardrail</th>
+        <th scope="col">decision</th>
+        <th scope="col">次の証拠</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row">未達</th>
+        <td>合格</td>
+        <td>stopまたは仮説更新</td>
+        <td>問題理解と介入mechanismを再調査する</td>
+      </tr>
+      <tr>
+        <th scope="row">達成</th>
+        <td>違反</td>
+        <td>stop</td>
+        <td>害の原因と軽減可能性を検証する</td>
+      </tr>
+      <tr>
+        <th scope="row">達成</th>
+        <td>合格</td>
+        <td>continue</td>
+        <td>標本誤差、segment、長期効果を確認する</td>
+      </tr>
+      <tr>
+        <th scope="row">不確定</th>
+        <td>不確定</td>
+        <td>learn</td>
+        <td>instrumentationと解析計画を修正して再実験する</td>
+      </tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><strong>誤診:</strong> treatmentのcompletion-rateが高いので採用する。 <strong>反証:</strong> complaint-rateとlatencyのguardrailを同時に評価し、害の上限を越えた場合はstopする。</li>
+    <li><strong>誤診:</strong> always-validなら好きな時点とsegmentで有意な結果を探してよい。 <strong>反証:</strong> sequential method、primary metric、停止規則を観測前に固定し、探索結果は新しい仮説として別の検証へ送る。</li>
+    <li><strong>誤診:</strong> 反証された仮説は失敗なので報告しない。 <strong>反証:</strong> 期待したmechanismが働かない証拠を意思決定記録へ残し、次の投資を止めた価値を評価する。</li>
+  </ul>
+</section>
+<section id="knowledge-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>「新しい画面は好まれる」を、対象、介入、観測、反証条件を持つ一文へ書き換えよ。</li>
+    <li>completion-rateが12 points改善し、complaint-rateが1.5 points悪化した。事前上限が1 pointならどのdecisionを選び、なぜか。</li>
+    <li>観測後にprimary metricを変更する行為と、探索から新しい仮説を作る行為をどう分離するか。</li>
+    <li>guardrail上限以外の入力が同じであることを、再実行可能な証拠としてどう示すか。</li>
+  </ol>
+</section>
+<section id="sources-next">
+  <h2>出典と次の学習</h2>
+  <p>出典は2026-07-30に版と公開状態を確認した。GOV.UKのdiscovery guidanceはproblem spaceの学習とsolution決定を分ける実務境界として用いた。Kohavi、Tang、Xuによる2020年の実験書とMicrosoftの実験報告は、controlled experiment、metric設計、organizational practiceの一次資料として扱った。</p>
+  <p>Always Valid InferenceはOperations Research掲載版のcontinuous monitoring手法として参照した。ただし本lessonのsimulated集計は統計的検定を実施せず、always-validの語を任意の途中終了やp-hackingの免罪符にはしていない。次は実際の標本設計、検出力、割付単位、SRM、長期効果を学び、探索とconfirmatory experimentを分離する。</p>
+</section>

@@ -1,0 +1,173 @@
+{
+  "version": 1,
+  "id": "core-18-product-discovery-experiments",
+  "title": "反証可能な仮説から停止判断までを事前に設計する",
+  "summary": "発見した問題を反証可能な仮説へ変換し、success metric、guardrail、stop conditionを事前固定して、simulated実験の証拠から継続または停止を判断する。",
+  "track": "human-product",
+  "stage": 3,
+  "difficulty": "advanced",
+  "estimatedMinutes": 300,
+  "prerequisiteIds": [
+    "core-06-requirements-domain-modeling",
+    "core-16-hci-usability-accessibility"
+  ],
+  "objectives": [
+    {
+      "id": "obj-falsifiable-hypothesis",
+      "statement": "利用者の問題、介入、期待する変化、反証条件を含む仮説を記述できる",
+      "evidenceIds": ["experiment-plan", "teach-back"]
+    },
+    {
+      "id": "obj-analysis-plan",
+      "statement": "success metric、guardrail、stop condition、解析方法を観測前に固定できる",
+      "evidenceIds": ["experiment-plan", "assessment"]
+    },
+    {
+      "id": "obj-decision",
+      "statement": "同じ観測値に対してguardrail閾値だけを変え、継続と停止の因果を説明できる",
+      "evidenceIds": ["assessment", "transfer"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "experiment-plan",
+      "kind": "artifact",
+      "description": "反証可能な仮説、成功指標、停止条件を持つ実験計画"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "探索と検証、success metricとguardrail、always-validとp-hackingを区別する5分説明"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "固定したsimulated観測から効果量とguardrail差分を計算し、継続または停止を導く回答"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "観測値を変えずguardrail上限だけを厳しくして停止判断を再評価した記録"
+    }
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "問題、仮説、primary metric、guardrail、stop conditionを区別できる",
+      "evidenceIds": ["experiment-plan"]
+    },
+    {
+      "level": "explain",
+      "criterion": "有意差の探索や途中結果による指標変更がp-hackingになる理由を説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "訪問者、完了、苦情からcompletion-rateとcomplaint-rateを再計算できる",
+      "evidenceIds": ["experiment-plan"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "primary metricが改善してもguardrail違反なら停止すべき条件を証拠で特定できる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "観測前の解析計画と停止権限を関係者と合意し、反証結果を意思決定へ反映できる",
+      "evidenceIds": ["transfer"]
+    }
+  ],
+  "lab": {
+    "title": "完了率改善案のsimulated実験計画と停止判断を作る",
+    "artifact": "反証可能な仮説、成功指標、停止条件を持つ実験計画",
+    "steps": [
+      "利用者の離脱問題から介入、期待するcompletion-rate改善、反証条件を一文の仮説へ固定する",
+      "primary metric、complaint-rateとp95-latency-msのguardrail、stop condition、always-valid解析を観測前に記録する",
+      "固定simulated集計の訪問者、完了、苦情からvariant別rateとtreatment effectを導出する",
+      "success metricとguardrailを同時評価し、baseline上限でcontinueとなる根拠を説明する",
+      "同じ実験入力のままcomplaint-rate上限だけを厳しくし、stopへ変わる判断と変更した仮定を記録する"
+    ]
+  },
+  "teachBack": "5分で、discoveryがsolution承認ではない理由、反証可能な仮説の条件、success metricとguardrailの役割、always-validでもp-hackingを正当化できない理由を説明する。",
+  "assessment": [
+    {
+      "prompt": "completion-rateは改善したがcomplaint-rateも上昇した。どの事前契約を使って継続または停止を判断するか。",
+      "expectedEvidence": "仮説、primary effect、guardrail差分、事前上限、stop condition、観測後に閾値を変えない原則"
+    },
+    {
+      "prompt": "途中結果を毎日見て、有利になった時だけ終了したいという提案をどう再設計するか。",
+      "expectedEvidence": "optional stopping、always-valid、解析計画の事前固定、検定回数、p-hacking、意思決定権限"
+    }
+  ],
+  "transferTask": "guardrail上限だけを厳しくし、同じ実験結果の継続・停止判断を再評価する",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "分母を定義せず率を比較し、仮説に反証条件がない",
+        "developing": "primary metricは計算するがguardrailまたはstop conditionが欠ける",
+        "proficient": "固定入力からvariant別rate、効果量、guardrail差分を正しく導出する",
+        "exemplary": "欠測、重複、割付、sequential monitoringによる推論境界まで検証する"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "primary metricが改善すれば他の害を無視して採用する",
+        "developing": "複数指標を見るが観測後に成功条件を選ぶ",
+        "proficient": "事前固定したsuccess、guardrail、stop conditionを用いて判断する",
+        "exemplary": "利用者価値、害、可逆性、学習価値、停止権限を一つの判断契約にする"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "印象またはdashboardの色だけで効果を主張する",
+        "developing": "集計値はあるがfixture出自や解析計画の固定時点を示さない",
+        "proficient": "simulated入力、計算式、閾値、判断、限界を再実行可能に残す",
+        "exemplary": "別指標探索と正式検証を分離し、反証結果も意思決定記録へ残す"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "勝敗だけを報告し仮説と害の境界が不明である",
+        "developing": "指標を報告するが停止理由とownerを説明しない",
+        "proficient": "仮説、success、guardrail、stop condition、判断を読者が追跡できる",
+        "exemplary": "product、design、engineering、risk ownerが次の学習判断を共同更新できる"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "How the discovery phase works",
+      "url": "https://www.gov.uk/service-manual/agile-delivery/how-the-discovery-phase-works",
+      "kind": "primary"
+    },
+    {
+      "title": "Trustworthy Online Controlled Experiments: A Practical Guide to A/B Testing",
+      "url": "https://doi.org/10.1017/9781108653985",
+      "kind": "primary"
+    },
+    {
+      "title": "Online Experimentation at Microsoft",
+      "url": "https://www.microsoft.com/en-us/research/publication/online-experimentation-at-microsoft/",
+      "kind": "primary"
+    },
+    {
+      "title": "Always Valid Inference: Continuous Monitoring of A/B Tests",
+      "url": "https://doi.org/10.1287/opre.2021.2135",
+      "kind": "peer-reviewed"
+    }
+  ],
+  "review": {
+    "intervalDays": [1, 7, 30, 90],
+    "prompts": [
+      "反証可能な仮説に最低限必要な四要素は何か",
+      "success metricが改善してもguardrailで停止するのはなぜか",
+      "always-validとp-hackingの違いを一例で説明する"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}
