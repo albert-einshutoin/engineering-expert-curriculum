@@ -330,6 +330,7 @@ class _MatrixParser(HTMLParser):
             "competency-framework",
             "competency-version",
             "competency-code",
+            "competency-strength",
         }:
             self.nowrap_cells += 1
         if classes & {
@@ -891,7 +892,7 @@ class CompetencyBuildTests(unittest.TestCase):
             self.assertEqual(parser.row_headers, 90)
             self.assertEqual(parser.rows, 91)
             self.assertEqual(len(parser.lesson_links), 90)
-            self.assertEqual(parser.nowrap_cells, 270)
+            self.assertEqual(parser.nowrap_cells, 360)
             self.assertEqual(parser.wrapping_cells, 180)
             self.assertFalse(parser.has_script)
             self.assertEqual(list(output.rglob("*.js")), [])
@@ -1016,6 +1017,7 @@ class CompetencyBuildTests(unittest.TestCase):
                 r"\.competency-framework.*"
                 r"\.competency-version.*"
                 r"\.competency-code.*"
+                r"\.competency-strength.*"
                 r"white-space:\s*nowrap"
             ),
         )
