@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from curriculum_builder.build import build_site
 from curriculum_builder.capstones import (
@@ -346,6 +347,49 @@ class CapstoneContractTests(unittest.TestCase):
                 "draft lessons cannot be referenced",
             ):
                 load_capstones(root / "real-capstones")
+
+    def test_loader_rejects_parent_directory_rebinding(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            content = root / "content"
+            raced = root / "raced"
+            saved = root / "saved"
+            shutil.copytree(REPOSITORY_ROOT / "content", content)
+            shutil.copytree(content, raced)
+            original_open = os.open
+            swapped = False
+
+            def swapping_open(
+                path: object,
+                *args: object,
+                **kwargs: object,
+            ) -> int:
+                nonlocal swapped
+                if (
+                    not swapped
+                    and kwargs.get("dir_fd") is None
+                    and isinstance(path, (str, os.PathLike))
+                    and Path(path) == content
+                ):
+                    content.rename(saved)
+                    raced.rename(content)
+                    swapped = True
+                return original_open(path, *args, **kwargs)  # type: ignore[arg-type]
+
+            try:
+                with patch(
+                    "curriculum_builder.capstones.os.open",
+                    side_effect=swapping_open,
+                ):
+                    with self.assertRaisesRegex(
+                        CurriculumValidationError,
+                        "changed while opening",
+                    ):
+                        load_capstones(content / "capstones")
+            finally:
+                if swapped:
+                    content.rename(raced)
+                    saved.rename(content)
 
 
 class CapstoneRenderingTests(unittest.TestCase):
