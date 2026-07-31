@@ -27,57 +27,99 @@
   <h3>購入完了journeyからmulti-window alertを計算する</h3>
   <dl>
     <dt>前提</dt>
-    <dd>lesson-defined synthetic eventを使い、production SLOとは主張しない。購入完了10件をvalidとし、検索とhealth checkの2件は分母から除外する。</dd>
+    <dd>2026-07-31T12:00:00+00:00を観測終了とするlesson-defined synthetic eventを使い、production SLOとは主張しない。購入完了と検索成功のeventは同じfixtureへtimestamp付きで保持する。</dd>
     <dt>入力</dt>
-    <dd>statusと300 msのlatency境界からgoodを分類する。28日window、target 90%という教材fixtureでerror budgetとburn rateを計算する。</dd>
+    <dd>statusと300 msのlatency境界からgoodを分類する。28日window、target 90%という教材fixtureで、直近5分と60分のeventをtimestampから別々に選び、bad割合とburn rateを計算する。</dd>
     <dt>操作</dt>
-    <dd>短窓pageと長窓ticketを別thresholdへ結び、runbookへownerと行動を置く。OpenTelemetry 1.59.0とSemantic Conventions 1.43.0をversion固定し、resource属性、trace correlation、PII、cardinality、samplingを検査する。</dd>
+    <dd>短窓と長窓がともにpage thresholdを越えた時だけpageする。正常、短窓だけ異常、両窓異常の三fixtureでAND条件を反証する。OpenTelemetry 1.59.0とSemantic Conventions 1.43.0をversion固定し、resource属性、trace correlation、PII、cardinality、samplingを検査する。</dd>
     <dt>観測</dt>
-    <dd>10 valid中7 good、3 badなのでSLIは0.7、許容bad割合0.1に対するburn rateは3となる。eventをgoodへ変え、必須resource属性を欠落させるmutationではalertとvalidationがともに変わる。</dd>
+    <dd>正常では両条件false、直近5分に1 failureだけ加えると短窓だけtrue、直近12分をfailureにすると両窓trueとなる。transferでは同じevent、target、window、telemetryを保ち、検索成功率から購入完了率へjourney境界だけを変える。</dd>
     <dt>結論</dt>
     <dd>SLOはdashboardの装飾ではなく、利用者impact、変更判断、on-call actionをつなぐ境界である。fixtureのtargetは教材用であり、実serviceでは利用者期待、事業価値、過去実績とerror budget方針から決め直す。</dd>
   </dl>
   <pre><code>python3.13 - &lt;&lt;'PY'
-import copy
+from datetime import datetime, timedelta, timezone
 import json
 
 HARNESS = "reliability_slo_lab_v1"
 TARGET = 0.9
 LATENCY_LIMIT_MS = 300
+SHORT_WINDOW_MINUTES = 5
+LONG_WINDOW_MINUTES = 60
+PAGE_BURN_THRESHOLD = 2.0
+OBSERVATION_END = datetime(
+    2026,
+    7,
+    31,
+    12,
+    0,
+    tzinfo=timezone.utc,
+)
 REQUIRED_RESOURCE_ATTRIBUTES = [
     "service.name",
     "deployment.environment",
     "service.version",
 ]
 
-EVENTS = [
-    {"id": "p1", "journey": "purchase-completion", "eligible": True, "status": "ok", "latency_ms": 100},
-    {"id": "p2", "journey": "purchase-completion", "eligible": True, "status": "ok", "latency_ms": 220},
-    {"id": "p3", "journey": "purchase-completion", "eligible": True, "status": "timeout", "latency_ms": 500},
-    {"id": "p4", "journey": "purchase-completion", "eligible": True, "status": "ok", "latency_ms": 310},
-    {"id": "p5", "journey": "purchase-completion", "eligible": True, "status": "ok", "latency_ms": 180},
-    {"id": "p6", "journey": "purchase-completion", "eligible": True, "status": "ok", "latency_ms": 250},
-    {"id": "p7", "journey": "purchase-completion", "eligible": True, "status": "ok", "latency_ms": 90},
-    {"id": "p8", "journey": "purchase-completion", "eligible": True, "status": "failed", "latency_ms": 150},
-    {"id": "p9", "journey": "purchase-completion", "eligible": True, "status": "ok", "latency_ms": 290},
-    {"id": "p10", "journey": "purchase-completion", "eligible": True, "status": "ok", "latency_ms": 200},
-    {"id": "s1", "journey": "search", "eligible": True, "status": "ok", "latency_ms": 80},
-    {"id": "h1", "journey": "health-check", "eligible": False, "status": "ok", "latency_ms": 5},
-]
+def make_event(event_id, journey, minutes_ago, good):
+    return {
+        "id": event_id,
+        "journey": journey,
+        "eligible": True,
+        "timestamp": (
+            OBSERVATION_END - timedelta(minutes=minutes_ago)
+        ).isoformat(),
+        "status": "ok" if good else "failed",
+        "latency_ms": 100 if good else 500,
+    }
 
-def derive_sli(events):
+def purchase_fixture(name, bad_offsets):
+    return [
+        make_event(
+            f"{name}-purchase-{offset:02}",
+            "purchase-completion",
+            offset,
+            offset not in bad_offsets,
+        )
+        for offset in range(LONG_WINDOW_MINUTES)
+    ]
+
+SCENARIO_EVENTS = {
+    "normal": purchase_fixture("normal", set()),
+    "short-only": purchase_fixture("short-only", {0}),
+    "both": purchase_fixture("both", set(range(12))),
+}
+SEARCH_EVENTS = [
+    make_event(
+        f"search-{offset:02}",
+        "search-success",
+        offset,
+        offset != 9,
+    )
+    for offset in range(10)
+]
+FIXTURE_EVENTS = SCENARIO_EVENTS["both"] + SEARCH_EVENTS
+
+def derive_sli(events, journey):
     valid = []
     classified = []
     for event in events:
-        if event["journey"] != "purchase-completion" or not event["eligible"]:
+        if event["journey"] != journey or not event["eligible"]:
             continue
         valid.append(event)
         good = event["status"] == "ok" and event["latency_ms"] &lt;= 300
-        classified.append({"id": event["id"], "good": good})
+        classified.append(
+            {
+                "id": event["id"],
+                "timestamp": event["timestamp"],
+                "good": good,
+            }
+        )
+    assert valid, f"journey-boundary: no valid events for {journey}"
     good_events = sum(item["good"] for item in classified)
     bad_events = len(valid) - good_events
     return {
-        "journey": "purchase-completion",
+        "journey": journey,
         "total_events": len(events),
         "valid_events": len(valid),
         "good_events": good_events,
@@ -86,29 +128,64 @@ def derive_sli(events):
         "classified": classified,
     }
 
-def alert_for(sli):
-    error_budget_fraction = 1 - TARGET
+def burn_window(events, journey, window_minutes):
+    window_start = OBSERVATION_END - timedelta(minutes=window_minutes)
+    selected = [
+        event
+        for event in events
+        if (
+            window_start
+            &lt; datetime.fromisoformat(event["timestamp"])
+            &lt;= OBSERVATION_END
+        )
+    ]
+    sli = derive_sli(selected, journey)
     observed_bad_fraction = sli["bad_events"] / sli["valid_events"]
-    rate = observed_bad_fraction / error_budget_fraction
     return {
+        "window_minutes": window_minutes,
+        "start_timestamp": window_start.isoformat(),
+        "end_timestamp": OBSERVATION_END.isoformat(),
+        "valid_events": sli["valid_events"],
+        "good_events": sli["good_events"],
+        "bad_events": sli["bad_events"],
+        "observed_bad_fraction": observed_bad_fraction,
+        "rate": observed_bad_fraction / (1 - TARGET),
+    }
+
+def evaluate_alert(events, journey):
+    windows = {
+        "short": burn_window(
+            events,
+            journey,
+            SHORT_WINDOW_MINUTES,
+        ),
+        "long": burn_window(
+            events,
+            journey,
+            LONG_WINDOW_MINUTES,
+        ),
+    }
+    conditions = {
+        name: window["rate"] >= PAGE_BURN_THRESHOLD
+        for name, window in windows.items()
+    }
+    return windows, {
         "multi_window": True,
+        "combination": "short-and-long",
         "page": {
-            "window_minutes": 5,
-            "threshold": 2.0,
-            "triggered": rate >= 2.0,
+            "conditions": conditions,
+            "threshold": PAGE_BURN_THRESHOLD,
+            "triggered": conditions["short"] and conditions["long"],
             "actionable": True,
             "action": "購入impactを確認しcheckoutを縮退する",
         },
         "ticket": {
-            "window_minutes": 60,
+            "window_minutes": LONG_WINDOW_MINUTES,
             "threshold": 1.0,
-            "triggered": rate >= 1.0,
+            "triggered": windows["long"]["rate"] >= 1.0,
             "actionable": True,
             "action": "翌営業日までにbudget消費原因を追跡する",
         },
-    }, {
-        "observed_bad_fraction": observed_bad_fraction,
-        "rate": rate,
     }
 
 def validate_telemetry(resource_attributes, metric_labels):
@@ -122,11 +199,35 @@ def validate_telemetry(resource_attributes, metric_labels):
     return sorted(errors)
 
 def main():
-    sli = derive_sli(EVENTS)
-    alerts, burn_rate = alert_for(sli)
-    assert sli["valid_events"] == 10
-    assert sli["good_events"] == 7
-    assert alerts["page"]["triggered"]
+    sli = derive_sli(FIXTURE_EVENTS, "purchase-completion")
+    burn_windows, alerts = evaluate_alert(
+        SCENARIO_EVENTS["both"],
+        "purchase-completion",
+    )
+    scenario_reports = {}
+    for name, events in SCENARIO_EVENTS.items():
+        windows, scenario_alerts = evaluate_alert(
+            events,
+            "purchase-completion",
+        )
+        scenario_reports[name] = {
+            "windows": windows,
+            "conditions": scenario_alerts["page"]["conditions"],
+            "page_triggered": scenario_alerts["page"]["triggered"],
+        }
+    alerts["scenarios"] = scenario_reports
+    assert {
+        name: (
+            result["conditions"]["short"],
+            result["conditions"]["long"],
+            result["page_triggered"],
+        )
+        for name, result in scenario_reports.items()
+    } == {
+        "normal": (False, False, False),
+        "short-only": (True, False, False),
+        "both": (True, True, True),
+    }, "multi-window-causal-invariant"
 
     resources = {
         "service.name": "checkout",
@@ -137,41 +238,40 @@ def main():
     telemetry_errors = validate_telemetry(resources, metric_labels)
     assert telemetry_errors == []
 
-    mutated_events = copy.deepcopy(EVENTS)
-    for event in mutated_events:
-        if event["journey"] == "purchase-completion":
-            event["status"] = "ok"
-            event["latency_ms"] = 100
-    mutated_sli = derive_sli(mutated_events)
-    mutated_alerts, _ = alert_for(mutated_sli)
-    mutated_resources = dict(resources)
-    del mutated_resources["service.version"]
-    mutated_errors = validate_telemetry(
-        mutated_resources,
-        metric_labels | {"user.id"},
+    baseline_sli = derive_sli(FIXTURE_EVENTS, "search-success")
+    transferred_sli = derive_sli(
+        FIXTURE_EVENTS,
+        "purchase-completion",
     )
-    mutation = {
-        "detected": (
-            alerts["page"]["triggered"]
-            != mutated_alerts["page"]["triggered"]
-            and bool(mutated_errors)
-        ),
-        "alert_changed": (
-            alerts["page"]["triggered"]
-            != mutated_alerts["page"]["triggered"]
-        ),
-        "validation_changed": telemetry_errors != mutated_errors,
-        "errors": mutated_errors,
+    fixture_event_ids = [event["id"] for event in FIXTURE_EVENTS]
+    journey_boundary_transfer = {
+        "changed_fields": ["journey"],
+        "baseline_sli": baseline_sli,
+        "transferred_sli": transferred_sli,
+        "baseline_event_ids": fixture_event_ids,
+        "transferred_event_ids": fixture_event_ids,
+        "unchanged": {
+            "event_fixture": True,
+            "target": True,
+            "window": True,
+            "telemetry_contract": True,
+        },
+        "telemetry_errors_before": telemetry_errors,
+        "telemetry_errors_after": telemetry_errors,
     }
-    assert mutation["detected"]
+    assert baseline_sli["ratio"] != transferred_sli["ratio"]
+    assert journey_boundary_transfer["baseline_event_ids"] == (
+        journey_boundary_transfer["transferred_event_ids"]
+    )
 
     report = {
         "harness": HARNESS,
-        "fixture": "purchase-journey-events-v1",
+        "fixture": "timestamped-user-journey-events-v2",
+        "fixture_events": FIXTURE_EVENTS,
         "fixture_metadata": {
             "kind": "synthetic",
-            "provenance": "lesson-defined fixed user-journey events",
-            "purpose": "SLI、budget、alert、telemetry契約の因果を反証する",
+            "provenance": "lesson-defined timestamped user-journey events",
+            "purpose": "SLI、window別burn、alert、journey境界の因果を反証する",
             "limitations": "production traffic、SLA、利用者期待を表さない",
         },
         "sli": sli,
@@ -181,7 +281,7 @@ def main():
             "error_budget_fraction": 1 - TARGET,
             "decision_scope": "internal reliability objective, not SLA",
         },
-        "burn_rate": burn_rate,
+        "burn_windows": burn_windows,
         "alerts": alerts,
         "runbook": {
             "owner": "checkout-on-call",
@@ -211,14 +311,14 @@ def main():
                 "stableとdevelopmentのsemantic fieldsをversionごとにreviewする"
             ),
         },
-        "event_telemetry_mutation": mutation,
+        "journey_boundary_transfer": journey_boundary_transfer,
         "mastery_evidence": {
             "lab_steps": [
-                {"step": 1, "evidence": "fixed EVENTSとclassified"},
-                {"step": 2, "evidence": "SLI、SLO、burn_rate"},
-                {"step": 3, "evidence": "pageとticketのmulti-window"},
+                {"step": 1, "evidence": "timestamp付きfixtureとclassified"},
+                {"step": 2, "evidence": "SLI、SLO、window別burn rate"},
+                {"step": 3, "evidence": "normal、short-only、bothのAND判定"},
                 {"step": 4, "evidence": "owner付きrunbook"},
-                {"step": 5, "evidence": "telemetry contractとmutation"},
+                {"step": 5, "evidence": "telemetry検証とjourney境界だけのtransfer"},
             ],
             "assessments": [
                 {"assessment": 1, "evidence": "purchase journey境界とtrace correlation"},
@@ -236,7 +336,10 @@ def main():
                     "信頼性境界を変え、SLIとSLOを再設計する"
                 ),
                 "changed_assumption": "user-visible-reliability",
-                "evidence": "journey境界変更後のSLIとalert再計算",
+                "evidence": (
+                    "同じevent、target、window、telemetryで"
+                    "journeyだけを変えたSLI再計算"
+                ),
             },
         },
         "external_network_used": False,

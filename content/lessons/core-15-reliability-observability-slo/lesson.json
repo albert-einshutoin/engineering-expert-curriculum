@@ -82,11 +82,11 @@
     "title": "購入完了journeyのSLOとmulti-window alertを作る",
     "artifact": "利用者ジャーニーから導いたSLI、SLO、アラート、ランブック",
     "steps": [
-      "購入完了journeyの固定synthetic eventをvalid、good、badへ分類する",
-      "good÷validのSLI、28日window、target、error budget、burn rateを計算する",
-      "短窓のpageと長窓のticketを別thresholdとactionで定義する",
+      "timestamp付きの固定synthetic eventを購入完了journeyのvalid、good、badへ分類する",
+      "good÷validのSLI、28日window、target、error budget、5分と60分それぞれのbad割合とburn rateを計算する",
+      "正常、短窓だけ異常、両窓異常を再現し、短窓と長窓のAND条件でpageを定義する",
       "runbookへuser impact確認、mitigation、rollback、escalation、ownerを結ぶ",
-      "OpenTelemetryとsemantic conventionsのversion、resource属性、trace correlation、PII、cardinality、sampling、stabilityを検査しmutationでalertまたはvalidationの変化を確認する"
+      "OpenTelemetry契約を検査し、同じevent、target、window、telemetryのまま検索成功率から購入完了率へjourney境界だけを変えてSLIを再計算する"
     ]
   },
   "teachBack": "5分で、SLOとSLAが同義でない理由、CPU metricを利用者SLIにできない場合、100%目標とtelemetry全量保存の代償を説明する。",
