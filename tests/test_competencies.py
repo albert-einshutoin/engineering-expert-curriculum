@@ -409,7 +409,10 @@ class CompetencyContractTests(unittest.TestCase):
             and mapping.framework == "CS2023"
         )
         self.assertEqual(security_incident.alignment, "partial")
-        self.assertIn("セキュリティインシデント", security_incident.rationale)
+        self.assertIn(
+            "セキュリティインシデント",
+            security_incident.rationale,
+        )
         self.assertIn("限定", security_incident.rationale)
 
         infrastructure = next(

@@ -1181,26 +1181,30 @@ def _competency_content(
     if matrix is None:
         frameworks = validate_fragment(
             '<ul class="competency-frameworks">'
-            '<li class="empty-state">release buildで公式版を検証します。</li>'
+            '<li class="empty-state">'
+            "release buildで公式版を検証します。</li>"
             "</ul>"
         )
         rendered_rows = ""
     else:
         framework_order = ("CS2023", "SWEBOK", "SFIA")
-        frameworks = validate_fragment(
-            '<ul class="competency-frameworks">'
-            + "".join(
+        source_items: list[str] = []
+        for framework in framework_order:
+            source = matrix.framework_sources[framework]
+            source_items.append(
                 "<li><strong>"
                 f"{escape(framework, quote=False)}</strong>: "
-                f"{escape(matrix.framework_versions[framework], quote=False)}"
+                f"{escape(source.version, quote=False)}"
                 " <small>確認日: "
-                f"{escape(matrix.framework_sources[framework].verified_at, quote=False)}"
+                f"{escape(source.verified_at, quote=False)}"
                 " · <a rel=\"noreferrer\" href=\""
-                f"{escape(matrix.framework_sources[framework].official_url, quote=True)}"
+                f"{escape(source.official_url, quote=True)}"
                 '">公式参照</a></small>'
                 "</li>"
-                for framework in framework_order
             )
+        frameworks = validate_fragment(
+            '<ul class="competency-frameworks">'
+            + "".join(source_items)
             + "</ul>"
         )
         lesson_titles = {
