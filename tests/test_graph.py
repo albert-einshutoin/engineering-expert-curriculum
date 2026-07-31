@@ -165,6 +165,45 @@ class GraphTests(unittest.TestCase):
         ):
             topological_stages(("b", "a", "b", "a"), {})
 
+    def test_rejects_unsafe_identifiers_without_reflecting_them(self) -> None:
+        unsafe_values = (
+            "node\nFORGED",
+            "node\x1b[31mFORGED",
+            "node\u202eFORGED",
+            "x" * 129,
+        )
+        for unsafe in unsafe_values:
+            cases = (
+                (
+                    "node",
+                    (unsafe,),
+                    {},
+                    "node IDs contain an unsafe identifier",
+                ),
+                (
+                    "key",
+                    ("safe",),
+                    {unsafe: ()},
+                    "prerequisite keys contain an unsafe identifier",
+                ),
+                (
+                    "dependency",
+                    ("safe",),
+                    {"safe": (unsafe,)},
+                    "prerequisites for safe contain an unsafe identifier",
+                ),
+            )
+            for label, node_ids, prerequisites, diagnostic in cases:
+                with self.subTest(label=label, unsafe=repr(unsafe)):
+                    with self.assertRaises(
+                        CurriculumValidationError
+                    ) as caught:
+                        topological_stages(node_ids, prerequisites)
+                    self.assertEqual(str(caught.exception), diagnostic)
+                    self.assertNotIn("FORGED", str(caught.exception))
+                    self.assertNotIn("\x1b", str(caught.exception))
+                    self.assertLessEqual(len(str(caught.exception)), 80)
+
     def test_rejects_non_mapping_prerequisites(self) -> None:
         with self.assertRaisesRegex(
             CurriculumValidationError, r"^prerequisites must be a mapping$"

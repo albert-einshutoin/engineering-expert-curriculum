@@ -340,6 +340,79 @@ class RoadmapAcceptanceTests(unittest.TestCase):
                         require_complete=False,
                     )
 
+    def test_authoring_identifiers_are_safe_bounded_and_never_reflected(
+        self,
+    ) -> None:
+        parser = getattr(build_module, "parse_roadmap_bytes")
+        unsafe_values = (
+            "id\nFORGED",
+            "id\x1b[31mFORGED",
+            "id\u202eFORGED",
+            "x" * 129,
+        )
+        for unsafe in unsafe_values:
+            documents = (
+                (
+                    "node",
+                    {
+                        "version": 1,
+                        "nodes": [
+                            {
+                                "id": unsafe,
+                                "title": "Think",
+                                "prerequisites": [],
+                            }
+                        ],
+                    },
+                    "node IDs contain an unsafe identifier",
+                ),
+                (
+                    "prerequisite",
+                    {
+                        "version": 1,
+                        "nodes": [
+                            {
+                                "id": "safe",
+                                "title": "Think",
+                                "prerequisites": [unsafe],
+                            }
+                        ],
+                    },
+                    "prerequisites for safe contain an unsafe identifier",
+                ),
+                (
+                    "gate",
+                    {
+                        **_canonical_document(),
+                        "masteryGates": [
+                            {
+                                **EXPECTED_GATES[0],
+                                "id": unsafe,
+                            },
+                            *[
+                                dict(gate)
+                                for gate in EXPECTED_GATES[1:]
+                            ],
+                        ],
+                    },
+                    "mastery gate 0 id is invalid",
+                ),
+            )
+            for label, document, diagnostic in documents:
+                with self.subTest(label=label, unsafe=repr(unsafe)):
+                    with self.assertRaises(
+                        CurriculumValidationError
+                    ) as caught:
+                        parser(
+                            _encoded(document),
+                            "roadmap.json",
+                            require_complete=False,
+                        )
+                    self.assertEqual(str(caught.exception), diagnostic)
+                    self.assertNotIn("FORGED", str(caught.exception))
+                    self.assertNotIn("\x1b", str(caught.exception))
+                    self.assertLessEqual(len(str(caught.exception)), 80)
+
     def test_release_schema_validates_root_before_nested_data(self) -> None:
         parser = getattr(build_module, "parse_roadmap_bytes")
         invalid = _canonical_document()
@@ -438,6 +511,11 @@ class RoadmapAcceptanceTests(unittest.TestCase):
             second_root_nodes[1],
             prerequisite_ids=(),
         )
+        boolean_ordinal_nodes = list(release.nodes)
+        boolean_ordinal_nodes[0] = replace(
+            boolean_ordinal_nodes[0],
+            ordinal=True,
+        )
         draft_lessons = (
             replace(lessons[0], status="draft"),
             *lessons[1:],
@@ -460,6 +538,12 @@ class RoadmapAcceptanceTests(unittest.TestCase):
                 no_gates,
                 lessons,
                 "release roadmap must contain the exact canonical mastery gates",
+            ),
+            (
+                "ordinal type",
+                replace(release, nodes=tuple(boolean_ordinal_nodes)),
+                lessons,
+                "release roadmap node ordinal must be an integer",
             ),
             (
                 "complete",
@@ -548,6 +632,47 @@ class RoadmapAcceptanceTests(unittest.TestCase):
             self.assertEqual(sentinel.read_text(encoding="utf-8"), "old")
             self.assertEqual(tuple(root.glob(".site.staging-*")), ())
 
+    def test_cli_release_build_accepts_a_safe_deep_root(self) -> None:
+        with TemporaryDirectory() as directory:
+            temporary_root = Path(directory).resolve(strict=True)
+            deep_parent = temporary_root
+            while len(str(deep_parent / "project")) <= 300:
+                deep_parent /= "deep-roadmap-root"
+            project = deep_parent / "project"
+            project.mkdir(parents=True)
+            shutil.copytree(
+                REPOSITORY_ROOT / "content",
+                project / "content",
+            )
+            shutil.copytree(
+                REPOSITORY_ROOT / "templates",
+                project / "templates",
+            )
+            shutil.copytree(
+                REPOSITORY_ROOT / "static",
+                project / "static",
+            )
+            output = project / "site"
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(REPOSITORY_ROOT / "tools/build.py"),
+                    "--root",
+                    str(project),
+                    "--output",
+                    str(output),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue((output / "roadmap/index.html").is_file())
+            self.assertEqual(tuple(output.rglob("*.js")), ())
+            self.assertEqual(tuple(project.glob(".site.staging-*")), ())
+
     def test_release_build_links_every_lesson_and_renders_six_gates(self) -> None:
         with TemporaryDirectory() as directory:
             output = Path(directory).resolve(strict=True) / "site"
@@ -572,6 +697,10 @@ class RoadmapAcceptanceTests(unittest.TestCase):
                 self.assertEqual(
                     html.count(f'id="mastery-{gate["id"]}"'),
                     1,
+                )
+                self.assertIn(
+                    f"<h3>{gate['id'].title()}</h3>",
+                    html,
                 )
                 self.assertIn(gate["artifact"], html)
                 self.assertIn(gate["review"], html)
@@ -650,6 +779,9 @@ class RoadmapAcceptanceTests(unittest.TestCase):
             )
             self.assertNotIn("<script", html.casefold())
             self.assertEqual(tuple(output.rglob("*.js")), ())
+            stylesheet = (output / "styles.css").read_text(encoding="utf-8")
+            self.assertIn(".mastery-gate h3", stylesheet)
+            self.assertNotIn(".mastery-gate h2", stylesheet)
 
 
 if __name__ == "__main__":
