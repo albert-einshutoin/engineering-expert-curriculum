@@ -1611,6 +1611,40 @@ git commit -m "feat: connect thirty lessons through mastery gates"
   `2f44d246e1a8e2f0e851c5e99e15fe05179d2051e3b5d946af51bd947af64ced`.
   Catalog and archive preservation evidence remains unchanged.
 
+#### Task 9 second quality-review remediation
+
+- The second independent review reported Critical 0 / Important 1 / Minor 3.
+  Tests-only commit `ff76e59` reproduced unsafe or unbounded roadmap
+  identifiers reaching public graph diagnostics, a forged boolean ordinal
+  passing integer equality, an absolute diagnostic label coupling valid builds
+  to checkout-path length, and a dead mastery-gate heading selector.
+- Commit `bc32e59` gives graph node, prerequisite-key, and dependency IDs one
+  bounded ASCII identifier contract before any value-dependent diagnostic.
+  Authoring mastery-gate IDs use a stricter HTML-safe contract. Release
+  validation now requires an exact `int` ordinal, roadmap parsing receives the
+  fixed safe label `roadmap.json`, and the stylesheet targets the rendered
+  mastery-gate `h3`. A CLI regression builds successfully from a safe path over
+  300 characters without JavaScript or staging residue.
+- Self-review then identified that trailing control whitespace or overlong
+  ASCII-space padding could still enter the legacy padding diagnostic after
+  `strip()`. Tests-only commit `a769e1f` reproduced eight failures. Commit
+  `911810e` preserves the actionable legacy diagnostic only for bounded ASCII
+  space padding; all control, bidirectional, escape, or overlong identifiers
+  now use fixed non-reflective diagnostics.
+- The final focused gate passes all 118 tests and the complete suite passes all
+  491 tests. Two repository-external release builds each contain 35 regular
+  artifacts, 34 HTML files, one CSS file, zero JavaScript files, zero symbolic
+  links, and zero special nodes. Each contains 1,158,954 bytes, nine
+  topological stages, 30 lesson list items, and six mastery gates. Both produce
+  canonical aggregate SHA-256
+  `253aad1329906f9ee7e6a69073238444a3034ed2376e2947f36761047451cf08`.
+- The 1,140-item catalog remains unique with SHA-256
+  `4f38b5f63931a7f06e13f90f5d9ef90a0a435f30dae5d4fe70720d730a057473`.
+  The private prototype archive remains unchanged: 1,194 files, 16,805,630
+  bytes, and zero missing, extra, hash-mismatched, symbolic-link, special-node,
+  or unsafe-path entries. Gitleaks and `git diff --check` are clean for the
+  complete remediation range.
+
 ### Task 10: Add the versioned competency matrix
 
 **Files:**
