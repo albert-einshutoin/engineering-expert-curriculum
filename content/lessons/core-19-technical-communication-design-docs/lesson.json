@@ -1,0 +1,178 @@
+{
+  "version": 1,
+  "id": "core-19-technical-communication-design-docs",
+  "title": "読者の判断を支える設計文書とADRを構成する",
+  "summary": "同じ技術判断を、経営読者向けの短い要約と実装者向けの検証可能な付録へ分け、代替案、リスク、決定証拠を失わずに伝える。",
+  "track": "human-product",
+  "stage": 3,
+  "difficulty": "advanced",
+  "estimatedMinutes": 300,
+  "prerequisiteIds": [
+    "core-01-systems-tradeoffs",
+    "core-06-requirements-domain-modeling"
+  ],
+  "objectives": [
+    {
+      "id": "obj-audience",
+      "statement": "読者の責務と必要な判断から情報階層、用語、詳細度を設計できる",
+      "evidenceIds": ["design-document", "teach-back"]
+    },
+    {
+      "id": "obj-decision",
+      "statement": "代替案、評価基準、リスク、決定、検証を一つの追跡可能な文書へ結べる",
+      "evidenceIds": ["design-document", "assessment"]
+    },
+    {
+      "id": "obj-transfer",
+      "statement": "決定証拠を変えず、異なる読者が次の行動を取れる表現へ再構成できる",
+      "evidenceIds": ["assessment", "transfer"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "design-document",
+      "kind": "artifact",
+      "description": "読者別の要約、代替案、リスク、決定を含む設計文書"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "要約、技術付録、ADRの役割と相互参照を説明する5分発表"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "読者、根拠、代替案、リスク、検証の欠落を診断する回答"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "同じ決定証拠を経営読者向けから実装者向けへ再構成した記録"
+    }
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "事実、推測、選択肢、決定、検証を文書内で区別できる",
+      "evidenceIds": ["design-document"]
+    },
+    {
+      "level": "explain",
+      "criterion": "one-page executive summary、technical appendix、ADRが別々に必要な理由を説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "読者の判断に必要な結論を先に置き、代替案と証拠へ追跡可能にできる",
+      "evidenceIds": ["design-document"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "要約と付録のdecision drift、未定義語、検証不能な断定を発見できる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "複数職能が同じ証拠を参照し、決定と再評価条件を更新できる文書運用を主導できる",
+      "evidenceIds": ["transfer"]
+    }
+  ],
+  "lab": {
+    "title": "通知基盤の選定を読者別の設計文書へまとめる",
+    "artifact": "読者別の要約、代替案、リスク、決定を含む設計文書",
+    "steps": [
+      "読者、必要な判断、読後に取る行動、用語境界を明示する",
+      "固定synthetic評価基準から三つの代替案のweighted scoreと選定結果を計算する",
+      "one-page executive summaryへ結果、主要risk、承認依頼を収める",
+      "technical appendixとADRへalternatives、consequences、validation evidenceを結ぶ",
+      "決定証拠を変えずaudienceだけを経営読者から実装読者へ変えて再構成する"
+    ]
+  },
+  "teachBack": "5分で、長い文書を短くするだけでは要約にならない理由と、plain languageを精度低下ではなく読者の次の行動を明確にする設計として説明する。",
+  "assessment": [
+    {
+      "prompt": "経営要約ではoption Aを推奨し、付録の比較表ではoption Bが最高点だった。どの証拠をどう直すか。",
+      "expectedEvidence": "評価基準、score、decision、ADR、要約の追跡とdecision driftの修復"
+    },
+    {
+      "prompt": "実装者が要約を読んでもmigrationとvalidationを開始できない。何を付録へ追加するか。",
+      "expectedEvidence": "前提、interface、移行順序、失敗条件、rollback、検証owner、再評価条件"
+    }
+  ],
+  "transferTask": "経営読者から実装読者へaudienceだけを変え、同じ決定証拠を再構成する",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "結論だけを書き、用語、前提、代替案、検証が欠ける",
+        "developing": "選択肢はあるが評価基準とdecisionの対応が曖昧である",
+        "proficient": "要約、付録、ADRで同じ代替案、risk、decision、validationを追跡できる",
+        "exemplary": "前提変更時の再評価条件と文書間のdrift検査まで自動化する"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "書き手が知っている情報を順番なく並べる",
+        "developing": "読者を挙げるが必要な判断と情報量を対応させない",
+        "proficient": "読者の責務、判断、risk許容度から要約と付録の境界を選ぶ",
+        "exemplary": "対立する読者要求を明示し、同じ証拠から複数の行動可能なviewを設計する"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "権威や印象だけで選定を正当化する",
+        "developing": "scoreはあるが入力、尺度、validationの出自がない",
+        "proficient": "評価入力、weighted score、代替案、risk、validationを再計算可能に残す",
+        "exemplary": "反証条件、再評価owner、decision drift検査を継続的な証拠へする"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "読者と次の行動が不明な長文を共有する",
+        "developing": "plain languageだが重要な制約かtechnical detailを失う",
+        "proficient": "結論を先に示し、読者別の詳細と共通の証拠を相互参照できる",
+        "exemplary": "経営、product、実装、運用が一つの決定を異なる粒度で誤解なく更新できる"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "ISO/IEC/IEEE 42010:2022 - Software, systems and enterprise — Architecture description",
+      "url": "https://www.iso.org/standard/74393.html",
+      "kind": "standard"
+    },
+    {
+      "title": "NASA Systems Engineering Handbook, NASA/SP-2016-6105 Rev2",
+      "url": "https://www.nasa.gov/reference/systems-engineering-handbook/",
+      "kind": "primary"
+    },
+    {
+      "title": "RFC 7322: RFC Style Guide",
+      "url": "https://www.rfc-editor.org/info/rfc7322/",
+      "kind": "standard"
+    },
+    {
+      "title": "Markdown Architectural Decision Records 4.0.0",
+      "url": "https://adr.github.io/madr/",
+      "kind": "primary"
+    },
+    {
+      "title": "Plain language guide series",
+      "url": "https://digital.gov/guides/plain-language",
+      "kind": "primary"
+    }
+  ],
+  "review": {
+    "intervalDays": [1, 7, 30, 90],
+    "prompts": [
+      "要約と付録のdecisionが一致していることをどう検証するか",
+      "読者が変わっても変えてはいけない決定証拠は何か",
+      "plain languageと技術的精度を両立する編集を一つ説明する"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}

@@ -1,0 +1,300 @@
+<section id="why">
+  <h2>なぜ重要か</h2>
+  <p>設計文書の目的は、書き手の知識を保存することではなく、特定の読者が根拠を検査して次の行動を選べるようにすることである。経営読者には投資、期限、主要risk、承認事項が必要で、実装読者にはinterface、migration、失敗条件、validationが必要になる。しかし、両者が参照するalternatives、評価証拠、decisionは同じでなければならない。</p>
+  <p>このレッスンでは、one-page executive summary、technical appendix、ADRを重複文書ではなく一つの判断証拠に対する三つのviewとして設計する。plain languageは専門性を消す手法ではない。主語、行動、条件、未知を明示し、必要なtechnical detailへ到達できる情報設計である。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> ISO/IEC/IEEE 42010:2022、NASA/SP-2016-6105 Rev2、RFC 7322、MADR 4.0.0は文書の目的が異なる。形式に従っただけで正しいdecisionになるわけではなく、読者、context、alternatives、risk、validationを自分の状況で検証する必要がある。</p>
+  </aside>
+</section>
+<section id="mental-model">
+  <h2>メンタルモデル</h2>
+  <p>先に「誰が、何を判断し、読後に何をするか」を置く。次に、全読者で共有するdecision evidenceを一つだけ作り、読者ごとに順序と詳細度を変える。要約は結果と承認事項から始め、付録は再現手順と境界を、ADRはcontext、decision、alternatives、consequences、risks、validationの履歴を保持する。</p>
+  <figure>
+    <figcaption>一つの決定証拠から読者別viewを導く構造</figcaption>
+    <ol>
+      <li><strong>Audience:</strong> 責務、判断、既知の用語、時間制約を定義する。</li>
+      <li><strong>Evidence:</strong> 評価基準、入力、代替案、risk、検証結果を固定する。</li>
+      <li><strong>Decision:</strong> 選定結果、負うconsequence、再評価条件を明示する。</li>
+      <li><strong>Executive view:</strong> 結論、価値、主要risk、承認依頼を一頁へ収める。</li>
+      <li><strong>Implementation view:</strong> interface、migration、rollback、validationを付録へ置く。</li>
+      <li><strong>Drift check:</strong> 要約、付録、ADRが同じdecisionを指すか検査する。</li>
+    </ol>
+  </figure>
+  <p>情報量を減らす時も根拠との接続は切らない。「詳しくは付録」だけでは弱い。どのrisk、どの代替案、どのvalidationへ進むかを見出しと識別子で追えるようにする。未知は削除せず、仮定、owner、期限を付ける。</p>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>通知基盤の選定を三つのviewへ変換する</h3>
+  <dl>
+    <dt>前提</dt>
+    <dd>lesson-defined synthetic scenarioとして、managed、self-hosted、hybridの三案をdelivery、operations、cost、reversibilityで比較する。実組織の見積りやproduction測定ではない。</dd>
+    <dt>入力</dt>
+    <dd>重みの合計を1.0とし、各案を1〜5で評価する。読者はbaselineではexecutive、transferではimplementerとする。評価入力、alternatives、risk、validation evidenceは変えない。</dd>
+    <dt>操作</dt>
+    <dd>weighted scoreを計算し最高案をdecisionとする。one-page executive summary、technical appendix、ADRを同じdecisionから生成し、必須fieldと文書間driftを検査する。</dd>
+    <dt>観測</dt>
+    <dd>要約は1頁、80語以内となり、付録は全代替案、主要risk、検証証拠を保持する。audienceだけを変えても選定結果とdecision evidenceは一致する。</dd>
+    <dt>結論</dt>
+    <dd>短さは目的ではない。読者が必要な判断へ最短で到達し、その判断を同じ証拠から反証できることがtechnical communicationの品質である。</dd>
+  </dl>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+import json
+
+HARNESS = "technical_communication_lab_v1"
+CRITERIA = {
+    "delivery": {"weight": 0.30, "meaning": "価値提供までの速さ"},
+    "operations": {"weight": 0.30, "meaning": "運用負荷の小ささ"},
+    "cost": {"weight": 0.20, "meaning": "予測可能な総費用"},
+    "reversibility": {"weight": 0.20, "meaning": "撤退と移行の容易さ"},
+}
+OPTION_FIXTURE = [
+    {
+        "id": "managed",
+        "ratings": {
+            "delivery": 5,
+            "operations": 5,
+            "cost": 3,
+            "reversibility": 4,
+        },
+        "risks": ["provider dependency", "egress cost"],
+    },
+    {
+        "id": "self-hosted",
+        "ratings": {
+            "delivery": 2,
+            "operations": 2,
+            "cost": 4,
+            "reversibility": 5,
+        },
+        "risks": ["on-call load", "capacity ownership"],
+    },
+    {
+        "id": "hybrid",
+        "ratings": {
+            "delivery": 3,
+            "operations": 3,
+            "cost": 3,
+            "reversibility": 4,
+        },
+        "risks": ["dual operation", "migration drift"],
+    },
+]
+REQUIRED_ADR_FIELDS = [
+    "context",
+    "decision",
+    "alternatives",
+    "consequences",
+    "risks",
+    "validation",
+]
+EXECUTIVE_TEXT = (
+    "Select managed delivery for the first release. "
+    "It has the strongest weighted evidence for delivery and operations. "
+    "Approve a reversible pilot, an egress cost limit, and a migration exit test. "
+    "The team will stop expansion if either guardrail fails."
+)
+TRANSFER_TASK = (
+    "経営読者から実装読者へaudienceだけを変え、同じ決定証拠を"
+    "再構成する"
+)
+
+def score_options(options):
+    scored = []
+    for option in options:
+        # 重み付きscoreを入力から導出し、要約だけを変えて結論を
+        # 書き換えられないようにする。
+        weighted_score = sum(
+            option["ratings"][criterion_id] * criterion["weight"]
+            for criterion_id, criterion in CRITERIA.items()
+        )
+        scored.append(
+            {
+                "id": option["id"],
+                "ratings": option["ratings"],
+                "weighted_score": weighted_score,
+                "risks": option["risks"],
+            }
+        )
+    return scored
+
+def validate_adr(document):
+    missing_fields = [
+        field
+        for field in REQUIRED_ADR_FIELDS
+        if not document.get(field)
+    ]
+    return {
+        "valid": not missing_fields,
+        "required_fields": REQUIRED_ADR_FIELDS,
+        "missing_fields": missing_fields,
+    }
+
+def main():
+    options = score_options(OPTION_FIXTURE)
+    selected_option = max(
+        options,
+        key=lambda option: option["weighted_score"],
+    )["id"]
+    decision = {
+        "criteria": CRITERIA,
+        "options": options,
+        "selected_option": selected_option,
+        "evidence_id": "notification-platform-comparison-v1",
+    }
+    summary = {
+        "audience": "executive",
+        "page_budget": 1,
+        "word_limit": 80,
+        "word_count": len(EXECUTIVE_TEXT.split()),
+        "decision": selected_option,
+        "reader_outcome": "pilot承認とcost guardrailのowner決定",
+        "text": EXECUTIVE_TEXT,
+    }
+    appendix_decision = decision["selected_option"]
+    technical_appendix = {
+        "audience": "implementer",
+        "alternatives": options,
+        "decision": appendix_decision,
+        "risks": [
+            risk
+            for option in options
+            for risk in option["risks"]
+        ],
+        "validation_evidence": [
+            "synthetic weighted comparison",
+            "reversible pilot plan",
+            "exit test specification",
+        ],
+    }
+    adr_document = {
+        "context": "初回releaseの通知基盤を選ぶ",
+        "decision": selected_option,
+        "alternatives": [option["id"] for option in options],
+        "consequences": ["delivery短縮", "provider dependencyを受容"],
+        "risks": technical_appendix["risks"],
+        "validation": technical_appendix["validation_evidence"],
+    }
+    # 三つのviewが同じ決定を指すことを実行時不変条件にし、
+    # copy-and-pasteによる静かなdecision driftを失敗へ変える。
+    assert (
+        summary["decision"]
+        == appendix_decision
+        == adr_document["decision"]
+    ), "communication-causal-invariant"
+    audience_transfer = {
+        "changed_assumption": "audience",
+        "changed_fields": ["audience"],
+        "baseline_audience": "executive",
+        "transferred_audience": "implementer",
+        "baseline_decision": summary["decision"],
+        "transferred_decision": technical_appendix["decision"],
+        "decision_evidence_unchanged": (
+            decision["evidence_id"]
+            == "notification-platform-comparison-v1"
+        ),
+    }
+    report = {
+        "fixture_metadata": {
+            "kind": "synthetic",
+            "provenance": "lesson-defined synthetic scenario",
+            "limitations": (
+                "評価値と文章量は教材用であり実組織の承認を表さない"
+            ),
+        },
+        "decision": decision,
+        "one_page_executive_summary": summary,
+        "technical_appendix": technical_appendix,
+        "adr_validation": validate_adr(adr_document),
+        "audience_transfer": audience_transfer,
+        "runtime_bound": {
+            "records": len(options) + len(CRITERIA) + len(REQUIRED_ADR_FIELDS),
+            "subprocesses": 0,
+        },
+        "mastery_evidence": {
+            "lab_steps": [
+                {"step": 1, "evidence": "audienceとreader outcome"},
+                {"step": 2, "evidence": "criteriaとweighted score"},
+                {"step": 3, "evidence": "one-page executive summary"},
+                {"step": 4, "evidence": "appendixとADR validation"},
+                {"step": 5, "evidence": "audience transfer"},
+            ],
+            "assessments": [
+                {"assessment": 1, "evidence": "decision drift検査"},
+                {"assessment": 2, "evidence": "実装者向けvalidation情報"},
+            ],
+            "rubric_dimensions": [
+                "technical-correctness",
+                "judgment",
+                "evidence",
+                "communication",
+            ],
+            "transfer": {
+                "task": TRANSFER_TASK,
+                "changed_assumption": "audience",
+                "evidence": "決定証拠を維持した読者別再構成",
+            },
+        },
+        "external_network_used": False,
+    }
+    assert report["adr_validation"]["valid"], "adr-required-fields"
+    assert (
+        report["one_page_executive_summary"]["word_count"]
+        &lt;= report["one_page_executive_summary"]["word_limit"]
+    ), "executive-page-budget"
+    print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+
+main()
+PY</code></pre>
+</section>
+<section id="tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <table>
+    <caption>読者、情報、検証を対応させるdecision table</caption>
+    <thead>
+      <tr>
+        <th scope="col">状況</th>
+        <th scope="col">先に示す情報</th>
+        <th scope="col">残す証拠</th>
+        <th scope="col">失敗条件</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row">経営判断</th>
+        <td>価値、decision、主要risk、承認事項</td>
+        <td>比較結果と再評価条件</td>
+        <td>結論はあるが次の行動がない</td>
+      </tr>
+      <tr>
+        <th scope="row">実装開始</th>
+        <td>interface、migration、validation</td>
+        <td>付録とADRへの追跡</td>
+        <td>根拠と異なる仕様を実装する</td>
+      </tr>
+      <tr>
+        <th scope="row">決定更新</th>
+        <td>変わった前提と新しい証拠</td>
+        <td>旧decisionとconsequences</td>
+        <td>履歴を消して理由が失われる</td>
+      </tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><strong>誤診:</strong> 誰も読まないのは文書が長いからだ。<strong>反証:</strong> 長さだけを削る前に、読者、必要なdecision、reader outcome、見出しから証拠までの経路を観察する。</li>
+    <li><strong>誤診:</strong> ADR templateのfieldを埋めれば判断品質は保証される。<strong>反証:</strong> alternativesのscore、risk、validationを再計算し、要約と付録のdecision driftを検査する。</li>
+  </ul>
+</section>
+<section id="knowledge-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>経営要約と実装付録で変えてよいもの、変えてはいけないものを一つずつ挙げよ。</li>
+    <li>selected optionのscoreが最高でも、そのdecisionを採用してはいけない条件を二つ挙げよ。</li>
+    <li>plain languageへ編集した結果、技術的な誤解が増えたことをどう検証するか。</li>
+    <li>ADRのvalidation fieldへ、測定結果、rollback、再評価ownerをどう結ぶか。</li>
+  </ol>
+</section>
+<section id="sources-next">
+  <h2>出典と次の学習</h2>
+  <p>architecture descriptionの構造はISO/IEC/IEEE 42010:2022、system decisionとverificationの考え方はNASA Systems Engineering Handbook Rev2、技術文書の表現はRFC 7322、ADRの最小構造はMADR 4.0.0、読者中心の表現はPlain language guide seriesを基準にした。いずれも文脈へ適用して検証するための一次資料または標準であり、形式だけを模写する根拠ではない。</p>
+  <p>次はcore20で、このdecisionがaffected peopleへ与えるuneven harm、data lifecycle、mitigation、residual riskを文書の制約へ追加する。</p>
+</section>
