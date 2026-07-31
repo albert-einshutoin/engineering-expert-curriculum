@@ -274,6 +274,21 @@ class RoadmapAcceptanceTests(unittest.TestCase):
                 require_complete=True,
             )
 
+    def test_release_schema_rejects_an_independent_second_root(self) -> None:
+        parser = getattr(build_module, "parse_roadmap_bytes")
+        invalid = _canonical_document()
+        invalid["nodes"][1]["prerequisiteIds"] = []
+
+        with self.assertRaisesRegex(
+            CurriculumValidationError,
+            "release roadmap must have core-01 as its only root",
+        ):
+            parser(
+                _encoded(invalid),
+                "roadmap.json",
+                require_complete=True,
+            )
+
     def test_release_validation_rejects_missing_duplicate_and_drift(
         self,
     ) -> None:
