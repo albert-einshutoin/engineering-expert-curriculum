@@ -187,17 +187,16 @@ Each `lesson.json` contains:
 - Rubric dimensions and four performance levels
 - Review prompts and a printable review schedule
 
-`body.html` is an authored semantic fragment. It must contain:
+`body.html` is an authored semantic fragment. It must contain exactly these six sections in order:
 
 1. Why this matters
 2. Mental model
 3. Worked example
 4. Trade-offs and failure modes
-5. Practical lab
-6. Knowledge checks
-7. Transfer task
-8. Rubric
-9. Sources and further study
+5. Knowledge checks
+6. Sources and further study
+
+`lesson.json` provides the structured lab, teach-back, assessment, transfer, review schedule, rubric, and sources that the renderer generates outside the authored body.
 
 The validator rejects scriptable or embedding elements, inline event handlers,
 unsafe URL schemes, forms, and inline styles in lesson bodies. Authored body

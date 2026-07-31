@@ -113,10 +113,28 @@ EXPECTED_CHECKLIST = (
     "v0.1.0以後のreviewerKindを開示し、AI reviewをhuman approvalに数えていない。",
     "Generated map、full tests、2回build、local link、安全性、accessibility検査と認証済みmaintainer decisionが揃った。",
 )
+EXPECTED_EVIDENCE_TABLE = (
+    ("段階", "学習者の行動", "MUSTとなる証拠"),
+    ("Learn", "機構、境界、制約、失敗モードを理解する", "objective、メンタルモデル、出典"),
+    ("Practice", "固定条件で手を動かし結果を観測する", "3手順以上のlabと提出成果物"),
+    ("Explain", "自分の言葉で因果関係と代替案を説明する", "teach-backとexplanation evidence"),
+    ("Prove", "もっともらしい誤診を反証して判断する", "問いとexpected evidenceを持つassessment"),
+    ("Transfer", "一つの重要制約を変え、判断を再実行する", "transfer taskと更新された証拠"),
+    ("Review", "時間を空けて再現・説明・修正する", "1/7/30/90日後のpromptとrubric再評価"),
+)
+EXPECTED_REVIEW_TABLE = (
+    ("役割", "独立して確認する責任"),
+    ("技術的正確性", "機構、code、測定、制約、failure mode、sourceとの一致"),
+    ("学習設計・証拠", "objective、六段階loop、assessment、transfer、rubricの採点可能性"),
+    ("アクセシビリティ", "semantic HTML、keyboard、読み順、zoom、contrast、print"),
+    ("編集・出典", "用語、断定範囲、version、引用、link、Errata履歴"),
+)
 
 _ATX_HEADING = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*$")
 _OPEN_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(?:[^`~]*)$")
 _CHECKBOX = re.compile(r"^\s*[-*+]\s+\[ \]\s+(.+?)\s*$")
+_SETEXT_UNDERLINE = re.compile(r"^ {0,3}(?:=+|-+)[ \t]*$")
+_RAW_HTML_HEADING = re.compile(r"^ {0,3}<h[12](?:[ \t][^>]*)?>", re.IGNORECASE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,27 +146,57 @@ class _StandardDocument:
 
 def _visible_lines(source: str) -> tuple[str, ...]:
     """Return prose lines while excluding Markdown's hidden code/comment text."""
-    without_comments = re.sub(r"<!--.*?-->", "", source, flags=re.DOTALL)
     visible: list[str] = []
     fence_character: str | None = None
     fence_width = 0
-    for line in without_comments.splitlines():
+    in_comment = False
+    for raw_line in source.splitlines():
         if fence_character is not None:
             if re.fullmatch(
                 rf" {{0,3}}{re.escape(fence_character)}{{{fence_width},}}[ \t]*",
-                line,
+                raw_line,
             ):
                 fence_character = None
                 fence_width = 0
             continue
+
+        fragments: list[str] = []
+        position = 0
+        while position <= len(raw_line):
+            if in_comment:
+                closing = raw_line.find("-->", position)
+                if closing < 0:
+                    break
+                in_comment = False
+                position = closing + 3
+                continue
+
+            opening_comment = raw_line.find("<!--", position)
+            unexpected_close = raw_line.find("-->", position)
+            if unexpected_close >= 0 and (
+                opening_comment < 0 or unexpected_close < opening_comment
+            ):
+                raise AssertionError("content standard contains an unmatched comment")
+            if opening_comment < 0:
+                fragments.append(raw_line[position:])
+                break
+            fragments.append(raw_line[position:opening_comment])
+            in_comment = True
+            position = opening_comment + 4
+
+        line = "".join(fragments)
         opening = _OPEN_FENCE.fullmatch(line)
         if opening is not None:
             fence_character = opening.group(1)[0]
             fence_width = len(opening.group(1))
             continue
+        if re.match(r"^(?: {4}|\t)", line) or re.match(r"^ {0,3}>", line):
+            continue
         visible.append(line)
     if fence_character is not None:
         raise AssertionError("content standard contains an unclosed code fence")
+    if in_comment:
+        raise AssertionError("content standard contains an unclosed HTML comment")
     return tuple(visible)
 
 
@@ -162,6 +210,15 @@ def _parse_standard(source: str) -> _StandardDocument:
     sections: dict[str, list[str]] = {}
     active_section: str | None = None
     visible = _visible_lines(source)
+    for index, line in enumerate(visible):
+        if _RAW_HTML_HEADING.match(line):
+            raise AssertionError("content standard headings must use ATX Markdown")
+        if (
+            index > 0
+            and visible[index - 1].strip()
+            and _SETEXT_UNDERLINE.fullmatch(line)
+        ):
+            raise AssertionError("content standard headings must use ATX Markdown")
     first_content = next((line for line in visible if line.strip()), "")
     if first_content != f"# {EXPECTED_H1}":
         raise AssertionError("content standard must begin with the exact H1")
@@ -193,6 +250,19 @@ def _normalized_prose(lines: tuple[str, ...]) -> str:
     return " ".join(" ".join(lines).split())
 
 
+def _markdown_table(lines: tuple[str, ...]) -> tuple[tuple[str, ...], ...]:
+    rows: list[tuple[str, ...]] = []
+    for line in lines:
+        stripped = line.strip()
+        if not (stripped.startswith("|") and stripped.endswith("|")):
+            continue
+        cells = tuple(cell.strip() for cell in stripped[1:-1].split("|"))
+        if cells and all(re.fullmatch(r":?-{3,}:?", cell) for cell in cells):
+            continue
+        rows.append(cells)
+    return tuple(rows)
+
+
 def _assert_content_standard(source: str) -> None:
     parsed = _parse_standard(source)
     if parsed.h1 != (EXPECTED_H1,):
@@ -210,6 +280,11 @@ def _assert_content_standard(source: str) -> None:
                     f"content standard section lacks required clause: {section}"
                 )
 
+    if _markdown_table(parsed.sections[EXPECTED_H2[2]]) != EXPECTED_EVIDENCE_TABLE:
+        raise AssertionError("evidence loop table rows must be exact")
+    if _markdown_table(parsed.sections[EXPECTED_H2[10]]) != EXPECTED_REVIEW_TABLE:
+        raise AssertionError("review role table rows must be exact")
+
     checklist = tuple(
         match.group(1)
         for line in parsed.sections[EXPECTED_H2[-1]]
@@ -224,6 +299,22 @@ def _valid_standard() -> str:
     for heading in EXPECTED_H2:
         lines.extend((f"## {heading}", ""))
         lines.extend(REQUIRED_CLAUSES[heading])
+        if heading == EXPECTED_H2[2]:
+            lines.extend(
+                "| " + " | ".join(row) + " |" for row in EXPECTED_EVIDENCE_TABLE[:1]
+            )
+            lines.append("|---|---|---|")
+            lines.extend(
+                "| " + " | ".join(row) + " |" for row in EXPECTED_EVIDENCE_TABLE[1:]
+            )
+        if heading == EXPECTED_H2[10]:
+            lines.extend(
+                "| " + " | ".join(row) + " |" for row in EXPECTED_REVIEW_TABLE[:1]
+            )
+            lines.append("|---|---|")
+            lines.extend(
+                "| " + " | ".join(row) + " |" for row in EXPECTED_REVIEW_TABLE[1:]
+            )
         if heading == EXPECTED_H2[-1]:
             lines.extend(f"- [ ] {item}" for item in EXPECTED_CHECKLIST)
         lines.append("")
