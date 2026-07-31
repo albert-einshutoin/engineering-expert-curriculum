@@ -871,6 +871,7 @@ python3.13 -m unittest \
   tests.test_core_tracks.CoreTrackTests.test_transaction_harness_reproduces_anomalies_and_retry \
   tests.test_core_tracks.CoreTrackTests.test_transaction_harness_rejects_serializable_check_mutation \
   tests.test_core_tracks.CoreTrackTests.test_coordination_harness_replays_partial_failure \
+  tests.test_core_tracks.CoreTrackTests.test_coordination_harness_rejects_same_key_different_payload \
   tests.test_core_tracks.CoreTrackTests.test_coordination_harness_rejects_partition_mutation \
   tests.test_core_tracks.CoreTrackTests.test_performance_harness_separates_simulation_and_measurement \
   tests.test_core_tracks.CoreTrackTests.test_performance_harness_rejects_capacity_mutation \
@@ -910,23 +911,39 @@ git commit -m "content: teach evidence-driven scale and reliability"
   retain exactly five performance sources including Python 3.13 profiler
   documentation, calculate timestamped 5-minute and 60-minute burn windows,
   and compute the search-to-purchase journey-only transfer diff.
-- The Data and Scale evidence is 12 named `unittest` methods: two metadata/body
-  contracts, five default harness executions, and five source-mutation
-  rejections. The default harnesses change exactly one learning assumption
+- Second-round RED commit `0c94cdd` exposes the remaining causal-evidence and
+  print-safety gaps. GREEN commits `94c319e`, `ca078e5`, `a5510fc`, `3e49c39`,
+  and `5f40abd` derive all four storage query contributions, reject conflicting
+  idempotency-key reuse by typed error, calculate arithmetic means from bounded
+  latency samples, derive baseline and transfer knees from separate load
+  curves, adopt Semantic Conventions 1.43
+  `deployment.environment.name`, calculate correlation and unique-series
+  cardinality from fixtures, and preserve complete preformatted text in print.
+- The Data and Scale evidence is 13 named `unittest` methods: two metadata/body
+  contracts, five default harness executions, five source-mutation rejections,
+  and one same-key/different-input conflict rejection. The default harnesses
+  change exactly one learning assumption
   each—access pattern, concurrency, partition, request mix, or user-visible
   reliability—and the five negative runs prove the relevant decision changes
   fail closed when causal checks are corrupted. The reliability method also
   executes normal, short-window-only, and both-window failure scenarios and
-  requires both burn conditions before paging. All 12 focused methods pass
+  requires both burn conditions before paging. All 13 focused methods pass
   with CPython 3.13.5; the separate lesson quality/rendering gate passes 67
-  tests. The complete repository suite passes all 369 tests.
+  tests, and the CSS gate passes 18 tests. The complete repository suite passes
+  all 371 tests.
 - Two independent repository-external builds each contain 20 regular
-  artifacts, 19 HTML files, zero JavaScript files, and 635,089 bytes. The
+  artifacts, 19 HTML files, zero JavaScript files, and 651,000 bytes. The
   canonical aggregate algorithm encodes each sorted relative POSIX path,
   byte length, and file payload into one SHA-256 state; both builds produce
-  `e5e009f24d7f384a55b963a2ecf6414d4039e2a3bafa7abc83183a5d51b1f5ab`.
-- Task 5 scans report zero unsafe-HTML, secret, dangerous-execution, and body
-  external-URL matches. The catalog remains exactly 1,140 items with SHA-256
+  `be08916ae2fc368fcfe46864042339ea2c9a96bdd8d782c37f3b5596818736a2`.
+- Chrome 150 Letter-PDF regression evidence covers the two longest changed
+  harnesses: core-11 renders as 20 pages and core-13 as 22 pages, both at
+  612 by 792 points. PDFKit text extraction finds the long-line suffixes, and
+  1224 by 1584 page images confirm that preformatted text wraps without
+  right-edge clipping.
+- Task 5 scans report zero authored-body unsafe-HTML, scoped secret,
+  dangerous-execution, and body external-URL matches. The catalog remains
+  exactly 1,140 items with SHA-256
   `4f38b5f63931a7f06e13f90f5d9ef90a0a435f30dae5d4fe70720d730a057473`.
   The preserved non-public prototype archive remains independently
   verifiable: 1,194 files, 16,805,630 bytes, and zero manifest SHA-256
