@@ -387,6 +387,11 @@ DATA_SCALE_SOURCES = {
             "https://doi.org/10.1145/2408776.2408794",
             "peer-reviewed",
         ),
+        (
+            "The Python Profilers",
+            "https://docs.python.org/3.13/library/profile.html",
+            "primary",
+        ),
     ),
     "core-15-reliability-observability-slo": (
         (
@@ -2444,7 +2449,29 @@ class CoreTrackTests(unittest.TestCase):
             option["id"]: option
             for option in report["baseline"]["options"]
         }
+        baseline_frequencies = {
+            query["id"]: query["frequency_per_hour"]
+            for query in report["workload"]["query_shapes"]
+        }
+        self.assertEqual(
+            report["baseline"]["rating_inputs"],
+            {
+                "get_customer_history": baseline_frequencies[
+                    "get_customer_history"
+                ],
+                "list_product_window": baseline_frequencies[
+                    "list_product_window"
+                ],
+            },
+        )
         self.assertEqual(set(options), {"relational", "document", "key-value"})
+        self.assertEqual(
+            report["baseline"]["derived_access_fit_ratings"],
+            {
+                option_id: option["ratings"]["access_fit"]
+                for option_id, option in options.items()
+            },
+        )
         for option in options.values():
             self.assertEqual(set(option["ratings"]), set(criteria))
             expected_score = sum(
@@ -2475,6 +2502,28 @@ class CoreTrackTests(unittest.TestCase):
             option["id"]: option
             for option in mutation["options"]
         }
+        mutated_frequencies = {
+            query["id"]: query["frequency_per_hour"]
+            for query in mutation["workload"]["query_shapes"]
+        }
+        self.assertEqual(
+            mutation["rating_inputs"],
+            {
+                "get_customer_history": mutated_frequencies[
+                    "get_customer_history"
+                ],
+                "list_product_window": mutated_frequencies[
+                    "list_product_window"
+                ],
+            },
+        )
+        self.assertEqual(
+            mutation["derived_access_fit_ratings"],
+            {
+                option_id: option["ratings"]["access_fit"]
+                for option_id, option in mutated_options.items()
+            },
+        )
         mutated_winner = max(
             mutated_options.values(),
             key=lambda option: option["score"],
@@ -2502,8 +2551,8 @@ class CoreTrackTests(unittest.TestCase):
         self.assert_harness_source_mutation_fails(
             "core-11-data-modeling-storage",
             "storage_decision_lab_v1",
-            '"list_product_window": 48,',
-            '"list_product_window": 4,',
+            "if product_window_frequency >= 400:",
+            "if product_window_frequency >= 4_000:",
         )
 
     def test_transaction_harness_reproduces_anomalies_and_retry(
@@ -2701,7 +2750,28 @@ class CoreTrackTests(unittest.TestCase):
             capacity["observed_knee_rps"],
         )
         self.assertGreater(capacity["headroom_fraction"], 0)
+        self.assertAlmostEqual(
+            capacity["safe_capacity_rps"],
+            capacity["observed_knee_rps"]
+            * (1 - capacity["headroom_fraction"]),
+        )
         little = report["little_law"]
+        near_limit = next(
+            point for point in curve if point["stage"] == "near-limit"
+        )
+        self.assertEqual(little["source_stage"], "near-limit")
+        self.assertEqual(
+            little["throughput_per_second"],
+            near_limit["success_rps"],
+        )
+        self.assertEqual(
+            little["mean_response_seconds"],
+            near_limit["mean_ms"] / 1_000,
+        )
+        self.assertEqual(
+            little["observed_concurrency"],
+            near_limit["observed_concurrency"],
+        )
         self.assertAlmostEqual(
             little["observed_concurrency"],
             little["throughput_per_second"]
@@ -2716,8 +2786,22 @@ class CoreTrackTests(unittest.TestCase):
             "actual-local-measurement",
         )
         self.assertEqual(profile["profiler"], "cProfile")
+        self.assertEqual(profile["declared_target"], "profile_target")
         self.assertGreater(profile["total_calls"], 0)
-        self.assertTrue(profile["top_function"])
+        self.assertTrue(profile["measurement_derived"])
+        self.assertIn(
+            profile["measured_top_function"],
+            profile["measured_functions"],
+        )
+        self.assertEqual(
+            profile["tool_scope"],
+            {
+                "python": "3.13",
+                "profiler": "cProfile/pstats standard library",
+                "go_docs": "rolling; reviewed 2026-07-31",
+                "apple_docs": "rolling; reviewed 2026-07-31",
+            },
+        )
         self.assertTrue(profile["environment_limitations"])
         mutation = report["request_mix_mutation"]
         self.assertTrue(mutation["recomputed"])
@@ -2728,6 +2812,10 @@ class CoreTrackTests(unittest.TestCase):
         self.assertNotEqual(
             mutation["baseline_safe_capacity_rps"],
             mutation["mutated_safe_capacity_rps"],
+        )
+        self.assertEqual(
+            mutation["baseline_safe_capacity_rps"],
+            capacity["safe_capacity_rps"],
         )
         self.assertLessEqual(report["runtime_bound"]["iterations"], 50_000)
         self.assert_data_scale_mastery_evidence(report, lesson_id)
