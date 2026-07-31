@@ -3,14 +3,26 @@ __pycache__/
 *.py[cod]
 .coverage
 htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .venv/
+.env
+.env.*
+!.env.example
+*.log
+build/
+dist/
 
 # Brainstorming mockups are local design artifacts, not product assets.
-.superpowers/
+/.superpowers/
 
 # The generated prototype is retained locally during migration but must not
 # inflate the public repository or preserve duplicated generated pages.
-.archive/
+/.archive/
+/daily.html
+/roadmap.html
+/README.txt
 
 # Generated output is reproducible from version-controlled source content.
 site/
