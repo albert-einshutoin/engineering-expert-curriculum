@@ -466,6 +466,42 @@ class SiteCheckerHtmlTests(unittest.TestCase):
                     any("charset" in issue for issue in self._issues_for(document))
                 )
 
+    def test_charset_byte_boundary_handles_all_html_parser_newlines(self) -> None:
+        marker = '<meta charset="utf-8">'
+        cases = (
+            ("LF", "\n", "x"),
+            ("CRLF", "\r\n", "x"),
+            ("lone CR", "\r", "x"),
+            ("multibyte", "\n", "界"),
+        )
+
+        for label, newline, padding_unit in cases:
+            base = _page().replace("\n", newline)
+            marker_start = base.index(marker)
+            prefix = base[:marker_start]
+            suffix = base[marker_start + len(marker) :]
+            base_end = len((prefix + marker).encode("utf-8"))
+            unit_size = len(padding_unit.encode("utf-8"))
+
+            for expected_end, rejected in ((1024, False), (1025, True)):
+                padding_bytes = expected_end - base_end
+                units, remainder = divmod(padding_bytes, unit_size)
+                padding = padding_unit * units + "x" * remainder
+                document = prefix + padding + marker + suffix
+                self.assertEqual(
+                    len((prefix + padding + marker).encode("utf-8")),
+                    expected_end,
+                )
+
+                with self.subTest(
+                    newline=label,
+                    expected_end=expected_end,
+                ):
+                    charset_rejected = any(
+                        "charset" in issue for issue in self._issues_for(document)
+                    )
+                    self.assertEqual(charset_rejected, rejected)
+
     def test_rejects_forbidden_active_elements(self) -> None:
         for tag in ("script", "iframe", "object", "embed", "form", "base"):
             with self.subTest(tag=tag):
