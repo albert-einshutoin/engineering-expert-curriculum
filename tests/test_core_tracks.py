@@ -4069,6 +4069,44 @@ class CoreTrackTests(unittest.TestCase):
             "graphics-display-mode-invariant",
         )
 
+    def test_graphics_harness_rejects_javascript_url_in_artifact(
+        self,
+    ) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-17-graphics-visual-information",
+            "graphics_semantic_equivalence_lab_v1",
+            (
+                "roadmap = derive_roadmap("
+                "ROADMAP_NODES, ROADMAP_EDGES)"
+            ),
+            (
+                "roadmap = derive_roadmap("
+                "ROADMAP_NODES, ROADMAP_EDGES)\n"
+                """    roadmap["artifact"]["html"] += """
+                """'<a href="javascript:alert(1)">unsafe</a>'"""
+            ),
+            "graphics-artifact-invariant",
+        )
+
+    def test_graphics_harness_rejects_data_url_in_artifact(
+        self,
+    ) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-17-graphics-visual-information",
+            "graphics_semantic_equivalence_lab_v1",
+            (
+                "roadmap = derive_roadmap("
+                "ROADMAP_NODES, ROADMAP_EDGES)"
+            ),
+            (
+                "roadmap = derive_roadmap("
+                "ROADMAP_NODES, ROADMAP_EDGES)\n"
+                """    roadmap["artifact"]["html"] += """
+                """'<a href="data:text/html,unsafe">unsafe</a>'"""
+            ),
+            "graphics-artifact-invariant",
+        )
+
     def test_experiment_harness_derives_metrics_and_stop_decision(
         self,
     ) -> None:
