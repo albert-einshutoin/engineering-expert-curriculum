@@ -26,24 +26,90 @@
   <h3>注文APIのsimulated load curveとactual local profileを分ける</h3>
   <dl>
     <dt>前提</dt>
-    <dd>production計測ではない固定simulationを使う。read比率80%、処理上限100 RPS、4段階のoffered loadを与える。各段階のactive concurrencyはLittleの式から作らず、独立したsynthetic観測入力として与える。profileだけは、この場のCPython 3.13 processで実際に採取する。cProfile/pstatsはPython 3.13標準libraryを対象とし、version固定のないGo Diagnosticsは2026-07-31確認時点の範囲として扱う。</dd>
+    <dd>production計測ではない固定simulationを使う。read比率80%とwrite比率70%の二つのrequest mixへ、低負荷、限界付近、超過、回復のload pointを与える。各点のmeanはbounded latency sampleの算術平均、active concurrencyはLittleの式から作らない独立synthetic入力とする。profileだけは、この場のCPython 3.13 processで実際に採取する。cProfile/pstatsはPython 3.13標準libraryを対象とし、version固定のないGo Diagnosticsは2026-07-31確認時点の範囲として扱う。</dd>
     <dt>入力</dt>
-    <dd>40、100、150、50 RPSの順で負荷を変え、最後の50 RPSは超過後の回復区間とする。request mix mutationではwrite比率を20%から70%へ変える。</dd>
+    <dd>baselineは40、100、150、50 RPS、write中心transferは40、80、120、50 RPSの順で負荷を変える。各点に7件のlatency sampleを固定し、最後の点は超過後の回復区間とする。</dd>
     <dt>操作</dt>
-    <dd>accepted、success、p50、p95、p99、CPU、memory、queue、downstreamを計算し、observed kneeから20%のheadroomを引く。定常点ではLittleの式を照合し、cProfileでboundedなlocal関数を測る。</dd>
+    <dd>accepted、success、sample mean、p50、p95、p99、CPU、memory、queue、downstreamを計算する。throughput plateau、tail growth、error growthが初めて同時成立する点の直前をcurve上のkneeとし、20%のheadroomを引く。定常点ではsample meanをLittleの式へ接続し、cProfileでboundedなlocal関数を測る。</dd>
     <dt>観測</dt>
-    <dd>100 RPS以降でthroughputがplateauし、150 RPSではtail、error、queueが増える。負荷を50 RPSへ戻してもqueue由来のtailが残る。write中心mutationではstorage側をbottleneckとする容量計算へ変わる。</dd>
+    <dd>baseline curveは100 RPS、write中心curveは80 RPSが違反点直前のkneeとなる。負荷を戻してもqueue由来のtailが残る。両方のsafe capacityは、それぞれのcurveから導いたkneeへ同じ20% headroomを適用して80 RPSと64 RPSになる。</dd>
     <dt>結論</dt>
     <dd>安全容量は最大値ではなく、tailとerrorが急増する前のkneeから運用余力を引いた値である。simulationの数値は教材の因果を検査するfixtureであり、このserviceのproduction性能を表さない。</dd>
   </dl>
   <pre><code>python3.13 - &lt;&lt;'PY'
 import cProfile
 import json
+import math
 import pstats
 
 HARNESS = "performance_capacity_lab_v1"
 CAPACITY_RPS = 100
 HEADROOM_FRACTION = 0.2
+KNEE_CRITERIA = [
+    "throughput-plateau",
+    "tail-growth",
+    "error-growth",
+]
+
+BASELINE_POINT_INPUTS = [
+    {
+        "stage": "low",
+        "offered_rps": 40,
+        "observed_active_concurrency": 2.0,
+        "latency_samples_ms": [30, 34, 36, 40, 45, 55, 70],
+    },
+    {
+        "stage": "near-limit",
+        "offered_rps": 100,
+        "observed_active_concurrency": 6.2,
+        "latency_samples_ms": [40, 45, 50, 55, 60, 75, 100],
+    },
+    {
+        "stage": "overload",
+        "offered_rps": 150,
+        "observed_active_concurrency": 12.4,
+        "latency_samples_ms": [80, 100, 120, 160, 220, 300, 450],
+    },
+    {
+        "stage": "recovery",
+        "offered_rps": 50,
+        "observed_active_concurrency": 4.6,
+        "latency_samples_ms": [45, 50, 60, 75, 95, 130, 180],
+    },
+]
+
+TRANSFER_POINT_INPUTS = [
+    {
+        "stage": "low",
+        "offered_rps": 40,
+        "observed_active_concurrency": 2.4,
+        "latency_samples_ms": [35, 40, 45, 50, 60, 75, 90],
+    },
+    {
+        "stage": "near-limit",
+        "offered_rps": 80,
+        "observed_active_concurrency": 7.0,
+        "latency_samples_ms": [55, 65, 75, 85, 110, 145, 190],
+    },
+    {
+        "stage": "overload",
+        "offered_rps": 120,
+        "observed_active_concurrency": 15.0,
+        "latency_samples_ms": [120, 160, 220, 300, 420, 600, 900],
+    },
+    {
+        "stage": "recovery",
+        "offered_rps": 50,
+        "observed_active_concurrency": 6.8,
+        "latency_samples_ms": [75, 90, 110, 140, 190, 260, 360],
+    },
+]
+
+
+def nearest_rank(samples, quantile):
+    ordered = sorted(samples)
+    index = math.ceil(quantile * len(ordered)) - 1
+    return ordered[max(0, min(index, len(ordered) - 1))]
 
 def simulate(
     stage,
@@ -52,6 +118,7 @@ def simulate(
     previous_queue,
     write_fraction,
     observed_active_concurrency,
+    latency_samples_ms,
 ):
     if offered_rps > capacity:
         accepted_rps = capacity
@@ -64,11 +131,16 @@ def simulate(
     rejected_rps = max(0, offered_rps - capacity)
     error_rps = rejected_rps // 5
     success_rps = accepted_rps - min(accepted_rps, error_rps)
-    utilization = accepted_rps / capacity
-    p50_ms = 30 + int(utilization * 20) + queue_depth
-    p95_ms = p50_ms + 20 + queue_depth
-    p99_ms = p95_ms + 30 + queue_depth
-    mean_ms = (p50_ms + p95_ms) // 2
+    samples = list(latency_samples_ms)
+    # Bounded samples keep this local harness deterministic and cheap. The
+    # arithmetic mean intentionally has a separate derivation from percentiles
+    # so a plausible-looking p50/p95 midpoint cannot masquerade as observation.
+    assert 5 &lt;= len(samples) &lt;= 20
+    assert all(0 &lt; sample &lt;= 10_000 for sample in samples)
+    mean_ms = sum(samples) / len(samples)
+    p50_ms = nearest_rank(samples, 0.50)
+    p95_ms = nearest_rank(samples, 0.95)
+    p99_ms = nearest_rank(samples, 0.99)
     return {
         "stage": stage,
         "offered_rps": offered_rps,
@@ -78,6 +150,8 @@ def simulate(
         "p95_ms": p95_ms,
         "p99_ms": p99_ms,
         "mean_ms": mean_ms,
+        "mean_source": "bounded-latency-samples-arithmetic-mean",
+        "latency_samples_ms": samples,
         "observed_active_concurrency": observed_active_concurrency,
         "cpu_percent": min(99.0, 20.0 + accepted_rps * 0.65),
         "memory_mb": 128 + queue_depth * 2,
@@ -88,19 +162,54 @@ def simulate(
 def safe_capacity(observed_knee_rps, headroom_fraction):
     return int(observed_knee_rps * (1 - headroom_fraction))
 
-def capacity_for_mix(write_fraction):
-    # write比率が上がると、このfixtureではstorage更新費用が支配的になる。
+def processing_model_for_mix(write_fraction):
+    # Request mix changes the simulated processing envelope. The reported knee
+    # is not taken from this branch: detect_knee derives it from the resulting
+    # curve so the decision remains inspectable and mutation-sensitive.
     if write_fraction > 0.5:
-        bottleneck = "storage-write"
-        observed_knee_rps = 80
-    else:
-        bottleneck = "cpu-transform"
-        observed_knee_rps = CAPACITY_RPS
-    return (
-        bottleneck,
-        observed_knee_rps,
-        safe_capacity(observed_knee_rps, HEADROOM_FRACTION),
-    )
+        return {"bottleneck": "storage-write", "capacity_rps": 80}
+    return {"bottleneck": "cpu-transform", "capacity_rps": CAPACITY_RPS}
+
+
+def build_load_curve(point_inputs, processing_capacity_rps, write_fraction):
+    curve = []
+    previous_queue = 0
+    for point_input in point_inputs:
+        point = simulate(
+            point_input["stage"],
+            point_input["offered_rps"],
+            processing_capacity_rps,
+            previous_queue,
+            write_fraction,
+            point_input["observed_active_concurrency"],
+            point_input["latency_samples_ms"],
+        )
+        curve.append(point)
+        previous_queue = point["queue_depth"]
+    return curve
+
+
+def detect_knee(load_curve):
+    # Capacity is the last passing offered-load point before all three failure
+    # signals first coincide, never a constant copied from the simulator input.
+    for previous, current in zip(load_curve, load_curve[1:]):
+        criteria = {
+            "throughput-plateau": (
+                current["success_rps"] &lt;= previous["success_rps"]
+            ),
+            "tail-growth": current["p99_ms"] > previous["p99_ms"],
+            "error-growth": (
+                current["success_rps"] &lt; current["accepted_rps"]
+            ),
+        }
+        if all(criteria.values()):
+            return {
+                "observed_knee_rps": previous["offered_rps"],
+                "first_violation_stage": current["stage"],
+                "criteria": criteria,
+            }
+    raise AssertionError("load-curve-causal-invariant: no measured knee")
+
 
 def profile_target(values):
     total = 0
@@ -109,26 +218,22 @@ def profile_target(values):
             total += (value * multiplier) % 97
     return total
 
+
 def main():
-    stages = [
-        ("low", 40, 2.0),
-        ("near-limit", 100, 6.2),
-        ("overload", 150, 12.4),
-        ("recovery", 50, 4.6),
-    ]
-    curve = []
-    previous_queue = 0
-    for stage, offered_rps, observed_active_concurrency in stages:
-        point = simulate(
-            stage,
-            offered_rps,
-            CAPACITY_RPS,
-            previous_queue,
-            write_fraction=0.2,
-            observed_active_concurrency=observed_active_concurrency,
-        )
-        curve.append(point)
-        previous_queue = point["queue_depth"]
+    baseline_write_fraction = 0.2
+    transfer_write_fraction = 0.7
+    baseline_model = processing_model_for_mix(baseline_write_fraction)
+    transfer_model = processing_model_for_mix(transfer_write_fraction)
+    curve = build_load_curve(
+        BASELINE_POINT_INPUTS,
+        baseline_model["capacity_rps"],
+        baseline_write_fraction,
+    )
+    transfer_curve = build_load_curve(
+        TRANSFER_POINT_INPUTS,
+        transfer_model["capacity_rps"],
+        transfer_write_fraction,
+    )
 
     by_stage = {point["stage"]: point for point in curve}
     assert by_stage["overload"]["accepted_rps"] == CAPACITY_RPS
@@ -170,26 +275,41 @@ def main():
         ),
     )
 
-    (
-        baseline_bottleneck,
+    baseline_knee_evidence = detect_knee(curve)
+    transfer_knee_evidence = detect_knee(transfer_curve)
+    baseline_knee = baseline_knee_evidence["observed_knee_rps"]
+    mutated_knee = transfer_knee_evidence["observed_knee_rps"]
+    baseline_safe_capacity = safe_capacity(
         baseline_knee,
-        baseline_safe_capacity,
-    ) = capacity_for_mix(0.2)
-    (
-        mutated_bottleneck,
+        HEADROOM_FRACTION,
+    )
+    mutated_safe_capacity = safe_capacity(
         mutated_knee,
-        mutated_safe_capacity,
-    ) = capacity_for_mix(0.7)
+        HEADROOM_FRACTION,
+    )
     request_mix_mutation = {
         "changed_assumption": "request-mix",
-        "baseline_bottleneck": baseline_bottleneck,
-        "mutated_bottleneck": mutated_bottleneck,
+        "baseline_request_mix": {
+            "read_fraction": 1 - baseline_write_fraction,
+            "write_fraction": baseline_write_fraction,
+        },
+        "mutated_request_mix": {
+            "read_fraction": 1 - transfer_write_fraction,
+            "write_fraction": transfer_write_fraction,
+        },
+        "baseline_bottleneck": baseline_model["bottleneck"],
+        "mutated_bottleneck": transfer_model["bottleneck"],
         "baseline_observed_knee_rps": baseline_knee,
         "mutated_observed_knee_rps": mutated_knee,
         "baseline_safe_capacity_rps": baseline_safe_capacity,
         "mutated_safe_capacity_rps": mutated_safe_capacity,
+        "mutated_load_curve": transfer_curve,
+        "baseline_knee_evidence": baseline_knee_evidence,
+        "mutated_knee_evidence": transfer_knee_evidence,
+        "knee_criteria": KNEE_CRITERIA,
         "recomputed": (
-            baseline_bottleneck != mutated_bottleneck
+            baseline_model["bottleneck"] != transfer_model["bottleneck"]
+            and baseline_knee != mutated_knee
             and baseline_safe_capacity != mutated_safe_capacity
         ),
     }
@@ -229,6 +349,7 @@ def main():
             "observed_knee_rps": baseline_knee,
             "safe_capacity_rps": baseline_safe_capacity,
             "headroom_fraction": HEADROOM_FRACTION,
+            "knee_evidence": baseline_knee_evidence,
             "decision": "80 RPSを通常運用上限として再測定する",
         },
         "little_law": {
@@ -236,6 +357,7 @@ def main():
             "source_stage": little_source["stage"],
             "throughput_per_second": throughput_per_second,
             "mean_response_seconds": mean_response_seconds,
+            "mean_response_source": little_source["mean_source"],
             "observed_concurrency": observed_concurrency,
             "observed_concurrency_source": (
                 "independent-simulated-fixture-input"
@@ -265,7 +387,7 @@ def main():
         },
         "request_mix_mutation": request_mix_mutation,
         "runtime_bound": {
-            "iterations": 1600,
+            "iterations": 1656,
             "subprocesses": 0,
         },
         "mastery_evidence": {
@@ -298,6 +420,10 @@ def main():
         "external_network_used": False,
     }
     assert all(report["curve_analysis"].values())
+    assert baseline_knee in {point["offered_rps"] for point in curve}
+    assert mutated_knee in {
+        point["offered_rps"] for point in transfer_curve
+    }
     assert 0 &lt; report["little_law"]["relative_error"] &lt;= 0.05
     return report
 
