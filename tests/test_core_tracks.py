@@ -3960,6 +3960,18 @@ class CoreTrackTests(unittest.TestCase):
         transfer = report["display_mode_transfer"]
         baseline = transfer["baseline_artifact"]
         transferred = transfer["transferred_artifact"]
+        for artifact, expected_class in (
+            (baseline, "display-color"),
+            (transferred, "display-monochrome"),
+        ):
+            validation = artifact["validation"]
+            self.assertTrue(validation["html_valid"])
+            self.assertTrue(validation["css_valid"])
+            self.assertEqual(
+                validation["section_classes"],
+                [expected_class],
+            )
+            self.assertEqual(validation["unsafe_html"], [])
         self.assertIn("accent-color: #245d63", baseline["css"])
         self.assertIn(
             "accent-color: CanvasText",
@@ -4008,6 +4020,53 @@ class CoreTrackTests(unittest.TestCase):
             "meter_rows = render_meter_rows(chart_data, scale_max)",
             "meter_rows = render_meter_rows(chart_data[:-1], scale_max)",
             "graphics-scale-invariant",
+        )
+
+    def test_graphics_harness_rejects_unknown_display_mode(self) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-17-graphics-visual-information",
+            "graphics_semantic_equivalence_lab_v1",
+            (
+                "baseline_artifact = render_display_artifact(\n"
+                '        "color",'
+            ),
+            (
+                "baseline_artifact = render_display_artifact(\n"
+                '        "sepia",'
+            ),
+            "graphics-display-mode-invariant",
+        )
+
+    def test_graphics_harness_rejects_css_selector_injection(self) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-17-graphics-visual-information",
+            "graphics_semantic_equivalence_lab_v1",
+            (
+                "baseline_artifact = render_display_artifact(\n"
+                '        "color",'
+            ),
+            (
+                "baseline_artifact = render_display_artifact(\n"
+                '        "x}body{display:none}/*",'
+            ),
+            "graphics-display-mode-invariant",
+        )
+
+    def test_graphics_harness_rejects_html_attribute_injection(
+        self,
+    ) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-17-graphics-visual-information",
+            "graphics_semantic_equivalence_lab_v1",
+            (
+                "baseline_artifact = render_display_artifact(\n"
+                '        "color",'
+            ),
+            (
+                "baseline_artifact = render_display_artifact(\n"
+                """        'color" data-unsafe="true',"""
+            ),
+            "graphics-display-mode-invariant",
         )
 
     def test_experiment_harness_derives_metrics_and_stop_decision(
@@ -4290,6 +4349,7 @@ class CoreTrackTests(unittest.TestCase):
         )
 
         assessment = report["data_lifecycle_assessment"]
+        policy = report["lifecycle_policy"]
         self.assertEqual(
             [item["phase"] for item in assessment],
             report["data_lifecycle"],
@@ -4312,10 +4372,14 @@ class CoreTrackTests(unittest.TestCase):
                 set(item),
                 {
                     "phase",
-                    "purpose",
+                    "approved_purpose",
+                    "data_classes",
                     "necessity",
-                    "access",
-                    "retention",
+                    "allowed_roles",
+                    "retention_days",
+                    "delete_sla_days",
+                    "deletion_enabled",
+                    "forbidden_data_classes",
                     "owner",
                     "harm_ids",
                     "control_ids",
@@ -4324,6 +4388,41 @@ class CoreTrackTests(unittest.TestCase):
                 },
             )
             self.assertTrue(all(item.values()))
+            phase = item["phase"]
+            self.assertEqual(
+                item["approved_purpose"],
+                policy["approved_purposes"][phase],
+            )
+            self.assertIs(item["necessity"], True)
+            self.assertLessEqual(
+                set(item["data_classes"]),
+                set(policy["allowed_data_classes"][phase]),
+            )
+            self.assertFalse(
+                set(item["data_classes"])
+                & set(item["forbidden_data_classes"]),
+            )
+            self.assertEqual(
+                item["forbidden_data_classes"],
+                policy["forbidden_data_classes"],
+            )
+            self.assertLessEqual(
+                set(item["allowed_roles"]),
+                set(policy["allowed_roles"][phase]),
+            )
+            self.assertNotIn("public", item["allowed_roles"])
+            self.assertNotIn("all-roles", item["allowed_roles"])
+            self.assertGreater(item["retention_days"], 0)
+            self.assertLessEqual(
+                item["retention_days"],
+                policy["max_retention_days"][phase],
+            )
+            self.assertGreater(item["delete_sla_days"], 0)
+            self.assertLessEqual(
+                item["delete_sla_days"],
+                policy["max_delete_sla_days"],
+            )
+            self.assertIs(item["deletion_enabled"], True)
             self.assertLessEqual(set(item["harm_ids"]), known_harm_ids)
             self.assertLessEqual(
                 set(item["control_ids"]),
@@ -4366,4 +4465,60 @@ class CoreTrackTests(unittest.TestCase):
             ),
             "lifecycle_assessment = []",
             "ethics-lifecycle-invariant",
+        )
+
+    def test_ethics_harness_rejects_forbidden_data_overcollection(
+        self,
+    ) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-20-ethics-privacy-societal-impact",
+            "ethics_privacy_impact_lab_v1",
+            '"data_classes": ["availability-window"],',
+            (
+                '"data_classes": ['
+                '"availability-window", "health-diagnosis"'
+                "],"
+            ),
+            "ethics-lifecycle-policy-invariant",
+        )
+
+    def test_ethics_harness_rejects_public_all_role_access(
+        self,
+    ) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-20-ethics-privacy-societal-impact",
+            "ethics_privacy_impact_lab_v1",
+            (
+                '"allowed_roles": ['
+                '"data-subject", "assignment-operator"'
+                "],"
+            ),
+            '"allowed_roles": ["public", "all-roles"],',
+            "ethics-lifecycle-policy-invariant",
+        )
+
+    def test_ethics_harness_rejects_unlimited_retention(self) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-20-ethics-privacy-societal-impact",
+            "ethics_privacy_impact_lab_v1",
+            '"retention_days": 30,',
+            '"retention_days": -1,',
+            "ethics-lifecycle-policy-invariant",
+        )
+
+    def test_ethics_harness_rejects_disabled_deletion(self) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-20-ethics-privacy-societal-impact",
+            "ethics_privacy_impact_lab_v1",
+            (
+                '        "delete_sla_days": 7,\n'
+                '        "deletion_enabled": True,\n'
+                '        "owner": "deletion-control-owner",'
+            ),
+            (
+                '        "delete_sla_days": 7,\n'
+                '        "deletion_enabled": False,\n'
+                '        "owner": "deletion-control-owner",'
+            ),
+            "ethics-lifecycle-policy-invariant",
         )
