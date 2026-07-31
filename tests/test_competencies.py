@@ -1129,7 +1129,7 @@ class CompetencyBuildTests(unittest.TestCase):
             ("td:nth-child\\(2\\)", "フレームワーク"),
             ("td:nth-child\\(3\\)", "版"),
             ("td:nth-child\\(4\\)", "対応強度"),
-            ("td:nth-child\\(5\\)", "公式識別子・名称"),
+            ("td:nth-child\\(5\\)", "公式ID・名称"),
             ("td:nth-child\\(6\\)", "対応根拠"),
         ):
             with self.subTest(print_label=label):
@@ -1142,6 +1142,15 @@ class CompetencyBuildTests(unittest.TestCase):
                         rf'content:\s*"{label}："'
                     ),
                 )
+        self.assertRegex(
+            stylesheet,
+            (
+                r"(?s)@media print.*"
+                r"\.competency-matrix caption\s*\{.*"
+                r"display:\s*block.*"
+                r"writing-mode:\s*horizontal-tb"
+            ),
+        )
         self.assertNotIn("table-layout: fixed", stylesheet)
         self.assertRegex(
             stylesheet,
