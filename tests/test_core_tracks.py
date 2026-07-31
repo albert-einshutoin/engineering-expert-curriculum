@@ -3694,6 +3694,20 @@ class CoreTrackTests(unittest.TestCase):
         self.assertTrue(
             all(item["input_mode"] == "keyboard-only" for item in transferred)
         )
+        self.assertTrue(
+            all(item["operation"] for item in baseline + transferred)
+        )
+        self.assertTrue(
+            all(
+                baseline_item["operation"]
+                != transferred_item["operation"]
+                for baseline_item, transferred_item in zip(
+                    baseline,
+                    transferred,
+                    strict=True,
+                )
+            )
+        )
         baseline_actual = {
             item["dimension"]: item["actual"]
             for item in baseline
@@ -3772,6 +3786,26 @@ class CoreTrackTests(unittest.TestCase):
         self.assertEqual(transfer["transferred_mode"], "monochrome")
         self.assertTrue(transfer["data_unchanged"])
         self.assertTrue(transfer["text_equivalence_preserved"])
+        baseline_artifact = transfer["baseline_artifact"]
+        transferred_artifact = transfer["transferred_artifact"]
+        self.assertEqual(baseline_artifact["display_mode"], "color")
+        self.assertEqual(
+            transferred_artifact["display_mode"],
+            "monochrome",
+        )
+        self.assertIn("display-color", baseline_artifact["html"])
+        self.assertIn(
+            "display-monochrome",
+            transferred_artifact["html"],
+        )
+        self.assertIn(
+            ".display-monochrome",
+            transferred_artifact["css"],
+        )
+        self.assertEqual(
+            baseline_artifact["data_fingerprint"],
+            transferred_artifact["data_fingerprint"],
+        )
         self.assert_human_product_harness_contract(
             report,
             lesson_id,
@@ -4152,6 +4186,19 @@ class CoreTrackTests(unittest.TestCase):
             [item["phase"] for item in assessment],
             report["data_lifecycle"],
         )
+        impacts = report["impact_assessment"]["impacts"]
+        known_harm_ids = {item["harm_id"] for item in impacts}
+        known_control_ids = {
+            control_id
+            for item in impacts
+            for control_id in item["control_ids"]
+        }
+        known_residual_risk_ids = {
+            item["residual_risk_id"] for item in impacts
+        }
+        referenced_harm_ids: set[str] = set()
+        referenced_control_ids: set[str] = set()
+        referenced_residual_risk_ids: set[str] = set()
         for item in assessment:
             self.assertEqual(
                 set(item),
@@ -4160,12 +4207,35 @@ class CoreTrackTests(unittest.TestCase):
                     "purpose",
                     "necessity",
                     "access",
-                    "deadline",
-                    "control",
+                    "retention",
+                    "owner",
+                    "harm_ids",
+                    "control_ids",
+                    "residual_risk_ids",
                     "verification",
                 },
             )
             self.assertTrue(all(item.values()))
+            self.assertLessEqual(set(item["harm_ids"]), known_harm_ids)
+            self.assertLessEqual(
+                set(item["control_ids"]),
+                known_control_ids,
+            )
+            self.assertLessEqual(
+                set(item["residual_risk_ids"]),
+                known_residual_risk_ids,
+            )
+            referenced_harm_ids.update(item["harm_ids"])
+            referenced_control_ids.update(item["control_ids"])
+            referenced_residual_risk_ids.update(
+                item["residual_risk_ids"]
+            )
+        self.assertEqual(referenced_harm_ids, known_harm_ids)
+        self.assertEqual(referenced_control_ids, known_control_ids)
+        self.assertEqual(
+            referenced_residual_risk_ids,
+            known_residual_risk_ids,
+        )
         transfer = report["affected_population_transfer"]
         self.assertEqual(
             transfer["baseline_lifecycle"],
