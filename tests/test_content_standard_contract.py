@@ -8,6 +8,10 @@ import unittest
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CONTENT_STANDARD = REPOSITORY_ROOT / "docs/content-standard.md"
+DESIGN_SPEC = (
+    REPOSITORY_ROOT
+    / "docs/superpowers/specs/2026-07-30-static-oss-curriculum-design.md"
+)
 EXPECTED_H1 = "Engineering Expert Curriculum コンテンツ品質標準"
 EXPECTED_H2 = (
     "1. 適用範囲と規範語",
@@ -30,8 +34,9 @@ REQUIRED_CLAUSES = {
         "`MAY` は任意の改善として解釈することをMUSTとする。",
     ),
     EXPECTED_H2[1]: (
-        "`status: complete` はレッスン単体の構造的完全性だけを示し、commit単位の"
-        "公開可能性を保証しないことをMUSTとする。",
+        "`status: complete` はmachine-validated structural completenessだけを示し、"
+        "内容の正確性、human review、公開承認、学習者のmasteryを証明しないことを"
+        "MUSTとする。",
         "公開commitは、全レッスンの構造的完全性に加え、release-level test、2回の"
         "決定的build、link検査、安全性検査、accessibility検査、review approvalを"
         "満たすことをMUSTとする。",
@@ -76,16 +81,16 @@ REQUIRED_CLAUSES = {
     EXPECTED_H2[10]: (
         "技術的正確性、学習設計・証拠、アクセシビリティ、編集・出典の4 review "
         "dimensionsを独立して記録することをMUSTとする。",
-        "各review記録は `reviewerKind` を `human` または `ai-assisted` として正直に"
-        "開示することをMUSTとする。",
-        "AI支援の開示を削除せず、`ai-assisted` reviewを `human` reviewとして表記"
-        "しないことをMUSTとする。",
+        "各review記録は `reviewerKind` を `human`、`ai-assisted`、`automated` の"
+        "いずれかとして正直に開示することをMUSTとする。",
+        "AI支援または自動生成のreviewを `human` approvalとして扱わないことを"
+        "MUSTとする。",
     ),
     EXPECTED_H2[11]: (
-        "この標準の発効後に `complete` へ変更するcommitは、少なくとも一つの "
-        "`reviewerKind: human` approvalを持つことをMUSTとする。",
-        "発効前の既存 `complete` レッスンへhuman approvalを遡及して推定しないことを"
-        "MUSTとする。",
+        "公開可能性はcommit単位のPR・release evidenceと、認証済みmaintainerによる"
+        "明示的decisionで判定することをMUSTとする。",
+        "`v0.1.0` から発効するこの開示方針を、既存contentへ遡及してhuman approvalを"
+        "推定または付与するために使わないことをMUSTとする。",
         "承認は将来の変更にのみ効力を持ち、過去または後続のcommitへ自動継承しない"
         "ことをMUSTとする。",
     ),
@@ -105,8 +110,8 @@ EXPECTED_CHECKLIST = (
     "Source hierarchy、version、関連性、断定範囲、異なる2件以上のHTTPS URLを確認した。",
     "Semantic HTML、keyboard、zoom、contrast、print、JS0を確認した。",
     "4 review dimensions、reviewerKind、author fix、再確認結果を記録した。",
-    "発効後のcomplete変更にhuman approvalがあり、過去の承認を推定・継承していない。",
-    "Generated map、full tests、2回build、local link、安全性、accessibility検査が一致した。",
+    "v0.1.0以後のreviewerKindを開示し、AI reviewをhuman approvalに数えていない。",
+    "Generated map、full tests、2回build、local link、安全性、accessibility検査と認証済みmaintainer decisionが揃った。",
 )
 
 _ATX_HEADING = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*$")
@@ -234,6 +239,27 @@ class ContentStandardContractTests(unittest.TestCase):
     ) -> None:
         _assert_content_standard(CONTENT_STANDARD.read_text(encoding="utf-8"))
 
+    def test_design_spec_uses_the_same_model_b_status_boundary(self) -> None:
+        design = _normalized_prose(
+            tuple(DESIGN_SPEC.read_text(encoding="utf-8").splitlines())
+        )
+        clauses = (
+            "`status: complete` is a machine-validated structural state; it does not "
+            "prove human review, factual correctness, publication approval, or learner "
+            "mastery.",
+            "Publishability is decided per commit from PR and release evidence plus an "
+            "explicit decision by an authenticated maintainer.",
+            "`reviewerKind` is one of `human`, `ai-assisted`, or `automated`; AI-assisted "
+            "and automated reviews never count as human approval.",
+            "Starting with `v0.1.0`, this disclosure policy applies prospectively and "
+            "does not infer or retroactively grant human approval to existing content.",
+            "Review evidence covers four dimensions: technical accuracy, learning design "
+            "and evidence, accessibility, and editorial and source quality.",
+        )
+        for clause in clauses:
+            with self.subTest(clause=clause):
+                self.assertIn(_normalized_prose((clause,)), design)
+
     def test_heading_deletion_reordering_duplication_and_extension_fail(
         self,
     ) -> None:
@@ -292,7 +318,7 @@ class ContentStandardContractTests(unittest.TestCase):
             ),
             "complete equals published": valid.replace(
                 completion,
-                completion.replace("保証しない", "保証する"),
+                completion.replace("証明しない", "証明する"),
                 1,
             ),
         }
