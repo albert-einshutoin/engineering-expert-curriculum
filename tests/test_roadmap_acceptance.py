@@ -346,9 +346,11 @@ class RoadmapAcceptanceTests(unittest.TestCase):
         parser = getattr(build_module, "parse_roadmap_bytes")
         unsafe_values = (
             "id\nFORGED",
+            "id\n",
             "id\x1b[31mFORGED",
             "id\u202eFORGED",
             "x" * 129,
+            "x" + (" " * 129),
         )
         for unsafe in unsafe_values:
             documents = (

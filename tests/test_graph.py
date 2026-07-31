@@ -168,9 +168,11 @@ class GraphTests(unittest.TestCase):
     def test_rejects_unsafe_identifiers_without_reflecting_them(self) -> None:
         unsafe_values = (
             "node\nFORGED",
+            "node\n",
             "node\x1b[31mFORGED",
             "node\u202eFORGED",
             "x" * 129,
+            "x" + (" " * 129),
         )
         for unsafe in unsafe_values:
             cases = (
