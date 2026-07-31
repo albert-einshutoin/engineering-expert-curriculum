@@ -27,6 +27,12 @@ from .catalog import (
     load_repository_catalog_bytes,
     strict_json_loads,
 )
+from .capstones import (
+    CAPSTONE_IDS,
+    EVIDENCE_KINDS,
+    Capstone,
+    load_capstones_from_content_fd,
+)
 from .competencies import (
     MAX_COMPETENCIES_BYTES,
     CompetencyMatrix,
@@ -79,6 +85,8 @@ _TEMPLATE_NAMES = (
     "index.html",
     "catalog.html",
     "competency-matrix.html",
+    "capstone.html",
+    "capstones-index.html",
     "roadmap.html",
     "lesson.html",
     "lessons-index.html",
@@ -89,6 +97,7 @@ _BASE_ARTIFACTS = frozenset(
         PurePosixPath("styles.css"),
         PurePosixPath("catalog/index.html"),
         PurePosixPath("competencies/index.html"),
+        PurePosixPath("capstones/index.html"),
         PurePosixPath("roadmap/index.html"),
         PurePosixPath("lessons/index.html"),
     }
@@ -1295,6 +1304,142 @@ def _competency_content(
     )
 
 
+def _capstones_index_content(
+    renderer: Renderer,
+    capstones: tuple[Capstone, ...],
+) -> SafeHtml:
+    if not capstones:
+        cards = validate_fragment(
+            '<ol class="capstone-card-list"><li class="empty-state">'
+            "release buildで3つの統合課題を検証します。</li></ol>"
+        )
+    else:
+        rendered: list[str] = []
+        for capstone in capstones:
+            rendered.append(
+                '<li class="capstone-card">'
+                '<p class="eyebrow">Build · Operate · Explain · Review</p>'
+                f'<h2><a href="{escape(capstone.id, quote=True)}/index.html">'
+                f"{escape(capstone.title, quote=False)}</a></h2>"
+                f"<p>{escape(capstone.scenario, quote=False)}</p>"
+                '<p class="artifact-label"><strong>統合対象:</strong> '
+                f"{len(capstone.lesson_ids)} lessons</p>"
+                "</li>"
+            )
+        cards = validate_fragment(
+            '<ol class="capstone-card-list">'
+            + "".join(rendered)
+            + "</ol>"
+        )
+    return renderer.fragment(
+        "capstones-index.html",
+        text_values={},
+        html_values={"cards": cards},
+    )
+
+
+def _capstone_content(
+    renderer: Renderer,
+    capstone: Capstone,
+    lesson_titles: Mapping[str, str],
+) -> SafeHtml:
+    constraints = validate_fragment(
+        '<ul class="capstone-constraints">'
+        + "".join(
+            f"<li>{escape(value, quote=False)}</li>"
+            for value in capstone.constraints
+        )
+        + "</ul>"
+    )
+    evidence_labels = {
+        "build": "Build",
+        "operate": "Operate",
+        "explain": "Explain",
+        "review": "Review",
+    }
+    evidence = validate_fragment(
+        '<dl class="capstone-evidence">'
+        + "".join(
+            f"<dt>{evidence_labels[kind]}</dt>"
+            f"<dd>{escape(capstone.evidence[kind], quote=False)}</dd>"
+            for kind in EVIDENCE_KINDS
+        )
+        + "</dl>"
+    )
+    milestones = validate_fragment(
+        '<ol class="capstone-milestones">'
+        + "".join(
+            f"<li>{escape(value, quote=False)}</li>"
+            for value in capstone.milestones
+        )
+        + "</ol>"
+    )
+    questions = validate_fragment(
+        '<ol class="capstone-review-questions">'
+        + "".join(
+            f"<li>{escape(value, quote=False)}</li>"
+            for value in capstone.review_questions
+        )
+        + "</ol>"
+    )
+    primary = capstone.primary_exercises
+    lessons = validate_fragment(
+        '<ol class="capstone-lessons">'
+        + "".join(
+            "<li>"
+            '<a href="../../lessons/'
+            f'{escape(lesson_id, quote=True)}/index.html">'
+            f"{escape(lesson_titles[lesson_id], quote=False)}</a>"
+            + (
+                '<p class="primary-exercise"><strong>主評価:</strong> '
+                f"{escape(primary[lesson_id], quote=False)}</p>"
+                if lesson_id in primary
+                else '<p class="reinforcement">この課題では統合・補強して扱います。</p>'
+            )
+            + "</li>"
+            for lesson_id in capstone.lesson_ids
+        )
+        + "</ol>"
+    )
+    level_labels = {
+        "incomplete": "Incomplete",
+        "developing": "Developing",
+        "proficient": "Proficient",
+        "exemplary": "Exemplary",
+    }
+    rubric = validate_fragment(
+        '<table class="capstone-rubric">'
+        "<caption>4段階評価rubric</caption>"
+        "<thead><tr>"
+        '<th scope="col">Level</th>'
+        '<th scope="col">観測可能な基準</th>'
+        "</tr></thead><tbody>"
+        + "".join(
+            "<tr>"
+            f'<th scope="row">{level_labels[level]}</th>'
+            f"<td>{escape(capstone.rubric[level], quote=False)}</td>"
+            "</tr>"
+            for level in ("incomplete", "developing", "proficient", "exemplary")
+        )
+        + "</tbody></table>"
+    )
+    return renderer.fragment(
+        "capstone.html",
+        text_values={
+            "heading": capstone.title,
+            "scenario": capstone.scenario,
+        },
+        html_values={
+            "constraints": constraints,
+            "evidence": evidence,
+            "milestones": milestones,
+            "questions": questions,
+            "lessons": lessons,
+            "rubric": rubric,
+        },
+    )
+
+
 class _SiteDocumentParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -1409,10 +1554,18 @@ def _validate_external_https_url(candidate: str) -> None:
 
 def _expected_artifacts(
     lessons: tuple[LoadedLesson, ...],
+    capstones: tuple[Capstone, ...],
 ) -> frozenset[PurePosixPath]:
-    return _BASE_ARTIFACTS | frozenset(
-        PurePosixPath("lessons") / item.lesson.id / "index.html"
-        for item in lessons
+    return (
+        _BASE_ARTIFACTS
+        | frozenset(
+            PurePosixPath("lessons") / item.lesson.id / "index.html"
+            for item in lessons
+        )
+        | frozenset(
+            PurePosixPath("capstones") / item.id / "index.html"
+            for item in capstones
+        )
     )
 
 
@@ -1507,6 +1660,7 @@ def _render_artifacts(
     stylesheet: bytes,
     lessons: tuple[LoadedLesson, ...],
     competencies: CompetencyMatrix | None,
+    capstones: tuple[Capstone, ...],
 ) -> dict[PurePosixPath, bytes]:
     renderer = Renderer.from_template_bytes(
         template_sources,
@@ -1549,6 +1703,14 @@ def _render_artifacts(
                 lessons,
             ),
         ),
+        PurePosixPath("capstones/index.html"): renderer.page(
+            output_path=Path("capstones/index.html"),
+            title="統合Capstone",
+            description=(
+                "判断、実装、運用、説明、第三者レビューを統合する3課題"
+            ),
+            content=_capstones_index_content(renderer, capstones),
+        ),
         PurePosixPath("roadmap/index.html"): renderer.page(
             output_path=Path("roadmap/index.html"),
             title="学習ロードマップ",
@@ -1568,9 +1730,26 @@ def _render_artifacts(
     }
     artifacts[PurePosixPath("styles.css")] = stylesheet
     artifacts.update(render_lesson_artifacts(renderer, lessons))
+    lesson_titles = {
+        item.lesson.id: item.lesson.title
+        for item in lessons
+    }
+    for capstone in capstones:
+        artifacts[
+            PurePosixPath("capstones") / capstone.id / "index.html"
+        ] = renderer.page(
+            output_path=Path("capstones") / capstone.id / "index.html",
+            title=capstone.title,
+            description=capstone.scenario,
+            content=_capstone_content(
+                renderer,
+                capstone,
+                lesson_titles,
+            ),
+        ).encode("utf-8")
     _validate_site_artifacts(
         artifacts,
-        _expected_artifacts(lessons),
+        _expected_artifacts(lessons, capstones),
         _expected_external_links(lessons, competencies),
     )
     return artifacts
@@ -2630,6 +2809,7 @@ def build_site(
         lessons = lesson_snapshot.lessons
         competencies: CompetencyMatrix | None = None
         competency_snapshot: bytes | None = None
+        capstones: tuple[Capstone, ...] = ()
         if require_complete_curriculum:
             validate_release_curriculum(
                 roadmap,
@@ -2638,6 +2818,12 @@ def build_site(
             competencies, competency_snapshot = _load_competencies_from_root(
                 content,
                 frozenset(item.lesson.id for item in lessons),
+            )
+            capstones = load_capstones_from_content_fd(
+                content.descriptor,
+                expected_lesson_ids=frozenset(
+                    item.lesson.id for item in lessons
+                ),
             )
         stylesheet = _read_stable_regular_file(
             static_files,
@@ -2660,6 +2846,7 @@ def build_site(
             stylesheet,
             lessons,
             competencies,
+            capstones,
         )
         after_templates = {
             name: _read_stable_regular_file(
@@ -2689,6 +2876,17 @@ def build_site(
             )
         ):
             raise _validation("competencies.json changed during build")
+        if (
+            require_complete_curriculum
+            and capstones
+            != load_capstones_from_content_fd(
+                content.descriptor,
+                expected_lesson_ids=frozenset(
+                    item.lesson.id for item in lessons
+                ),
+            )
+        ):
+            raise _validation("capstones changed during build")
         for handle in (content, templates, static_files, output_parent):
             _verify_directory_identity(handle)
         _stage_and_publish(

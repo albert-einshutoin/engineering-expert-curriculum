@@ -373,7 +373,7 @@ class CapstoneRenderingTests(unittest.TestCase):
                 self.assertIn("<h2>レビュー質問</h2>", document)
                 self.assertIn("<caption>4段階評価rubric</caption>", document)
                 self.assertIn('scope="col"', document)
-                self.assertIn('href="../../../lessons/core-', document)
+                self.assertIn('href="../../lessons/core-', document)
                 self.assertNotIn("<script", document.casefold())
                 self.assertNotIn(".js", document.casefold())
             base_links = (output / "index.html").read_text(encoding="utf-8")

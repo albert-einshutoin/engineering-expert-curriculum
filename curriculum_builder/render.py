@@ -59,7 +59,7 @@ _BASE_PLACEHOLDER_COUNTS = MappingProxyType(
     {
         "title": 1,
         "description": 1,
-        "root": 6,
+        "root": 7,
         "content": 1,
     }
 )
@@ -94,6 +94,7 @@ _BASE_CHILDREN = MappingProxyType(
             "a:roadmap",
             "a:lessons",
             "a:competencies",
+            "a:capstones",
             "a:catalog",
         ),
         "footer": ("p:footer",),
@@ -110,6 +111,7 @@ _BASE_LEAF_TEXT = MappingProxyType(
         "a:roadmap": "ロードマップ",
         "a:lessons": "コアレッスン",
         "a:competencies": "コンピテンシー",
+        "a:capstones": "Capstone",
         "a:catalog": "全カタログ",
         "main": "$content",
         "p:footer": "Learn · Practice · Explain · Prove",
@@ -124,6 +126,7 @@ _REQUIRED_BASE_HREFS = MappingProxyType(
         "${root}roadmap/index.html": 1,
         "${root}lessons/index.html": 1,
         "${root}competencies/index.html": 1,
+        "${root}capstones/index.html": 1,
         "${root}catalog/index.html": 1,
     }
 )
@@ -807,6 +810,9 @@ class _BasePolicyParser(HTMLParser):
                 (
                     ("href", "${root}competencies/index.html"),
                 ): "a:competencies",
+                (
+                    ("href", "${root}capstones/index.html"),
+                ): "a:capstones",
                 (
                     ("href", "${root}catalog/index.html"),
                 ): "a:catalog",

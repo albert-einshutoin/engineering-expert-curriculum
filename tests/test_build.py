@@ -310,6 +310,7 @@ def _assert_static_site(
         Path("index.html"),
         Path("styles.css"),
         Path("catalog/index.html"),
+        Path("capstones/index.html"),
         Path("competencies/index.html"),
         Path("roadmap/index.html"),
         Path("lessons/index.html"),
@@ -318,6 +319,15 @@ def _assert_static_site(
         Path("lessons") / lesson_id / "index.html"
         for lesson_id in source_counts
     )
+    if competency_source_count:
+        expected.update(
+            Path("capstones") / capstone_id / "index.html"
+            for capstone_id in (
+                "global-service",
+                "legacy-evolution",
+                "oss-launch",
+            )
+        )
     actual = {
         path.relative_to(output)
         for path in output.rglob("*")
@@ -736,6 +746,7 @@ class BuildInputValidationTests(unittest.TestCase):
                 stylesheet: bytes,
                 lessons: object,
                 competencies: object,
+                capstones: object,
             ) -> dict[object, bytes]:
                 nonlocal restored
                 templates.rename(saved)
@@ -748,6 +759,7 @@ class BuildInputValidationTests(unittest.TestCase):
                         stylesheet,
                         lessons,  # type: ignore[arg-type]
                         competencies,  # type: ignore[arg-type]
+                        capstones,  # type: ignore[arg-type]
                     )
                 finally:
                     templates.rename(raced)
