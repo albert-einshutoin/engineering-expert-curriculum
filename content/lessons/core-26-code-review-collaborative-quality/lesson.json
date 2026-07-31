@@ -1,0 +1,173 @@
+{
+  "version": 1,
+  "id": "core-26-code-review-collaborative-quality",
+  "title": "コードレビューを協働品質システムとして運営する",
+  "summary": "変更リスクからpriorityを導き、evidenceとactionableな提案でauthor fixを支援し、別reviewerの独立再評価までを一つの品質ループとして設計する。",
+  "track": "lead",
+  "stage": 5,
+  "difficulty": "advanced",
+  "estimatedMinutes": 300,
+  "prerequisiteIds": [
+    "core-09-test-strategy-tdd",
+    "core-19-technical-communication-design-docs"
+  ],
+  "objectives": [
+    {
+      "id": "obj-review-priority",
+      "statement": "変更のrisk kindと観測証拠からreview findingのpriorityを再現可能に分類できる",
+      "evidenceIds": ["review-cycle", "assessment"]
+    },
+    {
+      "id": "obj-author-enablement",
+      "statement": "人格ではなく変更へ向けたevidenceとactionable fixでauthorの修正を支援できる",
+      "evidenceIds": ["review-cycle", "teach-back"]
+    },
+    {
+      "id": "obj-independent-review",
+      "statement": "修正済みsnapshotを別reviewerが独立再評価し、system outcomeまで検証できる",
+      "evidenceIds": ["review-cycle", "transfer"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "review-cycle",
+      "kind": "artifact",
+      "description": "優先度、根拠、修正可能性を備えたレビューと改善後の再評価"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "reviewをgatekeepingではなく別contributorの判断能力を増やす仕組みとして説明する5分発表"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "comment量やcommand successを品質と誤認しないreview判断"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "risk kindだけを変えた同じsample changeのreviewと独立再評価"
+    }
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "blocking risk、改善提案、質問、称賛を区別し、priorityの根拠を識別できる",
+      "evidenceIds": ["review-cycle"]
+    },
+    {
+      "level": "explain",
+      "criterion": "evidenceとactionable fixがauthorの学習と変更速度を両立する理由を説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "sample changeからfinding、priority、evidence、修正案を作りauthor fixへ結べる",
+      "evidenceIds": ["review-cycle"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "好みの強制、priority欠落、証拠のない断定、同一reviewerだけの再確認を反証できる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "別contributorが同じrisk判断と独立再評価を再現できるreview境界を運営できる",
+      "evidenceIds": ["transfer"]
+    }
+  ],
+  "lab": {
+    "title": "sample changeをレビューしauthor fixと独立再評価を完遂する",
+    "artifact": "優先度、根拠、修正可能性を備えたレビューと改善後の再評価",
+    "steps": [
+      "synthetic sample change、review context、priority orderのschemaと限界を固定する",
+      "初回reviewで各findingのpriority、input由来evidence、actionable fixを記録する",
+      "authorが全findingへ修正を適用し、元snapshotと修正snapshotを分離する",
+      "初回reviewerとは別のcontributorがresolved findingとsystem outcomeを独立再評価する",
+      "risk kindだけをcorrectnessからauthorizationへ変え、同じsample changeのpriorityを再評価する"
+    ]
+  },
+  "teachBack": "5分で、The Standard of Code Reviewとuseful review研究を、完璧さの要求ではなく継続的改善、明確なpriority、根拠、author enablementへ結ぶ。",
+  "assessment": [
+    {
+      "prompt": "commentは多いがpriorityと再現証拠がない。authorが最初に直すべき対象をどう決めるか。",
+      "expectedEvidence": "risk kind、影響範囲、観測証拠、priority order、actionable fix"
+    },
+    {
+      "prompt": "author fix後に同じreviewerがテストcommandの成功だけを確認した。reviewを完了できるか。",
+      "expectedEvidence": "独立reviewer、修正snapshot、resolved finding、system outcome、command successとの区別"
+    }
+  ],
+  "transferTask": "correctness変更からauthorization境界変更へrisk kindだけを変え、同じsample changeをレビュー、修正、独立再評価する",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "好みや印象だけでapproveまたはblockする",
+        "developing": "問題を指摘するがrisk、priority、再現条件が結び付かない",
+        "proficient": "input schema、risk、priority、evidence、fix、再評価を一貫して追跡する",
+        "exemplary": "順序、重複、snapshot drift、causal bypassをfail closedで検出できる"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "全commentを同じ重要度で扱う",
+        "developing": "priorityはあるが影響とreview budgetの関係を説明しない",
+        "proficient": "重大度、確度、範囲、可逆性からreview effortと修正順を決める",
+        "exemplary": "小さな継続改善とsystem riskの境界を保ち、不要なgatekeepingを減らす"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "reviewerの経験だけを根拠にする",
+        "developing": "テスト名はあるが変更入力とsystem outcomeへ結び付かない",
+        "proficient": "sample change由来の観測、修正snapshot、resolved finding、outcomeを残す",
+        "exemplary": "別contributorが同じ入力からpriorityと再評価を独立再現できる"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "命令や人格評価だけをcommentする",
+        "developing": "丁寧だが何をなぜ直すかが曖昧である",
+        "proficient": "priority、evidence、影響、具体的な次の行動を簡潔に伝える",
+        "exemplary": "authorの意図を確認しつつ、別contributorをenableする共有知識へ変える"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "The Standard of Code Review",
+      "url": "https://google.github.io/eng-practices/review/reviewer/standard.html",
+      "kind": "primary"
+    },
+    {
+      "title": "How to write code review comments",
+      "url": "https://google.github.io/eng-practices/review/reviewer/comments.html",
+      "kind": "primary"
+    },
+    {
+      "title": "Guide to the Software Engineering Body of Knowledge (SWEBOK Guide), Version 4.0a, September 2025",
+      "url": "https://ieeecs-media.computer.org/media/education/swebok/swebok-v4.pdf",
+      "kind": "standard"
+    },
+    {
+      "title": "Characteristics of Useful Code Reviews: An Empirical Study at Microsoft",
+      "url": "https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/bosu2015useful.pdf",
+      "kind": "peer-reviewed"
+    }
+  ],
+  "review": {
+    "intervalDays": [1, 7, 30, 90],
+    "prompts": [
+      "priorityと個人的な好みを分ける最小証拠は何か",
+      "actionable commentがauthor enablementになる条件は何か",
+      "command successだけでsystem outcomeを確認できない理由は何か"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}

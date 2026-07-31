@@ -1,0 +1,572 @@
+<section id="review-why">
+  <h2>なぜ重要か</h2>
+  <p>コードレビューの目的はcomment数を増やすことでも、reviewerの好みへauthorを従わせることでもない。変更がsystemへ与えるriskを早く見つけ、根拠を共有し、author fixと学習を助け、改善後の結果を確かめる協働品質システムを作ることである。</p>
+  <p>The Standard of Code Reviewは、完全な変更を待つのではなくcode healthを継続的に改善する判断を示す。How to write code review commentsとuseful code review研究は、何が問題かだけでなく、なぜ重要か、どの証拠があり、何をすれば解消できるかを伝える必要性を補う。SWEBOK Guide Version 4.0aのreview観点も、検証可能な品質活動として位置付ける。</p>
+  <p>良いreviewはauthor一人を通過させるだけでなく、次に同じ領域を扱う人がpriorityとevidenceを再現できるようにして、<strong>enable another contributor</strong>を実現する。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> review commentはsystem riskの証明そのものではない。sample change、想定利用、観測、未確認範囲を明示し、command successとsystem outcomeを分けて判断する。</p>
+  </aside>
+</section>
+<section id="review-mental-model">
+  <h2>メンタルモデル</h2>
+  <p>reviewを、sample changeからpriority / evidence / actionable commentを作る初回review、author fix、別reviewerによるindependent re-evaluationのループとして捉える。priorityは声の強さではなく、対象riskと影響から導く。</p>
+  <figure>
+    <figcaption>sample changeから共同で品質を改善し独立再評価するreview loop</figcaption>
+    <ol>
+      <li><strong>Scope:</strong> changeとrisk kind、review budgetを固定する。</li>
+      <li><strong>Initial review:</strong> priority、evidence、actionable fixを同じ入力から導く。</li>
+      <li><strong>Author fix:</strong> 指摘IDと修正snapshotを対応付ける。</li>
+      <li><strong>Independent re-evaluation:</strong> 初回とは別のreviewerがresolved findingとsystem outcomeを確認する。</li>
+      <li><strong>Enablement:</strong> 判断根拠を残し、他のcontributorが再利用できるようにする。</li>
+    </ol>
+  </figure>
+  <p>初回reviewerと再評価者を分けるのは儀式ではない。最初の仮説へ引きずられる可能性を下げ、修正後snapshotから証拠を作り直すためである。review budgetは重要だが、時間切れをapprovalへ変換してはならない。</p>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>correctness riskからauthorization riskへのtransfer</h3>
+  <dl>
+    <dt>前提</dt>
+    <dd>lesson-defined synthetic sample changeを使う。実repository、実利用者、production authorizationを観測したfixtureではない。</dd>
+    <dt>入力</dt>
+    <dd>2件のchange、2件のfinding、30分のreview budget、correctnessまたはauthorizationというrisk kindを与える。</dd>
+    <dt>操作</dt>
+    <dd>初回reviewをpriority順へ並べ、author fixを別snapshotへ適用する。さらに別reviewerが全findingの解消とoutcome evidenceを独立再評価する。</dd>
+    <dt>観測</dt>
+    <dd>baselineのhighest priorityはimportant、risk kindだけをauthorizationへ変えたtransferではcriticalになる。sample change自体は同一である。</dd>
+    <dt>結論</dt>
+    <dd>review command successだけではsystem outcomeを証明できない。入力由来evidence、修正snapshot、独立reviewerの再評価が揃って初めてreview cycleを完了できる。</dd>
+  </dl>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+import json
+
+HARNESS = "collaborative_code_review_lab_v1"
+PRIORITY_ORDER = ("critical", "important", "minor")
+CHANGE_ORDER = ("change-correctness", "change-authorization")
+FINDING_ORDER = ("finding-correctness", "finding-authorization")
+BASELINE_REVIEW_CONTEXT = {
+    "risk_kind": "correctness",
+    "review_budget_minutes": 30,
+}
+TRANSFER_REVIEW_CONTEXT = {
+    "risk_kind": "authorization",
+    "review_budget_minutes": 30,
+}
+SAMPLE_CHANGE = {
+    "change_set_id": "checkout-policy-v1",
+    "changes": [
+        {
+            "change_id": "change-correctness",
+            "component": "cart-total",
+            "risk_kind": "correctness",
+            "observed_evidence": "negative quantity changes total below zero",
+            "expected_outcome_evidence": "negative quantity is rejected",
+            "fixed": False,
+        },
+        {
+            "change_id": "change-authorization",
+            "component": "discount-policy",
+            "risk_kind": "authorization",
+            "observed_evidence": "caller scope is not checked before override",
+            "expected_outcome_evidence": "override without scope is denied",
+            "fixed": False,
+        },
+    ],
+}
+FINDING_SPECS = [
+    {
+        "finding_id": "finding-correctness",
+        "change_id": "change-correctness",
+        "actionable_fix": "reject quantity below zero before total calculation",
+    },
+    {
+        "finding_id": "finding-authorization",
+        "change_id": "change-authorization",
+        "actionable_fix": "require discount override scope before mutation",
+    },
+]
+COMMAND_INPUT = {"exit_code": 0}
+
+def is_nonempty_text(value):
+    return type(value) is str and bool(value)
+
+def context_difference(baseline, transferred):
+    return [
+        field
+        for field in sorted(set(baseline) | set(transferred))
+        if (
+            field not in baseline
+            or field not in transferred
+            or baseline[field] != transferred[field]
+        )
+    ]
+
+def validate_review_contexts():
+    allowed_fields = {"risk_kind", "review_budget_minutes"}
+    for context in (
+        BASELINE_REVIEW_CONTEXT,
+        TRANSFER_REVIEW_CONTEXT,
+    ):
+        if (
+            type(context) is not dict
+            or set(context) != allowed_fields
+            or type(context["risk_kind"]) is not str
+            or context["risk_kind"]
+            not in {"correctness", "authorization"}
+            or type(context["review_budget_minutes"]) is not int
+            or context["review_budget_minutes"] &lt;= 0
+        ):
+            raise AssertionError(
+                "review-transfer-invariant: invalid review context schema"
+            )
+    if context_difference(
+        BASELINE_REVIEW_CONTEXT,
+        TRANSFER_REVIEW_CONTEXT,
+    ) != ["risk_kind"]:
+        raise AssertionError(
+            "review-transfer-invariant: transfer changed wrong field"
+        )
+
+def validate_sample_change():
+    change_fields = {
+        "change_id",
+        "component",
+        "risk_kind",
+        "observed_evidence",
+        "expected_outcome_evidence",
+        "fixed",
+    }
+    valid = (
+        type(SAMPLE_CHANGE) is dict
+        and set(SAMPLE_CHANGE) == {"change_set_id", "changes"}
+        and is_nonempty_text(SAMPLE_CHANGE["change_set_id"])
+        and type(SAMPLE_CHANGE["changes"]) is list
+        and bool(SAMPLE_CHANGE["changes"])
+        and all(
+            type(change) is dict
+            and set(change) == change_fields
+            and is_nonempty_text(change["change_id"])
+            and is_nonempty_text(change["component"])
+            and change["risk_kind"]
+            in {"correctness", "authorization"}
+            and is_nonempty_text(change["observed_evidence"])
+            and is_nonempty_text(change["expected_outcome_evidence"])
+            and type(change["fixed"]) is bool
+            and change["fixed"] is False
+            for change in SAMPLE_CHANGE["changes"]
+        )
+    )
+    change_ids = (
+        [change["change_id"] for change in SAMPLE_CHANGE["changes"]]
+        if valid
+        else []
+    )
+    if (
+        not valid
+        or tuple(change_ids) != CHANGE_ORDER
+        or len(set(change_ids)) != len(change_ids)
+    ):
+        raise AssertionError(
+            "review-input-invariant: invalid sample change schema"
+        )
+
+def validate_finding_specs():
+    valid = (
+        type(FINDING_SPECS) is list
+        and bool(FINDING_SPECS)
+        and all(
+            type(finding) is dict
+            and set(finding)
+            == {"finding_id", "change_id", "actionable_fix"}
+            and is_nonempty_text(finding["finding_id"])
+            and finding["change_id"] in CHANGE_ORDER
+            and is_nonempty_text(finding["actionable_fix"])
+            for finding in FINDING_SPECS
+        )
+    )
+    finding_ids = (
+        [finding["finding_id"] for finding in FINDING_SPECS]
+        if valid
+        else []
+    )
+    referenced_changes = (
+        [finding["change_id"] for finding in FINDING_SPECS]
+        if valid
+        else []
+    )
+    if (
+        not valid
+        or tuple(finding_ids) != FINDING_ORDER
+        or len(set(finding_ids)) != len(finding_ids)
+        or len(set(referenced_changes)) != len(referenced_changes)
+    ):
+        raise AssertionError(
+            "review-input-invariant: invalid finding schema"
+        )
+
+def validate_all_inputs():
+    if PRIORITY_ORDER != ("critical", "important", "minor"):
+        raise AssertionError(
+            "review-priority-invariant: invalid canonical priority order"
+        )
+    validate_review_contexts()
+    validate_sample_change()
+    validate_finding_specs()
+    if (
+        type(COMMAND_INPUT) is not dict
+        or set(COMMAND_INPUT) != {"exit_code"}
+        or type(COMMAND_INPUT["exit_code"]) is not int
+    ):
+        raise AssertionError(
+            "review-input-invariant: invalid command input"
+        )
+
+def independent_snapshot(value):
+    # JSON値から独立snapshotを作り、author fixがbaseline入力を
+    # 書き換えてfalse greenになることを防ぐ。
+    return json.loads(json.dumps(value, ensure_ascii=False))
+
+def materialize_findings(sample_change):
+    changes = {
+        change["change_id"]: change
+        for change in sample_change["changes"]
+    }
+    return [
+        {
+            "finding_id": spec["finding_id"],
+            "change_id": spec["change_id"],
+            "risk_kind": changes[spec["change_id"]]["risk_kind"],
+            "evidence": changes[spec["change_id"]]["observed_evidence"],
+            "actionable_fix": spec["actionable_fix"],
+        }
+        for spec in FINDING_SPECS
+    ]
+
+def classify_priority(finding, context):
+    if (
+        finding["risk_kind"] == "authorization"
+        and context["risk_kind"] == "authorization"
+    ):
+        return "critical"
+    if finding["risk_kind"] == context["risk_kind"]:
+        return "important"
+    return "minor"
+
+def build_review(findings, context):
+    review = []
+    for finding in findings:
+        priority = classify_priority(finding, context)
+        review.append(
+            {
+                "finding_id": finding["finding_id"],
+                "change_id": finding["change_id"],
+                "priority": priority,
+                "priority_rank": PRIORITY_ORDER.index(priority),
+                "evidence": finding["evidence"],
+                "actionable_fix": finding["actionable_fix"],
+            }
+        )
+    return sorted(
+        review,
+        key=lambda item: (
+            item["priority_rank"],
+            item["finding_id"],
+        ),
+    )
+
+def apply_author_fix(sample_change, findings):
+    fixed_snapshot = independent_snapshot(sample_change)
+    finding_change_ids = {
+        finding["change_id"]
+        for finding in findings
+    }
+    for change in fixed_snapshot["changes"]:
+        if change["change_id"] in finding_change_ids:
+            change["fixed"] = True
+    return fixed_snapshot
+
+def independently_reevaluate(
+    fixed_snapshot,
+    findings,
+    initial_reviewer,
+    independent_reviewer,
+):
+    if independent_reviewer == initial_reviewer:
+        raise AssertionError(
+            "review-reevaluation-invariant: reviewer is not independent"
+        )
+    finding_by_change = {
+        finding["change_id"]: finding["finding_id"]
+        for finding in findings
+    }
+    resolved_findings = [
+        finding_by_change[change["change_id"]]
+        for change in fixed_snapshot["changes"]
+        if (
+            change["change_id"] in finding_by_change
+            and change["fixed"] is True
+            and is_nonempty_text(change["expected_outcome_evidence"])
+        )
+    ]
+    failed_outcomes = [
+        change["change_id"]
+        for change in fixed_snapshot["changes"]
+        if (
+            change["change_id"] in finding_by_change
+            and (
+                change["fixed"] is not True
+                or not is_nonempty_text(
+                    change["expected_outcome_evidence"]
+                )
+            )
+        )
+    ]
+    # failed outcomeが0件であることをall(empty)=Trueとして評価する。
+    # bool(empty)=Falseとの差がcausal bypassを検出可能にする。
+    system_outcome_verified = all(
+        [not failed_outcome for failed_outcome in failed_outcomes]
+    )
+    if (
+        set(resolved_findings)
+        != {finding["finding_id"] for finding in findings}
+        or not system_outcome_verified
+    ):
+        raise AssertionError(
+            "review-reevaluation-invariant: fix outcome not verified"
+        )
+    return {
+        "reviewer": independent_reviewer,
+        "resolved_findings": resolved_findings,
+        "system_outcome_verified": system_outcome_verified,
+        "outcome_evidence": [
+            {
+                "change_id": change["change_id"],
+                "evidence": change["expected_outcome_evidence"],
+            }
+            for change in fixed_snapshot["changes"]
+            if change["change_id"] in finding_by_change
+        ],
+    }
+
+def main():
+    validate_all_inputs()
+    baseline_context = independent_snapshot(BASELINE_REVIEW_CONTEXT)
+    transferred_context = independent_snapshot(
+        TRANSFER_REVIEW_CONTEXT
+    )
+    baseline_change = independent_snapshot(SAMPLE_CHANGE)
+    transferred_change = independent_snapshot(SAMPLE_CHANGE)
+    baseline_findings = materialize_findings(baseline_change)
+    transferred_findings = materialize_findings(transferred_change)
+    initial_review = build_review(
+        baseline_findings,
+        baseline_context,
+    )
+    transferred_review = build_review(
+        transferred_findings,
+        transferred_context,
+    )
+    if (
+        initial_review[0]["priority"] != "important"
+        or transferred_review[0]["priority"] != "critical"
+    ):
+        raise AssertionError(
+            "review-priority-invariant: priority not input-derived"
+        )
+    if baseline_change != transferred_change:
+        raise AssertionError(
+            "review-transfer-invariant: sample snapshots drifted"
+        )
+    fixed_snapshot = apply_author_fix(
+        baseline_change,
+        initial_review,
+    )
+    re_evaluation = independently_reevaluate(
+        fixed_snapshot,
+        initial_review,
+        "reviewer-alpha",
+        "reviewer-bravo",
+    )
+    changed_fields = context_difference(
+        baseline_context,
+        transferred_context,
+    )
+    author_fix = {
+        "author": "author-charlie",
+        "applied": all(
+            change["fixed"] is True
+            for change in fixed_snapshot["changes"]
+        ),
+        "resolved_finding_ids": [
+            finding["finding_id"]
+            for finding in initial_review
+        ],
+        "fixed_snapshot": fixed_snapshot,
+    }
+    contributor_enablement = {
+        "other_contributor": "reviewer-bravo",
+        "review_evidence": re_evaluation["outcome_evidence"],
+        "enabled_action": (
+            "priorityと修正証拠から独立にreviewを再実行する"
+        ),
+    }
+    report = {
+        "harness": HARNESS,
+        "review_cycle": {
+            "sample_change": baseline_change,
+            "initial_reviewer": "reviewer-alpha",
+            "initial_review": initial_review,
+            "author_fix": author_fix,
+            "independent_re_evaluation": re_evaluation,
+        },
+        "risk_kind_transfer": {
+            "changed_fields": changed_fields,
+            "same_sample_change": baseline_change
+            == transferred_change,
+            "baseline_context": baseline_context,
+            "transferred_context": transferred_context,
+            "baseline_highest_priority": initial_review[0][
+                "priority"
+            ],
+            "transferred_highest_priority": transferred_review[0][
+                "priority"
+            ],
+            "transferred_review": transferred_review,
+        },
+        "contributor_enablement": contributor_enablement,
+        "input_derived_evidence": {
+            "initial": [
+                finding["evidence"]
+                for finding in initial_review
+            ],
+            "after_fix": re_evaluation["outcome_evidence"],
+        },
+        "fixture_metadata": {
+            "kind": "synthetic",
+            "provenance": "lesson-defined collaborative review fixture",
+            "limitations": (
+                "実repository、production利用、権限境界を観測しない"
+            ),
+            "synthetic_or_observed_explicit": True,
+        },
+        "runtime_bound": {
+            "records": len(SAMPLE_CHANGE["changes"]) * 2,
+            "subprocesses": 0,
+            "maximum_iterations": len(FINDING_SPECS),
+        },
+        "external_network_used": False,
+        "command_success_distinction": {
+            "command_completed": COMMAND_INPUT["exit_code"] == 0,
+            "system_outcome_checked": re_evaluation[
+                "system_outcome_verified"
+            ],
+            "command_success_equals_system_outcome": False,
+            "outcome_evidence": re_evaluation["outcome_evidence"],
+        },
+        "mastery_evidence": {
+            "lab_steps": [
+                {"step": 1, "evidence": baseline_context},
+                {"step": 2, "evidence": initial_review},
+                {"step": 3, "evidence": author_fix},
+                {"step": 4, "evidence": re_evaluation},
+                {"step": 5, "evidence": transferred_review},
+            ],
+            "assessments": [
+                {
+                    "assessment": 1,
+                    "evidence": initial_review[0],
+                },
+                {
+                    "assessment": 2,
+                    "evidence": re_evaluation,
+                },
+            ],
+            "rubric_dimensions": [
+                "technical-correctness",
+                "judgment",
+                "evidence",
+                "communication",
+            ],
+            "transfer": {
+                "task": (
+                    "correctness変更からauthorization境界変更へ"
+                    "risk kindだけを変え、同じsample changeをレビュー、"
+                    "修正、独立再評価する"
+                ),
+                "changed_assumption": "risk-kind",
+                "evidence": {
+                    "changed_fields": changed_fields,
+                    "baseline": initial_review[0]["priority"],
+                    "transferred": transferred_review[0]["priority"],
+                },
+            },
+            "contributor_enablement": contributor_enablement,
+        },
+    }
+    print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+
+if __name__ == "__main__":
+    try:
+        main()
+    except AssertionError as error:
+        raise SystemExit(str(error)) from None
+PY</code></pre>
+</section>
+<section id="review-tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <table>
+    <caption>risk、evidence、修正状態に限定したreview decision table</caption>
+    <thead>
+      <tr>
+        <th scope="col">観測</th>
+        <th scope="col">priority</th>
+        <th scope="col">判断</th>
+        <th scope="col">次の行動</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row">authorization境界と一致</th>
+        <td>critical</td>
+        <td>approveを保留する</td>
+        <td>最小再現とdeny evidenceを要求する</td>
+      </tr>
+      <tr>
+        <th scope="row">対象riskと一致</th>
+        <td>important</td>
+        <td>修正または明示的反証を求める</td>
+        <td>具体的なfixと確認方法を示す</td>
+      </tr>
+      <tr>
+        <th scope="row">対象外だが有用</th>
+        <td>minor</td>
+        <td>blockingにしない</td>
+        <td>follow-up候補として分離する</td>
+      </tr>
+      <tr>
+        <th scope="row">author fix済み</th>
+        <td>再分類しない</td>
+        <td>独立再評価へ進む</td>
+        <td>resolved IDとsystem outcomeを照合する</td>
+      </tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><strong>誤診:</strong> comment数が多いreviewerほど品質へ貢献している。<strong>反証:</strong> findingごとのpriority、変更入力に結び付くevidence、actionable fix、解消後outcomeで有用性を評価する。</li>
+    <li><strong>誤診:</strong> authorが修正してtest commandが成功したのでreviewは完了した。<strong>反証:</strong> 元入力と修正snapshotを分け、別reviewerが全findingとsystem outcomeを独立再評価する。</li>
+  </ul>
+</section>
+<section id="review-knowledge-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>critical、important、minorを声の強さではなくriskから導くには何を固定するか。</li>
+    <li>evidenceのない正しい指摘がauthor enablementを妨げる理由は何か。</li>
+    <li>actionable fixを設計判断の押し付けにしないため、どの問いをauthorへ返すか。</li>
+    <li>independent re-evaluationでcommand success以外に確認するsystem outcomeを三つ挙げよ。</li>
+  </ol>
+</section>
+<section id="review-sources-next">
+  <h2>出典と次の学習</h2>
+  <p>The Standard of Code Review、How to write code review comments、SWEBOK Guide Version 4.0a、Characteristics of Useful Code Reviewsを、継続改善、明確なcomment、review品質、実証的な有用性の根拠として用いた。</p>
+  <p>次は自分のrepositoryから小さな変更を一つ選び、risk kindとreview budgetを宣言する。priority、evidence、actionable fix、author response、独立再評価を同じreview記録へ残し、他のcontributorが判断を再現できるか確認する。</p>
+</section>
