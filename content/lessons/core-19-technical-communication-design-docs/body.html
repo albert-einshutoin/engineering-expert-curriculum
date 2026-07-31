@@ -129,6 +129,47 @@ def validate_adr(document):
         "missing_fields": missing_fields,
     }
 
+def build_audience_view(audience, decision):
+    if audience == "executive":
+        sections = [
+            "reader-outcome",
+            "selected-option",
+            "business-risk",
+            "approval-request",
+        ]
+        reader_outcome = "pilot承認とcost guardrailのowner決定"
+    elif audience == "implementer":
+        sections = [
+            "selected-option",
+            "interface-boundary",
+            "migration-sequence",
+            "rollback",
+            "validation-evidence",
+        ]
+        reader_outcome = "pilot実装、exit test、rollback準備の開始"
+    else:
+        raise ValueError("unsupported-audience")
+    # audienceごとに構成は変えるが、decision evidenceは同じ入力から
+    # 再構成し、要約だけで選定根拠を書き換えられないようにする。
+    decision_evidence = {
+        "evidence_id": decision["evidence_id"],
+        "criteria_ids": sorted(decision["criteria"]),
+        "option_scores": [
+            {
+                "id": option["id"],
+                "weighted_score": option["weighted_score"],
+            }
+            for option in decision["options"]
+        ],
+    }
+    return {
+        "audience": audience,
+        "decision": decision["selected_option"],
+        "decision_evidence": decision_evidence,
+        "sections": sections,
+        "reader_outcome": reader_outcome,
+    }
+
 def main():
     options = score_options(OPTION_FIXTURE)
     selected_option = max(
@@ -141,18 +182,21 @@ def main():
         "selected_option": selected_option,
         "evidence_id": "notification-platform-comparison-v1",
     }
+    baseline_view = build_audience_view("executive", decision)
+    transferred_view = build_audience_view("implementer", decision)
     summary = {
-        "audience": "executive",
+        "audience": baseline_view["audience"],
         "page_budget": 1,
         "word_limit": 80,
         "word_count": len(EXECUTIVE_TEXT.split()),
         "decision": selected_option,
-        "reader_outcome": "pilot承認とcost guardrailのowner決定",
+        "reader_outcome": baseline_view["reader_outcome"],
         "text": EXECUTIVE_TEXT,
+        "audience_view": baseline_view,
     }
     appendix_decision = decision["selected_option"]
     technical_appendix = {
-        "audience": "implementer",
+        "audience": transferred_view["audience"],
         "alternatives": options,
         "decision": appendix_decision,
         "risks": [
@@ -165,6 +209,7 @@ def main():
             "reversible pilot plan",
             "exit test specification",
         ],
+        "audience_view": transferred_view,
     }
     adr_document = {
         "context": "初回releaseの通知基盤を選ぶ",
@@ -181,17 +226,29 @@ def main():
         == appendix_decision
         == adr_document["decision"]
     ), "communication-causal-invariant"
+    assert (
+        baseline_view["audience"] != transferred_view["audience"]
+        and baseline_view["sections"] != transferred_view["sections"]
+        and baseline_view["decision"] == transferred_view["decision"]
+        and baseline_view["decision_evidence"]
+        == transferred_view["decision_evidence"]
+    ), "communication-audience-invariant"
     audience_transfer = {
         "changed_assumption": "audience",
         "changed_fields": ["audience"],
-        "baseline_audience": "executive",
-        "transferred_audience": "implementer",
-        "baseline_decision": summary["decision"],
-        "transferred_decision": technical_appendix["decision"],
+        "baseline_audience": baseline_view["audience"],
+        "transferred_audience": transferred_view["audience"],
+        "baseline_decision": baseline_view["decision"],
+        "transferred_decision": transferred_view["decision"],
         "decision_evidence_unchanged": (
-            decision["evidence_id"]
-            == "notification-platform-comparison-v1"
+            baseline_view["decision_evidence"]
+            == transferred_view["decision_evidence"]
         ),
+        "audience_specific_content_differs": (
+            baseline_view["sections"] != transferred_view["sections"]
+        ),
+        "baseline_view": baseline_view,
+        "transferred_view": transferred_view,
     }
     report = {
         "fixture_metadata": {
