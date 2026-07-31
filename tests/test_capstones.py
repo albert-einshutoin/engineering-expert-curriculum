@@ -402,6 +402,17 @@ class CapstoneContractTests(unittest.TestCase):
                     content.rename(raced)
                     saved.rename(content)
 
+    def test_loader_fails_closed_without_nofollow_support(self) -> None:
+        with patch(
+            "curriculum_builder.capstones.os.O_NOFOLLOW",
+            None,
+        ):
+            with self.assertRaisesRegex(
+                CurriculumValidationError,
+                "safe capstone descriptors are not supported",
+            ):
+                load_capstones(CAPSTONES)
+
 
 class CapstoneRenderingTests(unittest.TestCase):
     def test_release_build_generates_index_and_three_semantic_briefs(self) -> None:
