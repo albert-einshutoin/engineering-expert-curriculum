@@ -415,6 +415,147 @@ DATA_SCALE_SOURCES = {
         ),
     ),
 }
+HUMAN_PRODUCT_SOURCES = {
+    "core-16-hci-usability-accessibility": (
+        (
+            "Web Content Accessibility Guidelines (WCAG) 2.2",
+            "https://www.w3.org/TR/WCAG22/",
+            "standard",
+        ),
+        (
+            "Website Accessibility Conformance Evaluation Methodology "
+            "(WCAG-EM) 1.0",
+            "https://www.w3.org/TR/WCAG-EM/",
+            "standard",
+        ),
+        (
+            "ISO 9241-210:2019 - Ergonomics of human-system interaction "
+            "— Part 210: Human-centred design for interactive systems",
+            "https://www.iso.org/standard/77520.html",
+            "standard",
+        ),
+        (
+            "W3C Accessibility Guidelines (WCAG) 3.0 Working Draft "
+            "03 March 2026",
+            "https://www.w3.org/TR/wcag-3.0/",
+            "primary",
+        ),
+    ),
+    "core-17-graphics-visual-information": (
+        (
+            "The OpenGL Graphics System: A Specification, Version 4.6 "
+            "(Core Profile), May 5, 2022",
+            "https://registry.khronos.org/OpenGL/specs/gl/"
+            "glspec46.core.pdf",
+            "standard",
+        ),
+        (
+            "Scalable Vector Graphics (SVG) 2",
+            "https://www.w3.org/TR/SVG2/",
+            "standard",
+        ),
+        (
+            "Graphical Perception: Theory, Experimentation, and "
+            "Application to the Development of Graphical Methods",
+            "https://doi.org/10.1080/01621459.1984.10478080",
+            "peer-reviewed",
+        ),
+        (
+            "Visualization Analysis and Design",
+            "https://www.routledge.com/Visualization-Analysis-and-Design/"
+            "Munzner/p/book/9781466508910",
+            "primary",
+        ),
+        (
+            "Complex Images",
+            "https://www.w3.org/WAI/tutorials/images/complex/",
+            "primary",
+        ),
+    ),
+    "core-18-product-discovery-experiments": (
+        (
+            "How the discovery phase works",
+            "https://www.gov.uk/service-manual/agile-delivery/"
+            "how-the-discovery-phase-works",
+            "primary",
+        ),
+        (
+            "Trustworthy Online Controlled Experiments: A Practical "
+            "Guide to A/B Testing",
+            "https://doi.org/10.1017/9781108653985",
+            "primary",
+        ),
+        (
+            "Online Experimentation at Microsoft",
+            "https://www.microsoft.com/en-us/research/publication/"
+            "online-experimentation-at-microsoft/",
+            "primary",
+        ),
+        (
+            "Always Valid Inference: Continuous Monitoring of A/B Tests",
+            "https://doi.org/10.1287/opre.2021.2135",
+            "peer-reviewed",
+        ),
+    ),
+    "core-19-technical-communication-design-docs": (
+        (
+            "ISO/IEC/IEEE 42010:2022 - Software, systems and enterprise "
+            "— Architecture description",
+            "https://www.iso.org/standard/74393.html",
+            "standard",
+        ),
+        (
+            "NASA Systems Engineering Handbook, NASA/SP-2016-6105 Rev2",
+            "https://www.nasa.gov/reference/systems-engineering-handbook/",
+            "primary",
+        ),
+        (
+            "RFC 7322: RFC Style Guide",
+            "https://www.rfc-editor.org/info/rfc7322/",
+            "standard",
+        ),
+        (
+            "Markdown Architectural Decision Records 4.0.0",
+            "https://adr.github.io/madr/",
+            "primary",
+        ),
+        (
+            "Plain language guide series",
+            "https://digital.gov/guides/plain-language",
+            "primary",
+        ),
+    ),
+    "core-20-ethics-privacy-societal-impact": (
+        (
+            "ACM Code of Ethics and Professional Conduct (2018)",
+            "https://www.acm.org/code-of-ethics",
+            "standard",
+        ),
+        (
+            "NIST Privacy Framework: A Tool for Improving Privacy "
+            "through Enterprise Risk Management, Version 1.0",
+            "https://doi.org/10.6028/NIST.CSWP.01162020",
+            "standard",
+        ),
+        (
+            "RFC 6973: Privacy Considerations for Internet Protocols",
+            "https://www.rfc-editor.org/info/rfc6973/",
+            "standard",
+        ),
+        (
+            "RFC 9620: Guidelines for Human Rights Protocol and "
+            "Architecture Considerations",
+            "https://www.rfc-editor.org/rfc/rfc9620.html",
+            "primary",
+        ),
+        (
+            "Artificial Intelligence Risk Management Framework "
+            "(AI RMF 1.0)",
+            "https://doi.org/10.6028/NIST.AI.100-1",
+            "standard",
+        ),
+    ),
+}
 FOUNDATIONS = {
     "core-01-systems-tradeoffs": {
         "prerequisites": (),
@@ -555,6 +696,68 @@ DATA_SCALE_ASSUMPTIONS = {
     "core-13-distributed-coordination-failure": "network-partition",
     "core-14-performance-capacity": "request-mix",
     "core-15-reliability-observability-slo": "user-visible-reliability",
+}
+HUMAN_PRODUCT = {
+    "core-16-hci-usability-accessibility": {
+        "prerequisites": ("core-06-requirements-domain-modeling",),
+        "artifact": "キーボード、ズーム、読み上げ、ユーザビリティの監査記録",
+        "transfer": (
+            "pointer操作中心からkeyboard-only利用へ入力方式だけを変え、"
+            "生成サイト監査を再評価する"
+        ),
+    },
+    "core-17-graphics-visual-information": {
+        "prerequisites": (
+            "core-03-architecture-memory-caches",
+            "core-16-hci-usability-accessibility",
+        ),
+        "artifact": "視覚表現と同等のテキスト構造を持つ静的データ図",
+        "transfer": (
+            "color表示からmonochrome表示へ変え、roadmapとchartの"
+            "同等情報を再検証する"
+        ),
+    },
+    "core-18-product-discovery-experiments": {
+        "prerequisites": (
+            "core-06-requirements-domain-modeling",
+            "core-16-hci-usability-accessibility",
+        ),
+        "artifact": "反証可能な仮説、成功指標、停止条件を持つ実験計画",
+        "transfer": (
+            "guardrail上限だけを厳しくし、同じ実験結果の継続・停止判断を"
+            "再評価する"
+        ),
+    },
+    "core-19-technical-communication-design-docs": {
+        "prerequisites": (
+            "core-01-systems-tradeoffs",
+            "core-06-requirements-domain-modeling",
+        ),
+        "artifact": "読者別の要約、代替案、リスク、決定を含む設計文書",
+        "transfer": (
+            "経営読者から実装読者へaudienceだけを変え、同じ決定証拠を"
+            "再構成する"
+        ),
+    },
+    "core-20-ethics-privacy-societal-impact": {
+        "prerequisites": (
+            "core-10-threat-modeling-secure-design",
+            "core-16-hci-usability-accessibility",
+            "core-19-technical-communication-design-docs",
+        ),
+        "artifact": "影響を受ける人、データライフサイクル、軽減策を含む影響評価",
+        "transfer": (
+            "平均的利用者から高リスク集団を含むaffected populationへ"
+            "変え、残余riskを再評価する"
+        ),
+    },
+}
+HUMAN_PRODUCT_ASSUMPTIONS = {
+    "core-16-hci-usability-accessibility": "input-mode",
+    "core-17-graphics-visual-information": "display-mode",
+    "core-18-product-discovery-experiments": "guardrail-threshold",
+    "core-19-technical-communication-design-docs": "audience",
+    "core-20-ethics-privacy-societal-impact": "affected-population",
 }
 
 
@@ -889,6 +1092,58 @@ class CoreTrackTests(unittest.TestCase):
         )
         self.assertTrue(transfer["evidence"])
 
+    def assert_human_product_mastery_evidence(
+        self,
+        report: dict[str, object],
+        lesson_id: str,
+    ) -> None:
+        metadata_path = self.body_path(lesson_id).with_name("lesson.json")
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        mastery = report["mastery_evidence"]
+
+        self.assertEqual(
+            [item["step"] for item in mastery["lab_steps"]],
+            list(range(1, len(metadata["lab"]["steps"]) + 1)),
+        )
+        self.assertTrue(
+            all(item["evidence"] for item in mastery["lab_steps"]),
+        )
+        self.assertEqual(
+            [item["assessment"] for item in mastery["assessments"]],
+            list(range(1, len(metadata["assessment"]) + 1)),
+        )
+        self.assertTrue(
+            all(item["evidence"] for item in mastery["assessments"]),
+        )
+        self.assertEqual(
+            set(mastery["rubric_dimensions"]),
+            {item["dimension"] for item in metadata["rubric"]},
+        )
+        transfer = mastery["transfer"]
+        self.assertEqual(transfer["task"], metadata["transferTask"])
+        self.assertEqual(
+            transfer["changed_assumption"],
+            HUMAN_PRODUCT_ASSUMPTIONS[lesson_id],
+        )
+        self.assertTrue(transfer["evidence"])
+
+    def assert_human_product_harness_contract(
+        self,
+        report: dict[str, object],
+        lesson_id: str,
+        expected_kind: str,
+    ) -> None:
+        metadata = report["fixture_metadata"]
+        self.assertEqual(metadata["kind"], expected_kind)
+        self.assertTrue(metadata["provenance"])
+        self.assertTrue(metadata["limitations"])
+        runtime_bound = report["runtime_bound"]
+        self.assertGreater(runtime_bound["records"], 0)
+        self.assertLessEqual(runtime_bound["records"], 1_000)
+        self.assertEqual(runtime_bound["subprocesses"], 0)
+        self.assertFalse(report["external_network_used"])
+        self.assert_human_product_mastery_evidence(report, lesson_id)
+
     def assert_harness_source_mutation_fails(
         self,
         lesson_id: str,
@@ -904,6 +1159,24 @@ class CoreTrackTests(unittest.TestCase):
         result = self.execute_python_harness_source(mutated)
 
         self.assertNotEqual(result.returncode, 0)
+
+    def assert_causal_harness_source_mutation_fails(
+        self,
+        lesson_id: str,
+        marker: str,
+        original: str,
+        replacement: str,
+        diagnostic: str,
+    ) -> None:
+        source = self.python_harness_source(lesson_id, marker)
+        self.assertIn(original, source)
+        mutated = source.replace(original, replacement, 1)
+        self.assertNotEqual(mutated, source)
+
+        result = self.execute_python_harness_source(mutated)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(diagnostic, result.stderr)
 
     def assert_body_contract(self, body: str, lesson_id: str) -> None:
         parser = _BodyContractParser()
@@ -1053,6 +1326,13 @@ class CoreTrackTests(unittest.TestCase):
             source_contract=DATA_SCALE_SOURCES,
         )
 
+    def test_human_product(self) -> None:
+        self.assert_track(
+            HUMAN_PRODUCT,
+            expected_track="human-product",
+            source_contract=HUMAN_PRODUCT_SOURCES,
+        )
+
     def test_foundation_bodies_follow_semantic_contract(self) -> None:
         for lesson_id in FOUNDATIONS:
             with self.subTest(lesson_id=lesson_id):
@@ -1070,6 +1350,77 @@ class CoreTrackTests(unittest.TestCase):
             with self.subTest(lesson_id=lesson_id):
                 body = self.body_path(lesson_id).read_text(encoding="utf-8")
                 self.assert_body_contract(body, lesson_id)
+
+    def test_human_product_bodies_follow_semantic_contract(self) -> None:
+        for lesson_id in HUMAN_PRODUCT:
+            with self.subTest(lesson_id=lesson_id):
+                body = self.body_path(lesson_id).read_text(encoding="utf-8")
+                self.assert_body_contract(body, lesson_id)
+
+    def test_human_product_bodies_scope_standards_and_practice(
+        self,
+    ) -> None:
+        required_markers = {
+            "core-16-hci-usability-accessibility": (
+                "WCAG 2.2",
+                "Level AA",
+                "ISO 9241-210:2019",
+                "WCAG 3.0",
+                "Working Draft",
+                "APCA",
+                "非標準",
+                "keyboard",
+                "200%",
+                "reading order",
+                "usability",
+            ),
+            "core-17-graphics-visual-information": (
+                "OpenGL 4.6",
+                "SVG 2",
+                "Cleveland",
+                "Munzner",
+                "semantic HTML",
+                "CSS",
+                "roadmap",
+                "quantitative chart",
+                "同等のテキスト構造",
+                "colorだけ",
+            ),
+            "core-18-product-discovery-experiments": (
+                "反証可能",
+                "success metric",
+                "guardrail",
+                "stop condition",
+                "simulated",
+                "always-valid",
+                "p-hacking",
+            ),
+            "core-19-technical-communication-design-docs": (
+                "one-page executive summary",
+                "technical appendix",
+                "alternatives",
+                "risk",
+                "decision",
+                "ADR",
+                "validation",
+                "plain language",
+            ),
+            "core-20-ethics-privacy-societal-impact": (
+                "ACM Code of Ethics",
+                "NIST Privacy Framework 1.0",
+                "affected people",
+                "data lifecycle",
+                "uneven harm",
+                "mitigation",
+                "residual risk",
+                "privacyとsecurityは同義ではない",
+            ),
+        }
+        for lesson_id, markers in required_markers.items():
+            with self.subTest(lesson_id=lesson_id):
+                body = self.body_path(lesson_id).read_text(encoding="utf-8")
+                for marker in markers:
+                    self.assertIn(marker, body, f"{lesson_id}: {marker}")
 
     def test_body_contract_rejects_heading_mutation(self) -> None:
         lesson_id = "core-01-systems-tradeoffs"
@@ -3187,4 +3538,373 @@ class CoreTrackTests(unittest.TestCase):
                 'and event["latency_ms"] <= 300'
             ),
             "good = True",
+        )
+
+    def test_hci_harness_derives_generated_site_audit(self) -> None:
+        lesson_id = "core-16-hci-usability-accessibility"
+        report = self.run_python_harness(
+            lesson_id,
+            "hci_accessibility_audit_lab_v1",
+        )
+
+        self.assertEqual(
+            report["site_under_audit"],
+            "generated-static-curriculum",
+        )
+        standards = report["standards"]
+        self.assertEqual(
+            standards["normative_target"],
+            {
+                "name": "WCAG",
+                "version": "2.2",
+                "level": "AA",
+                "status": "W3C Recommendation",
+                "date": "2024-12-12",
+            },
+        )
+        self.assertEqual(standards["human_centred_design"], "ISO 9241-210:2019")
+        self.assertEqual(
+            standards["non_normative_candidates"],
+            {
+                "WCAG 3.0": "W3C Working Draft 2026-03-03",
+                "APCA": "not-a-WCAG-2.2-conformance-standard",
+            },
+        )
+        observations = report["audit"]["observations"]
+        self.assertEqual(
+            {item["dimension"] for item in observations},
+            {"keyboard", "zoom-200", "reading-order", "usability"},
+        )
+        self.assertTrue(
+            all(
+                item["passed"]
+                == (item["actual"] == item["expected"])
+                for item in observations
+            )
+        )
+        summary = report["audit"]["summary"]
+        self.assertEqual(summary["total"], len(observations))
+        self.assertEqual(
+            summary["passed"],
+            sum(item["passed"] for item in observations),
+        )
+        self.assertEqual(
+            summary["failed"],
+            summary["total"] - summary["passed"],
+        )
+        self.assertTrue(report["audit"]["manual_review_required"])
+        self.assertFalse(report["audit"]["conformance_claim"])
+        transfer = report["input_mode_transfer"]
+        self.assertEqual(transfer["changed_assumption"], "input-mode")
+        self.assertEqual(transfer["changed_fields"], ["input_mode"])
+        self.assertEqual(
+            transfer["unchanged"],
+            {
+                "page_fixture": True,
+                "wcag_target": True,
+                "expected_outcomes": True,
+            },
+        )
+        self.assertNotEqual(
+            transfer["baseline_check_ids"],
+            transfer["transferred_check_ids"],
+        )
+        self.assert_human_product_harness_contract(
+            report,
+            lesson_id,
+            "synthetic",
+        )
+
+    def test_hci_harness_rejects_uncausal_audit_mutation(self) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-16-hci-usability-accessibility",
+            "hci_accessibility_audit_lab_v1",
+            'passed = observation["actual"] == observation["expected"]',
+            "passed = True",
+            "hci-causal-invariant",
+        )
+
+    def test_graphics_harness_preserves_semantic_equivalence(self) -> None:
+        lesson_id = "core-17-graphics-visual-information"
+        report = self.run_python_harness(
+            lesson_id,
+            "graphics_semantic_equivalence_lab_v1",
+        )
+
+        roadmap = report["roadmap"]
+        node_ids = [node["id"] for node in roadmap["data"]["nodes"]]
+        edge_pairs = [
+            [edge["from"], edge["to"]]
+            for edge in roadmap["data"]["edges"]
+        ]
+        self.assertEqual(roadmap["semantic_html"]["node_ids"], node_ids)
+        self.assertEqual(roadmap["text_equivalent"]["node_ids"], node_ids)
+        self.assertEqual(
+            roadmap["text_equivalent"]["edge_pairs"],
+            edge_pairs,
+        )
+        chart = report["quantitative_chart"]
+        expected_rows = [
+            {"id": point["id"], "label": point["label"], "value": point["value"]}
+            for point in chart["data"]
+        ]
+        self.assertEqual(chart["semantic_html"]["table_rows"], expected_rows)
+        self.assertEqual(chart["text_equivalent"]["rows"], expected_rows)
+        self.assertEqual(
+            chart["summary"]["maximum_id"],
+            max(chart["data"], key=lambda point: point["value"])["id"],
+        )
+        self.assertEqual(
+            chart["summary"]["minimum_id"],
+            min(chart["data"], key=lambda point: point["value"])["id"],
+        )
+        self.assertEqual(
+            chart["encoding"]["quantitative"],
+            "position-on-common-scale",
+        )
+        self.assertFalse(chart["encoding"]["color_only"])
+        transfer = report["display_mode_transfer"]
+        self.assertEqual(transfer["changed_assumption"], "display-mode")
+        self.assertEqual(transfer["changed_fields"], ["display_mode"])
+        self.assertEqual(transfer["baseline_mode"], "color")
+        self.assertEqual(transfer["transferred_mode"], "monochrome")
+        self.assertTrue(transfer["data_unchanged"])
+        self.assertTrue(transfer["text_equivalence_preserved"])
+        self.assert_human_product_harness_contract(
+            report,
+            lesson_id,
+            "synthetic",
+        )
+
+    def test_graphics_harness_rejects_text_equivalence_mutation(self) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-17-graphics-visual-information",
+            "graphics_semantic_equivalence_lab_v1",
+            "text_rows = [dict(point) for point in chart_data]",
+            "text_rows = []",
+            "graphics-causal-invariant",
+        )
+
+    def test_experiment_harness_derives_metrics_and_stop_decision(
+        self,
+    ) -> None:
+        lesson_id = "core-18-product-discovery-experiments"
+        report = self.run_python_harness(
+            lesson_id,
+            "product_experiment_lab_v1",
+        )
+
+        hypothesis = report["hypothesis"]
+        self.assertTrue(hypothesis["falsifiable"])
+        self.assertTrue(hypothesis["statement"])
+        plan = report["analysis_plan"]
+        self.assertTrue(plan["locked_before_exposure"])
+        self.assertEqual(plan["primary_metric"], "completion-rate")
+        self.assertEqual(
+            set(plan["guardrail_metrics"]),
+            {"complaint-rate", "p95-latency-ms"},
+        )
+        self.assertTrue(plan["stop_conditions"])
+        self.assertEqual(plan["sequential_method"], "always-valid")
+        self.assertTrue(plan["p_hacking_prohibited"])
+        variants = report["experiment"]["variants"]
+        metrics = report["experiment"]["derived_metrics"]
+        for variant_id, variant in variants.items():
+            derived = metrics[variant_id]
+            self.assertAlmostEqual(
+                derived["completion_rate"],
+                variant["completions"] / variant["visitors"],
+            )
+            self.assertAlmostEqual(
+                derived["complaint_rate"],
+                variant["complaints"] / variant["visitors"],
+            )
+        treatment_effect = (
+            metrics["treatment"]["completion_rate"]
+            - metrics["control"]["completion_rate"]
+        )
+        complaint_delta = (
+            metrics["treatment"]["complaint_rate"]
+            - metrics["control"]["complaint_rate"]
+        )
+        self.assertAlmostEqual(
+            report["experiment"]["primary_effect"],
+            treatment_effect,
+        )
+        self.assertAlmostEqual(
+            report["experiment"]["complaint_delta"],
+            complaint_delta,
+        )
+        transfer = report["guardrail_threshold_transfer"]
+        self.assertEqual(
+            transfer["changed_assumption"],
+            "guardrail-threshold",
+        )
+        self.assertEqual(transfer["changed_fields"], ["complaint_rate_limit"])
+        self.assertEqual(
+            transfer["baseline_inputs"],
+            transfer["transferred_inputs"],
+        )
+        self.assertEqual(transfer["baseline_decision"], "continue")
+        self.assertEqual(transfer["transferred_decision"], "stop")
+        self.assert_human_product_harness_contract(
+            report,
+            lesson_id,
+            "simulated",
+        )
+
+    def test_experiment_harness_rejects_guardrail_mutation(self) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-18-product-discovery-experiments",
+            "product_experiment_lab_v1",
+            "guardrail_passed = complaint_delta <= guardrail_limit",
+            "guardrail_passed = True",
+            "experiment-causal-invariant",
+        )
+
+    def test_communication_harness_aligns_summary_appendix_and_adr(
+        self,
+    ) -> None:
+        lesson_id = "core-19-technical-communication-design-docs"
+        report = self.run_python_harness(
+            lesson_id,
+            "technical_communication_lab_v1",
+        )
+
+        decision = report["decision"]
+        expected_option = max(
+            decision["options"],
+            key=lambda option: option["weighted_score"],
+        )
+        self.assertEqual(decision["selected_option"], expected_option["id"])
+        summary = report["one_page_executive_summary"]
+        self.assertEqual(summary["page_budget"], 1)
+        self.assertLessEqual(summary["word_count"], summary["word_limit"])
+        self.assertEqual(summary["decision"], decision["selected_option"])
+        self.assertTrue(summary["reader_outcome"])
+        appendix = report["technical_appendix"]
+        self.assertEqual(
+            {item["id"] for item in appendix["alternatives"]},
+            {item["id"] for item in decision["options"]},
+        )
+        self.assertEqual(appendix["decision"], decision["selected_option"])
+        self.assertTrue(appendix["risks"])
+        self.assertTrue(appendix["validation_evidence"])
+        adr = report["adr_validation"]
+        self.assertTrue(adr["valid"])
+        self.assertEqual(adr["missing_fields"], [])
+        self.assertEqual(
+            set(adr["required_fields"]),
+            {
+                "context",
+                "decision",
+                "alternatives",
+                "consequences",
+                "risks",
+                "validation",
+            },
+        )
+        transfer = report["audience_transfer"]
+        self.assertEqual(transfer["changed_assumption"], "audience")
+        self.assertEqual(transfer["changed_fields"], ["audience"])
+        self.assertEqual(transfer["baseline_audience"], "executive")
+        self.assertEqual(transfer["transferred_audience"], "implementer")
+        self.assertEqual(
+            transfer["baseline_decision"],
+            transfer["transferred_decision"],
+        )
+        self.assertTrue(transfer["decision_evidence_unchanged"])
+        self.assert_human_product_harness_contract(
+            report,
+            lesson_id,
+            "synthetic",
+        )
+
+    def test_communication_harness_rejects_document_drift(self) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-19-technical-communication-design-docs",
+            "technical_communication_lab_v1",
+            'appendix_decision = decision["selected_option"]',
+            'appendix_decision = "undocumented-option"',
+            "communication-causal-invariant",
+        )
+
+    def test_ethics_harness_derives_uneven_harm_and_residual_risk(
+        self,
+    ) -> None:
+        lesson_id = "core-20-ethics-privacy-societal-impact"
+        report = self.run_python_harness(
+            lesson_id,
+            "ethics_privacy_impact_lab_v1",
+        )
+
+        self.assertEqual(
+            report["frameworks"],
+            {
+                "professional_ethics": "ACM Code of Ethics 2018",
+                "privacy": "NIST Privacy Framework 1.0",
+                "privacy_protocol": "RFC 6973",
+                "human_rights": "RFC 9620",
+                "ai_risk": "NIST AI RMF 1.0",
+            },
+        )
+        self.assertEqual(
+            report["data_lifecycle"],
+            ["collect", "use", "share", "retain", "delete"],
+        )
+        impacts = report["impact_assessment"]["impacts"]
+        self.assertGreaterEqual(len({item["affected_people"] for item in impacts}), 3)
+        for impact in impacts:
+            self.assertEqual(
+                impact["inherent_risk"],
+                impact["likelihood"]
+                * impact["severity"]
+                * impact["exposure"],
+            )
+            self.assertEqual(
+                impact["residual_risk"],
+                max(0, impact["inherent_risk"] - impact["mitigation_reduction"]),
+            )
+            self.assertTrue(impact["mitigations"])
+        residuals = [item["residual_risk"] for item in impacts]
+        uneven = report["impact_assessment"]["uneven_harm"]
+        self.assertEqual(uneven["maximum"], max(residuals))
+        self.assertEqual(uneven["minimum"], min(residuals))
+        self.assertEqual(uneven["gap"], max(residuals) - min(residuals))
+        relation = report["privacy_security_relation"]
+        self.assertTrue(relation["related"])
+        self.assertTrue(relation["distinct"])
+        self.assertFalse(relation["privacy_equals_security"])
+        self.assertTrue(report["impact_assessment"]["residual_risk_owner"])
+        transfer = report["affected_population_transfer"]
+        self.assertEqual(
+            transfer["changed_assumption"],
+            "affected-population",
+        )
+        self.assertEqual(transfer["changed_fields"], ["affected_population"])
+        self.assertEqual(
+            transfer["unchanged"],
+            {
+                "data_lifecycle": True,
+                "mitigations": True,
+                "risk_formula": True,
+            },
+        )
+        self.assertGreater(
+            transfer["transferred_maximum_residual_risk"],
+            transfer["baseline_maximum_residual_risk"],
+        )
+        self.assert_human_product_harness_contract(
+            report,
+            lesson_id,
+            "simulated",
+        )
+
+    def test_ethics_harness_rejects_residual_risk_mutation(self) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-20-ethics-privacy-societal-impact",
+            "ethics_privacy_impact_lab_v1",
+            "residual_risk = max(0, inherent_risk - mitigation_reduction)",
+            "residual_risk = inherent_risk",
+            "ethics-causal-invariant",
         )
