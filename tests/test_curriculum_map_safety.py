@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 import fcntl
 from html import unescape
 import io
@@ -459,6 +459,91 @@ class CurriculumMapCliContractTests(unittest.TestCase):
 
             self.assertIn("parent durability is unknown", stderr.getvalue())
             self.assertIn(f"{BEGIN}\nnew\n{END}".encode(), target.read_bytes())
+
+    def test_parent_close_failure_reports_published_state_without_success(
+        self,
+    ) -> None:
+        with TemporaryDirectory(
+            prefix=".map-cli-parent-close-",
+            dir=REPOSITORY_ROOT.parent,
+        ) as directory:
+            root = self._repository(directory)
+            target = root / "docs/curriculum-map.md"
+            expected = f"# Map\n\n{BEGIN}\nnew\n{END}\n".encode("utf-8")
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            real_close = os.close
+            injected = False
+
+            def fail_parent_close(descriptor: int) -> None:
+                nonlocal injected
+                if not injected and stat.S_ISDIR(os.fstat(descriptor).st_mode):
+                    injected = True
+                    real_close(descriptor)
+                    raise OSError("DOCS_PARENT_CLOSE_FAILURE")
+                real_close(descriptor)
+
+            with (
+                patch.object(
+                    generate_curriculum_map.os,
+                    "close",
+                    side_effect=fail_parent_close,
+                ),
+                redirect_stdout(stdout),
+                redirect_stderr(stderr),
+            ):
+                self.assertEqual(self._run(root, "new"), 1)
+
+            self.assertTrue(injected)
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertIn("published and is visible", stderr.getvalue())
+            self.assertIn("DOCS_PARENT_CLOSE_FAILURE", stderr.getvalue())
+            self.assertEqual(target.read_bytes(), expected)
+
+    def test_noop_parent_close_failure_never_prints_success(self) -> None:
+        cases = ((), ("--check",))
+        for arguments in cases:
+            with self.subTest(arguments=arguments), TemporaryDirectory(
+                prefix=".map-cli-noop-close-",
+                dir=REPOSITORY_ROOT.parent,
+            ) as directory:
+                root = self._repository(directory, generated="current")
+                target = root / "docs/curriculum-map.md"
+                before = target.read_bytes()
+                stdout = io.StringIO()
+                stderr = io.StringIO()
+                real_close = os.close
+                injected = False
+
+                def fail_parent_close(descriptor: int) -> None:
+                    nonlocal injected
+                    if (
+                        not injected
+                        and stat.S_ISDIR(os.fstat(descriptor).st_mode)
+                    ):
+                        injected = True
+                        real_close(descriptor)
+                        raise OSError("DOCS_PARENT_CLOSE_FAILURE")
+                    real_close(descriptor)
+
+                with (
+                    patch.object(
+                        generate_curriculum_map.os,
+                        "close",
+                        side_effect=fail_parent_close,
+                    ),
+                    redirect_stdout(stdout),
+                    redirect_stderr(stderr),
+                ):
+                    self.assertEqual(
+                        self._run(root, "current", *arguments),
+                        1,
+                    )
+
+                self.assertTrue(injected)
+                self.assertEqual(stdout.getvalue(), "")
+                self.assertIn("descriptor close failed", stderr.getvalue())
+                self.assertEqual(target.read_bytes(), before)
 
 
 class CurriculumMapReleaseSnapshotTests(unittest.TestCase):
