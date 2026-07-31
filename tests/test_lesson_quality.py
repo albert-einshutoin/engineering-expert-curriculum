@@ -895,6 +895,58 @@ class LessonQualityTests(unittest.TestCase):
         self.assertEqual(lesson.status, "draft")
         self.assertEqual(len(lesson.assessment), 1)
 
+    def test_draft_may_keep_evidence_before_learning_paths_reference_it(
+        self,
+    ) -> None:
+        raw = self.complete_document()
+        raw["status"] = "draft"
+        raw["evidence"].append(
+            {
+                "id": "draft-orphan",
+                "kind": "artifact",
+                "description": "draftでは学習経路との接続を後続作業にできる",
+            }
+        )
+
+        lesson = load_lesson_bytes(
+            json.dumps(raw, ensure_ascii=False).encode("utf-8"),
+            "draft-orphan.json",
+        )
+
+        self.assertEqual(lesson.status, "draft")
+        self.assertIn("draft-orphan", {item.id for item in lesson.evidence})
+
+    def test_complete_evidence_coverage_diagnostic_is_bounded(self) -> None:
+        raw = self.complete_document()
+        kinds = ("artifact", "explanation", "reasoning", "transfer")
+        identifiers = tuple(
+            f"evidence-{index:02}-" + "x" * 68
+            for index in range(20)
+        )
+        raw["evidence"] = [
+            {
+                "id": identifier,
+                "kind": kinds[index % len(kinds)],
+                "description": f"bounded evidence {index}",
+            }
+            for index, identifier in enumerate(identifiers)
+        ]
+        for objective in raw["objectives"]:
+            objective["evidenceIds"] = [identifiers[0]]
+        for level in raw["capabilityProgression"]:
+            level["evidenceIds"] = [identifiers[0]]
+
+        with TemporaryDirectory() as directory:
+            path = self.write_document(directory, raw)
+            with self.assertRaisesRegex(
+                CurriculumValidationError,
+                r"objective evidence coverage missing",
+            ) as caught:
+                load_lesson(path)
+
+        self.assertLessEqual(len(str(caught.exception).encode("utf-8")), 2_048)
+        self.assertIn(identifiers[-1], str(caught.exception))
+
     def test_complete_lab_teach_back_transfer_and_assessment_are_substantive(
         self,
     ) -> None:
