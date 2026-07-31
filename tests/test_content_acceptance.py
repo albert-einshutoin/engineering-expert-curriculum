@@ -1286,6 +1286,9 @@ class ContentAcceptanceTests(unittest.TestCase):
             ("V4&#46;0a", r"V4\.0a"),
             ("V4&#46;0a", "V4&period;0a"),
             ("V4&#46;0a", "V4&#x2e;0a"),
+            ("| CS2023 | Final Report |", "|CS2023 | Final Report |"),
+            ("| CS2023 | Final Report |", "|  CS2023 | Final Report |"),
+            ("| CS2023 | Final Report |", "| CS2023| Final Report |"),
             (
                 "`core-01-systems-tradeoffs`<br>システム思考",
                 "`core-01-systems-tradeoffs`<br>\\システム思考",
