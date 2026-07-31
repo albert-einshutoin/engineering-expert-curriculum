@@ -29,11 +29,11 @@
     <dt>前提</dt>
     <dd>店舗はAssetを検索するCatalog、予約から返却までを扱うRental Operations、保証金と請求を扱うBillingを持つ。担当者は「予約できた機材は貸し出せる」と説明した。</dd>
     <dt>入力</dt>
-    <dd>通常貸出、同じAssetへの競合予約、期限切れHold、期限内返却、延滞返却という5例と、「保証金はいくらなら責任者承認が要るか」という未回答の質問を与える。</dd>
+    <dd>同じcamera-17に対する通常貸出、貸出中の競合予約、期限内返却、期限切れHold、再貸出、延滞返却という一続きの状態遷移と、「保証金はいくらなら責任者承認が要るか」という未回答の質問を与える。</dd>
     <dt>操作</dt>
-    <dd>発言を用語、コマンド、イベント、不変条件、例外へ分解する。各要求の追跡先が空でないことを検査し、保証金閾値を未宣言ルールとして検出した後、業務責任者の決定で解決済みにする。</dd>
+    <dd>発言を用語、コマンド、イベント、不変条件、例外へ分解する。一つのAsset状態を各操作へ引き継ぎ、active loanの有無で競合を判定する。各要求の追跡先が空でないことを検査し、保証金閾値を未宣言ルールとして検出した後、業務責任者の決定で解決済みにする。</dd>
     <dt>観測</dt>
-    <dd>5語、3文脈、5シナリオ、3例外をJSONへ出力する。返却でAssetが利用可能に戻り、延滞時だけ料金評価eventが生じる。すべての不変条件が通り、曖昧性にはdetectedとresolvedの履歴が残る。</dd>
+    <dd>5語、3文脈、6操作、3例外と各操作後のstate traceをJSONへ出力する。active loan数の最大値は計算結果として1になり、返却でAssetが利用可能に戻り、延滞時だけ料金評価eventが生じる。すべての不変条件が通り、曖昧性にはdetectedとresolvedの履歴が残る。</dd>
     <dt>結論</dt>
     <dd>「予約済み」は貸出の十分条件ではない。取置きが有効で、対象Assetが利用可能で、本人確認と保証金条件を満たす必要がある。例外と未確定事項を追跡して初めて、実装可能かつ反証可能な要求になる。</dd>
   </dl>
@@ -96,106 +96,146 @@ BOUNDED_CONTEXTS = [
 SCENARIOS = [
     {
         "id": "normal-checkout",
-        "available": True,
         "hold_active": True,
         "identity_verified": True,
         "command": "CheckoutAsset",
-        "event": "AssetCheckedOut",
+        "due_at": "2026-08-03T10:00:00Z",
         "expected": "checked-out",
     },
     {
         "id": "competing-reservation",
-        "available": False,
         "hold_active": True,
         "identity_verified": True,
         "command": "CheckoutAsset",
-        "event": "CheckoutRejected",
         "expected": "rejected-unavailable",
-    },
-    {
-        "id": "expired-hold",
-        "available": True,
-        "hold_active": False,
-        "identity_verified": True,
-        "command": "CheckoutAsset",
-        "event": "CheckoutRejected",
-        "expected": "rejected-expired-hold",
     },
     {
         "id": "normal-return",
         "command": "ReturnAsset",
-        "event": "LoanReturned",
-        "due_at": "2026-08-03T10:00:00Z",
         "returned_at": "2026-08-03T09:30:00Z",
         "expected": "accepted-on-time",
-        "policy_event": None,
+    },
+    {
+        "id": "expired-hold",
+        "hold_active": False,
+        "identity_verified": True,
+        "command": "CheckoutAsset",
+        "expected": "rejected-expired-hold",
+    },
+    {
+        "id": "overdue-checkout",
+        "hold_active": True,
+        "identity_verified": True,
+        "command": "CheckoutAsset",
+        "due_at": "2026-08-03T10:00:00Z",
+        "expected": "checked-out",
     },
     {
         "id": "overdue-return",
         "command": "ReturnAsset",
-        "event": "LoanReturned",
-        "due_at": "2026-08-03T10:00:00Z",
         "returned_at": "2026-08-03T10:30:00Z",
         "expected": "accepted-overdue",
-        "policy_event": "OverdueChargeAssessmentRequested",
     },
 ]
 
-def decide_checkout(scenario):
-    # 判定順を固定し、同じfixtureから同じ例外を再現できるようにする。
-    if not scenario["hold_active"]:
-        return "rejected-expired-hold"
-    if not scenario["available"]:
-        return "rejected-unavailable"
-    if not scenario["identity_verified"]:
-        return "rejected-identity"
-    return "checked-out"
+def state_name(asset):
+    return "available" if asset["active_loan"] is None else "checked-out"
 
-def observe_scenario(scenario):
-    if scenario["command"] == "ReturnAsset":
-        # UTC RFC 3339の同形式fixtureなので文字列順が時刻順と一致する。
-        overdue = scenario["returned_at"] > scenario["due_at"]
-        observed = "accepted-overdue" if overdue else "accepted-on-time"
-        policy_event = (
-            "OverdueChargeAssessmentRequested" if overdue else None
-        )
-        return {
-            "id": scenario["id"],
-            "command": scenario["command"],
-            "event": scenario["event"],
-            "expected": scenario["expected"],
-            "observed": observed,
+def checkout_asset(asset, scenario):
+    before = state_name(asset)
+    event = "CheckoutRejected"
+    # Holdの検証を先に置き、期限切れを在庫競合と誤分類しない。
+    if not scenario["hold_active"]:
+        observed = "rejected-expired-hold"
+    elif asset["active_loan"] is not None:
+        # 同じAssetのactive loanを状態として検査するから競合を反証できる。
+        observed = "rejected-unavailable"
+    elif not scenario["identity_verified"]:
+        observed = "rejected-identity"
+    else:
+        asset["active_loan"] = {
+            "checkout_id": scenario["id"],
             "due_at": scenario["due_at"],
-            "returned_at": scenario["returned_at"],
-            "policy_event": policy_event,
-            "asset_available_after": True,
         }
+        asset["active_loan_count"] += 1
+        observed = "checked-out"
+        event = "AssetCheckedOut"
     return {
         "id": scenario["id"],
+        "asset_id": asset["asset_id"],
         "command": scenario["command"],
-        "event": scenario["event"],
+        "event": event,
         "expected": scenario["expected"],
-        "observed": decide_checkout(scenario),
+        "observed": observed,
+        "state_before": before,
+        "state_after": state_name(asset),
+        "active_loan_count": asset["active_loan_count"],
+    }
+
+def return_asset(asset, scenario):
+    before = state_name(asset)
+    assert asset["active_loan"] is not None
+    due_at = asset["active_loan"]["due_at"]
+    # 固定UTC fixtureでは同形式なので文字列順が時刻順と一致する。
+    overdue = scenario["returned_at"] > due_at
+    observed = "accepted-overdue" if overdue else "accepted-on-time"
+    policy_event = (
+        "OverdueChargeAssessmentRequested" if overdue else None
+    )
+    asset["active_loan"] = None
+    asset["active_loan_count"] -= 1
+    return {
+        "id": scenario["id"],
+        "asset_id": asset["asset_id"],
+        "command": scenario["command"],
+        "event": "LoanReturned",
+        "expected": scenario["expected"],
+        "observed": observed,
+        "due_at": due_at,
+        "returned_at": scenario["returned_at"],
+        "policy_event": policy_event,
+        "asset_available_after": state_name(asset) == "available",
+        "state_before": before,
+        "state_after": state_name(asset),
+        "active_loan_count": asset["active_loan_count"],
     }
 
 def main():
-    observed = [observe_scenario(scenario) for scenario in SCENARIOS]
+    asset = {
+        "asset_id": "camera-17",
+        "active_loan": None,
+        "active_loan_count": 0,
+    }
+    observed = []
+    for scenario in SCENARIOS:
+        if scenario["command"] == "CheckoutAsset":
+            result = checkout_asset(asset, scenario)
+        else:
+            result = return_asset(asset, scenario)
+        observed.append(result)
+
     scenarios_by_id = {item["id"]: item for item in observed}
     # Exact fixture identity is part of the lab evidence. The mutation test
     # proves a removed overdue case cannot leave a false-green report.
     assert set(scenarios_by_id) == {
         "normal-checkout",
         "competing-reservation",
-        "expired-hold",
         "normal-return",
+        "expired-hold",
+        "overdue-checkout",
         "overdue-return",
     }
+    max_active_loan_count = max(
+        item["active_loan_count"] for item in observed
+    )
     invariants = [
         {
             "name": "one-active-checkout-per-asset",
-            "passed": sum(
-                item["observed"] == "checked-out" for item in observed
-            ) == 1,
+            "passed": max_active_loan_count == 1,
+            "evidence": {
+                "asset_id": asset["asset_id"],
+                "max_active_loan_count": max_active_loan_count,
+            },
         },
         {
             "name": "checkout-requires-active-hold",
@@ -232,6 +272,14 @@ def main():
     ]
     assert all(item["expected"] == item["observed"] for item in observed)
     assert all(item["passed"] for item in invariants)
+    assert [item["active_loan_count"] for item in observed] == [
+        1,
+        1,
+        0,
+        0,
+        1,
+        0,
+    ]
 
     traceability = [
         {
@@ -275,6 +323,12 @@ def main():
         "glossary": GLOSSARY,
         "bounded_contexts": BOUNDED_CONTEXTS,
         "example_scenarios": observed,
+        "asset_state_machine": {
+            "asset_id": asset["asset_id"],
+            "state_trace": observed,
+            "max_active_loan_count": max_active_loan_count,
+            "final_state": state_name(asset),
+        },
         "exceptions": [
             {
                 "code": "asset-unavailable",
@@ -350,6 +404,7 @@ PY</code></pre>
     <li><strong>誤診:</strong> 要求が変わったのはwaterfallを採用しなかったからだ。<strong>反証:</strong> 要求工学は一括固定ではなく、発見、分析、仕様化、妥当性確認、管理を反復する。変更理由と影響を追跡できることが品質であり、変化ゼロが品質ではない。</li>
     <li><strong>誤診:</strong> 三つの境界づけられた文脈があるので三つのmicroserviceへ分割すればよい。<strong>反証:</strong> 文脈はモデルと言語の境界、microserviceは配置と運用の選択である。独立配置の費用、通信失敗、team能力を評価しない分割は根拠にならない。</li>
     <li><strong>失敗モード:</strong> 名詞だけを抽出し、時間、権限、失敗を動詞と状態遷移で確かめないと、例外が実装後まで隠れる。</li>
+    <li><strong>失敗モード:</strong> 貸出、競合、返却を独立した成功例として数えるだけでは、同じAssetの状態が操作間で保存されることを証明できない。識別子とstate traceを共有し、最大active loan数を履歴から計算する。</li>
     <li><strong>失敗モード:</strong> 未回答の規則を実装者が暗黙に決めると、コードが唯一の仕様になり、業務責任者が妥当性を検証できない。</li>
   </ul>
 </section>
