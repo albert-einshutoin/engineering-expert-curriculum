@@ -12,7 +12,7 @@
   <figure>
     <figcaption>オフライン操作を副作用と観測へ分ける契約経路</figcaption>
     <ol>
-      <li><strong>作成:</strong> clientは操作ID、冪等key、対象version、tenantを永続化する。</li>
+      <li><strong>作成:</strong> clientは操作ID、冪等key、対象version、tenantを永続化する。serverは認証済みprincipal、tenant、route、keyを保存scopeにする。</li>
       <li><strong>送信:</strong> serverはschema、意味、認証、認可を順に検査する。</li>
       <li><strong>適用:</strong> keyと操作結果を同じ耐久境界で記録し、状態を一度だけ進める。</li>
       <li><strong>応答:</strong> 現在時刻やtrace IDを含むresponseは試行ごとに違ってよい。</li>
@@ -21,7 +21,7 @@
       <li><strong>進化:</strong> 旧versionの利用状況を観測し、source、wire、意味の互換性を別々に判定する。</li>
     </ol>
   </figure>
-  <p>RFC 9110のmethod意味論は共通の土台だが、業務操作の副作用境界はapplicationが定義する。RFC 9457のProblem Detailsは機械可読な失敗の基本形を揃えるが、retry可否、field単位の違反、業務状態の回復方法はAPI契約で補う。type URIを識別子として使う場合も、本文取得に成功しなければ処理できない設計にはしない。</p>
+  <p>RFC 9110のmethod意味論は共通の土台だが、業務操作の副作用境界はapplicationが定義する。RFC 9457のProblem Detailsはtype、title、status、detail、instanceという標準memberを定義するが、RFC上これらは一律の必須memberではない。このAPIはtype、title、statusをprofileとして必須にし、detailとinstanceを任意にする。type URIを識別子として使う場合も、本文取得に成功しなければ処理できない設計にはしない。</p>
 </section>
 <section id="worked-example">
   <h2>動く例で考える</h2>
@@ -30,22 +30,31 @@
     <dt>前提</dt>
     <dd>field-7の端末は最大14日offlineになる。v1とv2は同じCompleteWorkコマンドを受け、tenant-aの主体だけがtenant-aの作業を完了できる。</dd>
     <dt>入力</dt>
-    <dd>operation-42をkey-42で初回送信し、response喪失後に同じkeyで再送する。任意field追加、必須field削除、enum拡張の3変更と、schema上正しい別tenant requestも与える。</dd>
+    <dd>operation-42をkey-42で初回送信し、response喪失後に同じscopeとpayloadで再送する。同じscopeとkeyでpayloadだけが異なる衝突、同じraw keyを使う別tenant、3種類の契約変更、schema上正しい別tenant requestも与える。</dd>
     <dt>操作</dt>
-    <dd>serverはkeyごとに業務効果を一度保存する。再送時は保存済み効果を再利用するが、responseのreceipt番号は更新する。構造検査と認可判定を独立に記録する。</dd>
+    <dd>serverはtenant、認証済みprincipal、route、keyとpayload SHA-256を業務効果と共に保存する。同じscopeでfingerprintが違えば409にし、別tenantなら独立した効果として処理する。注入したRFC 3339時計でresponse時刻を生成し、構造検査と認可判定を独立に記録する。</dd>
     <dt>観測</dt>
-    <dd>初回と再送のeffect countはともに1、responseは異なる。v1とv2を維持し、3状態遷移、5 memberのProblem Details、互換性3分類、schema validだがunauthorizedの反例をJSONへ出力する。</dd>
+    <dd>初回と再送のeffect countはともに1、response時刻は異なる。payload衝突ではeffectを増やさず、別tenantでは2件目を作る。v1とv2、3状態遷移、API profileのProblem Details、三軸の互換性分類、schema validだがunauthorizedの反例をJSONへ出力する。</dd>
     <dt>結論</dt>
-    <dd>同じ効果を再現できても同じresponseやexactly-once配送を証明したことにはならない。旧clientが未知enumを拒否するなら、schema上の追加でも意味的riskである。</dd>
+    <dd>同じ効果を再現できても同じresponseやexactly-once配送を証明したことにはならない。raw keyだけを共有せず認証scopeを分離し、payload取り違えを409にする。旧clientが未知enumを拒否するなら、schema上の追加でも意味的riskである。</dd>
   </dl>
   <pre><code>python3.13 - &lt;&lt;'PY'
+import hashlib
 import json
 
 HARNESS = "api_contract_lab_v1"
 SUPPORTED_VERSIONS = ["v1", "v2"]
+ROUTE = "POST /work-items/{id}:complete"
 
 def structurally_valid(request):
-    required = {"version", "operation_id", "idempotency_key", "tenant"}
+    required = {
+        "version",
+        "operation_id",
+        "idempotency_key",
+        "tenant",
+        "work_item_id",
+        "result",
+    }
     return (
         required.issubset(request)
         and request["version"] in SUPPORTED_VERSIONS
@@ -55,42 +64,162 @@ def structurally_valid(request):
 def authorized(request, principal):
     return request["tenant"] == principal["tenant"]
 
+def request_fingerprint(request):
+    payload = {
+        name: request[name]
+        for name in (
+            "version",
+            "operation_id",
+            "tenant",
+            "work_item_id",
+            "result",
+        )
+    }
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+class FixedClock:
+    def __init__(self, values):
+        self.values = list(values)
+        self.index = 0
+
+    def __call__(self):
+        if self.index >= len(self.values):
+            raise AssertionError("fixed clock exhausted")
+        value = self.values[self.index]
+        self.index += 1
+        return value
+
 class WorkService:
-    def __init__(self):
+    def __init__(self, clock):
         self.results = {}
         self.effect_count = 0
-        self.receipt_sequence = 0
         self.transitions = []
+        self.clock = clock
 
-    def complete(self, request):
-        key = request["idempotency_key"]
-        self.receipt_sequence += 1
-        if key not in self.results:
-            self.transitions.extend(
-                [
-                    {"from": "assigned", "to": "in-progress"},
-                    {"from": "in-progress", "to": "completed"},
-                    {"from": "completed", "to": "synced"},
-                ]
-            )
-            self.effect_count += 1
-            self.results[key] = {
-                "operation_id": request["operation_id"],
-                "state": "completed",
+    def complete(self, request, principal, route):
+        if not structurally_valid(request) or not authorized(request, principal):
+            raise ValueError("request failed validation or authorization")
+        storage_key = (
+            principal["tenant"],
+            principal["subject"],
+            route,
+            request["idempotency_key"],
+        )
+        scope = {
+            "tenant": principal["tenant"],
+            "principal": principal["subject"],
+            "route": route,
+            "idempotency_key": request["idempotency_key"],
+        }
+        fingerprint = request_fingerprint(request)
+        response_generated_at = self.clock()
+        stored = self.results.get(storage_key)
+        if stored is not None:
+            if stored["request_fingerprint"] != fingerprint:
+                return {
+                    "status": 409,
+                    "effect_applied": False,
+                    "effect_count": self.effect_count,
+                    "scope": scope,
+                    "request_fingerprint": fingerprint,
+                    "response_generated_at": response_generated_at,
+                    "problem_details": {
+                        "type": "urn:problem:idempotency-key-conflict",
+                        "title": "Idempotency key payload conflict",
+                        "status": 409,
+                    },
+                }
+            return {
+                "status": 200,
+                "effect_applied": False,
+                "effect": dict(stored["effect"]),
+                "effect_count": self.effect_count,
+                "scope": scope,
+                "request_fingerprint": fingerprint,
+                "response_generated_at": response_generated_at,
             }
-        # receiptは配送試行の観測なので、業務効果と分離して更新する。
+
+        self.transitions.extend(
+            [
+                {"from": "assigned", "to": "in-progress"},
+                {"from": "in-progress", "to": "completed"},
+                {"from": "completed", "to": "synced"},
+            ]
+        )
+        self.effect_count += 1
+        effect = {
+                "operation_id": request["operation_id"],
+                "work_item_id": request["work_item_id"],
+                "state": "completed",
+        }
+        self.results[storage_key] = {
+            "request_fingerprint": fingerprint,
+            "effect": effect,
+        }
         return {
-            "effect": dict(self.results[key]),
+            "status": 200,
+            "effect_applied": True,
+            "effect": dict(effect),
             "effect_count": self.effect_count,
-            "receipt": self.receipt_sequence,
+            "scope": scope,
+            "request_fingerprint": fingerprint,
+            "response_generated_at": response_generated_at,
         }
 
 def classify_change(change):
-    # 互換性の種類を潰さず、旧clientの意味解釈まで判断へ残す。
+    # source・wire・semanticを潰さず、旧client traceへ根拠を戻す。
     outcomes = {
-        "add_optional_field": "compatible",
-        "remove_required_field": "breaking",
-        "expand_enum": "semantic-risk",
+        "add_optional_field": {
+            "source": {
+                "compatible": True,
+                "evidence": "旧clientは未知fieldを読み飛ばす",
+            },
+            "wire": {
+                "compatible": True,
+                "evidence": "既存required fieldと型を維持する",
+            },
+            "semantic": {
+                "compatible": True,
+                "evidence": "省略時の既存意味を維持する",
+            },
+            "trace_id": "trace-add-optional",
+        },
+        "remove_required_field": {
+            "source": {
+                "compatible": False,
+                "evidence": "生成済みclientのaccessorが参照できない",
+            },
+            "wire": {
+                "compatible": False,
+                "evidence": "旧schemaがrequired field欠落を拒否する",
+            },
+            "semantic": {
+                "compatible": False,
+                "evidence": "旧clientが作業完了を判定できない",
+            },
+            "trace_id": "trace-remove-required",
+        },
+        "expand_enum": {
+            "source": {
+                "compatible": False,
+                "evidence": "網羅switchの旧clientが未知値を扱えない",
+            },
+            "wire": {
+                "compatible": True,
+                "evidence": "JSON stringとしては配送できる",
+            },
+            "semantic": {
+                "compatible": False,
+                "evidence": "未知状態を既定値へ誤変換する",
+            },
+            "trace_id": "trace-expand-enum",
+        },
     }
     return outcomes[change]
 
@@ -100,18 +229,50 @@ def main():
         "operation_id": "operation-42",
         "idempotency_key": "key-42",
         "tenant": "tenant-a",
+        "work_item_id": "work-42",
+        "result": "completed",
     }
     principal = {"subject": "field-7", "tenant": "tenant-a"}
     assert structurally_valid(request)
     assert authorized(request, principal)
 
-    service = WorkService()
-    initial = service.complete(request)
-    replay = service.complete(request)
+    clock = FixedClock(
+        [
+            "2026-08-01T09:00:00Z",
+            "2026-08-01T09:00:01Z",
+            "2026-08-01T09:00:02Z",
+            "2026-08-01T09:00:03Z",
+        ]
+    )
+    service = WorkService(clock)
+    initial = service.complete(request, principal, ROUTE)
+    replay = service.complete(request, principal, ROUTE)
     same_effect = initial["effect"] == replay["effect"]
     same_response = initial == replay
     assert initial["effect_count"] == replay["effect_count"] == 1
     assert same_effect and not same_response
+
+    conflicting_request = dict(request)
+    conflicting_request["operation_id"] = "operation-conflict"
+    conflicting_request["result"] = "cancelled"
+    conflict = service.complete(conflicting_request, principal, ROUTE)
+    assert conflict["status"] == 409
+    assert not conflict["effect_applied"]
+    assert conflict["effect_count"] == 1
+    assert conflict["request_fingerprint"] != initial["request_fingerprint"]
+
+    other_tenant_request = dict(request)
+    other_tenant_request["tenant"] = "tenant-b"
+    other_tenant_request["operation_id"] = "operation-tenant-b"
+    other_tenant_principal = {"subject": "field-7", "tenant": "tenant-b"}
+    other_tenant = service.complete(
+        other_tenant_request,
+        other_tenant_principal,
+        ROUTE,
+    )
+    assert other_tenant["effect_applied"]
+    assert other_tenant["effect_count"] == 2
+    assert other_tenant["effect"]["operation_id"] != initial["effect"]["operation_id"]
 
     cross_tenant = dict(request)
     cross_tenant["tenant"] = "tenant-b"
@@ -130,13 +291,29 @@ def main():
             "expand_enum",
         )
     }
-    problem_details = {
-        "type": "urn:problem:work-state-conflict",
-        "title": "Work state conflict",
-        "status": 409,
-        "detail": "completed work cannot return to assigned",
-        "instance": "urn:operation:operation-42",
-    }
+    offline_client_trace = [
+        {
+            "id": "trace-add-optional",
+            "client": "v1-field-device",
+            "observed": "unknown field ignored",
+        },
+        {
+            "id": "trace-remove-required",
+            "client": "v1-field-device",
+            "observed": "required result missing",
+        },
+        {
+            "id": "trace-expand-enum",
+            "client": "v1-field-device",
+            "observed": "unknown enum rejected",
+        },
+    ]
+    assert {
+        change["trace_id"] for change in compatibility.values()
+    } == {trace["id"] for trace in offline_client_trace}
+    assert initial["scope"] == replay["scope"]
+    assert initial["request_fingerprint"] == replay["request_fingerprint"]
+    assert initial["response_generated_at"] != replay["response_generated_at"]
     return {
         "harness": HARNESS,
         "fixture": "offline-field-client-v1",
@@ -147,9 +324,23 @@ def main():
             "same_effect": same_effect,
             "same_response": same_response,
             "exactly_once_claimed": False,
+            "payload_conflict": conflict,
+            "other_tenant": other_tenant,
         },
         "compatibility_cases": compatibility,
-        "problem_details": problem_details,
+        "offline_client_trace": offline_client_trace,
+        "problem_contract": {
+            "rfc_standard_members": [
+                "type",
+                "title",
+                "status",
+                "detail",
+                "instance",
+            ],
+            "rfc_members_are_optional": True,
+            "required_by_this_api": ["type", "title", "status"],
+            "optional_by_this_api": ["detail", "instance"],
+        },
         "authorization_boundary": boundary,
         "state_transitions": service.transitions,
         "offline_window_days": 14,
@@ -216,6 +407,6 @@ PY</code></pre>
 </section>
 <section id="sources-next">
   <h2>出典と次の学習</h2>
-  <p>HTTP method、status、表現の意味はRFC 9110を基準にする。interface記述はOpenAPI Specification v3.2.0、構造検証はJSON Schema Draft 2020-12のvalidation vocabulary、後方互換の変更分類はAIP-180、共通の失敗表現はRFC 9457へ照合する。いずれも業務意味と認可の設計を自動化するものではない。</p>
+  <p>HTTP method、status、表現の意味はRFC 9110を基準にする。interface記述はOpenAPI Specification v3.2.0、構造検証はJSON Schema Draft 2020-12のvalidation vocabulary、後方互換の変更分類はAIP-180、共通の失敗表現はRFC 9457へ照合する。Problem Detailsの標準memberはRFC上一律必須ではなく、必要な必須性はAPI profileで明示する。いずれも業務意味と認可の設計を自動化するものではない。</p>
   <p>次はcore-08で、契約を実現するmoduleの依存方向を変更理由から決め、代替案と撤回条件をADRへ残す。API versionを増やす前に、変更を局所化できるarchitectureかを検査する。</p>
 </section>

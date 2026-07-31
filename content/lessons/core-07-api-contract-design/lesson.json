@@ -79,9 +79,10 @@
     "artifact": "互換性、冪等性、失敗形式を含むAPI契約",
     "steps": [
       "v1とv2で共有する作業完了コマンド、状態遷移、認可境界を宣言する",
-      "同じ冪等keyを二度処理し、副作用回数が一のままresponse生成時刻が異なる証拠を記録する",
-      "任意field追加、必須field削除、enum拡張をsource、wire、意味の観点で分類する",
-      "RFC 9457のProblem Details必須memberだけを持つ失敗表現を生成する",
+      "tenant、認証済みprincipal、route、冪等keyをscopeとし、同じpayloadの再送と異なるpayload fingerprintの衝突を検証する",
+      "注入した固定RFC 3339時計で、副作用回数が一のままresponse生成時刻が異なる証拠を記録する",
+      "任意field追加、必須field削除、enum拡張をsource、wire、semanticの三軸で分類しoffline client traceへ結ぶ",
+      "RFC 9457の標準memberの任意性と、このAPI profileが必須にするmemberを分けたProblem Detailsを生成する",
       "schema上正しい別tenantのrequestを認可で拒否し、外部networkなしで三つ以上の状態遷移を検査する"
     ]
   },
