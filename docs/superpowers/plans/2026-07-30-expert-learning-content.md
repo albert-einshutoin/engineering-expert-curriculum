@@ -746,17 +746,39 @@ git commit -m "content: connect software design to trustworthy evidence"
   contracts. The NASA source is fixed exactly to the official H1
   `Appendix C: How to Write a Good Requirement` and direct page
   `https://www.nasa.gov/reference/appendix-c-how-to-write-a-good-requirement/`.
-- All 11 default and negative Build harness gates pass. The formal Task 4
-  quality command passes 94 tests, and
-  `python3.13 -m unittest discover -s tests` passes all 357 tests.
+- Residual-review RED commits `0d4d253`, `ffb1747`, and `1d66de0` then expose
+  independent-scenario state counting, ambiguous impact deltas, synthetic
+  evidence presented without provenance, partial rating anchors, and
+  unvalidated actor/identity/date relationships. GREEN commits `00b8dfd`,
+  `db732ca`, and `4f330a7` close those contracts.
+- The Build evidence is exactly 10 `unittest` methods, not 11 informal gates.
+  The five default harness methods are
+  `test_domain_model_harness_traces_rules_and_exceptions`,
+  `test_api_contract_harness_models_replay_and_evolution`,
+  `test_architecture_harness_exposes_dependencies_and_decision`,
+  `test_testing_harness_executes_red_green_refactor_and_mutation`, and
+  `test_threat_model_harness_links_assets_controls_and_verification`.
+  The five negative/adversarial methods are
+  `test_domain_model_rejects_overdue_return_trace_mutation`,
+  `test_api_contract_rejects_fingerprint_check_mutation`,
+  `test_api_contract_rejects_tenant_scope_mutation`,
+  `test_testing_harness_isolates_symlinks_and_ambient_tests`, and
+  `test_threat_model_rejects_disabled_validation_mutation`.
+- Those methods execute 21 explicit mutation cases: two state/trace source
+  mutations in core-06, two contract source mutations in core-07, two impact
+  data mutations in core-08, one production-code mutation in core-09, and
+  13 model plus one validator-source mutation in core-10. The core-09
+  adversarial method separately proves both symlink-victim preservation and
+  ambient-test exclusion. The formal Task 4 quality command passes 94 tests,
+  and `python3.13 -m unittest discover -s tests` passes all 357 tests.
 - Each of two independent repository-external builds contains 15 regular
-  artifacts, 14 HTML files, zero JavaScript files, and 474,022 bytes. The
+  artifacts, 14 HTML files, zero JavaScript files, and 483,484 bytes. The
   canonical aggregate algorithm rejects symlinks and non-regular entries,
   encodes every relative POSIX path as UTF-8, sorts those path bytes bytewise,
   then feeds, for every artifact in that order,
   `path bytes + NUL + ASCII decimal byte length + NUL + file bytes` directly
   into one SHA-256 state. Both builds produce
-  `9375b34c292c5596143f30baf367df374a271d4147a98acdc2d262213c30a4d4`.
+  `1314176da0c2f74f5b8246b80cacf423572fb8ad2373eba5e3c7f702745e346c`.
   No per-file-digest concatenation is used.
 - Security scans report zero unsafe HTML, secret, dangerous execution, or body
   external-URL patterns. The catalog remains exactly 1,140 items with SHA-256
