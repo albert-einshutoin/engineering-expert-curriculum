@@ -403,6 +403,8 @@ class CapstoneContractTests(unittest.TestCase):
                 "symbolic link",
             ):
                 load_capstones(root / "capstones")
+            (root / "capstones").unlink()
+            (root / "real-capstones").rename(root / "capstones")
 
             metadata = root / "lessons" / LESSON_IDS[0] / "lesson.json"
             document = json.loads(metadata.read_text(encoding="utf-8"))
@@ -426,7 +428,7 @@ class CapstoneContractTests(unittest.TestCase):
                 CurriculumValidationError,
                 "draft lessons cannot be referenced",
             ):
-                load_capstones(root / "real-capstones")
+                load_capstones(root / "capstones")
 
     def test_loader_rejects_parent_directory_rebinding(self) -> None:
         with TemporaryDirectory() as temporary:
