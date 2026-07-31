@@ -1363,7 +1363,7 @@ def test_lead(self) -> None:
 Run:
 
 ```bash
-python3 -m unittest tests.test_core_tracks.CoreTrackTests.test_lead -v
+python3.13 -m unittest tests.test_core_tracks.CoreTrackTests.test_lead -v
 ```
 
 Expected: five missing lessons.
@@ -1382,7 +1382,7 @@ first step.
 Run:
 
 ```bash
-python3 -m unittest \
+python3.13 -m unittest \
   tests.test_lesson_quality \
   tests.test_core_tracks.CoreTrackTests.test_lead \
   tests.test_lesson_rendering -v
