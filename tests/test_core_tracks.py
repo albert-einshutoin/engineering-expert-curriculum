@@ -558,7 +558,7 @@ HUMAN_PRODUCT_SOURCES = {
     ),
 }
 SUSTAIN_SOURCES = {
-    "core-21-legacy-systems-maintenance": (
+    "core-21-maintenance-legacy-comprehension": (
         (
             "Guide to the Software Engineering Body of Knowledge "
             "(SWEBOK Guide), Version 4.0a, September 2025",
@@ -584,7 +584,7 @@ SUSTAIN_SOURCES = {
             "peer-reviewed",
         ),
     ),
-    "core-22-database-schema-migration": (
+    "core-22-evolution-safe-migrations": (
         (
             "DORA Capability: Database change management "
             "(accessed 2026-07-31)",
@@ -623,7 +623,7 @@ SUSTAIN_SOURCES = {
             "primary",
         ),
     ),
-    "core-24-delivery-ci-supply-chain": (
+    "core-24-delivery-ci-release-safety": (
         (
             "SLSA Specification Version 1.2 (Approved)",
             "https://slsa.dev/spec/v1.2/",
@@ -648,7 +648,7 @@ SUSTAIN_SOURCES = {
             "standard",
         ),
     ),
-    "core-25-engineering-economics": (
+    "core-25-engineering-economics-capacity": (
         (
             "FinOps Framework Capability: Unit Economics "
             "(accessed 2026-07-31)",
@@ -883,7 +883,7 @@ HUMAN_PRODUCT_ASSUMPTIONS = {
     "core-20-ethics-privacy-societal-impact": "affected-population",
 }
 SUSTAIN = {
-    "core-21-legacy-systems-maintenance": {
+    "core-21-maintenance-legacy-comprehension": {
         "prerequisites": (
             "core-08-modularity-evolutionary-architecture",
             "core-09-test-strategy-tdd",
@@ -896,11 +896,11 @@ SUSTAIN = {
             "同じlegacy fixtureの影響経路、未知領域、特性テストを再構成する"
         ),
     },
-    "core-22-database-schema-migration": {
+    "core-22-evolution-safe-migrations": {
         "prerequisites": (
             "core-08-modularity-evolutionary-architecture",
             "core-12-transactions-isolation-consistency",
-            "core-21-legacy-systems-maintenance",
+            "core-21-maintenance-legacy-comprehension",
         ),
         "artifact": (
             "expand-contract段階、観測、停止、ロールバックを含む移行計画"
@@ -913,7 +913,7 @@ SUSTAIN = {
     "core-23-incident-response-learning": {
         "prerequisites": (
             "core-15-reliability-observability-slo",
-            "core-21-legacy-systems-maintenance",
+            "core-21-maintenance-legacy-comprehension",
         ),
         "artifact": (
             "影響、意思決定、証拠、寄与要因、検証可能な対策を含むレビュー"
@@ -923,7 +923,7 @@ SUSTAIN = {
             "学習行動を再評価する"
         ),
     },
-    "core-24-delivery-ci-supply-chain": {
+    "core-24-delivery-ci-release-safety": {
         "prerequisites": (
             "core-09-test-strategy-tdd",
             "core-15-reliability-observability-slo",
@@ -936,11 +936,11 @@ SUSTAIN = {
             "段階配信のadvance・rollback判断を再評価する"
         ),
     },
-    "core-25-engineering-economics": {
+    "core-25-engineering-economics-capacity": {
         "prerequisites": (
             "core-14-performance-capacity",
             "core-15-reliability-observability-slo",
-            "core-24-delivery-ci-supply-chain",
+            "core-24-delivery-ci-release-safety",
         ),
         "artifact": (
             "機会費用、運用時間、信頼性、容量を含む投資比較"
@@ -952,18 +952,18 @@ SUSTAIN = {
     },
 }
 SUSTAIN_ASSUMPTIONS = {
-    "core-21-legacy-systems-maintenance": "change-request",
-    "core-22-database-schema-migration": "backfill-error-rate",
+    "core-21-maintenance-legacy-comprehension": "change-request",
+    "core-22-evolution-safe-migrations": "backfill-error-rate",
     "core-23-incident-response-learning": "detection-delay",
-    "core-24-delivery-ci-supply-chain": "canary-error-rate",
-    "core-25-engineering-economics": "demand-growth",
+    "core-24-delivery-ci-release-safety": "canary-error-rate",
+    "core-25-engineering-economics-capacity": "demand-growth",
 }
 SUSTAIN_HARNESSES = {
-    "core-21-legacy-systems-maintenance": (
+    "core-21-maintenance-legacy-comprehension": (
         "legacy_comprehension_lab_v1",
         "synthetic",
     ),
-    "core-22-database-schema-migration": (
+    "core-22-evolution-safe-migrations": (
         "migration_state_machine_lab_v1",
         "simulated",
     ),
@@ -971,15 +971,21 @@ SUSTAIN_HARNESSES = {
         "incident_learning_review_lab_v1",
         "simulated",
     ),
-    "core-24-delivery-ci-supply-chain": (
+    "core-24-delivery-ci-release-safety": (
         "delivery_safety_lab_v1",
         "simulated",
     ),
-    "core-25-engineering-economics": (
+    "core-25-engineering-economics-capacity": (
         "engineering_economics_lab_v1",
         "synthetic",
     ),
 }
+DEPRECATED_SUSTAIN_IDS = (
+    "core-21-legacy-systems-maintenance",
+    "core-22-database-schema-migration",
+    "core-24-delivery-ci-supply-chain",
+    "core-25-engineering-economics",
+)
 
 
 class _BodyContractParser(HTMLParser):
@@ -1728,6 +1734,15 @@ class CoreTrackTests(unittest.TestCase):
             source_contract=SUSTAIN_SOURCES,
         )
 
+    def test_sustain_uses_only_canonical_lesson_ids(self) -> None:
+        lessons_root = REPOSITORY_ROOT / "content" / "lessons"
+        for deprecated_id in DEPRECATED_SUSTAIN_IDS:
+            with self.subTest(deprecated_id=deprecated_id):
+                self.assertFalse(
+                    (lessons_root / deprecated_id).exists(),
+                    f"deprecated Sustain lesson id: {deprecated_id}",
+                )
+
     def test_foundation_bodies_follow_semantic_contract(self) -> None:
         for lesson_id in FOUNDATIONS:
             with self.subTest(lesson_id=lesson_id):
@@ -1762,14 +1777,14 @@ class CoreTrackTests(unittest.TestCase):
         self,
     ) -> None:
         required_markers = {
-            "core-21-legacy-systems-maintenance": (
+            "core-21-maintenance-legacy-comprehension": (
                 "SWEBOK Guide Version 4.0a",
                 "ISO/IEC/IEEE 14764:2022",
                 "program comprehension",
                 "characterization test",
                 "unknown",
             ),
-            "core-22-database-schema-migration": (
+            "core-22-evolution-safe-migrations": (
                 "expand",
                 "dual write",
                 "backfill",
@@ -1785,7 +1800,7 @@ class CoreTrackTests(unittest.TestCase):
                 "non-blaming",
                 "verifiable action",
             ),
-            "core-24-delivery-ci-supply-chain": (
+            "core-24-delivery-ci-release-safety": (
                 "SLSA v1.2",
                 "Approved",
                 "NIST SSDF 1.1",
@@ -1794,7 +1809,7 @@ class CoreTrackTests(unittest.TestCase):
                 "provenance presence alone",
                 "rollback outcome",
             ),
-            "core-25-engineering-economics": (
+            "core-25-engineering-economics-capacity": (
                 "FinOps Framework",
                 "unit economics",
                 "opportunity cost",
@@ -4995,7 +5010,7 @@ class CoreTrackTests(unittest.TestCase):
                 )
 
     def test_legacy_harness_maps_change_before_editing(self) -> None:
-        lesson_id = "core-21-legacy-systems-maintenance"
+        lesson_id = "core-21-maintenance-legacy-comprehension"
         report = self.run_python_harness(
             lesson_id,
             "legacy_comprehension_lab_v1",
@@ -5032,7 +5047,7 @@ class CoreTrackTests(unittest.TestCase):
 
     def test_legacy_harness_rejects_affected_path_bypass(self) -> None:
         self.assert_causal_harness_source_mutation_fails(
-            "core-21-legacy-systems-maintenance",
+            "core-21-maintenance-legacy-comprehension",
             "legacy_comprehension_lab_v1",
             "affected_path = trace_execution(FIXTURE, change_request)",
             "affected_path = []",
@@ -5042,7 +5057,7 @@ class CoreTrackTests(unittest.TestCase):
     def test_migration_harness_models_expand_contract_state_machine(
         self,
     ) -> None:
-        lesson_id = "core-22-database-schema-migration"
+        lesson_id = "core-22-evolution-safe-migrations"
         report = self.run_python_harness(
             lesson_id,
             "migration_state_machine_lab_v1",
@@ -5076,7 +5091,7 @@ class CoreTrackTests(unittest.TestCase):
 
     def test_migration_harness_rejects_stop_decision_bypass(self) -> None:
         self.assert_causal_harness_source_mutation_fails(
-            "core-22-database-schema-migration",
+            "core-22-evolution-safe-migrations",
             "migration_state_machine_lab_v1",
             "decision = decide_migration(observation, thresholds)",
             'decision = "continue"',
@@ -5138,7 +5153,7 @@ class CoreTrackTests(unittest.TestCase):
     def test_delivery_harness_fails_closed_and_verifies_provenance(
         self,
     ) -> None:
-        lesson_id = "core-24-delivery-ci-supply-chain"
+        lesson_id = "core-24-delivery-ci-release-safety"
         report = self.run_python_harness(
             lesson_id,
             "delivery_safety_lab_v1",
@@ -5182,7 +5197,7 @@ class CoreTrackTests(unittest.TestCase):
         self,
     ) -> None:
         self.assert_causal_harness_source_mutation_fails(
-            "core-24-delivery-ci-supply-chain",
+            "core-24-delivery-ci-release-safety",
             "delivery_safety_lab_v1",
             (
                 "provenance_verified = "
@@ -5195,7 +5210,7 @@ class CoreTrackTests(unittest.TestCase):
     def test_economics_harness_compares_input_derived_investments(
         self,
     ) -> None:
-        lesson_id = "core-25-engineering-economics"
+        lesson_id = "core-25-engineering-economics-capacity"
         report = self.run_python_harness(
             lesson_id,
             "engineering_economics_lab_v1",
@@ -5243,7 +5258,7 @@ class CoreTrackTests(unittest.TestCase):
 
     def test_economics_harness_rejects_total_cost_bypass(self) -> None:
         self.assert_causal_harness_source_mutation_fails(
-            "core-25-engineering-economics",
+            "core-25-engineering-economics-capacity",
             "engineering_economics_lab_v1",
             (
                 "total_cost = direct_cost + opportunity_cost + "
