@@ -8,13 +8,13 @@
 </section>
 <section id="mental-model">
   <h2>メンタルモデル</h2>
-  <p>最初にclockとevidence IDを揃え、何がいつ観測されたかだけを並べる。次にdetectionとrecoveryの入力からimpactを算出し、当時のdecisionをその時点までに利用可能だったevidenceへ結ぶ。contributing factorは個人の性質ではなく、alert、権限、interface、容量、変更境界など変更可能なsystem conditionとして記述する。</p>
+  <p>最初にclockとevidence IDを揃え、何がいつ観測されたかだけを並べる。次にincident startからdetectionまでを未緩和のpre-detection impact、incident startからrecoveryまでをtotal durationとして別々に算出し、当時のdecisionをその時点までに利用可能だったevidenceへ結ぶ。contributing factorは個人の性質ではなく、alert、権限、interface、容量、変更境界など変更可能なsystem conditionとして記述する。</p>
   <figure>
     <figcaption>incident evidenceを検証可能な学習へ変えるreview chain</figcaption>
     <ol>
       <li><strong>Evidence:</strong> timestamp、source、観測値、evidence IDを固定する。</li>
       <li><strong>Timeline:</strong> clockを揃えて観測事実を時刻順に並べる。</li>
-      <li><strong>Impact:</strong> detection、recovery、affected rateから利用者影響を導く。</li>
+      <li><strong>Impact:</strong> incident startからdetectionまでの未緩和時間とaffected rateから検知遅延の影響を導く。</li>
       <li><strong>Decision:</strong> 当時利用可能だったevidenceと判断を結ぶ。</li>
       <li><strong>Factor:</strong> 複数のsystem conditionと反証可能な仮説を残す。</li>
       <li><strong>Action:</strong> owner、due、verification、evidenceで完了を定義する。</li>
@@ -29,11 +29,11 @@
     <dt>前提</dt>
     <dd>lesson-defined simulated incidentであり、実利用者、実組織、production logを観測したものではない。限られたevidenceでreview構造とimpact導出を検査するfixtureである。</dd>
     <dt>入力</dt>
-    <dd>順序を崩した四つのevidence event、baseline detection minute、recovery minute、毎分のaffected request数、二つのdecision、system condition、action定義を与える。</dd>
+    <dd>順序を崩した四つのevidence event、incident start minute、baseline detection minute、recovery minute、毎分のaffected request数、二つのdecision、system condition、action定義と観測済みverification resultを与える。</dd>
     <dt>操作</dt>
-    <dd>eventをminute順に並べ、recoveryからdetectionを引いてimpact durationを算出する。decisionとactionのevidence IDがtimeline内に存在することをfail closedで検査する。</dd>
+    <dd>eventをminute順に並べ、detectionからincident startを引いて未緩和のpre-detection impactを算出する。decisionとactionのevidence IDがtimeline内に存在し、actionのverificationが実際にobserved system outcomeを持つことをfail closedで検査する。</dd>
     <dt>観測</dt>
-    <dd>detection minuteだけを変えると同じincident evidenceでもimpact minutesが増える。impact式をrecovery minuteだけへ差し替えるとincident-causal-invariantが検知する。</dd>
+    <dd>baselineのdetection minuteは10、transferは18であり、検知が8分遅れると同じincident evidenceでも未緩和のimpact minutesが増える。impact式をrecovery minuteだけへ差し替えるとincident-causal-invariantが検知する。</dd>
     <dt>結論</dt>
     <dd>command successだけではreviewは完了しない。impact、evidence-linked decision、non-blamingなsystem condition、verifiable actionが揃い、その後のsystem outcomeで対策を検証できることが学習証拠になる。</dd>
   </dl>
@@ -72,12 +72,13 @@ INCIDENT_EVIDENCE = [
     },
 ]
 BASELINE_ASSUMPTION = {
-    "detection_minute": 18,
-}
-TRANSFER_ASSUMPTION = {
     "detection_minute": 10,
 }
+TRANSFER_ASSUMPTION = {
+    "detection_minute": 18,
+}
 IMPACT_INPUT = {
+    "incident_start_minute": 0,
     "recovery_minute": 48,
     "affected_requests_per_minute": 24,
 }
@@ -119,6 +120,11 @@ ACTION_INPUTS = [
         "verification": (
             "inject saturation signal and observe checkout on-call receipt"
         ),
+        "verification_observation": {
+            "observed": True,
+            "expected_outcome": "checkout-on-call-received",
+            "actual_outcome": "checkout-on-call-received",
+        },
         "evidence_ids": ["ev-saturation"],
     },
     {
@@ -128,17 +134,89 @@ ACTION_INPUTS = [
         "verification": (
             "replay pool-change fixture and require saturation rollback"
         ),
+        "verification_observation": {
+            "observed": True,
+            "expected_outcome": "rollback-triggered",
+            "actual_outcome": "rollback-triggered",
+        },
         "evidence_ids": ["ev-change", "ev-mitigation"],
     },
 ]
 
-def derive_impact(detection_minute, recovery_minute, affected_rate):
-    impact_minutes = recovery_minute - detection_minute
-    # 単純な出力置換を見逃さないよう、元入力へ戻せる加法不変条件で
-    # impactの因果を検査する。
+def materialize_action(source):
+    observation = source["verification_observation"]
+    system_outcome = (
+        observation["observed"]
+        and observation["actual_outcome"]
+        == observation["expected_outcome"]
+    )
+    return {
+        "action_id": source["action_id"],
+        "owner": source["owner"],
+        "due": source["due"],
+        "verification": source["verification"],
+        "evidence_ids": list(source["evidence_ids"]),
+        "verification_result": {
+            "observed": observation["observed"],
+            "expected_outcome": observation["expected_outcome"],
+            "actual_outcome": observation["actual_outcome"],
+            "system_outcome": system_outcome,
+        },
+    }
+
+def fixed_incident_evidence():
+    # baselineとtransferで同じ証拠を別objectとして構成し、同一参照を
+    # 比較してfalse greenになることを防ぐ。
+    return {
+        "timeline": sorted(
+            [
+                {
+                    "evidence_id": event["evidence_id"],
+                    "minute": event["minute"],
+                    "source": event["source"],
+                    "observation": event["observation"],
+                }
+                for event in INCIDENT_EVIDENCE
+            ],
+            key=lambda event: event["minute"],
+        ),
+        "decisions": [
+            {
+                "decision": decision["decision"],
+                "minute": decision["minute"],
+                "evidence_ids": list(decision["evidence_ids"]),
+            }
+            for decision in DECISION_INPUTS
+        ],
+        "factors": [
+            {
+                "factor_id": factor["factor_id"],
+                "system_condition": factor["system_condition"],
+                "individual_blame": factor["individual_blame"],
+                "evidence_ids": list(factor["evidence_ids"]),
+            }
+            for factor in FACTOR_INPUTS
+        ],
+        "actions": [
+            materialize_action(action)
+            for action in ACTION_INPUTS
+        ],
+    }
+
+def derive_impact(
+    detection_minute,
+    incident_start_minute,
+    recovery_minute,
+    affected_rate,
+):
+    impact_minutes = detection_minute - incident_start_minute
+    total_incident_minutes = recovery_minute - incident_start_minute
+    # 未緩和時間を元入力へ戻せる加法不変条件で検査し、recovery値を
+    # impactへ直接流す置換を検知する。
     if (
         impact_minutes &lt;= 0
-        or impact_minutes + detection_minute != recovery_minute
+        or impact_minutes + incident_start_minute != detection_minute
+        or total_incident_minutes &lt; impact_minutes
     ):
         raise AssertionError(
             "incident-causal-invariant: impact derivation bypassed"
@@ -146,6 +224,8 @@ def derive_impact(detection_minute, recovery_minute, affected_rate):
     return {
         "duration_minutes": impact_minutes,
         "affected_requests": impact_minutes * affected_rate,
+        "total_incident_duration_minutes": total_incident_minutes,
+        "semantics": "unmitigated-pre-detection-impact",
     }
 
 def validate_evidence_links(items, evidence_ids, item_kind):
@@ -158,35 +238,51 @@ def validate_evidence_links(items, evidence_ids, item_kind):
             )
 
 def main():
-    timeline = sorted(
-        INCIDENT_EVIDENCE,
-        key=lambda event: event["minute"],
-    )
+    baseline_evidence = fixed_incident_evidence()
+    transferred_evidence = fixed_incident_evidence()
+    if baseline_evidence != transferred_evidence:
+        raise AssertionError(
+            "incident-transfer-invariant: fixed evidence drifted"
+        )
+    timeline = baseline_evidence["timeline"]
+    decisions = baseline_evidence["decisions"]
+    factors = baseline_evidence["factors"]
+    actions = baseline_evidence["actions"]
     evidence_ids = {
         event["evidence_id"]
         for event in timeline
     }
-    validate_evidence_links(DECISION_INPUTS, evidence_ids, "decision")
-    validate_evidence_links(FACTOR_INPUTS, evidence_ids, "factor")
-    validate_evidence_links(ACTION_INPUTS, evidence_ids, "action")
+    validate_evidence_links(decisions, evidence_ids, "decision")
+    validate_evidence_links(factors, evidence_ids, "factor")
+    validate_evidence_links(actions, evidence_ids, "action")
     if (
-        len(FACTOR_INPUTS) &lt; 2
+        len(factors) &lt; 2
         or not all(
             factor["system_condition"]
             and not factor["individual_blame"]
-            for factor in FACTOR_INPUTS
+            for factor in factors
         )
     ):
         raise AssertionError(
             "incident-causal-invariant: non-blaming factors missing"
         )
+    if not all(
+        action["verification_result"]["observed"]
+        and action["verification_result"]["system_outcome"]
+        for action in actions
+    ):
+        raise AssertionError(
+            "incident-action-outcome-invariant: outcome not observed"
+        )
     baseline = derive_impact(
         BASELINE_ASSUMPTION["detection_minute"],
+        IMPACT_INPUT["incident_start_minute"],
         IMPACT_INPUT["recovery_minute"],
         IMPACT_INPUT["affected_requests_per_minute"],
     )
     transferred = derive_impact(
         TRANSFER_ASSUMPTION["detection_minute"],
+        IMPACT_INPUT["incident_start_minute"],
         IMPACT_INPUT["recovery_minute"],
         IMPACT_INPUT["affected_requests_per_minute"],
     )
@@ -219,33 +315,37 @@ def main():
         "runtime_bound": {
             "records": (
                 len(INCIDENT_EVIDENCE)
-                + len(DECISION_INPUTS)
-                + len(FACTOR_INPUTS)
-                + len(ACTION_INPUTS)
+                + len(decisions)
+                + len(factors)
+                + len(actions)
             ),
             "subprocesses": 0,
             "maximum_iterations": (
                 len(INCIDENT_EVIDENCE)
-                + len(DECISION_INPUTS)
-                + len(FACTOR_INPUTS)
-                + len(ACTION_INPUTS)
+                + len(decisions)
+                + len(factors)
+                + len(actions)
             ),
         },
         "external_network_used": False,
         "evidence_timeline": timeline,
         "impact": baseline,
-        "decisions": DECISION_INPUTS,
-        "contributing_factors": FACTOR_INPUTS,
-        "verifiable_actions": ACTION_INPUTS,
+        "decisions": decisions,
+        "contributing_factors": factors,
+        "verifiable_actions": actions,
         "detection_delay_transfer": {
             "changed_assumption": "detection-delay",
             "changed_fields": changed_fields,
             "same_incident_evidence": (
-                timeline
-                == sorted(
-                    INCIDENT_EVIDENCE,
-                    key=lambda event: event["minute"],
-                )
+                baseline_evidence == transferred_evidence
+            ),
+            "baseline_incident_evidence": baseline_evidence,
+            "transferred_incident_evidence": transferred_evidence,
+            "baseline_detection_minute": (
+                BASELINE_ASSUMPTION["detection_minute"]
+            ),
+            "transferred_detection_minute": (
+                TRANSFER_ASSUMPTION["detection_minute"]
             ),
             "baseline_impact_minutes": baseline["duration_minutes"],
             "transferred_impact_minutes": (
@@ -258,7 +358,11 @@ def main():
                 baseline["affected_requests"] &gt; 0
                 and transferred["affected_requests"]
                 &gt; baseline["affected_requests"]
-                and all(action["verification"] for action in ACTION_INPUTS)
+                and all(
+                    action["verification_result"]["observed"]
+                    and action["verification_result"]["system_outcome"]
+                    for action in actions
+                )
             ),
             "command_success_equals_system_outcome": False,
             "outcome_evidence": (
@@ -268,12 +372,12 @@ def main():
         "mastery_evidence": {
             "lab_steps": [
                 {"step": 1, "evidence": timeline},
-                {"step": 2, "evidence": FACTOR_INPUTS + ACTION_INPUTS},
+                {"step": 2, "evidence": factors + actions},
                 {"step": 3, "evidence": transferred},
             ],
             "assessments": [
-                {"assessment": 1, "evidence": FACTOR_INPUTS},
-                {"assessment": 2, "evidence": ACTION_INPUTS},
+                {"assessment": 1, "evidence": factors},
+                {"assessment": 2, "evidence": actions},
             ],
             "rubric_dimensions": [
                 "technical-correctness",
