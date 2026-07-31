@@ -2072,7 +2072,7 @@ git commit -m "content: prove expertise through integrated capstones"
   with CPython 3.13. Two repository-external builds each contain 40 artifacts,
   39 HTML files, four capstone pages, and zero JavaScript files; both have the
   canonical aggregate SHA-256
-  `ad89009277b65e7be1030b32917844837db643ccb857bdc47f47a0247e07744e`.
+  `ca90b2453c203c8245fb4592b33399b297b71089a477d62cb795a0162e880c11`.
 - Chromium generated tagged, JavaScript-free, Letter PDFs of six pages for
   each of the three briefs. PDFKit extraction finds all 30 primary-exercise
   markers and all 46 reinforcement markers. Full 18-page Poppler raster review
