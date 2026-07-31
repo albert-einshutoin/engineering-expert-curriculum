@@ -183,6 +183,17 @@ class CapstoneContractTests(unittest.TestCase):
                 with self.assertRaises(CurriculumValidationError):
                     _parse(documents)
 
+        invalid_documents: dict[object, object] = dict(_documents())
+        invalid_documents[1] = invalid_documents.pop("global-service.json")
+        with self.assertRaisesRegex(
+            CurriculumValidationError,
+            "names and snapshots have invalid types",
+        ):
+            parse_capstone_documents(  # type: ignore[arg-type]
+                invalid_documents,
+                expected_lesson_ids=frozenset(LESSON_IDS),
+            )
+
     def test_duplicate_json_keys_at_root_and_nested_fail_closed(self) -> None:
         documents = _documents()
         valid = documents["global-service.json"].decode("utf-8")
