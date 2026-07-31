@@ -5905,13 +5905,13 @@ class CoreTrackTests(unittest.TestCase):
             (
                 "baseline = compare_all(\n"
                 "        baseline_candidates,\n"
-                "        BASELINE_ASSUMPTIONS,\n"
+                "        baseline_assumptions,\n"
                 "    )"
             ),
             (
                 "baseline = compare_all(\n"
                 "        baseline_candidates,\n"
-                "        BASELINE_ASSUMPTIONS,\n"
+                "        baseline_assumptions,\n"
                 "    )\n"
                 '    transferred_candidates[0]["direct_cost"] += 1'
             ),

@@ -49,7 +49,9 @@ BASELINE_ASSUMPTIONS = {
     "loss_per_incident_hour": 10000,
 }
 TRANSFER_ASSUMPTIONS = {
-    **BASELINE_ASSUMPTIONS,
+    "engineering_hour_value": 100,
+    "operations_hour_cost": 80,
+    "loss_per_incident_hour": 10000,
     "demand_growth": 0.5,
 }
 INVESTMENT_CANDIDATES = [
@@ -239,13 +241,20 @@ def main():
         BASELINE_ASSUMPTIONS,
         TRANSFER_ASSUMPTIONS,
     )
+    validate_candidate_snapshot(INVESTMENT_CANDIDATES)
+    baseline_assumptions = json.loads(
+        json.dumps(BASELINE_ASSUMPTIONS, ensure_ascii=False)
+    )
+    transferred_assumptions = json.loads(
+        json.dumps(TRANSFER_ASSUMPTIONS, ensure_ascii=False)
+    )
     baseline_candidates = fixed_candidate_snapshot()
     transferred_candidates = fixed_candidate_snapshot()
     validate_candidate_snapshot(baseline_candidates)
     validate_candidate_snapshot(transferred_candidates)
     baseline = compare_all(
         baseline_candidates,
-        BASELINE_ASSUMPTIONS,
+        baseline_assumptions,
     )
     if baseline_candidates != transferred_candidates:
         raise AssertionError(
@@ -253,7 +262,7 @@ def main():
         )
     transferred = compare_all(
         transferred_candidates,
-        TRANSFER_ASSUMPTIONS,
+        transferred_assumptions,
     )
     for option in baseline + transferred:
         component_sum = (
@@ -303,17 +312,17 @@ def main():
         "demand_growth_transfer": {
             "changed_assumption": "demand-growth",
             "changed_fields": changed_fields,
-            "baseline_assumptions": dict(BASELINE_ASSUMPTIONS),
-            "transferred_assumptions": dict(TRANSFER_ASSUMPTIONS),
+            "baseline_assumptions": baseline_assumptions,
+            "transferred_assumptions": transferred_assumptions,
             "same_investment_candidates": same_candidates,
             "baseline_candidate_snapshot": baseline_candidates,
             "transferred_candidate_snapshot": transferred_candidates,
             "baseline_selected_option": baseline_selected,
             "transferred_selected_option": transferred_selected,
-            "baseline_demand_growth": BASELINE_ASSUMPTIONS[
+            "baseline_demand_growth": baseline_assumptions[
                 "demand_growth"
             ],
-            "transferred_demand_growth": TRANSFER_ASSUMPTIONS[
+            "transferred_demand_growth": transferred_assumptions[
                 "demand_growth"
             ],
             "sensitivity_recomputed": sensitivity_recomputed,
@@ -335,7 +344,7 @@ def main():
         "runtime_bound": {
             "records": (
                 len(INVESTMENT_CANDIDATES)
-                * len([BASELINE_ASSUMPTIONS, TRANSFER_ASSUMPTIONS])
+                * len([baseline_assumptions, transferred_assumptions])
             ),
             "subprocesses": 0,
             "maximum_iterations": len(baseline_candidates),
