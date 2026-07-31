@@ -22,19 +22,32 @@ END = curriculum_map.END_GENERATED_MAP
 
 class MarkdownCellSafetyTests(unittest.TestCase):
     def test_hostile_markdown_and_html_are_rendered_as_plain_text(self) -> None:
-        source = r'<img src="https://example.invalid/x"> [link](https://example.invalid) `code` a|b \\ *em* ~strike~'
+        source = (
+            r'<img src="https://example.invalid/x"> '
+            r'[link](https://example.invalid) `code` a|b \\ *em* ~strike~'
+        )
 
         rendered = curriculum_map._markdown_cell(source)
 
         self.assertEqual(
             rendered,
-            r'&lt;img src="https://example.invalid/x"&gt; \[link\](https://example.invalid) \`code\` a\|b \\\\ \*em\* \~strike\~',
+            r'&lt;img src="https://example.invalid/x"&gt; '
+            r'\[link\](https://example.invalid) \`code\` a\|b '
+            r'\\\\ \*em\* \~strike\~',
         )
         self.assertNotIn("<img", rendered)
         self.assertNotIn("[link](", rendered)
 
     def test_control_characters_and_oversized_cells_fail_closed(self) -> None:
-        for character in ("\x00", "\t", "\n", "\r", "\u2028", "\u202e"):
+        for character in (
+            "\x00",
+            "\t",
+            "\n",
+            "\r",
+            "\u2028",
+            "\u202e",
+            "\ud800",
+        ):
             with self.subTest(character=ascii(character)):
                 with self.assertRaisesRegex(
                     CurriculumValidationError,
