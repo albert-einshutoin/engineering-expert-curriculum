@@ -2052,6 +2052,9 @@ tag:
 CURRENT_RELEASE_HEAD_SHA="$(gh pr view "$RELEASE_PR_URL" \
   --repo "$PUBLIC_REPOSITORY_SLUG" --json headRefOid --jq '.headRefOid')"
 test "$CURRENT_RELEASE_HEAD_SHA" = "${RELEASE_HEAD_SHA}"
+# Release metadata is reviewed for one UTC publication date. If this fails,
+# regenerate both metadata files on a new commit and repeat review before merge.
+test "$(date -u +%F)" = "$RELEASE_DATE"
 gh pr merge --merge --delete-branch --match-head-commit "${RELEASE_HEAD_SHA}" \
   --repo "$PUBLIC_REPOSITORY_SLUG" "$RELEASE_PR_URL"
 gh pr view "$RELEASE_PR_URL" --repo "$PUBLIC_REPOSITORY_SLUG" \
@@ -2099,6 +2102,9 @@ for workflow_name in "Validate" "CodeQL" "Gitleaks" "Deploy GitHub Pages"; do
   verify_workflow_run_for_sha "$workflow_name" "$RELEASE_MERGE_SHA"
 done
 
+# Workflow verification can cross UTC midnight. If this fails, stop before the
+# tag and merge a new release-metadata PR for the actual publication date.
+test "$(date -u +%F)" = "$RELEASE_DATE"
 git -C "$PUBLICATION_CLONE" \
   -c user.name="$PUBLIC_AUTHOR_NAME" \
   -c user.email="$PUBLIC_NOREPLY_EMAIL" \
