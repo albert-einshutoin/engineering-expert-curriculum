@@ -8,7 +8,7 @@
 </section>
 <section id="mental-model">
   <h2>メンタルモデル</h2>
-  <p>system boundaryを利用者の画面で止めず、直接利用者、非利用者、労働者、低accessibility環境の人、将来のデータ主体までaffected peopleを広げる。次にdata lifecycleをcollect、use、share、retain、deleteへ分け、各段階でpurpose、necessity、access、期限、異議申立てを検査する。</p>
+  <p>system boundaryを利用者の画面で止めず、直接利用者、非利用者、労働者、低accessibility環境の人、将来のデータ主体までaffected peopleを広げる。次にdata lifecycleをcollect、use、share、retain、deleteへ分け、各段階でapproved purpose、data class、necessity、allowed role、retention日数、delete SLA、削除可否を構造化して検査する。</p>
   <figure>
     <figcaption>affected peopleから残余riskの意思決定へ至るimpact chain</figcaption>
     <ol>
@@ -29,9 +29,9 @@
     <dt>前提</dt>
     <dd>勤務希望と過去実績から候補を提示するlesson-defined simulated scenarioを使う。数値は実在の人、組織、production modelを測定したものではない。</dd>
     <dt>入力</dt>
-    <dd>一般成人、低視力利用者、夜勤労働者についてlikelihood、severity、exposure、mitigation reductionを固定する。data lifecycleとrisk式は全集団で共通にする。</dd>
+    <dd>一般成人、低視力利用者、夜勤労働者についてlikelihood、severity、exposure、mitigation reductionを固定する。data lifecycleはpurpose、data class、role、retention、delete policyを構造化し、risk式とともに全集団で共通にする。</dd>
     <dt>操作</dt>
-    <dd>inherent riskを三入力の積で計算し、具体的なmitigation後のresidual riskを求める。最大、最小、gapからuneven harmを観測する。</dd>
+    <dd>過剰収集、publicまたは全role公開、無期限保持、削除無効をpolicy境界でfail closedにする。そのうえでinherent riskを三入力の積で計算し、具体的なmitigation後のresidual riskとuneven harmを求める。</dd>
     <dt>観測</dt>
     <dd>baselineの最大residual riskは低視力利用者へ偏る。transferで生活基盤への影響が大きい高リスク集団だけをaffected populationへ加えると、同じ式とmitigationでも最大残余riskが増える。</dd>
     <dt>結論</dt>
@@ -49,13 +49,56 @@ FRAMEWORKS = {
     "ai_risk": "NIST AI RMF 1.0",
 }
 DATA_LIFECYCLE = ["collect", "use", "share", "retain", "delete"]
-LIFECYCLE_FIXTURE = [
+LIFECYCLE_POLICY = {
+    "approved_purposes": {
+        "collect": "collect-availability-for-candidates",
+        "use": "generate-constraint-compatible-candidates",
+        "share": "present-candidates-and-reasons",
+        "retain": "support-appeals-and-bias-monitoring",
+        "delete": "make-expired-personal-data-unavailable",
+    },
+    "allowed_data_classes": {
+        "collect": ["availability-window"],
+        "use": ["availability-window"],
+        "share": ["candidate-result", "decision-reason"],
+        "retain": ["decision-reason", "group-aggregate"],
+        "delete": [
+            "availability-window",
+            "candidate-result",
+            "decision-reason",
+        ],
+    },
+    "allowed_roles": {
+        "collect": ["data-subject", "assignment-operator"],
+        "use": ["candidate-service"],
+        "share": ["site-assignment-operator"],
+        "retain": ["independent-reviewer", "privacy-owner"],
+        "delete": ["deletion-job", "audit-reviewer"],
+    },
+    "max_retention_days": {
+        "collect": 30,
+        "use": 1,
+        "share": 30,
+        "retain": 90,
+        "delete": 7,
+    },
+    "max_delete_sla_days": 7,
+    "forbidden_data_classes": [
+        "health-diagnosis",
+        "protected-trait",
+        "raw-biometric",
+    ],
+}
+LIFECYCLE_INPUTS = [
     {
         "phase": "collect",
-        "purpose": "勤務候補を作るため希望時間帯を受け取る",
-        "necessity": "候補生成に必要な時間帯だけを最小収集する",
-        "access": "本人と割当担当者",
-        "retention": "候補確定から30日以内に原入力を削除する",
+        "approved_purpose": "collect-availability-for-candidates",
+        "data_classes": ["availability-window"],
+        "necessity": True,
+        "allowed_roles": ["data-subject", "assignment-operator"],
+        "retention_days": 30,
+        "delete_sla_days": 7,
+        "deletion_enabled": True,
         "owner": "data-intake-owner",
         "harm_ids": [
             "harm-schedule-opportunity",
@@ -73,10 +116,13 @@ LIFECYCLE_FIXTURE = [
     },
     {
         "phase": "use",
-        "purpose": "制約を満たす勤務候補を計算する",
-        "necessity": "健康情報を順位特徴へ使わない",
-        "access": "候補生成serviceの限定role",
-        "retention": "候補確定時に用途外cacheを失効する",
+        "approved_purpose": "generate-constraint-compatible-candidates",
+        "data_classes": ["availability-window"],
+        "necessity": True,
+        "allowed_roles": ["candidate-service"],
+        "retention_days": 1,
+        "delete_sla_days": 7,
+        "deletion_enabled": True,
         "owner": "ranking-safety-owner",
         "harm_ids": [
             "harm-schedule-opportunity",
@@ -97,10 +143,13 @@ LIFECYCLE_FIXTURE = [
     },
     {
         "phase": "share",
-        "purpose": "担当者へ候補と理由を提示する",
-        "necessity": "候補判断に不要な個人属性を共有しない",
-        "access": "当該拠点の割当担当者",
-        "retention": "担当期間終了時に閲覧権限を失効する",
+        "approved_purpose": "present-candidates-and-reasons",
+        "data_classes": ["candidate-result", "decision-reason"],
+        "necessity": True,
+        "allowed_roles": ["site-assignment-operator"],
+        "retention_days": 30,
+        "delete_sla_days": 7,
+        "deletion_enabled": True,
         "owner": "workforce-access-owner",
         "harm_ids": [
             "harm-schedule-opportunity",
@@ -121,10 +170,13 @@ LIFECYCLE_FIXTURE = [
     },
     {
         "phase": "retain",
-        "purpose": "異議申立てと偏りmonitoringを可能にする",
-        "necessity": "決定根拠と集団別集計だけを保持する",
-        "access": "独立review担当とprivacy owner",
-        "retention": "90日後に削除または再承認する",
+        "approved_purpose": "support-appeals-and-bias-monitoring",
+        "data_classes": ["decision-reason", "group-aggregate"],
+        "necessity": True,
+        "allowed_roles": ["independent-reviewer", "privacy-owner"],
+        "retention_days": 90,
+        "delete_sla_days": 7,
+        "deletion_enabled": True,
         "owner": "privacy-risk-owner",
         "harm_ids": [
             "harm-history-lock-in",
@@ -140,10 +192,17 @@ LIFECYCLE_FIXTURE = [
     },
     {
         "phase": "delete",
-        "purpose": "目的を終えた個人データを利用不能にする",
-        "necessity": "法的保存義務のある最小記録だけを分離する",
-        "access": "削除jobと監査担当者",
-        "retention": "削除要求から7日以内に完了する",
+        "approved_purpose": "make-expired-personal-data-unavailable",
+        "data_classes": [
+            "availability-window",
+            "candidate-result",
+            "decision-reason",
+        ],
+        "necessity": True,
+        "allowed_roles": ["deletion-job", "audit-reviewer"],
+        "retention_days": 7,
+        "delete_sla_days": 7,
+        "deletion_enabled": True,
         "owner": "deletion-control-owner",
         "harm_ids": [
             "harm-schedule-opportunity",
@@ -162,6 +221,21 @@ LIFECYCLE_FIXTURE = [
         "verification": "再検索不能と削除receiptを確認する",
     },
 ]
+
+def derive_lifecycle_fixture(inputs):
+    # Policy-owned forbidden classes are attached during derivation so every
+    # phase is checked against one boundary rather than copied prose.
+    return [
+        {
+            **source,
+            "forbidden_data_classes": list(
+                LIFECYCLE_POLICY["forbidden_data_classes"]
+            ),
+        }
+        for source in inputs
+    ]
+
+LIFECYCLE_FIXTURE = derive_lifecycle_fixture(LIFECYCLE_INPUTS)
 BASELINE_IMPACT_FIXTURE = [
     {
         "affected_people": "general-adult-workers",
@@ -252,10 +326,14 @@ TRANSFER_TASK = (
 def validate_lifecycle(fixture):
     required_fields = {
         "phase",
-        "purpose",
+        "approved_purpose",
+        "data_classes",
         "necessity",
-        "access",
-        "retention",
+        "allowed_roles",
+        "retention_days",
+        "delete_sla_days",
+        "deletion_enabled",
+        "forbidden_data_classes",
         "owner",
         "harm_ids",
         "control_ids",
@@ -291,7 +369,51 @@ def validate_lifecycle(fixture):
         # recordで追跡する。
         assert set(source) == required_fields, "ethics-lifecycle-invariant"
         assert source["phase"] == expected_phase, "ethics-lifecycle-invariant"
-        assert all(source.values()), "ethics-lifecycle-invariant"
+        assert (
+            source["owner"]
+            and source["harm_ids"]
+            and source["control_ids"]
+            and source["residual_risk_ids"]
+            and source["verification"]
+        ), "ethics-lifecycle-invariant"
+        approved_data_classes = set(
+            LIFECYCLE_POLICY["allowed_data_classes"][expected_phase]
+        )
+        approved_roles = set(
+            LIFECYCLE_POLICY["allowed_roles"][expected_phase]
+        )
+        forbidden_data_classes = set(
+            LIFECYCLE_POLICY["forbidden_data_classes"]
+        )
+        data_classes = source["data_classes"]
+        allowed_roles = source["allowed_roles"]
+        assert (
+            type(source["approved_purpose"]) is str
+            and source["approved_purpose"]
+            == LIFECYCLE_POLICY["approved_purposes"][expected_phase]
+            and source["necessity"] is True
+            and type(data_classes) is list
+            and bool(data_classes)
+            and all(type(item) is str and item for item in data_classes)
+            and len(data_classes) == len(set(data_classes))
+            and set(data_classes) &lt;= approved_data_classes
+            and not set(data_classes) & forbidden_data_classes
+            and source["forbidden_data_classes"]
+            == LIFECYCLE_POLICY["forbidden_data_classes"]
+            and type(allowed_roles) is list
+            and bool(allowed_roles)
+            and all(type(role) is str and role for role in allowed_roles)
+            and len(allowed_roles) == len(set(allowed_roles))
+            and set(allowed_roles) &lt;= approved_roles
+            and not {"public", "all-roles"} & set(allowed_roles)
+            and type(source["retention_days"]) is int
+            and 0 &lt; source["retention_days"]
+            &lt;= LIFECYCLE_POLICY["max_retention_days"][expected_phase]
+            and type(source["delete_sla_days"]) is int
+            and 0 &lt; source["delete_sla_days"]
+            &lt;= LIFECYCLE_POLICY["max_delete_sla_days"]
+            and source["deletion_enabled"] is True
+        ), "ethics-lifecycle-policy-invariant"
         for reference_name, known_ids in known_references.items():
             source_ids = set(source[reference_name])
             assert source_ids &lt;= known_ids, "ethics-lifecycle-invariant"
@@ -396,6 +518,7 @@ def main():
         },
         "frameworks": FRAMEWORKS,
         "data_lifecycle": DATA_LIFECYCLE,
+        "lifecycle_policy": LIFECYCLE_POLICY,
         "data_lifecycle_assessment": lifecycle_assessment,
         "impact_assessment": baseline,
         "privacy_security_relation": {
