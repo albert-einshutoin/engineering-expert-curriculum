@@ -3,6 +3,7 @@ message: "If you use this curriculum, please cite it using this metadata."
 title: "Engineering Expert Curriculum"
 type: software
 version: "0.1.0"
+date-released: 2026-07-31
 authors:
   - name: "Engineering Expert Curriculum contributors"
 abstract: >-
