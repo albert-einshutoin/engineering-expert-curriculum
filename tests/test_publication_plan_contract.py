@@ -313,11 +313,146 @@ gh pr view "$PUBLIC_PR_URL" --repo "wrong/project" # --repo "$PUBLIC_REPOSITORY_
             "PREFLIGHT_PAYLOAD",
             "refs/heads/main",
             "refs/heads/feat/static-oss-curriculum",
+            'repository.slug=$PUBLIC_REPOSITORY_SLUG',
+            'repository.url=$PUBLIC_REPOSITORY',
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, verification)
                 self.assertIn(phrase, push)
         self.assertIn('test "$(cat "$PUBLICATION_PREFLIGHT_TOKEN")" = "$PREFLIGHT_PAYLOAD"', push)
+        remote_add = push.index(
+            'git -C "$PUBLICATION_CLONE" remote add public "$PUBLIC_REPOSITORY"'
+        )
+        remote_verify = push.index(
+            'test "$(git -C "$PUBLICATION_CLONE" remote get-url public)" = '
+            '"$PUBLIC_REPOSITORY"'
+        )
+        token_verify = push.index(
+            'test "$(cat "$PUBLICATION_PREFLIGHT_TOKEN")" = "$PREFLIGHT_PAYLOAD"'
+        )
+        actual_push = push.index('git -C "$PUBLICATION_CLONE" push --set-upstream public')
+        self.assertLess(remote_add, remote_verify)
+        self.assertLess(remote_verify, token_verify)
+        self.assertLess(token_verify, actual_push)
+
+    def test_repository_settings_are_applied_and_read_back_before_merge(self) -> None:
+        publication = _read(PUBLICATION_PLAN)
+        settings = publication.split(
+            "**Step 2: Configure repository metadata and protection**",
+            maxsplit=1,
+        )[1].split("**Step 3: Merge only the verified PR**", maxsplit=1)[0]
+        for phrase in (
+            'gh api --method PUT "repos/$PUBLIC_REPOSITORY_SLUG/actions/permissions"',
+            "sha_pinning_required=true",
+            'gh api "repos/$PUBLIC_REPOSITORY_SLUG/actions/permissions"',
+            'gh api --method PUT "repos/$PUBLIC_REPOSITORY_SLUG/actions/permissions/workflow"',
+            "default_workflow_permissions=read",
+            "can_approve_pull_request_reviews=false",
+            'gh api "repos/$PUBLIC_REPOSITORY_SLUG/actions/permissions/workflow"',
+            'gh api --method POST "repos/$PUBLIC_REPOSITORY_SLUG/pages"',
+            "build_type=workflow",
+            'gh api "repos/$PUBLIC_REPOSITORY_SLUG/pages"',
+            'gh api --method PUT "repos/$PUBLIC_REPOSITORY_SLUG/environments/github-pages"',
+            "custom_branch_policies",
+            'environments/github-pages/deployment-branch-policies',
+            '"main"',
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, settings)
+
+    def test_both_merges_are_bound_to_the_reviewed_head_commit(self) -> None:
+        publication = _read(PUBLICATION_PLAN).replace("\\\n", " ")
+        initial_merge = publication.split(
+            "**Step 3: Merge only the verified PR**",
+            maxsplit=1,
+        )[1].split("**Step 4: Verify Pages deployment and public site**", maxsplit=1)[0]
+        release_merge = publication.split(
+            "The release metadata PR now has its own Model B commit",
+            maxsplit=1,
+        )[1].split("**Step 6: Clean only the merged public feature branch**", maxsplit=1)[0]
+        for section, prefix, pr_url in (
+            (initial_merge, "PR", "$PUBLIC_PR_URL"),
+            (release_merge, "RELEASE", "$RELEASE_PR_URL"),
+        ):
+            reviewed = f"${{{prefix}_HEAD_SHA}}"
+            current = f"CURRENT_{prefix}_HEAD_SHA"
+            merge_sha = f"${{{prefix}_MERGE_SHA}}"
+            with self.subTest(prefix=prefix):
+                self.assertIn(f'{current}="$(gh pr view "{pr_url}"', section)
+                self.assertIn(f'test "${current}" = "{reviewed}"', section)
+                self.assertIn(f'--match-head-commit "{reviewed}"', section)
+                self.assertIn(
+                    f'test "$(git -C "$PUBLICATION_CLONE" rev-parse "{merge_sha}^2")" = "{reviewed}"',
+                    section,
+                )
+
+    def test_workflow_and_https_evidence_are_bound_to_each_merge_sha(self) -> None:
+        publication = _read(PUBLICATION_PLAN)
+        pages = publication.split(
+            "**Step 4: Verify Pages deployment and public site**",
+            maxsplit=1,
+        )[1].split(
+            "**Step 5: Materialize release metadata through a PR, then publish**",
+            maxsplit=1,
+        )[0]
+        for phrase in (
+            '--commit "$PUBLIC_MERGE_SHA"',
+            'gh run view "$PAGES_RUN_ID" --repo "$PUBLIC_REPOSITORY_SLUG"',
+            '"$PUBLIC_MERGE_SHA:completed:success"',
+            "PUBLIC_HTTPS_EVIDENCE_SOURCE",
+            "public HTTPS smoke: PASS",
+            "tested commit: $PUBLIC_MERGE_SHA",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, pages)
+
+        release = publication.split(
+            "**Step 5: Materialize release metadata through a PR, then publish**",
+            maxsplit=1,
+        )[1].split("**Step 6: Clean only the merged public feature branch**", maxsplit=1)[0]
+        for phrase in (
+            'docs/reviews/2026-07-31-release-readiness.md',
+            '"Validate" "CodeQL" "Gitleaks" "Deploy GitHub Pages"',
+            '--commit "$RELEASE_MERGE_SHA"',
+            '"$RELEASE_MERGE_SHA:completed:success"',
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, release)
+        evidence = publication.index("PUBLIC_HTTPS_EVIDENCE_SOURCE")
+        metadata_branch = publication.index("switch -c release/v0.1.0-metadata")
+        tag = publication.index("tag -a v0.1.0")
+        self.assertLess(evidence, metadata_branch)
+        self.assertLess(metadata_branch, tag)
+
+    def test_release_commit_and_annotated_tag_use_verified_public_identity(self) -> None:
+        publication = _read(PUBLICATION_PLAN).replace("\\\n", " ")
+        release = publication.split(
+            "**Step 5: Materialize release metadata through a PR, then publish**",
+            maxsplit=1,
+        )[1].split("**Step 6: Clean only the merged public feature branch**", maxsplit=1)[0]
+        for command in ("commit", "tag -a v0.1.0"):
+            with self.subTest(command=command):
+                self.assertRegex(
+                    release,
+                    re.compile(
+                        r'git -C "\$PUBLICATION_CLONE" '
+                        r'-c user\.name="\$PUBLIC_AUTHOR_NAME" '
+                        r'-c user\.email="\$PUBLIC_NOREPLY_EMAIL" '
+                        + re.escape(command)
+                    ),
+                )
+        for phrase in (
+            "RELEASE_METADATA_SHA",
+            "%(authorname)",
+            "%(authoremail)",
+            "%(committername)",
+            "%(committeremail)",
+            "%(taggername)",
+            "%(taggeremail)",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, release)
+        self.assertLess(release.index("%(taggeremail)"), release.index("push public refs/tags/v0.1.0"))
 
     def test_current_site_checker_cli_is_used_everywhere(self) -> None:
         publication = _read(PUBLICATION_PLAN)
