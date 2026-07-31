@@ -1,0 +1,632 @@
+<section id="oss-why">
+  <h2>なぜ重要か</h2>
+  <p>OSSの公開はsourceを読める状態にするだけでは終わらない。第三者が入口を発見し、変更を準備してsubmitし、reviewを受けられることと、maintainerがmergeとreleaseのaccountabilityを引き受けることを、一つのcontribution journeyとして設計する必要がある。</p>
+  <p>OpenSSF Scorecardはsecurity practiceの観測、Contributor Covenant 2.1はcommunity behaviorの期待、SLSA v1.2 Sourceはsource provenanceの要件を扱う。GitHubのhealthy contributions guidanceとOSS maintainer guideは、CONTRIBUTINGなどの入口とmaintainerの継続的なstewardshipを結ぶ。どれか一つのbadgeや文書だけではrepository readyを証明しない。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> このlabは2026-07-31に教材リポジトリを観測した固定snapshotである。LICENSE、CONTRIBUTING、CODE_OF_CONDUCT、SECURITY、CI、provenance、governance、maintainer boundaryが不足しているため現状は<strong>not ready</strong>であり、公開済み、release可能、security practice適合とは断定しない。</p>
+  </aside>
+</section>
+<section id="oss-mental-model">
+  <h2>メンタルモデル</h2>
+  <p>governanceを「誰でも変更できる」ことではなく、「誰でも提案経路を理解でき、decision rightsとevidenceが追跡できる」こととして捉える。第三者にはread-onlyから始まる最小権限のcontribution pathを開き、review、maintainer merge、release evidenceには明示的な責任境界を置く。</p>
+  <figure>
+    <figcaption>第三者contributionをmaintainerのreview・merge・release evidenceへ安全に接続するgovernance chain</figcaption>
+    <ol>
+      <li><strong>discover:</strong> 第三者がlicense、community rule、security窓口、contribution手順を見つける。</li>
+      <li><strong>prepare:</strong> forkまたは同等のread-only境界で変更と検証証拠を作る。</li>
+      <li><strong>submit:</strong> 変更理由、scope、test結果をreview可能な単位で提示する。</li>
+      <li><strong>review:</strong> maintainerが品質、security、policy、互換性を証拠で判断する。</li>
+      <li><strong>maintainer-merge:</strong> write権限を第三者へ移さず、承認済み変更だけを統合する。</li>
+      <li><strong>release-evidence:</strong> CI結果、provenance、承認、公開artifactを対応付ける。</li>
+    </ol>
+  </figure>
+  <p>command successは一つの処理がexit code 0で終わったという局所的な観測である。system outcomeは、利用者が検証できるartifactが正しいsource、review、provenance、governanceから公開されたかという結果であり、両者を同一視しない。</p>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>observed snapshotからcontribution journeyとrelease boundaryを導く</h3>
+  <dl>
+    <dt>前提</dt>
+    <dd>2026-07-31の固定観測ではrepository readinessの8条件がすべて不足している。これは教材用のobserved snapshotであり、将来状態を主張しない。</dd>
+    <dt>入力</dt>
+    <dd>baselineはdocumentation contribution、transferはrelease-workflow contributionで、どちらもrequested permissionはread-onlyとする。同じrepository snapshotを独立に複製する。</dd>
+    <dt>操作</dt>
+    <dd>exact schema、unique evidence ID、canonical journey orderを検証し、8つのgap、必要証拠、maintainer boundary、release gateを入力から計算する。</dd>
+    <dt>観測</dt>
+    <dd>contribution kindだけを変えるとrequired evidenceは変わるが、repository snapshotは変わらない。8 gapsが残るためreadyはfalse、third-party releaseとrelease allowedもfalseになる。</dd>
+    <dt>結論</dt>
+    <dd>journeyをJSONで生成するcommand successだけではsystem outcomeを達成しない。第三者をenableする経路を示しつつ、maintainer承認と不足条件をrelease blockerとして残す。</dd>
+  </dl>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+import json
+
+HARNESS = "oss_stewardship_lab_v1"
+BASELINE_CONTRIBUTION = {
+    "contribution_kind": "documentation",
+    "requested_permission": "read-only",
+}
+TRANSFER_CONTRIBUTION = {
+    "contribution_kind": "release-workflow",
+    "requested_permission": "read-only",
+}
+REPOSITORY_READINESS = {
+    "LICENSE": False,
+    "CONTRIBUTING": False,
+    "CODE_OF_CONDUCT": False,
+    "SECURITY": False,
+    "CI": False,
+    "provenance": False,
+    "governance": False,
+    "maintainer-boundary": False,
+}
+JOURNEY_ORDER = (
+    "discover",
+    "prepare",
+    "submit",
+    "review",
+    "maintainer-merge",
+    "release-evidence",
+)
+JOURNEY_REQUIREMENTS = [
+    {
+        "phase": "discover",
+        "actor": "third-party-contributor",
+        "evidence_ids": ["readiness-snapshot"],
+    },
+    {
+        "phase": "prepare",
+        "actor": "third-party-contributor",
+        "evidence_ids": ["local-validation"],
+    },
+    {
+        "phase": "submit",
+        "actor": "third-party-contributor",
+        "evidence_ids": ["reviewable-change"],
+    },
+    {
+        "phase": "review",
+        "actor": "maintainer",
+        "evidence_ids": ["maintainer-review"],
+    },
+    {
+        "phase": "maintainer-merge",
+        "actor": "maintainer",
+        "evidence_ids": ["merge-approval"],
+    },
+    {
+        "phase": "release-evidence",
+        "actor": "maintainer",
+        "evidence_ids": ["release-provenance"],
+    },
+]
+REQUIRED_EVIDENCE_BY_KIND = {
+    "documentation": [
+        "scope",
+        "rendered-preview",
+        "maintainer-review",
+    ],
+    "release-workflow": [
+        "workflow-diff",
+        "least-privilege-review",
+        "maintainer-approval",
+        "release-provenance",
+    ],
+}
+COMMAND_INPUT = {"exit_code": 0}
+CONTRIBUTION_FIELDS = {
+    "contribution_kind",
+    "requested_permission",
+}
+READINESS_FIELDS = {
+    "LICENSE",
+    "CONTRIBUTING",
+    "CODE_OF_CONDUCT",
+    "SECURITY",
+    "CI",
+    "provenance",
+    "governance",
+    "maintainer-boundary",
+}
+JOURNEY_FIELDS = {"phase", "actor", "evidence_ids"}
+CONTRIBUTION_KINDS = {"documentation", "release-workflow"}
+
+def is_non_empty_text(value):
+    return type(value) is str and bool(value.strip())
+
+def validate_contribution(value):
+    valid = (
+        type(value) is dict
+        and set(value) == CONTRIBUTION_FIELDS
+        and is_non_empty_text(value["contribution_kind"])
+        and value["contribution_kind"] in CONTRIBUTION_KINDS
+        and type(value["requested_permission"]) is str
+        and value["requested_permission"] == "read-only"
+    )
+    if not valid:
+        raise AssertionError(
+            "oss-transfer-invariant: invalid contribution schema"
+        )
+
+def validate_readiness(value):
+    if (
+        type(value) is not dict
+        or set(value) != READINESS_FIELDS
+        or tuple(value) != (
+            "LICENSE",
+            "CONTRIBUTING",
+            "CODE_OF_CONDUCT",
+            "SECURITY",
+            "CI",
+            "provenance",
+            "governance",
+            "maintainer-boundary",
+        )
+        or not all(type(state) is bool for state in value.values())
+    ):
+        raise AssertionError(
+            "oss-input-invariant: invalid readiness schema"
+        )
+    if value["maintainer-boundary"] is not False:
+        raise AssertionError(
+            "oss-maintainer-boundary-invariant: observed boundary drift"
+        )
+    if any(value.values()):
+        raise AssertionError(
+            "oss-readiness-invariant: observed readiness drift"
+        )
+
+def validate_journey(order, requirements):
+    canonical = (
+        "discover",
+        "prepare",
+        "submit",
+        "review",
+        "maintainer-merge",
+        "release-evidence",
+    )
+    if type(order) is not tuple or order != canonical:
+        raise AssertionError(
+            "oss-journey-invariant: non-canonical phase order"
+        )
+    valid_records = (
+        type(requirements) is list
+        and len(requirements) == len(order)
+        and all(
+            type(item) is dict
+            and set(item) == JOURNEY_FIELDS
+            and is_non_empty_text(item["phase"])
+            and is_non_empty_text(item["actor"])
+            and type(item["evidence_ids"]) is list
+            and bool(item["evidence_ids"])
+            and all(
+                is_non_empty_text(evidence_id)
+                for evidence_id in item["evidence_ids"]
+            )
+            and len(set(item["evidence_ids"]))
+            == len(item["evidence_ids"])
+            for item in requirements
+        )
+    )
+    if not valid_records:
+        raise AssertionError(
+            "oss-journey-invariant: invalid journey schema"
+        )
+    phases = [item["phase"] for item in requirements]
+    evidence_ids = [
+        evidence_id
+        for item in requirements
+        for evidence_id in item["evidence_ids"]
+    ]
+    if (
+        phases != list(order)
+        or len(set(phases)) != len(phases)
+        or len(set(evidence_ids)) != len(evidence_ids)
+        or [item["actor"] for item in requirements]
+        != [
+            "third-party-contributor",
+            "third-party-contributor",
+            "third-party-contributor",
+            "maintainer",
+            "maintainer",
+            "maintainer",
+        ]
+    ):
+        raise AssertionError(
+            "oss-journey-invariant: phase or evidence identity drift"
+        )
+
+def validate_required_evidence(value):
+    expected = {
+        "documentation": [
+            "scope",
+            "rendered-preview",
+            "maintainer-review",
+        ],
+        "release-workflow": [
+            "workflow-diff",
+            "least-privilege-review",
+            "maintainer-approval",
+            "release-provenance",
+        ],
+    }
+    valid = (
+        type(value) is dict
+        and set(value) == CONTRIBUTION_KINDS
+        and all(
+            type(items) is list
+            and bool(items)
+            and all(is_non_empty_text(item) for item in items)
+            and len(set(items)) == len(items)
+            for items in value.values()
+        )
+    )
+    if not valid or value != expected:
+        raise AssertionError(
+            "oss-input-invariant: invalid required evidence schema"
+        )
+
+def validate_command(value):
+    if (
+        type(value) is not dict
+        or set(value) != {"exit_code"}
+        or type(value["exit_code"]) is not int
+        or type(value["exit_code"]) is bool
+    ):
+        raise AssertionError(
+            "oss-input-invariant: invalid command schema"
+        )
+
+def validate_all_inputs():
+    validate_contribution(BASELINE_CONTRIBUTION)
+    validate_contribution(TRANSFER_CONTRIBUTION)
+    validate_readiness(REPOSITORY_READINESS)
+    validate_journey(JOURNEY_ORDER, JOURNEY_REQUIREMENTS)
+    validate_required_evidence(REQUIRED_EVIDENCE_BY_KIND)
+    validate_command(COMMAND_INPUT)
+
+def changed_contribution_fields(baseline, transferred):
+    changed = [
+        field
+        for field in sorted(set(baseline) | set(transferred))
+        if (
+            field not in baseline
+            or field not in transferred
+            or baseline[field] != transferred[field]
+        )
+    ]
+    if (
+        changed != ["contribution_kind"]
+        or baseline["contribution_kind"] != "documentation"
+        or transferred["contribution_kind"] != "release-workflow"
+        or baseline["requested_permission"]
+        != transferred["requested_permission"]
+    ):
+        raise AssertionError(
+            "oss-transfer-invariant: transfer changed wrong input"
+        )
+    return changed
+
+def fixed_repository_snapshot():
+    # baselineとtransferを別objectへ復元し、同一aliasによるdrift隠蔽を防ぐ。
+    return json.loads(
+        json.dumps(REPOSITORY_READINESS, ensure_ascii=False)
+    )
+
+def fixed_journey_snapshot():
+    # journeyのnested evidenceも入力から独立copyし、評価中の変更を防ぐ。
+    return json.loads(
+        json.dumps(JOURNEY_REQUIREMENTS, ensure_ascii=False)
+    )
+
+def build_journey(requirements, readiness_gaps):
+    return [
+        {
+            "phase": item["phase"],
+            "actor": item["actor"],
+            "required_evidence": list(item["evidence_ids"]),
+            "status": (
+                "blocked-by-readiness"
+                if item["phase"] == "release-evidence"
+                and readiness_gaps
+                else "defined"
+            ),
+        }
+        for item in requirements
+    ]
+
+def required_evidence(contribution):
+    return list(
+        REQUIRED_EVIDENCE_BY_KIND[
+            contribution["contribution_kind"]
+        ]
+    )
+
+def main():
+    validate_all_inputs()
+    changed_fields = changed_contribution_fields(
+        BASELINE_CONTRIBUTION,
+        TRANSFER_CONTRIBUTION,
+    )
+    baseline_snapshot = fixed_repository_snapshot()
+    transferred_snapshot = fixed_repository_snapshot()
+    baseline_journey = fixed_journey_snapshot()
+    transferred_journey = fixed_journey_snapshot()
+    if (
+        baseline_snapshot is transferred_snapshot
+        or baseline_snapshot != transferred_snapshot
+        or baseline_journey is transferred_journey
+        or baseline_journey != transferred_journey
+    ):
+        raise AssertionError(
+            "oss-transfer-invariant: independent snapshots drifted"
+        )
+
+    readiness_gaps = [
+        field
+        for field, ready in baseline_snapshot.items()
+        if not ready
+    ]
+    repository_ready = not readiness_gaps
+    if readiness_gaps != [
+        "LICENSE",
+        "CONTRIBUTING",
+        "CODE_OF_CONDUCT",
+        "SECURITY",
+        "CI",
+        "provenance",
+        "governance",
+        "maintainer-boundary",
+    ]:
+        raise AssertionError(
+            "oss-readiness-invariant: incorrect observed gaps"
+        )
+    if repository_ready:
+        raise AssertionError(
+            "oss-readiness-invariant: gaps cannot be ready"
+        )
+
+    journey = build_journey(baseline_journey, readiness_gaps)
+    if [item["phase"] for item in journey] != list(JOURNEY_ORDER):
+        raise AssertionError(
+            "oss-journey-invariant: rendered journey order drifted"
+        )
+
+    third_party_can_release = False
+    maintainer_approval_required = True
+    release_allowed = (
+        repository_ready
+        and maintainer_approval_required
+        and not third_party_can_release
+    )
+    if third_party_can_release:
+        raise AssertionError(
+            "oss-maintainer-boundary-invariant: third party release"
+        )
+    if release_allowed or not maintainer_approval_required:
+        raise AssertionError(
+            "oss-maintainer-boundary-invariant: unsafe release gate"
+        )
+
+    baseline_required = required_evidence(BASELINE_CONTRIBUTION)
+    transferred_required = required_evidence(TRANSFER_CONTRIBUTION)
+    if baseline_required == transferred_required:
+        raise AssertionError(
+            "oss-transfer-invariant: evidence was not recomputed"
+        )
+
+    blocked_by_readiness = bool(readiness_gaps)
+    system_outcome_checked = (
+        release_allowed is False
+        and blocked_by_readiness
+        and len(readiness_gaps) == len(REPOSITORY_READINESS)
+    )
+    input_derived_evidence = (
+        changed_fields == ["contribution_kind"]
+        and baseline_snapshot == REPOSITORY_READINESS
+        and transferred_snapshot == REPOSITORY_READINESS
+        and [item["phase"] for item in journey]
+        == list(JOURNEY_ORDER)
+        and system_outcome_checked
+    )
+
+    report = {
+        "harness": HARNESS,
+        "repository_readiness": {
+            "ready": repository_ready,
+            "gaps": readiness_gaps,
+            "observed_snapshot": baseline_snapshot,
+        },
+        "contribution_journey": journey,
+        "release_boundary": {
+            "third_party_can_release": third_party_can_release,
+            "maintainer_approval_required": (
+                maintainer_approval_required
+            ),
+            "release_allowed": release_allowed,
+            "blocked_by_readiness_gaps": blocked_by_readiness,
+        },
+        "contribution_kind_transfer": {
+            "changed_fields": changed_fields,
+            "same_repository_snapshot": (
+                baseline_snapshot == transferred_snapshot
+            ),
+            "baseline_required_evidence": baseline_required,
+            "transferred_required_evidence": transferred_required,
+            "baseline_snapshot": baseline_snapshot,
+            "transferred_snapshot": transferred_snapshot,
+        },
+        "fixture_metadata": {
+            "kind": "observed-snapshot",
+            "provenance": (
+                "lesson repository observation fixed at 2026-07-31"
+            ),
+            "limitations": (
+                "offline fixture; repository changes after observation "
+                "require a fresh audit"
+            ),
+            "synthetic_or_observed_explicit": True,
+        },
+        "runtime_bound": {
+            "records": (
+                len(REPOSITORY_READINESS)
+                + len(JOURNEY_REQUIREMENTS)
+            ),
+            "subprocesses": 0,
+            "maximum_iterations": len(JOURNEY_REQUIREMENTS),
+        },
+        "external_network_used": False,
+        "input_derived_evidence": input_derived_evidence,
+        "command_success_distinction": {
+            "command_completed": COMMAND_INPUT["exit_code"] == 0,
+            "system_outcome_checked": system_outcome_checked,
+            "command_success_equals_system_outcome": (
+                COMMAND_INPUT["exit_code"] == 0
+                and release_allowed
+            ),
+            "outcome_evidence": {
+                "readiness_gaps": readiness_gaps,
+                "release_allowed": release_allowed,
+            },
+        },
+        "mastery_evidence": {
+            "lab_steps": [
+                {"step": 1, "evidence": baseline_snapshot},
+                {
+                    "step": 2,
+                    "evidence": journey[:3],
+                },
+                {
+                    "step": 3,
+                    "evidence": journey[3:5],
+                },
+                {
+                    "step": 4,
+                    "evidence": {
+                        "phase": journey[5],
+                        "required": transferred_required,
+                    },
+                },
+                {
+                    "step": 5,
+                    "evidence": {
+                        "ready": repository_ready,
+                        "release_allowed": release_allowed,
+                    },
+                },
+                {
+                    "step": 6,
+                    "evidence": {
+                        "changed_fields": changed_fields,
+                        "required_evidence": transferred_required,
+                    },
+                },
+            ],
+            "assessments": [
+                {
+                    "assessment": 1,
+                    "evidence": {
+                        "gaps": readiness_gaps,
+                        "boundary": "maintainer-approval",
+                    },
+                },
+                {
+                    "assessment": 2,
+                    "evidence": {
+                        "command_exit_code": COMMAND_INPUT["exit_code"],
+                        "system_outcome": release_allowed,
+                    },
+                },
+            ],
+            "rubric_dimensions": [
+                "technical-correctness",
+                "judgment",
+                "evidence",
+                "communication",
+            ],
+            "transfer": {
+                "task": (
+                    "documentationからrelease-workflowへ"
+                    "contribution kindだけを変え、同じrepository "
+                    "snapshotのreview、release gate、"
+                    "maintainer境界を再評価する"
+                ),
+                "changed_assumption": "contribution-kind",
+                "evidence": {
+                    "changed_fields": changed_fields,
+                    "baseline": baseline_required,
+                    "transferred": transferred_required,
+                },
+            },
+            "contributor_enablement": {
+                "other_contributor": "third-party-contributor",
+                "review_evidence": journey,
+            },
+        },
+    }
+    print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+
+if __name__ == "__main__":
+    try:
+        main()
+    except AssertionError as error:
+        raise SystemExit(str(error)) from None
+PY</code></pre>
+</section>
+<section id="oss-tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <table>
+    <caption>repository readinessとmaintainer boundaryから次の行動を選ぶdecision table</caption>
+    <thead>
+      <tr>
+        <th scope="col">観測scope</th>
+        <th scope="col">判断</th>
+        <th scope="col">第三者の行動</th>
+        <th scope="col">maintainerの行動</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row">入口文書が不足</th>
+        <td>contribution pathはnot ready</td>
+        <td>read-onlyで不足を報告</td>
+        <td>policyと窓口をreview可能に追加</td>
+      </tr>
+      <tr>
+        <th scope="row">review証拠あり、boundaryなし</th>
+        <td>mergeとreleaseを停止</td>
+        <td>変更と検証証拠だけをsubmit</td>
+        <td>decision rightsとapprovalを定義</td>
+      </tr>
+      <tr>
+        <th scope="row">CI成功、provenanceなし</th>
+        <td>release outcomeは未証明</td>
+        <td>artifactをrelease済みと断定しない</td>
+        <td>source、builder、artifactを対応付ける</td>
+      </tr>
+      <tr>
+        <th scope="row">8条件とrelease evidenceあり</th>
+        <td>固定snapshotで再評価</td>
+        <td>documented journeyを追試</td>
+        <td>承認、公開、consumer検証を記録</td>
+      </tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><strong>誤診:</strong> CONTRIBUTINGとCODE_OF_CONDUCTがあるので第三者はreleaseまで安全に完遂できる。<strong>反証:</strong> SECURITY、CI、provenance、governance、maintainer boundaryを含む全8条件と、reviewからrelease evidenceまでのactor・権限・結果を同じsnapshotで検証する。</li>
+    <li><strong>誤診:</strong> OpenSSF Scorecard実行とCIのcommand successがあればsystem outcomeも成功である。<strong>反証:</strong> Scorecardを観測の一部として扱い、maintainer approval、source provenance、公開artifact、consumer検証を別のrelease evidenceとして確認する。</li>
+  </ul>
+</section>
+<section id="oss-knowledge-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>第三者のrequested permissionをread-onlyに保ちながらcontributionをenableするには、どの入口と証拠が必要か。</li>
+    <li>review済み変更のmergeとreleaseをmaintainer decisionに限定する理由を説明せよ。</li>
+    <li>LICENSEからmaintainer boundaryまでの8条件のうち、一つでも不足したときreadyをtrueにできない理由は何か。</li>
+    <li>documentationからrelease-workflowへcontribution kindだけを変えると、required evidenceの何が変わり、何を同じに保つか。</li>
+  </ol>
+</section>
+<section id="oss-sources-next">
+  <h2>出典と次の学習</h2>
+  <p>OpenSSF Scorecardをsecurity practiceの観測、Contributor Covenant 2.1をcommunity behaviorの共通境界、SLSA v1.2 Sourceをsource provenance、GitHubのhealthy contributions guidanceを入口設計、OSS maintainer guideを継続的stewardshipの一次資料として用いた。</p>
+  <p>次は不足しているLICENSE、CONTRIBUTING、CODE_OF_CONDUCT、SECURITY、CI、provenance、governance、maintainer boundaryを一項目ずつ実装・reviewし、独立snapshotでjourneyを追試する。すべて揃うまではnot readyとrelease blockedを維持する。</p>
+</section>

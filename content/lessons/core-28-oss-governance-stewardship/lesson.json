@@ -1,0 +1,185 @@
+{
+  "version": 1,
+  "id": "core-28-oss-governance-stewardship",
+  "title": "OSS governanceで貢献とリリースを持続可能にする",
+  "summary": "第三者の貢献経路、maintainerの意思決定境界、repository readiness、release evidenceを一つのjourneyとして検証し、公開リポジトリを安全にstewardする。",
+  "track": "lead",
+  "stage": 5,
+  "difficulty": "advanced",
+  "estimatedMinutes": 300,
+  "prerequisiteIds": [
+    "core-10-threat-modeling-secure-design",
+    "core-19-technical-communication-design-docs",
+    "core-26-code-review-collaborative-quality"
+  ],
+  "objectives": [
+    {
+      "id": "obj-readiness",
+      "statement": "公開リポジトリのreadinessをlicense、contribution policy、security、CI、provenance、governanceから監査できる",
+      "evidenceIds": ["repository-audit", "assessment"]
+    },
+    {
+      "id": "obj-journey",
+      "statement": "第三者のdiscoverからmaintainer mergeとrelease evidenceまでを権限境界付きで設計できる",
+      "evidenceIds": ["stewardship-repository", "teach-back"]
+    },
+    {
+      "id": "obj-transfer",
+      "statement": "contribution kindだけを変え、同じrepository snapshotで必要証拠とrelease gateを再評価できる",
+      "evidenceIds": ["repository-audit", "transfer"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "stewardship-repository",
+      "kind": "artifact",
+      "description": "第三者が貢献からリリースまで完遂できるOSSリポジトリ"
+    },
+    {
+      "id": "repository-audit",
+      "kind": "reasoning",
+      "description": "readiness gap、journey、maintainer boundary、release evidenceを結ぶ監査記録"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "open contributionとmaintainer権限を分ける理由を説明する5分発表"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "command successとsystem outcomeを分けたrelease readiness判断"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "documentationからrelease-workflowへの単一仮定transfer"
+    }
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "LICENSE、CONTRIBUTING、CODE_OF_CONDUCT、SECURITY、CI、provenance、governance、maintainer boundaryを別々のreadiness条件として識別できる",
+      "evidenceIds": ["repository-audit"]
+    },
+    {
+      "level": "explain",
+      "criterion": "第三者が提案できることとmaintainerだけがmergeやreleaseを承認できることの違いを説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "discover、prepare、submit、review、maintainer merge、release evidenceの順でjourneyを設計できる",
+      "evidenceIds": ["stewardship-repository"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "文書の存在やcommand成功だけからrepository readyやrelease成功を誤認する判断を反証できる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "contributorをenableしつつ、review、merge、release、security responseのdecision rightsをmaintainer間で合意できる",
+      "evidenceIds": ["transfer"]
+    }
+  ],
+  "lab": {
+    "title": "第三者contributionからrelease evidenceまでを監査する",
+    "artifact": "第三者が貢献からリリースまで完遂できるOSSリポジトリ",
+    "steps": [
+      "観測対象と観測時点を固定し、repository readinessの8条件を記録する",
+      "第三者contributorのdiscover、prepare、submitを権限要求と証拠へ結ぶ",
+      "reviewとmaintainer mergeを第三者release権限から分離する",
+      "release evidenceをCI、provenance、maintainer approvalへ結ぶ",
+      "不足条件からreadyとrelease allowedを再計算して断定を止める",
+      "contribution kindだけをrelease-workflowへ変え、必要証拠を再評価する"
+    ]
+  },
+  "teachBack": "5分で、OpenSSF Scorecard、Contributor Covenant 2.1、SLSA v1.2 Source、GitHubのhealthy contribution guidanceを、単なるbadgeではなく第三者enablementとmaintainer accountabilityへ結ぶ理由を説明する。",
+  "assessment": [
+    {
+      "prompt": "CONTRIBUTINGがあるので第三者が安全にreleaseまで完遂できる、と判断してよいか。",
+      "expectedEvidence": "8つのreadiness条件、権限境界、maintainer approval、release evidence、観測時点"
+    },
+    {
+      "prompt": "CI commandが成功したがprovenanceとmaintainer boundaryがない。system outcomeをどう判定するか。",
+      "expectedEvidence": "command successとの分離、not ready、release blocked、不足条件、再検証"
+    }
+  ],
+  "transferTask": "documentationからrelease-workflowへcontribution kindだけを変え、同じrepository snapshotのreview、release gate、maintainer境界を再評価する",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "文書かCIの一項目だけでreadyと判断する",
+        "developing": "複数条件を列挙するがjourneyと権限へ結び付かない",
+        "proficient": "8条件、canonical journey、maintainer boundary、release evidenceを同じsnapshotから導く",
+        "exemplary": "並行変更、権限失効、provenance再現、security responseでも境界を維持する"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "open sourceなので第三者へrelease権限を与える",
+        "developing": "maintainer承認を要求するがblocked条件を示さない",
+        "proficient": "contributionをenableしつつmergeとreleaseのdecision rightsを限定する",
+        "exemplary": "maintainer bus factor、appeal、rotation、emergency revokeまで可逆に設計する"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "badgeやcommand出力だけを成功証拠にする",
+        "developing": "snapshotはあるが観測時点と限界がない",
+        "proficient": "入力、gap、journey、approval、provenance、release結果を再検証可能に残す",
+        "exemplary": "独立snapshotとtransfer差分から証拠のdriftや誤ったready判定を検出する"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "貢献歓迎またはrelease不可とだけ伝える",
+        "developing": "手順はあるが各phaseのactorとdecision rightsが不明である",
+        "proficient": "第三者とmaintainerが必要な入力、証拠、review、blocked理由を追跡できる",
+        "exemplary": "初参加者、maintainer、security reporter、release consumerが同じgovernanceを検証できる"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "OpenSSF Scorecard (accessed 2026-07-31)",
+      "url": "https://www.scorecard.dev/",
+      "kind": "primary"
+    },
+    {
+      "title": "Contributor Covenant Code of Conduct Version 2.1",
+      "url": "https://www.contributor-covenant.org/version/2/1/code_of_conduct/",
+      "kind": "standard"
+    },
+    {
+      "title": "SLSA v1.2 Source: Requirements for producing source",
+      "url": "https://slsa.dev/spec/v1.2/source-requirements",
+      "kind": "standard"
+    },
+    {
+      "title": "Setting up your project for healthy contributions",
+      "url": "https://docs.github.com/en/communities/setting-up-your-project-for-healthy-contributions",
+      "kind": "primary"
+    },
+    {
+      "title": "Best Practices for Maintainers",
+      "url": "https://opensource.guide/best-practices/",
+      "kind": "primary"
+    }
+  ],
+  "review": {
+    "intervalDays": [1, 7, 30, 90],
+    "prompts": [
+      "第三者contributionとmaintainer releaseの権限境界はどこか",
+      "repository readyを断定する前にどの8条件を確認するか",
+      "contribution kindだけを変えたとき必要証拠はどう変わるか"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}
