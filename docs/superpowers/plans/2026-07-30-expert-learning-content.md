@@ -2068,6 +2068,9 @@ git commit -m "content: prove expertise through integrated capstones"
   lesson-specific semantic anchors. Commit `7794858` replaces the print grid
   with a non-fragmenting block flow and removes the site footer from capstone
   print documents.
+- Test refinement commit `1da589b` proves that raw-distinct ASCII-space and
+  ideographic-space variants collide after normalization, rather than testing
+  only byte-identical exercise reuse.
 - All 20 focused capstone tests and the complete 529-test repository suite pass
   with CPython 3.13. Two repository-external builds each contain 40 artifacts,
   39 HTML files, four capstone pages, and zero JavaScript files; both have the
@@ -2084,8 +2087,8 @@ git commit -m "content: prove expertise through integrated capstones"
   `4f38b5f63931a7f06e13f90f5d9ef90a0a435f30dae5d4fe70720d730a057473`.
   The private prototype payload remains 1,194 files and 16,805,630 bytes; its
   separate 157,542-byte manifest makes the observed archive total 1,195 files.
-  Gitleaks scanned both the complete Task 11 history and all four remediation
-  commits and reported no leaks; `git diff --check` is clean.
+  Gitleaks scanned both the complete Task 11 history and all remediation and
+  evidence commits and reported no leaks; `git diff --check` is clean.
 
 ### Task 12: Run the complete learning-quality gate
 
