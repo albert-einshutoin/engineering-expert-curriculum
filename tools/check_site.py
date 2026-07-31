@@ -242,7 +242,14 @@ class _PageParser(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.relative = relative
         self.issues = issues
-        self.document_lines = document.splitlines(keepends=True)
+        self.document = document
+        # HTMLParser increments its line counter only for LF.  Generic
+        # splitlines() also treats lone CR as a newline, which would make byte
+        # security boundaries disagree with the parser's reported position.
+        self.line_start_offsets = [0]
+        self.line_start_offsets.extend(
+            index + 1 for index, character in enumerate(document) if character == "\n"
+        )
         self.stack: list[str] = []
         self.ids: set[str] = set()
         self.references: list[_LocalReference] = []
@@ -272,10 +279,11 @@ class _PageParser(HTMLParser):
 
     def _current_tag_end_byte(self) -> int:
         line_number, column = self.getpos()
-        prefix = "".join(self.document_lines[: line_number - 1])
-        prefix += self.document_lines[line_number - 1][:column]
+        tag_start = self.line_start_offsets[line_number - 1] + column
         raw_tag = self.get_starttag_text() or ""
-        return len(prefix.encode("utf-8")) + len(raw_tag.encode("utf-8"))
+        return len(self.document[:tag_start].encode("utf-8")) + len(
+            raw_tag.encode("utf-8")
+        )
 
     def handle_decl(self, decl: str) -> None:
         if decl.casefold().strip() != "doctype html":
