@@ -165,19 +165,6 @@ def _css_block(css: str, prelude: str) -> str:
     return matches[0]
 
 
-def _assert_connector_hidden_in_media(css: str, media_prelude: str) -> None:
-    try:
-        media_body = _css_block(css, media_prelude)
-        connector = _css_block(
-            media_body,
-            ".learning-stage:not(:last-child)::after",
-        )
-    except AssertionError:
-        raise AssertionError("connector must be hidden in its media block") from None
-    if re.search(r"(?m)^\s*display\s*:\s*none\s*;", connector) is None:
-        raise AssertionError("connector must be hidden in its media block")
-
-
 def _bounded_plan_section(text: str, start: str, end: str) -> str:
     if text.count(start) != 1 or text.count(end) != 1:
         raise AssertionError(
@@ -565,7 +552,9 @@ class StyleContractTests(unittest.TestCase):
         self.assertRegex(self.css, r"font-size:\s*clamp\(")
         self.assertRegex(self.css, r"padding(?:-block|-inline)?:\s*clamp\(")
 
-    def test_learning_path_is_a_four_stage_css_graph(self) -> None:
+    def test_learning_path_groups_real_stages_without_false_edge_arrows(
+        self,
+    ) -> None:
         self.assertIn(".learning-path", self.css)
         self.assertRegex(
             self.css,
@@ -573,29 +562,29 @@ class StyleContractTests(unittest.TestCase):
         )
         self.assertRegex(
             self.css,
-            r"grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)",
+            r"\.learning-stage-list\s*\{[^}]*display:\s*grid",
         )
-        self.assertIn("counter-reset: learning-stage", self.css)
-        self.assertIn(".learning-stage::before", self.css)
-        self.assertIn("counter-increment: learning-stage", self.css)
-        self.assertIn('content: counter(learning-stage)', self.css)
-        connector_body = _css_block(
+        self.assertRegex(
             self.css,
-            ".learning-stage:not(:last-child)::after",
+            r"\.learning-stage-list\s*\{[^}]*"
+            r"grid-template-columns:\s*repeat\(auto-fit,\s*"
+            r"minmax\(min\(100%,",
         )
-        self.assertRegex(connector_body, r'content:\s*""')
-        self.assertRegex(connector_body, r"pointer-events:\s*none")
-        self.assertRegex(connector_body, r"clip-path:\s*polygon\(")
-        self.assertRegex(connector_body, r"background:\s*var\(--color-warm\)")
-        forced_colors = _css_block(
+        for selector in (
+            ".roadmap-stage",
+            ".learning-stage-list",
+            ".lesson-ordinal",
+            ".mastery-gates",
+            ".mastery-gate-list",
+        ):
+            self.assertIn(selector, self.css)
+        self.assertNotIn("counter-reset: learning-stage", self.css)
+        self.assertNotIn("counter-increment: learning-stage", self.css)
+        self.assertNotIn(".learning-stage::before", self.css)
+        self.assertNotIn(
+            ".learning-stage:not(:last-child)::after",
             self.css,
-            "@media (forced-colors: active)",
         )
-        forced_connector = _css_block(
-            forced_colors,
-            ".learning-stage:not(:last-child)::after",
-        )
-        self.assertRegex(forced_connector, r"background:\s*CanvasText")
         self.assertNotRegex(self.css, r"(?i)@keyframes\b|animation\s*:|transition\s*:")
 
     def test_quantitative_chart_has_color_and_monochrome_scale(
@@ -631,26 +620,21 @@ class StyleContractTests(unittest.TestCase):
         self.assertRegex(print_bar, r"background:\s*transparent")
         self.assertRegex(print_bar, r"border:\s*2px solid currentColor")
 
-    def test_mobile_layout_is_single_column_and_hides_graph_connector(self) -> None:
+    def test_mobile_layout_is_single_column_without_graph_connectors(self) -> None:
         mobile = _css_block(self.css, "@media (max-width: 48rem)")
         self.assertRegex(
             mobile,
             r"\.learning-path\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)",
         )
-        _assert_connector_hidden_in_media(self.css, "@media (max-width: 48rem)")
-        mobile_without_hidden_connector = self.css.replace(
-            """  .learning-stage:not(:last-child)::after {
-    display: none;
-  }
-""",
-            "",
-            1,
+        self.assertRegex(
+            mobile,
+            r"\.learning-stage-list\s*\{[^}]*"
+            r"grid-template-columns:\s*minmax\(0,\s*1fr\)",
         )
-        with self.assertRaisesRegex(AssertionError, "connector must be hidden"):
-            _assert_connector_hidden_in_media(
-                mobile_without_hidden_connector,
-                "@media (max-width: 48rem)",
-            )
+        self.assertNotIn(
+            ".learning-stage:not(:last-child)::after",
+            self.css,
+        )
         self.assertRegex(
             self.css,
             r"\.catalog-grid\s*\{[^}]*"

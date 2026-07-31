@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 from pathlib import Path
 import re
 import shutil
+import subprocess
+import sys
 from tempfile import TemporaryDirectory
 import unittest
 
@@ -258,6 +261,85 @@ class RoadmapAcceptanceTests(unittest.TestCase):
                 require_complete=True,
             )
 
+    def test_parser_bounds_bytes_and_never_reflects_unsafe_source_names(
+        self,
+    ) -> None:
+        parser = getattr(build_module, "parse_roadmap_bytes")
+        with self.assertRaisesRegex(
+            CurriculumValidationError,
+            "^roadmap exceeds maximum byte count$",
+        ):
+            parser(
+                b" " * (build_module.MAX_ROADMAP_BYTES + 1),
+                "roadmap.json",
+            )
+        with self.assertRaisesRegex(
+            CurriculumValidationError,
+            "^roadmap snapshot must be exact bytes$",
+        ):
+            parser(  # type: ignore[arg-type]
+                bytearray(_encoded(_canonical_document())),
+                "roadmap.json",
+            )
+
+        for source_name in (
+            "roadmap.json\nFORGED",
+            "roadmap.json\x1b[31mFORGED",
+            "x" * 256,
+        ):
+            with self.subTest(source_name=repr(source_name)):
+                with self.assertRaises(CurriculumValidationError) as caught:
+                    parser(b"{", source_name)
+                self.assertEqual(
+                    str(caught.exception),
+                    "roadmap source name is invalid",
+                )
+                self.assertNotIn("FORGED", str(caught.exception))
+                self.assertNotIn("\x1b", str(caught.exception))
+
+    def test_authoring_parser_rejects_duplicate_mastery_gate_identity(
+        self,
+    ) -> None:
+        parser = getattr(build_module, "parse_roadmap_bytes")
+        valid = _canonical_document()
+        mutations = (
+            (
+                "id",
+                {
+                    **valid["masteryGates"][1],
+                    "id": valid["masteryGates"][0]["id"],
+                },
+                "duplicate mastery gate ids: foundation",
+            ),
+            (
+                "after",
+                {
+                    **valid["masteryGates"][1],
+                    "after": valid["masteryGates"][0]["after"],
+                },
+                "duplicate mastery gate after values: 5",
+            ),
+        )
+        for label, second_gate, diagnostic in mutations:
+            mutated = {
+                **valid,
+                "masteryGates": [
+                    valid["masteryGates"][0],
+                    second_gate,
+                    *valid["masteryGates"][2:],
+                ],
+            }
+            with self.subTest(label=label):
+                with self.assertRaisesRegex(
+                    CurriculumValidationError,
+                    re.escape(diagnostic),
+                ):
+                    parser(
+                        _encoded(mutated),
+                        "roadmap.json",
+                        require_complete=False,
+                    )
+
     def test_release_schema_validates_root_before_nested_data(self) -> None:
         parser = getattr(build_module, "parse_roadmap_bytes")
         invalid = _canonical_document()
@@ -333,6 +415,67 @@ class RoadmapAcceptanceTests(unittest.TestCase):
         ):
             validator(drifted, lessons)
 
+    def test_release_validator_enforces_roadmap_invariants_independently(
+        self,
+    ) -> None:
+        parser = getattr(build_module, "parse_roadmap_bytes")
+        validator = getattr(build_module, "validate_release_curriculum")
+        lessons = _lessons()
+        release = parser(
+            _encoded(_canonical_document()),
+            "roadmap.json",
+            require_complete=True,
+        )
+        authoring_document = _canonical_document()
+        authoring_document["masteryGates"] = []
+        no_gates = parser(
+            _encoded(authoring_document),
+            "roadmap.json",
+            require_complete=False,
+        )
+        second_root_nodes = list(release.nodes)
+        second_root_nodes[1] = replace(
+            second_root_nodes[1],
+            prerequisite_ids=(),
+        )
+        draft_lessons = (
+            replace(lessons[0], status="draft"),
+            *lessons[1:],
+        )
+        cases = (
+            (
+                "version",
+                replace(release, version=2),
+                lessons,
+                "release roadmap version must be 1",
+            ),
+            (
+                "root",
+                replace(release, nodes=tuple(second_root_nodes)),
+                lessons,
+                "release roadmap must have core-01 as its only root",
+            ),
+            (
+                "gates",
+                no_gates,
+                lessons,
+                "release roadmap must contain the exact canonical mastery gates",
+            ),
+            (
+                "complete",
+                release,
+                draft_lessons,
+                "release curriculum cannot contain draft lessons",
+            ),
+        )
+        for label, roadmap, candidate_lessons, diagnostic in cases:
+            with self.subTest(label=label):
+                with self.assertRaisesRegex(
+                    CurriculumValidationError,
+                    re.escape(diagnostic),
+                ):
+                    validator(roadmap, candidate_lessons)
+
     def test_release_build_rejects_partial_curriculum_without_publication(
         self,
     ) -> None:
@@ -365,6 +508,46 @@ class RoadmapAcceptanceTests(unittest.TestCase):
             self.assertEqual(sentinel.read_text(encoding="utf-8"), "old")
             self.assertEqual(tuple(root.glob(".site.staging-*")), ())
 
+    def test_cli_release_gate_rejects_partial_root_atomically(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve(strict=True)
+            shutil.copytree(REPOSITORY_ROOT / "content", root / "content")
+            shutil.copytree(REPOSITORY_ROOT / "templates", root / "templates")
+            shutil.copytree(REPOSITORY_ROOT / "static", root / "static")
+            shutil.rmtree(
+                root
+                / "content"
+                / "lessons"
+                / "core-30-evidence-based-technical-leadership"
+            )
+            output = root / "site"
+            output.mkdir()
+            sentinel = output / "sentinel.txt"
+            sentinel.write_text("old", encoding="utf-8")
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(REPOSITORY_ROOT / "tools/build.py"),
+                    "--root",
+                    str(root),
+                    "--output",
+                    str(output),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(result.stdout, "")
+            self.assertIn(
+                "release curriculum must contain exactly 30 lessons",
+                result.stderr,
+            )
+            self.assertEqual(sentinel.read_text(encoding="utf-8"), "old")
+            self.assertEqual(tuple(root.glob(".site.staging-*")), ())
+
     def test_release_build_links_every_lesson_and_renders_six_gates(self) -> None:
         with TemporaryDirectory() as directory:
             output = Path(directory).resolve(strict=True) / "site"
@@ -392,6 +575,79 @@ class RoadmapAcceptanceTests(unittest.TestCase):
                 )
                 self.assertIn(gate["artifact"], html)
                 self.assertIn(gate["review"], html)
+            self.assertEqual(
+                html.count('<li class="learning-stage">'),
+                30,
+            )
+            self.assertEqual(
+                html.count('<li class="mastery-gate"'),
+                6,
+            )
+            self.assertNotIn('<ol class="learning-path">', html)
+            self.assertEqual(
+                html.count('<ol class="learning-stage-list">'),
+                len(
+                    topological_stages(
+                        tuple(lesson.id for lesson in _lessons()),
+                        {
+                            lesson.id: lesson.prerequisite_ids
+                            for lesson in _lessons()
+                        },
+                    )
+                ),
+            )
+            self.assertEqual(
+                html.count('<ol class="mastery-gate-list">'),
+                1,
+            )
+            self.assertEqual(
+                html.count('<section class="mastery-gates">'),
+                1,
+            )
+            for ordinal in range(1, 31):
+                self.assertEqual(
+                    html.count(
+                        f'<p class="lesson-ordinal">Lesson {ordinal:02}</p>'
+                    ),
+                    1,
+                )
+
+            raw = _canonical_document()
+            nodes = raw["nodes"]
+            assert isinstance(nodes, list)
+            stages = topological_stages(
+                tuple(node["id"] for node in nodes),
+                {
+                    node["id"]: tuple(node["prerequisiteIds"])
+                    for node in nodes
+                },
+            )
+            rendered_stages = html.split(
+                '<section class="roadmap-stage">'
+            )[1:]
+            self.assertEqual(len(rendered_stages), len(stages))
+            for expected_ids, rendered_stage in zip(
+                stages,
+                rendered_stages,
+                strict=True,
+            ):
+                stage_fragment = rendered_stage.split("</section>", 1)[0]
+                for lesson_id in expected_ids:
+                    self.assertIn(
+                        f"../lessons/{lesson_id}/index.html",
+                        stage_fragment,
+                    )
+                for lesson_id in set(
+                    node["id"] for node in nodes
+                ) - set(expected_ids):
+                    self.assertNotIn(
+                        f"../lessons/{lesson_id}/index.html",
+                        stage_fragment,
+                    )
+            self.assertGreater(
+                html.index('<section class="mastery-gates">'),
+                html.rindex('<section class="roadmap-stage">'),
+            )
             self.assertNotIn("<script", html.casefold())
             self.assertEqual(tuple(output.rglob("*.js")), ())
 
