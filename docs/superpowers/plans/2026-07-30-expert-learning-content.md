@@ -2072,7 +2072,7 @@ git commit -m "content: prove expertise through integrated capstones"
   ideographic-space variants collide after normalization, rather than testing
   only byte-identical exercise reuse.
 - All 20 focused capstone tests and the complete 529-test repository suite pass
-  with CPython 3.13. Two repository-external builds each contain 40 artifacts,
+  with CPython 3.12.13. Two repository-external builds each contain 40 artifacts,
   39 HTML files, four capstone pages, and zero JavaScript files; both have the
   canonical aggregate SHA-256
   `ca90b2453c203c8245fb4592b33399b297b71089a477d62cb795a0162e880c11`.
