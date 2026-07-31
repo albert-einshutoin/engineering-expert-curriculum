@@ -292,13 +292,24 @@ gh pr view "$PUBLIC_PR_URL" --repo "wrong/project" # --repo "$PUBLIC_REPOSITORY_
             assert_gh_invocations_are_scoped(self, wrong_repo)
 
     def test_private_reporting_and_labels_are_verified_before_first_push(self) -> None:
-        publication = _read(PUBLICATION_PLAN)
+        publication = re.sub(r"\s+", " ", _read(PUBLICATION_PLAN).replace("\\\n", " "))
+        put_assignment = (
+            'PRIVATE_REPORTING_PUT_RESPONSE="$(gh api --include --method PUT '
+            '"repos/$PUBLIC_REPOSITORY_SLUG/private-vulnerability-reporting")"'
+        )
+        get_assignment = (
+            'PRIVATE_REPORTING_ENABLED="$(gh api '
+            '"repos/$PUBLIC_REPOSITORY_SLUG/private-vulnerability-reporting" '
+            "--jq '.enabled')\""
+        )
+        get_assertion = 'test "$PRIVATE_REPORTING_ENABLED" = "true"'
         push = publication.index(
             'git -C "$PUBLICATION_CLONE" push --set-upstream public'
         )
         for phrase in (
-            'gh api --method PUT "repos/$PUBLIC_REPOSITORY_SLUG/private-vulnerability-reporting"',
-            "PRIVATE_REPORTING_STATUS",
+            put_assignment,
+            get_assignment,
+            get_assertion,
             "204 No Content",
             'gh label create code --repo "$PUBLIC_REPOSITORY_SLUG"',
             'gh label create content --repo "$PUBLIC_REPOSITORY_SLUG"',
@@ -309,6 +320,11 @@ gh pr view "$PUBLIC_PR_URL" --repo "wrong/project" # --repo "$PUBLIC_REPOSITORY_
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, publication)
                 self.assertLess(publication.index(phrase), push)
+        self.assertEqual(publication.count(put_assignment), 1)
+        self.assertEqual(publication.count(get_assignment), 3)
+        self.assertEqual(publication.count(get_assertion), 3)
+        self.assertEqual(publication.count("204 No Content"), 1)
+        self.assertNotIn("PRIVATE_REPORTING_STATUS", publication)
 
     def test_review_evidence_uses_the_actual_implementation_date(self) -> None:
         publication = _read(PUBLICATION_PLAN)
