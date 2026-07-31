@@ -283,6 +283,51 @@ class CapstoneContractTests(unittest.TestCase):
         ):
             _parse(missing)
 
+    def test_lesson_id_diagnostics_are_indexed_bounded_and_value_safe(
+        self,
+    ) -> None:
+        unknown_value = "core-01-invented"
+        unknown = _decoded()
+        lesson_ids = unknown["global-service.json"]["lessonIds"]
+        assert isinstance(lesson_ids, list)
+        unknown_index = len(lesson_ids)
+        lesson_ids.append(unknown_value)
+        with self.assertRaises(CurriculumValidationError) as context:
+            _parse(unknown)
+        self.assertIn(
+            f"lessonIds item {unknown_index} references an unknown lesson",
+            str(context.exception),
+        )
+        self.assertNotIn(unknown_value, str(context.exception))
+
+        duplicate = _decoded()
+        lesson_ids = duplicate["global-service.json"]["lessonIds"]
+        assert isinstance(lesson_ids, list)
+        duplicate_value = lesson_ids[0]
+        duplicate_index = len(lesson_ids)
+        lesson_ids.append(duplicate_value)
+        with self.assertRaises(CurriculumValidationError) as context:
+            _parse(duplicate)
+        self.assertIn(
+            f"lessonIds item {duplicate_index} duplicates an earlier lesson",
+            str(context.exception),
+        )
+        self.assertNotIn(duplicate_value, str(context.exception))
+
+        oversized_value = "core-01-" + "a" * 100
+        oversized = _decoded()
+        lesson_ids = oversized["global-service.json"]["lessonIds"]
+        assert isinstance(lesson_ids, list)
+        oversized_index = len(lesson_ids)
+        lesson_ids.append(oversized_value)
+        with self.assertRaises(CurriculumValidationError) as context:
+            _parse(oversized)
+        self.assertIn(
+            f"lessonIds item {oversized_index} is invalid",
+            str(context.exception),
+        )
+        self.assertNotIn(oversized_value, str(context.exception))
+
     def test_primary_exercises_reject_id_water_filling_and_wrong_owner(
         self,
     ) -> None:
@@ -294,6 +339,30 @@ class CapstoneContractTests(unittest.TestCase):
         with self.assertRaisesRegex(
             CurriculumValidationError,
             "primary exercise",
+        ):
+            _parse(documents)
+
+    def test_primary_exercises_are_unique_and_lesson_specific(self) -> None:
+        generic = "固定入力を反復測定し、観測結果から設計判断を更新して妥当性を検証する"
+        documents = _decoded()
+        for document in documents.values():
+            primary = document["primaryExercises"]
+            assert isinstance(primary, dict)
+            for lesson_id in primary:
+                primary[lesson_id] = generic
+        with self.assertRaisesRegex(
+            CurriculumValidationError,
+            "primary exercises must be unique",
+        ):
+            _parse(documents)
+
+        documents = _decoded()
+        primary = documents["global-service.json"]["primaryExercises"]
+        assert isinstance(primary, dict)
+        primary["core-01-systems-tradeoffs"] = generic
+        with self.assertRaisesRegex(
+            CurriculumValidationError,
+            "primary exercise must be lesson-specific",
         ):
             _parse(documents)
 
@@ -402,6 +471,114 @@ class CapstoneContractTests(unittest.TestCase):
                     content.rename(raced)
                     saved.rename(content)
 
+    def test_loader_requires_the_exact_capstones_leaf(self) -> None:
+        for wrong_leaf in (
+            REPOSITORY_ROOT / "content/catalog.json",
+            REPOSITORY_ROOT / "content/lessons",
+        ):
+            with self.subTest(path=wrong_leaf):
+                with self.assertRaisesRegex(
+                    CurriculumValidationError,
+                    "path must name the capstones directory",
+                ):
+                    load_capstones(wrong_leaf)
+
+    def test_loader_rejects_capstones_leaf_rebinding(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            content = root / "content"
+            raced = root / "raced-capstones"
+            saved = root / "saved-capstones"
+            shutil.copytree(REPOSITORY_ROOT / "content", content)
+            shutil.copytree(content / "capstones", raced)
+
+            from curriculum_builder.lesson_rendering import (
+                load_lessons_from_root as original_load_lessons,
+            )
+
+            swapped = False
+
+            def swapping_load_lessons(content_descriptor: int):
+                nonlocal swapped
+                snapshot = original_load_lessons(content_descriptor)
+                if not swapped:
+                    (content / "capstones").rename(saved)
+                    raced.rename(content / "capstones")
+                    swapped = True
+                return snapshot
+
+            try:
+                with patch(
+                    "curriculum_builder.lesson_rendering.load_lessons_from_root",
+                    side_effect=swapping_load_lessons,
+                ):
+                    with self.assertRaisesRegex(
+                        CurriculumValidationError,
+                        "capstones directory changed before read",
+                    ):
+                        load_capstones(content / "capstones")
+            finally:
+                if swapped:
+                    (content / "capstones").rename(raced)
+                    saved.rename(content / "capstones")
+
+    def test_loader_preserves_primary_error_when_parent_close_also_fails(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            content = root / "content"
+            shutil.copytree(REPOSITORY_ROOT / "content", content)
+            target = content / "capstones/global-service.json"
+            document = json.loads(target.read_text(encoding="utf-8"))
+            document["unexpected"] = "primary validation failure"
+            target.write_text(
+                json.dumps(document, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            original_open = os.open
+            original_close = os.close
+            parent_descriptor: int | None = None
+
+            def tracking_open(
+                path: object,
+                *args: object,
+                **kwargs: object,
+            ) -> int:
+                nonlocal parent_descriptor
+                descriptor = original_open(path, *args, **kwargs)  # type: ignore[arg-type]
+                if (
+                    kwargs.get("dir_fd") is None
+                    and isinstance(path, (str, os.PathLike))
+                    and Path(path) == content
+                ):
+                    parent_descriptor = descriptor
+                return descriptor
+
+            def failing_close(descriptor: int) -> None:
+                original_close(descriptor)
+                if descriptor == parent_descriptor:
+                    raise OSError("close sentinel")
+
+            with patch(
+                "curriculum_builder.capstones.os.open",
+                side_effect=tracking_open,
+            ), patch(
+                "curriculum_builder.capstones.os.close",
+                side_effect=failing_close,
+            ):
+                with self.assertRaises(CurriculumValidationError) as context:
+                    load_capstones(content / "capstones")
+
+            self.assertIn("fields must be exactly", str(context.exception))
+            self.assertTrue(
+                any(
+                    "parent descriptor also failed to close" in note
+                    for note in getattr(context.exception, "__notes__", ())
+                )
+            )
+
     def test_loader_fails_closed_without_nofollow_support(self) -> None:
         with patch(
             "curriculum_builder.capstones.os.O_NOFOLLOW",
@@ -415,6 +592,27 @@ class CapstoneContractTests(unittest.TestCase):
 
 
 class CapstoneRenderingTests(unittest.TestCase):
+    def test_print_contract_keeps_capstone_lesson_cards_intact(self) -> None:
+        stylesheet = (REPOSITORY_ROOT / "static/styles.css").read_text(
+            encoding="utf-8"
+        )
+        print_styles = stylesheet.split("@media print {", 1)[1]
+        self.assertRegex(
+            print_styles,
+            r"(?s)\.capstone-lessons\s*\{[^}]*display:\s*block;",
+        )
+        self.assertRegex(
+            print_styles,
+            r"(?s)\.capstone-lessons\s*>\s*li\s*\{[^}]*"
+            r"break-inside:\s*avoid-page;[^}]*"
+            r"page-break-inside:\s*avoid;",
+        )
+        self.assertRegex(
+            print_styles,
+            r"(?s)body:has\(\.capstone-page\)\s*>\s*footer\s*\{"
+            r"[^}]*display:\s*none;",
+        )
+
     def test_release_build_generates_index_and_three_semantic_briefs(self) -> None:
         with TemporaryDirectory() as temporary:
             output = Path(temporary).resolve() / "site"
