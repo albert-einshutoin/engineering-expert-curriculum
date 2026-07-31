@@ -619,6 +619,18 @@ class BuildAcceptanceTests(unittest.TestCase):
 
 
 class BuildInputValidationTests(unittest.TestCase):
+    def test_fixture_nests_overlap_root_below_owned_temporary_directory(
+        self,
+    ) -> None:
+        with _fixture() as (root, content, templates, static_root):
+            self.assertEqual(root.name, "workspace")
+            self.assertEqual(
+                (content.parent, templates.parent, static_root.parent),
+                (root, root, root),
+            )
+            if hasattr(os, "geteuid"):
+                self.assertEqual(os.stat(root.parent).st_uid, os.geteuid())
+
     def test_repository_catalog_uses_fixed_provenance_but_fixture_is_generic(
         self,
     ) -> None:
