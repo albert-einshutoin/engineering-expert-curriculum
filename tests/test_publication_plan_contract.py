@@ -323,7 +323,10 @@ gh pr view "$PUBLIC_PR_URL" --repo "wrong/project" # --repo "$PUBLIC_REPOSITORY_
         self.assertEqual(publication.count(put_assignment), 1)
         self.assertEqual(publication.count(get_assignment), 3)
         self.assertEqual(publication.count(get_assertion), 3)
-        self.assertEqual(publication.count("204 No Content"), 1)
+        put_block = publication[
+            publication.index(put_assignment):publication.index(get_assignment)
+        ]
+        self.assertEqual(put_block.count("204 No Content"), 1)
         self.assertNotIn("PRIVATE_REPORTING_STATUS", publication)
 
     def test_review_evidence_uses_the_actual_implementation_date(self) -> None:

@@ -1025,11 +1025,14 @@ test "$REPOSITORY_NAME_WITH_OWNER" = "$PUBLIC_REPOSITORY_SLUG"
 test "$REPOSITORY_VISIBILITY" = "public"
 test "$REPOSITORY_SIZE" = "0"
 # The verified response binds nameWithOwner to "$PUBLIC_REPOSITORY_SLUG".
-gh api --method PUT "repos/$PUBLIC_REPOSITORY_SLUG/private-vulnerability-reporting"
-PRIVATE_REPORTING_STATUS="$(gh api --include \
+PRIVATE_REPORTING_PUT_RESPONSE="$(gh api --include --method PUT \
   "repos/$PUBLIC_REPOSITORY_SLUG/private-vulnerability-reporting")"
-printf '%s\n' "$PRIVATE_REPORTING_STATUS" | \
+printf '%s\n' "$PRIVATE_REPORTING_PUT_RESPONSE" | \
   grep -Eq '^HTTP/[0-9.]+ 204 No Content$'
+PRIVATE_REPORTING_ENABLED="$(gh api \
+  "repos/$PUBLIC_REPOSITORY_SLUG/private-vulnerability-reporting" \
+  --jq '.enabled')"
+test "$PRIVATE_REPORTING_ENABLED" = "true"
 
 gh label create code --repo "$PUBLIC_REPOSITORY_SLUG" --color 1d76db \
   --description "Changes to build, validation, or repository code" --force
@@ -1286,10 +1289,10 @@ PREFLIGHT_PAYLOAD="$(printf '%s\n%s\n%s\n%s' \
   "repository.url=$PUBLIC_REPOSITORY")"
 PUBLICATION_PREFLIGHT_TOKEN="$PUBLICATION_CLONE/.git/publication-preflight-token"
 test -f "$PUBLICATION_PREFLIGHT_TOKEN"
-PRIVATE_REPORTING_STATUS="$(gh api --include \
-  "repos/$PUBLIC_REPOSITORY_SLUG/private-vulnerability-reporting")"
-printf '%s\n' "$PRIVATE_REPORTING_STATUS" | \
-  grep -Eq '^HTTP/[0-9.]+ 204 No Content$'
+PRIVATE_REPORTING_ENABLED="$(gh api \
+  "repos/$PUBLIC_REPOSITORY_SLUG/private-vulnerability-reporting" \
+  --jq '.enabled')"
+test "$PRIVATE_REPORTING_ENABLED" = "true"
 git -C "$PUBLICATION_CLONE" remote add public "$PUBLIC_REPOSITORY"
 test "$(git -C "$PUBLICATION_CLONE" remote get-url public)" = \
   "$PUBLIC_REPOSITORY"
@@ -1580,10 +1583,10 @@ test "$(gh api "repos/$PUBLIC_REPOSITORY_SLUG/rulesets/$RULESET_ID" \
 gh api --method PATCH "repos/$PUBLIC_REPOSITORY_SLUG" \
   -F allow_merge_commit=true -F allow_squash_merge=false \
   -F allow_rebase_merge=false -F delete_branch_on_merge=true
-PRIVATE_REPORTING_STATUS="$(gh api --include \
-  "repos/$PUBLIC_REPOSITORY_SLUG/private-vulnerability-reporting")"
-printf '%s\n' "$PRIVATE_REPORTING_STATUS" | \
-  grep -Eq '^HTTP/[0-9.]+ 204 No Content$'
+PRIVATE_REPORTING_ENABLED="$(gh api \
+  "repos/$PUBLIC_REPOSITORY_SLUG/private-vulnerability-reporting" \
+  --jq '.enabled')"
+test "$PRIVATE_REPORTING_ENABLED" = "true"
 gh api "repos/$PUBLIC_REPOSITORY_SLUG" \
   --jq '{allow_merge_commit,allow_squash_merge,allow_rebase_merge,delete_branch_on_merge}'
 ```
