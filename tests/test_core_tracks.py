@@ -2449,14 +2449,19 @@ class CoreTrackTests(unittest.TestCase):
         }
         self.assertEqual(
             report["baseline"]["rating_inputs"],
-            {
-                "get_customer_history": baseline_frequencies[
-                    "get_customer_history"
-                ],
-                "list_product_window": baseline_frequencies[
-                    "list_product_window"
-                ],
-            },
+            baseline_frequencies,
+        )
+        baseline_dominant = max(
+            baseline_frequencies,
+            key=baseline_frequencies.__getitem__,
+        )
+        self.assertEqual(
+            report["baseline"]["dominant_query_id"],
+            baseline_dominant,
+        )
+        self.assertEqual(
+            report["baseline"]["workload_profile"],
+            f"{baseline_dominant}-dominant",
         )
         self.assertEqual(set(options), {"relational", "document", "key-value"})
         self.assertEqual(
@@ -2466,8 +2471,28 @@ class CoreTrackTests(unittest.TestCase):
                 for option_id, option in options.items()
             },
         )
+        total_frequency = sum(baseline_frequencies.values())
         for option in options.values():
             self.assertEqual(set(option["ratings"]), set(criteria))
+            self.assertEqual(
+                set(option["query_fit_ratings"]),
+                set(baseline_frequencies),
+            )
+            self.assertEqual(
+                option["query_contributions"],
+                {
+                    query_id: (
+                        frequency
+                        * option["query_fit_ratings"][query_id]
+                    )
+                    for query_id, frequency in baseline_frequencies.items()
+                },
+            )
+            self.assertAlmostEqual(
+                option["ratings"]["access_fit"],
+                sum(option["query_contributions"].values())
+                / total_frequency,
+            )
             expected_score = sum(
                 rating * criteria[criterion_id]["weight"]
                 for criterion_id, rating in option["ratings"].items()
@@ -2502,14 +2527,11 @@ class CoreTrackTests(unittest.TestCase):
         }
         self.assertEqual(
             mutation["rating_inputs"],
-            {
-                "get_customer_history": mutated_frequencies[
-                    "get_customer_history"
-                ],
-                "list_product_window": mutated_frequencies[
-                    "list_product_window"
-                ],
-            },
+            mutated_frequencies,
+        )
+        self.assertEqual(
+            mutation["dominant_query_id"],
+            max(mutated_frequencies, key=mutated_frequencies.__getitem__),
         )
         self.assertEqual(
             mutation["derived_access_fit_ratings"],
@@ -2528,6 +2550,29 @@ class CoreTrackTests(unittest.TestCase):
             report["baseline"]["selected_option"],
         )
         self.assertTrue(mutation["decision_recomputed"])
+        order_detail_mutation = report["order_detail_mutation"]
+        order_detail_frequencies = order_detail_mutation["rating_inputs"]
+        self.assertEqual(
+            set(order_detail_frequencies),
+            set(baseline_frequencies),
+        )
+        self.assertEqual(
+            order_detail_mutation["dominant_query_id"],
+            "get_order_detail",
+        )
+        self.assertEqual(
+            order_detail_frequencies["get_order_detail"],
+            max(order_detail_frequencies.values()),
+        )
+        self.assertEqual(
+            order_detail_mutation["selected_option"],
+            "document",
+        )
+        self.assertNotEqual(
+            order_detail_mutation["selected_option"],
+            report["baseline"]["selected_option"],
+        )
+        self.assertTrue(order_detail_mutation["decision_recomputed"])
         self.assertEqual(
             report["vendor_scope"],
             {
@@ -2545,8 +2590,8 @@ class CoreTrackTests(unittest.TestCase):
         self.assert_harness_source_mutation_fails(
             "core-11-data-modeling-storage",
             "storage_decision_lab_v1",
-            "if product_window_frequency >= 400:",
-            "if product_window_frequency >= 4_000:",
+            '"get_order_detail": 5,',
+            '"get_order_detail": 1,',
         )
 
     def test_transaction_harness_reproduces_anomalies_and_retry(
@@ -2670,6 +2715,15 @@ class CoreTrackTests(unittest.TestCase):
             dedupe["first_result"],
             dedupe["reused_result"],
         )
+        self.assertRegex(dedupe["input_fingerprint"], r"^[0-9a-f]{64}$")
+        self.assertEqual(
+            dedupe["stored_entry"],
+            {
+                "input_fingerprint": dedupe["input_fingerprint"],
+                "result": dedupe["first_result"],
+            },
+        )
+        self.assertTrue(dedupe["state_fingerprint_result_atomic"])
         self.assertTrue(report["idempotent_state_transition"])
         partition_mutation = report["partition_mutation"]
         self.assertTrue(partition_mutation["detected"])
@@ -2688,6 +2742,25 @@ class CoreTrackTests(unittest.TestCase):
         )
         self.assert_data_scale_mastery_evidence(report, lesson_id)
         self.assertFalse(report["external_network_used"])
+
+    def test_coordination_harness_rejects_same_key_different_payload(
+        self,
+    ) -> None:
+        report = self.run_python_harness(
+            "core-13-distributed-coordination-failure",
+            "coordination_simulator_lab_v1",
+        )
+
+        conflict = report["same_key_different_payload"]
+        self.assertEqual(conflict["error_type"], "IdempotencyConflict")
+        self.assertEqual(conflict["code"], "same-key-different-input")
+        self.assertTrue(conflict["rejected"])
+        self.assertNotEqual(
+            conflict["attempted_input_fingerprint"],
+            conflict["stored_input_fingerprint"],
+        )
+        self.assertEqual(conflict["applied_state_transitions"], 1)
+        self.assertTrue(conflict["stored_entry_unchanged"])
 
     def test_coordination_harness_rejects_partition_mutation(
         self,
@@ -2741,6 +2814,21 @@ class CoreTrackTests(unittest.TestCase):
             self.assertGreaterEqual(point["queue_depth"], 0)
             self.assertGreaterEqual(point["downstream_ms"], 0)
             self.assertGreater(point["observed_active_concurrency"], 0)
+            samples = point["latency_samples_ms"]
+            self.assertGreaterEqual(len(samples), 5)
+            self.assertTrue(all(sample > 0 for sample in samples))
+            self.assertAlmostEqual(
+                point["mean_ms"],
+                sum(samples) / len(samples),
+            )
+            self.assertEqual(
+                point["mean_source"],
+                "bounded-latency-samples-arithmetic-mean",
+            )
+            self.assertNotAlmostEqual(
+                point["mean_ms"],
+                (point["p50_ms"] + point["p95_ms"]) / 2,
+            )
         analysis = report["curve_analysis"]
         self.assertTrue(analysis["throughput_plateau"])
         self.assertTrue(analysis["tail_growth"])
@@ -2796,6 +2884,10 @@ class CoreTrackTests(unittest.TestCase):
             / little["observed_concurrency"],
         )
         self.assertLessEqual(little["relative_error"], 0.05)
+        self.assertEqual(
+            little["mean_response_source"],
+            "bounded-latency-samples-arithmetic-mean",
+        )
 
         profile = report["local_profile"]
         self.assertEqual(
@@ -2832,6 +2924,44 @@ class CoreTrackTests(unittest.TestCase):
         self.assertEqual(
             mutation["baseline_safe_capacity_rps"],
             capacity["safe_capacity_rps"],
+        )
+        def inferred_knee(load_curve: list[dict[str, object]]) -> int:
+            for previous, current in zip(load_curve, load_curve[1:]):
+                plateau = (
+                    current["success_rps"]
+                    <= previous["success_rps"]
+                )
+                tail_growth = (
+                    current["p99_ms"] > previous["p99_ms"]
+                )
+                error_growth = (
+                    current["success_rps"]
+                    < current["accepted_rps"]
+                )
+                if plateau and tail_growth and error_growth:
+                    return previous["offered_rps"]
+            self.fail("load curve has no measured knee")
+
+        self.assertEqual(
+            capacity["observed_knee_rps"],
+            inferred_knee(curve),
+        )
+        self.assertIn(
+            capacity["observed_knee_rps"],
+            {point["offered_rps"] for point in curve},
+        )
+        transfer_curve = mutation["mutated_load_curve"]
+        self.assertEqual(
+            mutation["mutated_observed_knee_rps"],
+            inferred_knee(transfer_curve),
+        )
+        self.assertIn(
+            mutation["mutated_observed_knee_rps"],
+            {point["offered_rps"] for point in transfer_curve},
+        )
+        self.assertEqual(
+            mutation["knee_criteria"],
+            ["throughput-plateau", "tail-growth", "error-growth"],
         )
         self.assertLessEqual(report["runtime_bound"]["iterations"], 50_000)
         self.assert_data_scale_mastery_evidence(report, lesson_id)
@@ -2955,11 +3085,61 @@ class CoreTrackTests(unittest.TestCase):
         self.assertEqual(telemetry["semantic_conventions"], "1.43.0")
         self.assertEqual(
             set(telemetry["required_resource_attributes"]),
-            {"service.name", "deployment.environment", "service.version"},
+            {
+                "service.name",
+                "deployment.environment.name",
+                "service.version",
+            },
         )
-        self.assertTrue(telemetry["trace_correlation"])
+        self.assertNotIn(
+            "deployment.environment",
+            telemetry["required_resource_attributes"],
+        )
+        schema_validation = telemetry["schema_validation"]
+        self.assertIs(
+            schema_validation["deprecated_attribute_rejected"],
+            True,
+        )
+        self.assertEqual(
+            schema_validation["deprecated_probe_errors"],
+            ["deprecated-resource-attribute:deployment.environment"],
+        )
+        correlation = telemetry["trace_correlation"]
+        self.assertIs(type(correlation["passed"]), bool)
+        self.assertIs(type(correlation["correlated_requests"]), int)
+        self.assertIs(type(correlation["total_requests"]), int)
+        self.assertEqual(
+            correlation["passed"],
+            (
+                correlation["correlated_requests"]
+                == correlation["total_requests"]
+            ),
+        )
+        self.assertEqual(
+            correlation["correlated_request_ids"],
+            correlation["request_ids"],
+        )
         self.assertTrue(telemetry["pii_check"]["passed"])
-        self.assertTrue(telemetry["cardinality_check"]["bounded"])
+        cardinality = telemetry["cardinality_check"]
+        self.assertIs(type(cardinality["bounded"]), bool)
+        self.assertIs(type(cardinality["unique_series_count"]), int)
+        self.assertIs(type(cardinality["series_bound"]), int)
+        self.assertEqual(
+            cardinality["bounded"],
+            (
+                cardinality["unique_series_count"]
+                <= cardinality["series_bound"]
+            ),
+        )
+        self.assertEqual(
+            cardinality["unique_series_count"],
+            len(
+                {
+                    tuple(sorted(sample.items()))
+                    for sample in cardinality["metric_series_fixture"]
+                }
+            ),
+        )
         self.assertTrue(telemetry["sampling_limitations"])
         self.assertTrue(telemetry["stability"])
         transfer = report["journey_boundary_transfer"]

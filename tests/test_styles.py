@@ -742,6 +742,15 @@ class StyleContractTests(unittest.TestCase):
         thead_body = _css_block(print_rules, "thead")
         self.assertRegex(thead_body, r"display:\s*table-header-group")
 
+    def test_print_preserves_complete_preformatted_text(self) -> None:
+        print_rules = _css_block(self.css, "@media print")
+        pre_rules = _css_block(print_rules, "pre")
+
+        self.assertRegex(pre_rules, r"white-space:\s*pre-wrap")
+        self.assertRegex(pre_rules, r"overflow-wrap:\s*anywhere")
+        self.assertRegex(pre_rules, r"overflow(?:-x)?:\s*visible")
+        self.assertNotRegex(pre_rules, r"white-space:\s*pre(?:;|$)")
+
     def test_uses_logical_properties_for_core_layout(self) -> None:
         for property_name in (
             "inline-size",
