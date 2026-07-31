@@ -303,6 +303,7 @@ def _assert_static_site(
     test: unittest.TestCase,
     output: Path,
     lesson_source_counts: dict[str, int] | None = None,
+    competency_source_count: int = 0,
 ) -> dict[Path, bytes]:
     source_counts = lesson_source_counts or {}
     expected = {
@@ -344,7 +345,7 @@ def _assert_static_site(
         )
         expected_source_count = source_counts.get(lesson_id or "", 0)
         if relative == Path("competencies/index.html"):
-            expected_source_count = 3
+            expected_source_count = competency_source_count
         test.assertEqual(
             len(parser.external_links),
             expected_source_count,
@@ -570,6 +571,7 @@ class BuildAcceptanceTests(unittest.TestCase):
                 self,
                 output,
                 _repository_lesson_source_counts(),
+                competency_source_count=3,
             )
 
     def test_cli_rejects_control_characters_without_log_injection(
