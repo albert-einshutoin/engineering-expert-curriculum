@@ -1093,6 +1093,22 @@ git commit -m "content: integrate human product and ethical judgment"
   replaces those nodes with policy-valid semantic markup; the build and full
   suite then pass. The final independent review at `d52750a` reports zero
   Critical, Important, or Minor findings.
+- A subsequent security review at `ae5b21f` reported zero Critical findings and
+  two Important false-green boundaries. An unknown graphics `display_mode`
+  could escape a generated CSS selector because it was interpolated before an
+  allowlist check, and lifecycle records could preserve unsafe free text for
+  over-collection, public access, unlimited retention, or disabled deletion.
+  Tests-only RED commit `d5335f5` reproduces the exact
+  `x}body{display:none}/*` selector payload, an HTML attribute payload, an
+  unknown mode, and all four lifecycle policy violations.
+- Security GREEN commit `8737a86` selects class names and CSS only from fixed
+  color/monochrome mappings, validates the combined HTML and CSS artifacts, and
+  rejects untrusted modes with `graphics-display-mode-invariant`. Commit
+  `914fa31` derives the lifecycle fixture from structured inputs and validates
+  approved purpose, necessary data classes, forbidden classes, allowed roles,
+  bounded retention, delete SLA, and enabled deletion before preserving the
+  complete phase-to-harm/control/residual-risk trace. Unsafe policy inputs fail
+  with `ethics-lifecycle-policy-invariant`.
 - The HCI audit derives keyboard, 200% zoom, reading-order, and usability
   results for the generated static curriculum while distinguishing WCAG 2.2
   Level AA and ISO 9241-210:2019 from the non-standard APCA practice and the
@@ -1103,28 +1119,32 @@ git commit -m "content: integrate human product and ethical judgment"
   a one-page summary, technical appendix, and validated ADR. The impact
   assessment calculates affected-group inherent and residual risk and exposes
   uneven harm when a high-risk population is added.
-- All 23 Human and Product methods now pass, including ten review-regression
+- All 30 Human and Product methods now pass, including seventeen
+  review-regression
   methods whose bypass mutations fail with
   `hci-input-mode-invariant`, `graphics-artifact-invariant`,
-  `graphics-scale-invariant`, `communication-audience-invariant`, or
-  `ethics-lifecycle-invariant`.
+  `graphics-scale-invariant`, `graphics-display-mode-invariant`,
+  `communication-audience-invariant`, `ethics-lifecycle-invariant`, or
+  `ethics-lifecycle-policy-invariant`.
   The separate lesson quality/rendering gate passes 67 tests, the CSS gate
-  passes 19 tests, and the complete repository suite passes all 395 tests.
+  passes 19 tests, and the complete repository suite passes all 402 tests.
   Scoped scans report zero authored-body unsafe-HTML, body external-URL,
   secret, and dangerous-execution matches.
 - Two consecutive clean builds each contain 25 regular artifacts, 24 HTML
-  files, zero JavaScript files, and 796,654 bytes. The canonical aggregate
+  files, zero JavaScript files, zero symbolic links, and 802,968 bytes. The
+  canonical aggregate
   algorithm encodes each sorted relative POSIX path, byte length, and file
   payload into one SHA-256 state; both builds produce
-  `628b4d7a1e0573eaf685db08a9628f364365d14bd47e349fb2817adc8622bc2e`.
+  `60104581be18faa2990da0f6dca56a88e53cf3360ab11f6b57fda4dd94f8ced4`.
 - Chrome 150 Letter-PDF evidence covers the two longest final changed bodies:
-  core-17 renders as 22 pages and core-20 as 18 pages, both at 612 by 792
+  core-17 renders as 24 pages and core-20 as 21 pages, both at 612 by 792
   points, tagged and without PDF JavaScript. PDFKit text extraction, with
   printed line-break hyphenation normalized, retains
-  `graphics-scale-invariant`, `display-monochrome`, the visible
-  `学習: 12 hours (60%)` label, `ethics-lifecycle-invariant`, and
-  `affected-population-must-change-risk`, proving the chart and late harness
-  suffixes remain present in print.
+  `graphics-display-mode-invariant`, `graphics-scale-invariant`,
+  `display-monochrome`, `ethics-lifecycle-policy-invariant`,
+  `make-expired-personal-data-unavailable`, and
+  `affected-population-must-change-risk`, proving both policy boundaries and
+  late harness suffixes remain present in print.
 - The catalog remains exactly 1,140 items with SHA-256
   `4f38b5f63931a7f06e13f90f5d9ef90a0a435f30dae5d4fe70720d730a057473`.
   The preserved non-public prototype archive remains independently
