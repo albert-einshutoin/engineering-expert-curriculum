@@ -1091,6 +1091,10 @@ class ContentAcceptanceTests(unittest.TestCase):
 
         mutations = (
             (
+                "`core-01-systems-tradeoffs`<br>システム思考",
+                "`core-01-systems-tradeoffs`<br>\\システム思考",
+            ),
+            (
                 "`core-01-systems-tradeoffs` | `foundation`",
                 "`core-30-evidence-based-technical-leadership` | `foundation`",
             ),
@@ -1120,10 +1124,26 @@ class ContentAcceptanceTests(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 _assert_generated_map_contract(tampered)
 
+        for injected in (
+            "| unexpected | generated | row |",
+            '<img src="https://example.invalid/tracker">',
+        ):
+            tampered = document.replace(
+                END_GENERATED_MAP,
+                f"{injected}\n{END_GENERATED_MAP}",
+                1,
+            )
+            with self.assertRaises(AssertionError):
+                _assert_generated_map_contract(tampered)
+
     def test_independent_markdown_parser_accepts_an_escaped_pipe(self) -> None:
         self.assertEqual(
             _parse_markdown_table_row(r"| 1 | boundary a\|b | final |"),
             ("1", "boundary a|b", "final"),
+        )
+        self.assertEqual(
+            _parse_markdown_table_row(r"| \literal |"),
+            (r"\literal",),
         )
 
     def test_two_fresh_builds_have_exact_deterministic_static_inventory(self) -> None:
