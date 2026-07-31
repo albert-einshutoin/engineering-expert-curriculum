@@ -1103,7 +1103,7 @@ ID or login. Then rewrite exactly the two public refs:
 ```bash
 export PUBLIC_AUTHOR_NAME="Engineering Expert Curriculum contributors"
 EXPECTED_NOREPLY_EMAIL="${PUBLIC_ACCOUNT_ID}+${PUBLIC_OWNER}@users.noreply.github.com"
-PUBLIC_NOREPLY_EMAIL="${PUBLIC_NOREPLY_EMAIL:?copy the verified GitHub noreply address}"
+export PUBLIC_NOREPLY_EMAIL="${PUBLIC_NOREPLY_EMAIL:?copy the verified GitHub noreply address}"
 test "$PUBLIC_NOREPLY_EMAIL" = "$EXPECTED_NOREPLY_EMAIL"
 git -C "$PUBLICATION_CLONE" filter-repo --force \
   --refs refs/heads/main refs/heads/feat/static-oss-curriculum \
@@ -1250,9 +1250,11 @@ git -C "$PUBLICATION_CLONE" switch feat/static-oss-curriculum
 PREFLIGHT_MAIN_SHA="$(git -C "$PUBLICATION_CLONE" rev-parse refs/heads/main)"
 PREFLIGHT_FEATURE_SHA="$(git -C "$PUBLICATION_CLONE" rev-parse \
   refs/heads/feat/static-oss-curriculum)"
-PREFLIGHT_PAYLOAD="$(printf '%s\n%s' \
+PREFLIGHT_PAYLOAD="$(printf '%s\n%s\n%s\n%s' \
   "refs/heads/main=$PREFLIGHT_MAIN_SHA" \
-  "refs/heads/feat/static-oss-curriculum=$PREFLIGHT_FEATURE_SHA")"
+  "refs/heads/feat/static-oss-curriculum=$PREFLIGHT_FEATURE_SHA" \
+  "repository.slug=$PUBLIC_REPOSITORY_SLUG" \
+  "repository.url=$PUBLIC_REPOSITORY")"
 PUBLICATION_PREFLIGHT_TOKEN="$PUBLICATION_CLONE/.git/publication-preflight-token"
 umask 077
 printf '%s' "$PREFLIGHT_PAYLOAD" > "$PUBLICATION_PREFLIGHT_TOKEN"
@@ -1277,17 +1279,21 @@ set -euo pipefail
 PREFLIGHT_MAIN_SHA="$(git -C "$PUBLICATION_CLONE" rev-parse refs/heads/main)"
 PREFLIGHT_FEATURE_SHA="$(git -C "$PUBLICATION_CLONE" rev-parse \
   refs/heads/feat/static-oss-curriculum)"
-PREFLIGHT_PAYLOAD="$(printf '%s\n%s' \
+PREFLIGHT_PAYLOAD="$(printf '%s\n%s\n%s\n%s' \
   "refs/heads/main=$PREFLIGHT_MAIN_SHA" \
-  "refs/heads/feat/static-oss-curriculum=$PREFLIGHT_FEATURE_SHA")"
+  "refs/heads/feat/static-oss-curriculum=$PREFLIGHT_FEATURE_SHA" \
+  "repository.slug=$PUBLIC_REPOSITORY_SLUG" \
+  "repository.url=$PUBLIC_REPOSITORY")"
 PUBLICATION_PREFLIGHT_TOKEN="$PUBLICATION_CLONE/.git/publication-preflight-token"
 test -f "$PUBLICATION_PREFLIGHT_TOKEN"
-test "$(cat "$PUBLICATION_PREFLIGHT_TOKEN")" = "$PREFLIGHT_PAYLOAD"
 PRIVATE_REPORTING_STATUS="$(gh api --include \
   "repos/$PUBLIC_REPOSITORY_SLUG/private-vulnerability-reporting")"
 printf '%s\n' "$PRIVATE_REPORTING_STATUS" | \
   grep -Eq '^HTTP/[0-9.]+ 204 No Content$'
 git -C "$PUBLICATION_CLONE" remote add public "$PUBLIC_REPOSITORY"
+test "$(git -C "$PUBLICATION_CLONE" remote get-url public)" = \
+  "$PUBLIC_REPOSITORY"
+test "$(cat "$PUBLICATION_PREFLIGHT_TOKEN")" = "$PREFLIGHT_PAYLOAD"
 git -C "$PUBLICATION_CLONE" push --set-upstream public \
   refs/heads/main:refs/heads/main \
   refs/heads/feat/static-oss-curriculum:refs/heads/feat/static-oss-curriculum
@@ -1451,6 +1457,67 @@ Before merging, configure and verify all of these settings:
 Use the repository settings/API response as evidence. A successful workflow
 alone does not prove these controls are configured.
 
+Apply and read back the repository-level controls before creating the ruleset.
+Every mutation is followed by an exact GET assertion; a `409`, unsupported
+account policy, or permission failure is a stop condition rather than a reason
+to infer the setting from workflow behavior.
+
+```bash
+set -euo pipefail
+ACTIONS_POLICY_STATUS="$(gh api --method PUT \
+  "repos/$PUBLIC_REPOSITORY_SLUG/actions/permissions" --include \
+  -F enabled=true -f allowed_actions=all -F sha_pinning_required=true)"
+printf '%s\n' "$ACTIONS_POLICY_STATUS" | \
+  grep -Eq '^HTTP/[0-9.]+ 204 No Content$'
+test "$(gh api "repos/$PUBLIC_REPOSITORY_SLUG/actions/permissions" \
+  --jq '[.enabled, .allowed_actions, .sha_pinning_required] | map(tostring) | join(":")')" = \
+  "true:all:true"
+
+WORKFLOW_PERMISSION_STATUS="$(gh api --method PUT \
+  "repos/$PUBLIC_REPOSITORY_SLUG/actions/permissions/workflow" --include \
+  -f default_workflow_permissions=read \
+  -F can_approve_pull_request_reviews=false)"
+printf '%s\n' "$WORKFLOW_PERMISSION_STATUS" | \
+  grep -Eq '^HTTP/[0-9.]+ 204 No Content$'
+test "$(gh api "repos/$PUBLIC_REPOSITORY_SLUG/actions/permissions/workflow" \
+  --jq '[.default_workflow_permissions, .can_approve_pull_request_reviews] | map(tostring) | join(":")')" = \
+  "read:false"
+
+PAGES_CREATE_STATUS="$(gh api --method POST \
+  "repos/$PUBLIC_REPOSITORY_SLUG/pages" --include -f build_type=workflow)"
+printf '%s\n' "$PAGES_CREATE_STATUS" | \
+  grep -Eq '^HTTP/[0-9.]+ 201 Created$'
+test "$(gh api "repos/$PUBLIC_REPOSITORY_SLUG/pages" --jq '.build_type')" = \
+  "workflow"
+
+ENVIRONMENT_STATUS="$(gh api --method PUT \
+  "repos/$PUBLIC_REPOSITORY_SLUG/environments/github-pages" --include \
+  -F 'deployment_branch_policy[protected_branches]=false' \
+  -F 'deployment_branch_policy[custom_branch_policies]=true')"
+printf '%s\n' "$ENVIRONMENT_STATUS" | \
+  grep -Eq '^HTTP/[0-9.]+ 200 OK$'
+test "$(gh api "repos/$PUBLIC_REPOSITORY_SLUG/environments/github-pages" \
+  --jq '[.name, .deployment_branch_policy.protected_branches, .deployment_branch_policy.custom_branch_policies] | map(tostring) | join(":")')" = \
+  "github-pages:false:true"
+test "$(gh api "repos/$PUBLIC_REPOSITORY_SLUG/environments/github-pages" \
+  --jq '[.protection_rules[].type] | sort | join(",")')" = "branch_policy"
+
+PAGES_BRANCH_POLICY_STATUS="$(gh api --method POST \
+  "repos/$PUBLIC_REPOSITORY_SLUG/environments/github-pages/deployment-branch-policies" \
+  --include -f name=main -f type=branch)"
+printf '%s\n' "$PAGES_BRANCH_POLICY_STATUS" | \
+  grep -Eq '^HTTP/[0-9.]+ 200 OK$'
+test "$(gh api \
+  "repos/$PUBLIC_REPOSITORY_SLUG/environments/github-pages/deployment-branch-policies" \
+  --jq '[.total_count, .branch_policies[0].name] | map(tostring) | join(":")')" = \
+  "1:main"
+```
+
+Expected: Actions are enabled with full-SHA pinning, the default token is
+read-only and cannot approve PRs, Pages uses `build_type=workflow`, and the
+`github-pages` environment has exactly one custom branch policy, `main`, with
+no reviewer bypass represented as protection.
+
 Save the following exact payload as `/tmp/engineering-curriculum-main-ruleset.json`:
 
 ```json
@@ -1529,8 +1596,11 @@ PR. Do not infer protection from a successful workflow alone.
 Run:
 
 ```bash
-gh pr merge --merge --delete-branch --repo "$PUBLIC_REPOSITORY_SLUG" \
-  "$PUBLIC_PR_URL"
+CURRENT_PR_HEAD_SHA="$(gh pr view "$PUBLIC_PR_URL" \
+  --repo "$PUBLIC_REPOSITORY_SLUG" --json headRefOid --jq '.headRefOid')"
+test "$CURRENT_PR_HEAD_SHA" = "${PR_HEAD_SHA}"
+gh pr merge --merge --delete-branch --match-head-commit "${PR_HEAD_SHA}" \
+  --repo "$PUBLIC_REPOSITORY_SLUG" "$PUBLIC_PR_URL"
 gh pr view "$PUBLIC_PR_URL" --repo "$PUBLIC_REPOSITORY_SLUG" \
   --json state,mergedAt,mergeCommit,url
 PUBLIC_MERGE_SHA="$(gh pr view "$PUBLIC_PR_URL" \
@@ -1541,6 +1611,8 @@ test "$(git -C "$PUBLICATION_CLONE" rev-parse refs/remotes/public/main)" = \
   "$PUBLIC_MERGE_SHA"
 test "$(git -C "$PUBLICATION_CLONE" rev-list --parents -n 1 \
   "$PUBLIC_MERGE_SHA" | awk '{print NF}')" -eq 3
+test "$(git -C "$PUBLICATION_CLONE" rev-parse "${PUBLIC_MERGE_SHA}^2")" = \
+  "${PR_HEAD_SHA}"
 ```
 
 Expected: the JSON contains `"state":"MERGED"`, `mergedAt` and `mergeCommit`
@@ -1554,18 +1626,58 @@ it into a squash commit.
 Run:
 
 ```bash
-gh run list --repo "$PUBLIC_REPOSITORY_SLUG" --branch main --limit 10
-PAGES_RUN_ID="$(gh run list --repo "$PUBLIC_REPOSITORY_SLUG" \
-  --workflow 'Deploy GitHub Pages' --branch main --limit 1 \
-  --json databaseId --jq '.[0].databaseId')"
+PAGES_RUN_ID=""
+for attempt in $(seq 1 30); do
+  PAGES_RUN_ID="$(gh run list --repo "$PUBLIC_REPOSITORY_SLUG" \
+    --workflow 'Deploy GitHub Pages' --branch main \
+    --commit "$PUBLIC_MERGE_SHA" --event push --limit 1 \
+    --json databaseId --jq '.[0].databaseId')"
+  if test -n "$PAGES_RUN_ID"; then
+    break
+  fi
+  sleep 2
+done
 test -n "$PAGES_RUN_ID"
 gh run watch "$PAGES_RUN_ID" --repo "$PUBLIC_REPOSITORY_SLUG"
-gh api "repos/$PUBLIC_REPOSITORY_SLUG/pages" --jq '{status,html_url}'
+PAGES_RUN_STATE="$(gh run view "$PAGES_RUN_ID" \
+  --repo "$PUBLIC_REPOSITORY_SLUG" --json headSha,status,conclusion \
+  --jq '[.headSha,.status,.conclusion] | join(":")')"
+test "$PAGES_RUN_STATE" = "$PUBLIC_MERGE_SHA:completed:success"
+PUBLIC_SITE_URL="$(gh api "repos/$PUBLIC_REPOSITORY_SLUG/pages" \
+  --jq '.html_url')"
+test -n "$PUBLIC_SITE_URL"
+printf '%s\n' "$PUBLIC_SITE_URL" | grep -Eq '^https://[^[:space:]]+/$'
 ```
 
 Expected: Pages workflow succeeds and the returned public URL serves the
 verified site. Open the public URL and repeat the Home → Roadmap → Lesson →
 Catalog smoke journey.
+
+Browser safety constraints do not permit treating a local `file://` automation
+result as public-host evidence. Stop here and inspect `$PUBLIC_SITE_URL` over
+public HTTPS in a human-controlled browser. Record the exact URL, merge SHA,
+UTC time, Home → Roadmap → Lesson → Catalog navigation, keyboard focus, 200%
+zoom/reflow, and print result in a new private staging file. Do not mark this
+gate complete from the earlier local review or from a successful Pages job.
+
+```bash
+PUBLIC_HTTPS_EVIDENCE_SOURCE="${PUBLIC_HTTPS_EVIDENCE_SOURCE:?write the public HTTPS evidence file after manual inspection}"
+test -f "$PUBLIC_HTTPS_EVIDENCE_SOURCE"
+test ! -L "$PUBLIC_HTTPS_EVIDENCE_SOURCE"
+test -s "$PUBLIC_HTTPS_EVIDENCE_SOURCE"
+grep -Fqx "tested commit: $PUBLIC_MERGE_SHA" "$PUBLIC_HTTPS_EVIDENCE_SOURCE"
+grep -Fqx "public URL: $PUBLIC_SITE_URL" "$PUBLIC_HTTPS_EVIDENCE_SOURCE"
+grep -Fqx "public HTTPS smoke: PASS" "$PUBLIC_HTTPS_EVIDENCE_SOURCE"
+grep -Eq '^checked at UTC: [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$' \
+  "$PUBLIC_HTTPS_EVIDENCE_SOURCE"
+for check in navigation keyboard-focus zoom-200-percent print; do
+  grep -Fqx "$check: PASS" "$PUBLIC_HTTPS_EVIDENCE_SOURCE"
+done
+```
+
+Expected: the manual evidence is bound to the initial merge commit and public
+HTTPS URL. Missing or failed evidence blocks the release metadata branch and
+therefore blocks the tag.
 
 - [ ] **Step 5: Materialize release metadata through a PR, then publish**
 
@@ -1583,6 +1695,14 @@ git -C "$PUBLICATION_CLONE" pull --ff-only public main
 RELEASE_DATE="$(date -u +%F)"
 test -n "$RELEASE_DATE"
 git -C "$PUBLICATION_CLONE" switch -c release/v0.1.0-metadata
+RELEASE_READINESS_PATH="docs/reviews/2026-07-31-release-readiness.md"
+mkdir -p "$PUBLICATION_CLONE/docs/reviews"
+install -m 0644 "$PUBLIC_HTTPS_EVIDENCE_SOURCE" \
+  "$PUBLICATION_CLONE/$RELEASE_READINESS_PATH"
+grep -Fqx "tested commit: $PUBLIC_MERGE_SHA" \
+  "$PUBLICATION_CLONE/$RELEASE_READINESS_PATH"
+grep -Fqx "public HTTPS smoke: PASS" \
+  "$PUBLICATION_CLONE/$RELEASE_READINESS_PATH"
 (cd "$PUBLICATION_CLONE" && RELEASE_DATE="$RELEASE_DATE" python3.13 - <<'PY'
 from datetime import date
 import os
@@ -1633,8 +1753,22 @@ PY
 (cd "$PUBLICATION_CLONE" && python3.13 tools/build.py)
 (cd "$PUBLICATION_CLONE" && \
   python3.13 tools/check_site.py --root site --require-current-release)
-git -C "$PUBLICATION_CLONE" add CITATION.cff CHANGELOG.md
-git -C "$PUBLICATION_CLONE" commit -m "docs: materialize v0.1.0 release metadata"
+git -C "$PUBLICATION_CLONE" add CITATION.cff CHANGELOG.md \
+  "$RELEASE_READINESS_PATH"
+git -C "$PUBLICATION_CLONE" \
+  -c user.name="$PUBLIC_AUTHOR_NAME" \
+  -c user.email="$PUBLIC_NOREPLY_EMAIL" \
+  commit -m "docs: materialize v0.1.0 release metadata"
+RELEASE_METADATA_SHA="$(git -C "$PUBLICATION_CLONE" rev-parse HEAD)"
+test "$(git -C "$PUBLICATION_CLONE" rev-parse \
+  refs/heads/release/v0.1.0-metadata)" = "$RELEASE_METADATA_SHA"
+EXPECTED_RELEASE_COMMIT_IDENTITY="$(printf '%s\n<%s>\n%s\n<%s>' \
+  "$PUBLIC_AUTHOR_NAME" "$PUBLIC_NOREPLY_EMAIL" \
+  "$PUBLIC_AUTHOR_NAME" "$PUBLIC_NOREPLY_EMAIL")"
+RELEASE_COMMIT_IDENTITY="$(git -C "$PUBLICATION_CLONE" for-each-ref \
+  --format='%(authorname)%0a%(authoremail)%0a%(committername)%0a%(committeremail)' \
+  refs/heads/release/v0.1.0-metadata)"
+test "$RELEASE_COMMIT_IDENTITY" = "$EXPECTED_RELEASE_COMMIT_IDENTITY"
 git -C "$PUBLICATION_CLONE" push --set-upstream public \
   refs/heads/release/v0.1.0-metadata:refs/heads/release/v0.1.0-metadata
 RELEASE_PR_URL="$(gh pr create --repo "$PUBLIC_REPOSITORY_SLUG" --base main \
@@ -1679,8 +1813,11 @@ the same history-preserving strategy and verify the result before creating the
 tag:
 
 ```bash
-gh pr merge --merge --delete-branch --repo "$PUBLIC_REPOSITORY_SLUG" \
-  "$RELEASE_PR_URL"
+CURRENT_RELEASE_HEAD_SHA="$(gh pr view "$RELEASE_PR_URL" \
+  --repo "$PUBLIC_REPOSITORY_SLUG" --json headRefOid --jq '.headRefOid')"
+test "$CURRENT_RELEASE_HEAD_SHA" = "${RELEASE_HEAD_SHA}"
+gh pr merge --merge --delete-branch --match-head-commit "${RELEASE_HEAD_SHA}" \
+  --repo "$PUBLIC_REPOSITORY_SLUG" "$RELEASE_PR_URL"
 gh pr view "$RELEASE_PR_URL" --repo "$PUBLIC_REPOSITORY_SLUG" \
   --json state,mergedAt,mergeCommit,url
 RELEASE_MERGE_SHA="$(gh pr view "$RELEASE_PR_URL" \
@@ -1691,13 +1828,53 @@ git -C "$PUBLICATION_CLONE" pull --ff-only public main
 test "$(git -C "$PUBLICATION_CLONE" rev-parse HEAD)" = "$RELEASE_MERGE_SHA"
 test "$(git -C "$PUBLICATION_CLONE" rev-list --parents -n 1 \
   "$RELEASE_MERGE_SHA" | awk '{print NF}')" -eq 3
+test "$(git -C "$PUBLICATION_CLONE" rev-parse "${RELEASE_MERGE_SHA}^2")" = \
+  "${RELEASE_HEAD_SHA}"
 test "$(git -C "$PUBLICATION_CLONE" show HEAD:CITATION.cff | \
   grep -Ec "^date-released: ${RELEASE_DATE}$")" -eq 1
 test "$(git -C "$PUBLICATION_CLONE" show HEAD:CHANGELOG.md | \
   grep -Ec "^## \[0\.1\.0\] - ${RELEASE_DATE}$")" -eq 1
-git -C "$PUBLICATION_CLONE" tag -a v0.1.0 -m "Engineering Expert Curriculum v0.1.0"
+test "$(git -C "$PUBLICATION_CLONE" show \
+  HEAD:docs/reviews/2026-07-31-release-readiness.md | \
+  grep -Fxc "tested commit: $PUBLIC_MERGE_SHA")" -eq 1
+
+verify_workflow_run_for_sha() {
+  local workflow_name="$1"
+  local expected_sha="$2"
+  local run_id=""
+  local run_state
+  for attempt in $(seq 1 30); do
+    run_id="$(gh run list --repo "$PUBLIC_REPOSITORY_SLUG" \
+      --workflow "$workflow_name" --branch main --commit "$expected_sha" \
+      --event push --limit 1 --json databaseId --jq '.[0].databaseId')"
+    if test -n "$run_id"; then
+      break
+    fi
+    sleep 2
+  done
+  test -n "$run_id"
+  gh run watch "$run_id" --repo "$PUBLIC_REPOSITORY_SLUG"
+  run_state="$(gh run view "$run_id" --repo "$PUBLIC_REPOSITORY_SLUG" \
+    --json headSha,status,conclusion \
+    --jq '[.headSha,.status,.conclusion] | join(":")')"
+  test "$run_state" = "$expected_sha:completed:success"
+}
+for workflow_name in "Validate" "CodeQL" "Gitleaks" "Deploy GitHub Pages"; do
+  verify_workflow_run_for_sha "$workflow_name" "$RELEASE_MERGE_SHA"
+done
+
+git -C "$PUBLICATION_CLONE" \
+  -c user.name="$PUBLIC_AUTHOR_NAME" \
+  -c user.email="$PUBLIC_NOREPLY_EMAIL" \
+  tag -a v0.1.0 -m "Engineering Expert Curriculum v0.1.0"
 test "$(git -C "$PUBLICATION_CLONE" rev-list -n 1 v0.1.0)" = \
   "$RELEASE_MERGE_SHA"
+test "$(git -C "$PUBLICATION_CLONE" cat-file -t v0.1.0)" = "tag"
+test "$(git -C "$PUBLICATION_CLONE" for-each-ref \
+  --format='%(taggername)' refs/tags/v0.1.0)" = "$PUBLIC_AUTHOR_NAME"
+test "$(git -C "$PUBLICATION_CLONE" for-each-ref \
+  --format='%(taggeremail)' refs/tags/v0.1.0)" = \
+  "<$PUBLIC_NOREPLY_EMAIL>"
 git -C "$PUBLICATION_CLONE" push public refs/tags/v0.1.0:refs/tags/v0.1.0
 REMOTE_RELEASE_SHA="$(git -C "$PUBLICATION_CLONE" ls-remote public \
   'refs/tags/v0.1.0^{}' | awk '{print $1}')"

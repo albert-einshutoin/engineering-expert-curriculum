@@ -320,17 +320,20 @@ gh pr view "$PUBLIC_PR_URL" --repo "wrong/project" # --repo "$PUBLIC_REPOSITORY_
                 self.assertIn(phrase, verification)
                 self.assertIn(phrase, push)
         self.assertIn('test "$(cat "$PUBLICATION_PREFLIGHT_TOKEN")" = "$PREFLIGHT_PAYLOAD"', push)
-        remote_add = push.index(
+        normalized_push = re.sub(r"\s+", " ", push.replace("\\\n", " "))
+        remote_add = normalized_push.index(
             'git -C "$PUBLICATION_CLONE" remote add public "$PUBLIC_REPOSITORY"'
         )
-        remote_verify = push.index(
+        remote_verify = normalized_push.index(
             'test "$(git -C "$PUBLICATION_CLONE" remote get-url public)" = '
             '"$PUBLIC_REPOSITORY"'
         )
-        token_verify = push.index(
+        token_verify = normalized_push.index(
             'test "$(cat "$PUBLICATION_PREFLIGHT_TOKEN")" = "$PREFLIGHT_PAYLOAD"'
         )
-        actual_push = push.index('git -C "$PUBLICATION_CLONE" push --set-upstream public')
+        actual_push = normalized_push.index(
+            'git -C "$PUBLICATION_CLONE" push --set-upstream public'
+        )
         self.assertLess(remote_add, remote_verify)
         self.assertLess(remote_verify, token_verify)
         self.assertLess(token_verify, actual_push)
@@ -341,6 +344,7 @@ gh pr view "$PUBLIC_PR_URL" --repo "wrong/project" # --repo "$PUBLIC_REPOSITORY_
             "**Step 2: Configure repository metadata and protection**",
             maxsplit=1,
         )[1].split("**Step 3: Merge only the verified PR**", maxsplit=1)[0]
+        settings = re.sub(r"\s+", " ", settings.replace("\\\n", " "))
         for phrase in (
             'gh api --method PUT "repos/$PUBLIC_REPOSITORY_SLUG/actions/permissions"',
             "sha_pinning_required=true",
@@ -355,7 +359,7 @@ gh pr view "$PUBLIC_PR_URL" --repo "wrong/project" # --repo "$PUBLIC_REPOSITORY_
             'gh api --method PUT "repos/$PUBLIC_REPOSITORY_SLUG/environments/github-pages"',
             "custom_branch_policies",
             'environments/github-pages/deployment-branch-policies',
-            '"main"',
+            '"1:main"',
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, settings)
@@ -370,13 +374,14 @@ gh pr view "$PUBLIC_PR_URL" --repo "wrong/project" # --repo "$PUBLIC_REPOSITORY_
             "The release metadata PR now has its own Model B commit",
             maxsplit=1,
         )[1].split("**Step 6: Clean only the merged public feature branch**", maxsplit=1)[0]
-        for section, prefix, pr_url in (
-            (initial_merge, "PR", "$PUBLIC_PR_URL"),
-            (release_merge, "RELEASE", "$RELEASE_PR_URL"),
+        for section, prefix, pr_url, merge_prefix in (
+            (initial_merge, "PR", "$PUBLIC_PR_URL", "PUBLIC"),
+            (release_merge, "RELEASE", "$RELEASE_PR_URL", "RELEASE"),
         ):
+            section = re.sub(r"\s+", " ", section)
             reviewed = f"${{{prefix}_HEAD_SHA}}"
             current = f"CURRENT_{prefix}_HEAD_SHA"
-            merge_sha = f"${{{prefix}_MERGE_SHA}}"
+            merge_sha = f"${{{merge_prefix}_MERGE_SHA}}"
             with self.subTest(prefix=prefix):
                 self.assertIn(f'{current}="$(gh pr view "{pr_url}"', section)
                 self.assertIn(f'test "${current}" = "{reviewed}"', section)
@@ -395,6 +400,7 @@ gh pr view "$PUBLIC_PR_URL" --repo "wrong/project" # --repo "$PUBLIC_REPOSITORY_
             "**Step 5: Materialize release metadata through a PR, then publish**",
             maxsplit=1,
         )[0]
+        pages = re.sub(r"\s+", " ", pages.replace("\\\n", " "))
         for phrase in (
             '--commit "$PUBLIC_MERGE_SHA"',
             'gh run view "$PAGES_RUN_ID" --repo "$PUBLIC_REPOSITORY_SLUG"',
@@ -413,8 +419,9 @@ gh pr view "$PUBLIC_PR_URL" --repo "wrong/project" # --repo "$PUBLIC_REPOSITORY_
         for phrase in (
             'docs/reviews/2026-07-31-release-readiness.md',
             '"Validate" "CodeQL" "Gitleaks" "Deploy GitHub Pages"',
-            '--commit "$RELEASE_MERGE_SHA"',
-            '"$RELEASE_MERGE_SHA:completed:success"',
+            '--commit "$expected_sha"',
+            'test "$run_state" = "$expected_sha:completed:success"',
+            'verify_workflow_run_for_sha "$workflow_name" "$RELEASE_MERGE_SHA"',
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, release)
@@ -435,9 +442,9 @@ gh pr view "$PUBLIC_PR_URL" --repo "wrong/project" # --repo "$PUBLIC_REPOSITORY_
                 self.assertRegex(
                     release,
                     re.compile(
-                        r'git -C "\$PUBLICATION_CLONE" '
-                        r'-c user\.name="\$PUBLIC_AUTHOR_NAME" '
-                        r'-c user\.email="\$PUBLIC_NOREPLY_EMAIL" '
+                        r'git -C "\$PUBLICATION_CLONE"\s+'
+                        r'-c user\.name="\$PUBLIC_AUTHOR_NAME"\s+'
+                        r'-c user\.email="\$PUBLIC_NOREPLY_EMAIL"\s+'
                         + re.escape(command)
                     ),
                 )
@@ -512,7 +519,7 @@ gh pr view "$PUBLIC_PR_URL" --repo "wrong/project" # --repo "$PUBLIC_REPOSITORY_
             "gh pr merge --merge --delete-branch",
             '"state":"MERGED"',
             "2 parents",
-            'git -C "$PUBLICATION_CLONE" tag -a v0.1.0',
+            'tag -a v0.1.0',
             "gh release create v0.1.0",
         ):
             with self.subTest(phrase=phrase):
