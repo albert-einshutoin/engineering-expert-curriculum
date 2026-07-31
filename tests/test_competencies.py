@@ -1110,6 +1110,22 @@ class CompetencyBuildTests(unittest.TestCase):
             stylesheet,
             (
                 r"(?s)@media print.*"
+                r"\.competency-matrix\s*\{.*"
+                r"table-layout:\s*fixed"
+            ),
+        )
+        self.assertRegex(
+            stylesheet,
+            (
+                r"(?s)@media print.*"
+                r"\.competency-matrix th:nth-child\(5\).*"
+                r"inline-size:\s*20%"
+            ),
+        )
+        self.assertRegex(
+            stylesheet,
+            (
+                r"(?s)@media print.*"
                 r"\.competency-matrix th:first-child.*"
                 r"\.competency-matrix td:last-child.*"
                 r"inline-size:\s*auto.*"
