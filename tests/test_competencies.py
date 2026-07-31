@@ -1091,11 +1091,12 @@ class CompetencyBuildTests(unittest.TestCase):
             stylesheet,
             (
                 r"(?s)@media print.*"
-                r"\.competency-matrix thead.*"
-                r"\.competency-matrix thead tr.*"
-                r"\.competency-matrix thead th.*"
-                r"break-inside:\s*avoid.*"
-                r"white-space:\s*nowrap"
+                r"\.competency-matrix,\s*"
+                r"\.competency-matrix tbody,\s*"
+                r"\.competency-matrix tr,\s*"
+                r"\.competency-matrix th,\s*"
+                r"\.competency-matrix td\s*\{.*"
+                r"display:\s*block"
             ),
         )
         self.assertRegex(
@@ -1110,28 +1111,38 @@ class CompetencyBuildTests(unittest.TestCase):
             stylesheet,
             (
                 r"(?s)@media print.*"
-                r"\.competency-matrix\s*\{.*"
-                r"table-layout:\s*fixed"
+                r"\.competency-matrix thead\s*\{.*"
+                r"display:\s*none"
             ),
         )
         self.assertRegex(
             stylesheet,
             (
                 r"(?s)@media print.*"
-                r"\.competency-matrix th:nth-child\(5\).*"
-                r"inline-size:\s*22%"
+                r"\.competency-matrix tbody tr\s*\{.*"
+                r"break-inside:\s*avoid.*"
+                r"border:"
             ),
         )
-        self.assertRegex(
-            stylesheet,
-            (
-                r"(?s)@media print.*"
-                r"\.competency-matrix th:first-child.*"
-                r"\.competency-matrix td:last-child.*"
-                r"inline-size:\s*auto.*"
-                r"min-inline-size:\s*0"
-            ),
-        )
+        for selector, label in (
+            ("th", "レッスン"),
+            ("td:nth-child\\(2\\)", "フレームワーク"),
+            ("td:nth-child\\(3\\)", "版"),
+            ("td:nth-child\\(4\\)", "対応強度"),
+            ("td:nth-child\\(5\\)", "公式識別子・名称"),
+            ("td:nth-child\\(6\\)", "対応根拠"),
+        ):
+            with self.subTest(print_label=label):
+                self.assertRegex(
+                    stylesheet,
+                    (
+                        r"(?s)@media print.*"
+                        r"\.competency-matrix tbody "
+                        rf"{selector}::before\s*\{{.*"
+                        rf'content:\s*"{label}："'
+                    ),
+                )
+        self.assertNotIn("table-layout: fixed", stylesheet)
         self.assertRegex(
             stylesheet,
             (
