@@ -745,6 +745,13 @@ footer p {
     overflow-wrap: anywhere;
   }
 
+  pre {
+    max-inline-size: 100%;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+
   .learning-path {
     grid-template-columns: 1fr;
   }
