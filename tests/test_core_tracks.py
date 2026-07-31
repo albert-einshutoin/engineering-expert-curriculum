@@ -1560,12 +1560,48 @@ class CoreTrackTests(unittest.TestCase):
         self.assertEqual(report["after"]["direction_violations"], [])
         self.assertEqual(
             set(report["after"]["modules"]),
-            {"pricing-domain", "pricing-application", "pricing-adapters"},
+            {
+                "pricing-domain",
+                "pricing-application",
+                "pricing-adapters",
+                "reporting",
+            },
         )
+        criteria = report["criteria"]
+        self.assertEqual(
+            set(criteria),
+            {
+                "change_locality",
+                "migration_cost",
+                "operability",
+                "reversibility",
+            },
+        )
+        self.assertAlmostEqual(
+            sum(criterion["weight"] for criterion in criteria.values()),
+            1.0,
+        )
+        for criterion in criteria.values():
+            self.assertEqual(set(criterion["scale"]), {"1", "3", "5"})
+            self.assertTrue(all(criterion["scale"].values()))
         self.assertEqual(len(report["options"]), 3)
-        self.assertTrue(
-            all(option["criteria"] and option["risks"] for option in report["options"])
-        )
+        for option in report["options"]:
+            self.assertEqual(set(option["ratings"]), set(criteria))
+            numerator = 0.0
+            denominator = 0.0
+            for criterion_id, rating in option["ratings"].items():
+                self.assertIn(rating["rating"], range(1, 6))
+                self.assertTrue(rating["evidence"])
+                weight = criteria[criterion_id]["weight"]
+                numerator += rating["rating"] * weight
+                denominator += weight
+            self.assertAlmostEqual(
+                option["score"],
+                numerator / denominator,
+            )
+            self.assertTrue(option["risks"])
+        winner = max(report["options"], key=lambda item: item["score"])
+        self.assertEqual(report["selected_option"], winner["id"])
         adr = report["adr"]
         self.assertEqual(adr["status"], "accepted")
         for field in (
@@ -1577,9 +1613,34 @@ class CoreTrackTests(unittest.TestCase):
             "confirmation",
         ):
             self.assertTrue(adr[field])
+        impact = report["change_impact"]
+        self.assertEqual(impact["target"], "pricing-domain")
         self.assertEqual(
-            report["change_impact"]["unrelated_modules_changed"],
-            0,
+            set(impact["impacted_modules"]),
+            {
+                "pricing-domain",
+                "pricing-application",
+                "pricing-adapters",
+            },
+        )
+        self.assertEqual(impact["unrelated_modules_changed"], 0)
+        mutations = report["impact_mutations"]
+        self.assertEqual(
+            set(mutations),
+            {"edge_removed", "target_changed"},
+        )
+        for mutation in mutations.values():
+            self.assertNotEqual(
+                mutation["impacted_modules"],
+                impact["impacted_modules"],
+            )
+            self.assertGreater(
+                mutation["unrelated_modules_changed"],
+                impact["unrelated_modules_changed"],
+            )
+        self.assertEqual(
+            adr["decision"],
+            report["selected_option"],
         )
         self.assertFalse(report["external_network_used"])
 
@@ -1657,22 +1718,87 @@ class CoreTrackTests(unittest.TestCase):
             {"external", "insider"},
         )
         threat_ids = {threat["id"] for threat in report["threats"]}
+        controls = {
+            control["id"]: control
+            for control in report["controls"]
+        }
+        self.assertEqual(
+            {control["type"] for control in controls.values()},
+            {"prevent", "detect", "recover"},
+        )
         self.assertEqual(
             {link["threat_id"] for link in report["control_links"]},
             threat_ids,
         )
+        for link in report["control_links"]:
+            linked_types = {
+                controls[control_id]["type"]
+                for control_id in link["control_ids"]
+            }
+            self.assertEqual(
+                linked_types,
+                {"prevent", "detect", "recover"},
+            )
         self.assertEqual(
             {link["threat_id"] for link in report["verification_links"]},
             threat_ids,
         )
         self.assertTrue(
-            all(link["result"] == "passed" for link in report["verification_links"])
+            all(
+                link["result"] == "passed"
+                and link["control_id"] in controls
+                for link in report["verification_links"]
+            )
         )
         self.assertTrue(
             all(
-                risk["owner"] and risk["review_date"]
+                risk["threat_id"] in threat_ids
+                and risk["owner"]
+                and risk["review_date"]
+                and risk["decision"]
+                and risk["uncertainty"]
                 for risk in report["residual_risks"]
             )
         )
+        self.assertEqual(
+            report["model_validation"],
+            {
+                "valid": True,
+                "errors": [],
+                "threat_count": len(report["threats"]),
+                "control_count": len(report["controls"]),
+                "verification_count": len(report["verification_links"]),
+                "residual_risk_count": len(report["residual_risks"]),
+            },
+        )
+        negative_mutations = report["negative_mutations"]
+        self.assertEqual(
+            set(negative_mutations),
+            {
+                "empty_controls",
+                "unknown_reference",
+                "failed_verification",
+                "blank_owner",
+                "missing_control_type",
+            },
+        )
+        for mutation in negative_mutations.values():
+            self.assertTrue(mutation["rejected"])
+            self.assertTrue(mutation["errors"])
         self.assertFalse(report["attack_code_executed"])
         self.assertFalse(report["external_network_used"])
+
+    def test_threat_model_rejects_disabled_validation_mutation(
+        self,
+    ) -> None:
+        source = self.python_harness_source(
+            "core-10-threat-modeling-secure-design",
+            "threat_model_lab_v1",
+        )
+        marker = "return sorted(errors)"
+        self.assertIn(marker, source)
+        mutated = source.replace(marker, "return []", 1)
+
+        result = self.execute_python_harness_source(mutated)
+
+        self.assertNotEqual(result.returncode, 0)
