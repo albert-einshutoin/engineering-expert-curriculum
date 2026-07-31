@@ -1654,7 +1654,7 @@ git commit -m "feat: connect thirty lessons through mastery gates"
 - Create: `tests/test_competencies.py`
 - Modify: `curriculum_builder/build.py`
 
-- [ ] **Step 1: Write competency integrity tests**
+- [x] **Step 1: Write competency integrity tests**
 
 ```python
 # tests/test_competencies.py
@@ -1683,7 +1683,7 @@ class CompetencyTests(unittest.TestCase):
             self.assertEqual({value.framework for value in mappings}, {"CS2023", "SWEBOK", "SFIA"})
 ```
 
-- [ ] **Step 2: Run competency tests and verify RED**
+- [x] **Step 2: Run competency tests and verify RED**
 
 Run:
 
@@ -1693,7 +1693,7 @@ python3 -m unittest tests.test_competencies -v
 
 Expected: import failure because competency loader does not exist.
 
-- [ ] **Step 3: Implement version and reference validation**
+- [x] **Step 3: Implement version and reference validation**
 
 ```python
 # curriculum_builder/competencies.py
@@ -1740,7 +1740,7 @@ def load_competencies(path: Path) -> CompetencyMatrix:
     return CompetencyMatrix(versions, mappings)
 ```
 
-- [ ] **Step 4: Map, render, and test all lessons**
+- [x] **Step 4: Map, render, and test all lessons**
 
 Create three justified mappings per lesson using the official CS2023, SWEBOK
 V4.0a, and SFIA 9 identifiers. Render a captioned table whose row headers are
@@ -1756,7 +1756,7 @@ python3 tools/build.py
 Expected: both competency tests pass and
 `site/competencies/index.html` contains 90 or more justified mapping rows.
 
-- [ ] **Step 5: Commit the framework matrix**
+- [x] **Step 5: Commit the framework matrix**
 
 ```bash
 git add curriculum_builder/competencies.py content/competencies.json \
@@ -1764,6 +1764,45 @@ git add curriculum_builder/competencies.py content/competencies.json \
   curriculum_builder/build.py
 git commit -m "feat: map core mastery to global competency frameworks"
 ```
+
+#### Task 10 verification evidence
+
+- Tests-only commit `018254d` defined the fail-closed contract before the
+  loader existed. The focused RED run failed with the expected
+  `ModuleNotFoundError`. Commit `3f36629` supplies the immutable parser,
+  version-pinned data, exact release binding, semantic static table, global
+  navigation, print treatment, and escaping boundary.
+- Primary-source verification on 2026-07-31 used the
+  [CS2023 Final Report](https://csed.acm.org/final-report/),
+  [SWEBOK Guide V4.0a](https://www.computer.org/education/bodies-of-knowledge/software-engineering),
+  and [SFIA 9 skills index](https://sfia-online.org/en/sfia-9/skills/all-skills-a-z?set_language=en).
+  The checked-in matrix uses official identifier-and-name pairs and pins
+  `CS2023: Final Report`, `SWEBOK: V4.0a`, and `SFIA: 9`. It deliberately
+  makes no certification or SFIA responsibility-level claim.
+- The matrix contains exactly 90 immutable mappings: one CS2023, one SWEBOK,
+  and one SFIA mapping for each of the 30 release lessons. Unknown fields,
+  duplicate JSON keys, wrong versions, unofficial identifier/name pairs,
+  missing or duplicate coverage, unsafe text, invalid UTF-8, oversized input,
+  symbolic links, pathname rebinding, and non-regular files all fail closed.
+  Missing or changing matrix input cannot replace a previously published
+  output.
+- All 14 focused competency tests and the complete 505-test repository suite
+  pass with CPython 3.13. Two repository-external release builds each contain
+  36 regular artifacts, 35 HTML files, one CSS file, zero JavaScript files,
+  zero symbolic links, and zero special nodes. Each contains 1,198,716 bytes
+  and produces canonical aggregate SHA-256
+  `48593db553275cb3301405334d543d98855d88ff71b18cd6c07f60793ded087d`.
+- The generated matrix has one caption, five scoped column headers, 90 scoped
+  row headers, and 90 static lesson links. Screen layout permits horizontal
+  reading of the wide table; print CSS restores a normal-width table without
+  animation or dynamic behavior.
+- Gitleaks 8.30.1 scanned both Task 10 commits from
+  `092838b..3f36629` and found no leaks. `git diff --check` is clean. The
+  catalog remains exactly 1,140 unique items with SHA-256
+  `4f38b5f63931a7f06e13f90f5d9ef90a0a435f30dae5d4fe70720d730a057473`.
+  The private prototype archive remains unchanged: 1,194 files, 16,805,630
+  bytes, and zero missing, extra, hash-mismatched, symbolic-link, special-node,
+  or unsafe-path entries.
 
 ### Task 11: Add three integrated capstones
 
