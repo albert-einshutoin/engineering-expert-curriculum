@@ -959,7 +959,7 @@ git commit -m "content: teach evidence-driven scale and reliability"
 - Create: `content/lessons/core-20-ethics-privacy-societal-impact/{lesson.json,body.html}`
 - Modify: `tests/test_core_tracks.py`
 
-- [ ] **Step 1: Add the exact Human and Product contract**
+- [x] **Step 1: Add the exact Human and Product contract**
 
 ```python
 HUMAN_PRODUCT = {
@@ -994,17 +994,17 @@ def test_human_product(self) -> None:
     self.assert_track(HUMAN_PRODUCT)
 ```
 
-- [ ] **Step 2: Run the Human and Product test and verify RED**
+- [x] **Step 2: Run the Human and Product test and verify RED**
 
 Run:
 
 ```bash
-python3 -m unittest tests.test_core_tracks.CoreTrackTests.test_human_product -v
+python3.13 -m unittest tests.test_core_tracks.CoreTrackTests.test_human_product -v
 ```
 
 Expected: five missing lessons.
 
-- [ ] **Step 3: Author the five human-centered lessons**
+- [x] **Step 3: Author the five human-centered lessons**
 
 Use real interfaces and decision scenarios rather than generic advice. The HCI
 lab audits this generated curriculum site against WCAG 2.2 AA. The graphics lab
@@ -1014,12 +1014,12 @@ communication lab produces both a one-page executive summary and a technical
 appendix. The ethics lab uses the ACM Code of Ethics and NIST Privacy Framework
 to identify unevenly distributed harm.
 
-- [ ] **Step 4: Run Human and Product gates**
+- [x] **Step 4: Run Human and Product gates**
 
 Run:
 
 ```bash
-python3 -m unittest \
+python3.13 -m unittest \
   tests.test_lesson_quality \
   tests.test_core_tracks.CoreTrackTests.test_human_product \
   tests.test_lesson_rendering -v
@@ -1027,12 +1027,93 @@ python3 -m unittest \
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit the Human and Product track**
+- [x] **Step 5: Commit the Human and Product track**
 
 ```bash
 git add content/lessons/core-{16,17,18,19,20}-* tests/test_core_tracks.py
 git commit -m "content: integrate human product and ethical judgment"
 ```
+
+**Task 6 evidence (2026-07-31):**
+
+- RED commit `55fec5b` added only the exact metadata, authoritative-source,
+  semantic-body, mastery-evidence, executable-harness, and causal-mutation
+  contracts. The first focused run reported exactly five missing
+  `lesson.json` files for core-16 through core-20, with no production content
+  added before that failure.
+- GREEN commits `b27bdfc`, `8fcf6ac`, `84516d6`, `bc12a54`, and `0d9c3e4`
+  implement HCI/accessibility, semantic graphics, product experimentation,
+  technical communication, and ethics/privacy respectively. Each lesson has a
+  local CPython 3.13 JSON harness embedded in the static body, an explicit
+  synthetic or simulated provenance and limitation, zero subprocesses, a
+  bounded record count, and no external network access.
+- The five transfer runs change exactly one hidden assumption each: input mode,
+  display mode, guardrail threshold, audience, or affected population. The five
+  source-mutation tests corrupt the causal calculation rather than only its
+  final JSON and require the lesson-specific diagnostic
+  `hci-causal-invariant`, `graphics-causal-invariant`,
+  `experiment-causal-invariant`, `communication-causal-invariant`, or
+  `ethics-causal-invariant`. The initial 13 named Human and Product methods
+  pass:
+  metadata, semantic body, standards/practice scope, five default harnesses,
+  and five causal negative executions.
+- An independent review then reported zero Critical findings and four Important
+  evidence gaps: HCI changed an input-mode label without re-observing an
+  operation, graphics described HTML/CSS as dictionaries without generating an
+  artifact, communication asserted an audience transfer from literals, and
+  ethics listed lifecycle phase names without tracing them to harms, controls,
+  and residual risks. Tests-only RED commits `1263f5e`, `b26ee49`, and
+  `803fa74` reproduce all four classes of defect with eight additional default
+  and source-mutation methods.
+- Review GREEN commits `d43ed66` and `43d76cb` derive mode-specific HCI
+  operations, observations, summaries, and changed dimensions. `0b95c8b`
+  generates roadmap and chart HTML/CSS from one fixture, validates the
+  resulting node, edge, caption, scope, table-row, and safety structure with
+  the standard-library HTML parser, and preserves one data fingerprint across
+  color and monochrome artifacts. `7eb2b56` generates executive and implementer
+  views from an audience argument while structurally comparing their shared
+  decision evidence and reader-specific sections. `0ecc874` validates all
+  collect/use/share/retain/delete records and proves complete ID references
+  from purpose, necessity, access, retention, and owner through harms,
+  controls, and residual risks.
+- The HCI audit derives keyboard, 200% zoom, reading-order, and usability
+  results for the generated static curriculum while distinguishing WCAG 2.2
+  Level AA and ISO 9241-210:2019 from the non-standard APCA practice and the
+  WCAG 3.0 Working Draft. The graphics artifact keeps roadmap and quantitative
+  chart data equivalent across semantic HTML/CSS, text rows, and monochrome
+  transfer. The experiment changes only its complaint guardrail and recomputes
+  continue to stop. The communication views keep one weighted decision across
+  a one-page summary, technical appendix, and validated ADR. The impact
+  assessment calculates affected-group inherent and residual risk and exposes
+  uneven harm when a high-risk population is added.
+- All 21 Human and Product methods now pass, including eight review-regression
+  methods whose bypass mutations fail with
+  `hci-input-mode-invariant`, `graphics-artifact-invariant`,
+  `communication-audience-invariant`, or `ethics-lifecycle-invariant`.
+  The separate lesson quality/rendering gate passes 67 tests, the CSS gate
+  passes 18 tests, and the complete repository suite passes all 392 tests.
+  Scoped scans report zero authored-body unsafe-HTML, body external-URL,
+  secret, and dangerous-execution matches.
+- Two repository-external builds under canonical `/private/tmp` each contain
+  25 regular artifacts, 24 HTML files, zero JavaScript files, and 790,377
+  bytes. The canonical aggregate algorithm encodes each sorted relative POSIX
+  path, byte length, and file payload into one SHA-256 state; both builds
+  produce
+  `3a1bfab265001501d27c39c9d6b64d7e0e49cbf7a52795a119b8e611e593a6e2`.
+  An initial `/tmp` output was correctly rejected because macOS exposes that
+  path through a symbolic link; using the canonical path satisfied the
+  publisher trust boundary without weakening it.
+- Chrome 150 Letter-PDF evidence covers the two longest final changed bodies:
+  core-17 renders as 20 pages and core-20 as 18 pages, both at 612 by 792
+  points. PDFKit text extraction retains the late-code
+  `graphics-artifact-invariant`, `display-monochrome`,
+  `ethics-lifecycle-invariant`, and `affected-population-must-change-risk`
+  markers, proving the preformatted harness suffixes remain present in print.
+- The catalog remains exactly 1,140 items with SHA-256
+  `4f38b5f63931a7f06e13f90f5d9ef90a0a435f30dae5d4fe70720d730a057473`.
+  The preserved non-public prototype archive remains independently
+  verifiable: 1,194 files, 16,805,630 bytes, and zero manifest SHA-256
+  mismatches.
 
 ### Task 7: Author the Sustain and Operate track
 
