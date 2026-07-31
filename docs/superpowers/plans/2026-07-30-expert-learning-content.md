@@ -1804,6 +1804,55 @@ git commit -m "feat: map core mastery to global competency frameworks"
   bytes, and zero missing, extra, hash-mismatched, symbolic-link, special-node,
   or unsafe-path entries.
 
+#### Task 10 quality-review remediation
+
+- The independent specification review reported Critical 0 / Important 2 /
+  Minor 1. Tests-only commit `9542352` reproduced the missing machine-readable
+  source metadata, the absence of per-mapping alignment strength, and the
+  print token contract. Commit `ef670c6` adds exact official URL, version, and
+  verification-date metadata; an immutable `direct | foundational | partial`
+  alignment for every mapping; a sixth semantic table column; and a visible
+  non-certification and non-SFIA-level disclaimer.
+- The test oracle hard-codes every official identifier/name pair used by the
+  matrix and all 90 alignment decisions without importing or deriving
+  production allowlists. The resulting distribution is 63 direct, 10
+  foundational, and 17 partial mappings. In particular,
+  `core-03` → SFIA `IFDN` is foundational, while `core-23` → CS2023 `SEC` is
+  partial and its rationale explicitly limits the overlap to security
+  incidents rather than claiming all operational incidents are Security.
+- Chrome 150 Letter-PDF probing exposed a second print defect after the first
+  GREEN: the screen selectors for the 17-rem lesson column and 26-rem
+  rationale column had greater specificity than the generic print reset,
+  producing 89 pages. Tests-only commit `3e828da` fixes that requirement in
+  the CSS contract; commit `2c8ef52` explicitly resets both selectors,
+  preserves framework/version/code tokens with no-wrap monospace treatment,
+  and reduces the same matrix to six readable pages.
+- The final Chrome artifact is a tagged, JavaScript-free, portrait Letter PDF
+  at 612 by 792 points. PDFKit extraction preserves `CS2023`, `Final Report`,
+  `SWEBOK`, `V4.0a`, `SFIA`, `CHAPTER 18`, `IFDN`, and `SEC` as continuous
+  tokens and finds none of the prior split forms such as `CS2\n023`,
+  `V4.\n0a`, `CHAPTER\n18`, or `IF\nDN`. Page-one raster inspection confirms
+  the same result visually.
+- The first complete-suite run after source links correctly exposed one stale
+  release expectation. A too-broad helper change then proved, through 23
+  authoring-mode failures, that authoring pages intentionally have no verified
+  framework links. Commit `a8adfa5` makes the release-only expectation
+  explicit, and `f0b230e` simplifies source rendering without changing
+  output. The focused competency and build gate passes all 54 tests; the
+  complete suite passes all 509 tests.
+- Two final repository-external builds each contain 36 regular artifacts,
+  35 HTML files, one CSS file, zero JavaScript files, zero symbolic links,
+  and zero special nodes. Each contains 1,216,139 bytes and produces canonical
+  aggregate SHA-256
+  `919d1e981a7539a56596acf5519613e444f70fe900ddb3eadf8f181244b01fc7`.
+  Gitleaks 8.30.1 reports no leaks across the six remediation commits, and
+  `git diff --check` is clean.
+- The catalog remains exactly 1,140 unique items with SHA-256
+  `4f38b5f63931a7f06e13f90f5d9ef90a0a435f30dae5d4fe70720d730a057473`.
+  The private archive remains independently unchanged: 1,194 files,
+  16,805,630 bytes, with zero missing, extra, hash-mismatched, symbolic-link,
+  special-node, or unsafe-path entries.
+
 ### Task 11: Add three integrated capstones
 
 **Files:**
