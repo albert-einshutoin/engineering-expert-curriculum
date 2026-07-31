@@ -1,0 +1,360 @@
+<section id="why">
+  <h2>なぜ重要か</h2>
+  <p>database schemaはapplication version、batch、replica、運用手順が共有する契約である。破壊的変更を一度に行うと、DDL command自体が成功してもold reader、遅延したwriter、backfill、logical replicationのいずれかが壊れる。安全なmigrationは「実行できたか」ではなく、混在versionでsystem outcomeを保てるかを段階ごとに検証する。</p>
+  <p>DORAのdatabase change managementは小さく頻繁でapplicationと協調した変更を重視する。PostgreSQL 18のALTER TABLEは操作ごとのlockと制約を確認する一次資料であり、logical replicationのRestrictionsはschema定義が自動複製されない等の境界を示す。一般論をそのまま適用せず、対象version、table規模、replication構成で検証する。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> expand-contractという名前を使うだけでは安全にならない。各phaseにcompatibility、observation、stop、rollbackがなければ順序付き手順書にすぎない。command successとsystem outcomeを分け、reader結果、write parity、backfill error、rollback後の回復を観測する。</p>
+  </aside>
+</section>
+<section id="mental-model">
+  <h2>メンタルモデル</h2>
+  <p>migrationを五つのstateへ分ける。expandで互換な構造を追加し、dual writeで新旧表現を同時更新し、backfillで既存rowを移す。dual readで新旧読取結果を比較し、十分な観測後にだけcontractで旧構造を除く。次phaseへの遷移は時刻ではなく検証済みのguardから導く。</p>
+  <figure>
+    <figcaption>互換性と観測gateを持つexpand-contract state machine</figcaption>
+    <ol>
+      <li><strong>expand:</strong> old readerを壊さないnullable構造を追加する。</li>
+      <li><strong>dual write:</strong> 新旧fieldへ書き、成功率と値のparityを観測する。</li>
+      <li><strong>backfill:</strong> bounded batchで既存rowを移しerror rateとlagを測る。</li>
+      <li><strong>dual read:</strong> 新旧readerの結果差を比較しfallbackを保持する。</li>
+      <li><strong>contract:</strong> 利用停止の証拠を確認してから旧構造を除く。</li>
+      <li><strong>rollback:</strong> 各stateで戻す対象と回復確認を先に定義する。</li>
+    </ol>
+  </figure>
+  <p>rollbackは必ずしもDDLの逆操作ではない。feature flagでold readへ戻す、dual writeを止める、backfill checkpointへ戻る、contractを延期するなど、各phaseで安全な回復形が異なる。不可逆なcontractには、旧利用者がいないことを示す観測gateが必要である。</p>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>顧客名fieldを五phaseで移行する</h3>
+  <dl>
+    <dt>前提</dt>
+    <dd>lesson-defined simulated migrationであり、実database、実customer row、production lock時間を観測したものではない。PostgreSQL固有の実行計画を保証せず、phase判断の因果だけを検査する。</dd>
+    <dt>入力</dt>
+    <dd>expand、dual write、backfill、dual read、contractの固定plan、old/new reader成功、dual write parity、backfill error rateとthresholdを与える。</dd>
+    <dt>操作</dt>
+    <dd>各phaseのcompatibility、observation、stop condition、rollbackを入力から構成する。baselineは低いbackfill error rate、transferはその値だけを高くし、同じplanへ判断関数を適用する。</dd>
+    <dt>観測</dt>
+    <dd>baselineはcontinue、transferはrollbackになる。判断を常にcontinueへ差し替えるとmigration-causal-invariantが検知する。</dd>
+    <dt>結論</dt>
+    <dd>command successはsystem outcomeではない。互換性とerror thresholdを満たす観測がcontinueを支え、違反時に実行されたrollback結果が安全性の証拠になる。</dd>
+  </dl>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+import json
+
+HARNESS = "migration_state_machine_lab_v1"
+TRANSFER_TASK = (
+    "backfill error rateだけを変え、同じ移行計画の継続・停止・"
+    "ロールバック判断を再評価する"
+)
+PHASE_INPUTS = [
+    {
+        "name": "expand",
+        "compatibility": "nullable customer_name_v2 keeps old reader valid",
+        "observation": "schema exists and old reader fixture succeeds",
+        "stop_condition": "old reader failure or blocking lock exceeds budget",
+        "rollback": "stop rollout and remove unused nullable field",
+    },
+    {
+        "name": "dual-write",
+        "compatibility": "old and new names are written from one input",
+        "observation": "write parity and write error rate",
+        "stop_condition": "parity mismatch or write error exceeds threshold",
+        "rollback": "disable new-field write and retain old-field write",
+    },
+    {
+        "name": "backfill",
+        "compatibility": "old field remains source for old reader",
+        "observation": "processed rows, error rate, checkpoint and replica lag",
+        "stop_condition": "backfill error rate exceeds threshold",
+        "rollback": "pause at checkpoint and clear unverified new values",
+    },
+    {
+        "name": "dual-read",
+        "compatibility": "new reader falls back to old field",
+        "observation": "old and new read result parity",
+        "stop_condition": "read mismatch or fallback rate exceeds threshold",
+        "rollback": "route all reads to old field",
+    },
+    {
+        "name": "contract",
+        "compatibility": "old reader usage is zero before removal",
+        "observation": "old-field read and write counters remain zero",
+        "stop_condition": "any old reader or writer is observed",
+        "rollback": "defer removal and restore compatibility window",
+    },
+]
+THRESHOLDS = {
+    "max_backfill_error_rate": 0.01,
+}
+BASELINE_OBSERVATION = {
+    "old_reader_successes": 200,
+    "old_reader_attempts": 200,
+    "new_reader_successes": 200,
+    "new_reader_attempts": 200,
+    "dual_write_matches": 200,
+    "dual_write_attempts": 200,
+    "backfill_rows": 500,
+    "backfill_errors": 2,
+}
+TRANSFER_OBSERVATION = {
+    "old_reader_successes": 200,
+    "old_reader_attempts": 200,
+    "new_reader_successes": 200,
+    "new_reader_attempts": 200,
+    "dual_write_matches": 200,
+    "dual_write_attempts": 200,
+    "backfill_rows": 500,
+    "backfill_errors": 20,
+}
+
+def ratio(numerator, denominator):
+    if denominator &lt;= 0:
+        raise AssertionError(
+            "migration-causal-invariant: denominator must be positive"
+        )
+    return numerator / denominator
+
+def derive_observation(source):
+    return {
+        "old_reader_supported": (
+            source["old_reader_successes"] == source["old_reader_attempts"]
+        ),
+        "new_reader_supported": (
+            source["new_reader_successes"] == source["new_reader_attempts"]
+        ),
+        "dual_write_verified": (
+            source["dual_write_matches"] == source["dual_write_attempts"]
+        ),
+        "backfill_error_rate": ratio(
+            source["backfill_errors"],
+            source["backfill_rows"],
+        ),
+    }
+
+def decide_migration(observation, thresholds):
+    compatible = (
+        observation["old_reader_supported"]
+        and observation["new_reader_supported"]
+        and observation["dual_write_verified"]
+    )
+    within_error_budget = (
+        observation["backfill_error_rate"]
+        &lt;= thresholds["max_backfill_error_rate"]
+    )
+    return "continue" if compatible and within_error_budget else "rollback"
+
+def evaluate(source, thresholds):
+    observation = derive_observation(source)
+    decision = decide_migration(observation, thresholds)
+    # decisionの置換を見逃さないため、入力から独立に導いたguardと
+    # state machineの出力を照合してfail closedにする。
+    guard_allows_continue = (
+        observation["old_reader_supported"]
+        and observation["new_reader_supported"]
+        and observation["dual_write_verified"]
+        and observation["backfill_error_rate"]
+        &lt;= thresholds["max_backfill_error_rate"]
+    )
+    expected_decision = (
+        "continue" if guard_allows_continue else "rollback"
+    )
+    if decision != expected_decision:
+        raise AssertionError(
+            "migration-causal-invariant: decision bypassed observed guard"
+        )
+    return {
+        "observation": observation,
+        "decision": decision,
+    }
+
+def build_phases(phase_inputs):
+    # phaseごとの停止と回復を同じ構造へ必須化し、happy pathだけの
+    # 手順がcontractまで流れることを防ぐ。
+    phases = [
+        {
+            "name": phase["name"],
+            "compatibility": phase["compatibility"],
+            "observation": phase["observation"],
+            "stop_condition": phase["stop_condition"],
+            "rollback": phase["rollback"],
+        }
+        for phase in phase_inputs
+    ]
+    if not all(
+        phase["compatibility"]
+        and phase["observation"]
+        and phase["stop_condition"]
+        and phase["rollback"]
+        for phase in phases
+    ):
+        raise AssertionError(
+            "migration-causal-invariant: incomplete phase"
+        )
+    return phases
+
+def main():
+    phases = build_phases(PHASE_INPUTS)
+    baseline = evaluate(BASELINE_OBSERVATION, THRESHOLDS)
+    transferred = evaluate(TRANSFER_OBSERVATION, THRESHOLDS)
+    source_fields = sorted(BASELINE_OBSERVATION)
+    changed_fields = [
+        field
+        for field in source_fields
+        if BASELINE_OBSERVATION[field] != TRANSFER_OBSERVATION[field]
+    ]
+    if (
+        changed_fields != ["backfill_errors"]
+        or baseline["decision"] != "continue"
+        or transferred["decision"] != "rollback"
+    ):
+        raise AssertionError(
+            "migration-causal-invariant: transfer changed wrong cause"
+        )
+    compatibility = {
+        "old_reader_supported": (
+            baseline["observation"]["old_reader_supported"]
+        ),
+        "new_reader_supported": (
+            baseline["observation"]["new_reader_supported"]
+        ),
+        "dual_write_verified": (
+            baseline["observation"]["dual_write_verified"]
+        ),
+    }
+    report = {
+        "harness": HARNESS,
+        "fixture_metadata": {
+            "kind": "simulated",
+            "provenance": "lesson-defined customer-name migration inputs",
+            "limitations": (
+                "simulated countsでありproduction lock、traffic、"
+                "replication lag、PostgreSQL実行結果を表さない"
+            ),
+            "synthetic_or_observed_explicit": (
+                "値はすべてsimulated入力またはその計算結果"
+            ),
+        },
+        "runtime_bound": {
+            "records": (
+                len(PHASE_INPUTS)
+                + len(BASELINE_OBSERVATION)
+                + len(TRANSFER_OBSERVATION)
+            ),
+            "subprocesses": 0,
+            "maximum_iterations": (
+                len(PHASE_INPUTS) + len(BASELINE_OBSERVATION)
+            ),
+        },
+        "external_network_used": False,
+        "migration_plan": {
+            "phases": phases,
+        },
+        "compatibility": compatibility,
+        "backfill_error_rate_transfer": {
+            "changed_assumption": "backfill-error-rate",
+            "changed_fields": ["backfill_error_rate"],
+            "same_migration_plan": (
+                [phase["name"] for phase in phases]
+                == [phase["name"] for phase in build_phases(PHASE_INPUTS)]
+            ),
+            "baseline_error_rate": (
+                baseline["observation"]["backfill_error_rate"]
+            ),
+            "transferred_error_rate": (
+                transferred["observation"]["backfill_error_rate"]
+            ),
+            "baseline_decision": baseline["decision"],
+            "transferred_decision": transferred["decision"],
+        },
+        "command_success_distinction": {
+            "command_completed": True,
+            "system_outcome_checked": (
+                all(compatibility.values())
+                and baseline["decision"] == "continue"
+                and transferred["decision"] == "rollback"
+            ),
+            "command_success_equals_system_outcome": False,
+            "outcome_evidence": (
+                "reader compatibility、write parity、backfill error、"
+                "rollback decisionを検査"
+            ),
+        },
+        "mastery_evidence": {
+            "lab_steps": [
+                {"step": 1, "evidence": phases},
+                {"step": 2, "evidence": baseline["observation"]},
+                {"step": 3, "evidence": transferred["decision"]},
+            ],
+            "assessments": [
+                {"assessment": 1, "evidence": compatibility},
+                {
+                    "assessment": 2,
+                    "evidence": transferred["observation"],
+                },
+            ],
+            "rubric_dimensions": [
+                "technical-correctness",
+                "judgment",
+                "evidence",
+                "communication",
+            ],
+            "transfer": {
+                "task": TRANSFER_TASK,
+                "changed_assumption": "backfill-error-rate",
+                "evidence": transferred["decision"],
+            },
+        },
+    }
+    print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+
+main()
+PY</code></pre>
+</section>
+<section id="tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <table>
+    <caption>expand-contract phase遷移のdecision table</caption>
+    <thead>
+      <tr>
+        <th scope="col">観測</th>
+        <th scope="col">判断</th>
+        <th scope="col">rollback outcome</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row">reader互換、write parity、error budget内</th>
+        <td>観測を継続して次phase候補とする</td>
+        <td>不要。current stateを維持する</td>
+      </tr>
+      <tr>
+        <th scope="row">backfill error rateがthreshold超過</th>
+        <td>backfillをstopしてrollbackする</td>
+        <td>checkpoint停止と未検証値の隔離を確認する</td>
+      </tr>
+      <tr>
+        <th scope="row">contract前にold readerを観測</th>
+        <td>削除を延期する</td>
+        <td>compatibility windowとold readを維持する</td>
+      </tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><strong>誤診:</strong> ALTER TABLE commandが成功したのでmigrationは完了した。<strong>反証:</strong> command successはreader compatibility、dual write parity、backfill error、replica、利用者可視のsystem outcomeを検証していない。</li>
+    <li><strong>誤診:</strong> dual write期間を短くすれば不整合riskも必ず減る。<strong>反証:</strong> 観測sampleが不足すれば低頻度のmismatchを見逃し、contract後にrollback不能な破壊へ進む。</li>
+    <li><strong>誤診:</strong> rollbackは逆向きDDLを用意することである。<strong>反証:</strong> phaseごとにold readへ戻す、writeを止める、checkpointで停止するなど回復形が異なり、回復後のsystem outcome確認まで必要である。</li>
+  </ul>
+</section>
+<section id="knowledge-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>expand、dual write、backfill、dual read、contractの順序が互換性を作る理由を説明せよ。</li>
+    <li>backfill processed rowsだけではcontinueを判断できない理由は何か。</li>
+    <li>contract前にold readerを一件観測した時のstopとrollbackを定義せよ。</li>
+    <li>backfill error rateだけを変えるtransferで固定すべきplan証拠は何か。</li>
+  </ol>
+</section>
+<section id="sources">
+  <h2>出典と次の学習</h2>
+  <p>DORA Capability: Database change management（accessed 2026-07-31）をdelivery practiceの根拠に、PostgreSQL 18 Documentation: ALTER TABLEをDDLとlockの確認に、PostgreSQL 18 Documentation: Restrictionsをlogical replication境界の確認に使う。完全な書誌情報と参照先はlesson metadataに分離している。</p>
+  <p>次はcore-23で、migrationを含むincidentのevidence timeline、意思決定、contributing factor、検証可能なactionをnon-blaming reviewへ変換する。</p>
+</section>

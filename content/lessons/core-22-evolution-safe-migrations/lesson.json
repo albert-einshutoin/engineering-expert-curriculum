@@ -1,0 +1,167 @@
+{
+  "version": 1,
+  "id": "core-22-evolution-safe-migrations",
+  "title": "互換性を保つschema migrationを段階実行する",
+  "summary": "database changeをexpand、dual write、backfill、dual read、contractへ分け、各段階の観測、停止、rollback、互換性を実行可能な移行計画として設計する。",
+  "track": "sustain",
+  "stage": 4,
+  "difficulty": "advanced",
+  "estimatedMinutes": 320,
+  "prerequisiteIds": [
+    "core-08-modularity-evolutionary-architecture",
+    "core-12-transactions-isolation-consistency",
+    "core-21-maintenance-legacy-comprehension"
+  ],
+  "objectives": [
+    {
+      "id": "obj-state-machine",
+      "statement": "schema changeを互換なexpand-contract phaseと明示的な遷移条件へ分解できる",
+      "evidenceIds": ["migration-plan", "teach-back"]
+    },
+    {
+      "id": "obj-observation",
+      "statement": "dual write、backfill、dual readの観測から停止とrollbackを判断できる",
+      "evidenceIds": ["migration-plan", "assessment"]
+    },
+    {
+      "id": "obj-transfer",
+      "statement": "backfill error rateだけが変わる条件で同じ計画の継続判断を再評価できる",
+      "evidenceIds": ["assessment", "transfer"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "migration-plan",
+      "kind": "artifact",
+      "description": "expand-contract段階、観測、停止、ロールバックを含む移行計画"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "database change managementとPostgreSQL制約を互換性へ結ぶ5分発表"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "互換性、観測、停止、rollbackが欠けるmigrationを診断する回答"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "backfill error rateだけを変えて継続・停止・rollbackを再評価した記録"
+    }
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "expand、dual write、backfill、dual read、contractの責務を区別できる",
+      "evidenceIds": ["migration-plan"]
+    },
+    {
+      "level": "explain",
+      "criterion": "old readerとnew readerを同時に支える期間が必要な理由を説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "各phaseへ観測、停止条件、rollback、compatibilityを割り当てられる",
+      "evidenceIds": ["migration-plan"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "backfill成功件数だけに隠れたerror、drift、reader incompatibilityを反証できる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "application、database、operationsのownerと停止権限を含む段階移行を主導できる",
+      "evidenceIds": ["transfer"]
+    }
+  ],
+  "lab": {
+    "title": "顧客名columnのexpand-contract migrationを設計する",
+    "artifact": "expand-contract段階、観測、停止、ロールバックを含む移行計画",
+    "steps": [
+      "old readerとnew readerを同時に支える五つのphase、観測、停止条件、rollbackを定義する",
+      "fixed simulated observationからcompatibilityとbackfill error rateを検査しcontinue判断を導く",
+      "backfill error rateだけを上げ、同じmigration planがrollbackへ遷移することを検証する"
+    ]
+  },
+  "teachBack": "5分で、DORA database change management、PostgreSQL 18 ALTER TABLE、logical replication Restrictionsを、具体的なexpand-contract順序と停止判断へどう変換するか説明する。",
+  "assessment": [
+    {
+      "prompt": "new columnを追加して全rowを一括更新し、直後にold columnを削除する計画を評価せよ。",
+      "expectedEvidence": "lock、old reader、new reader、dual write、backfill、観測、contract gate、rollback"
+    },
+    {
+      "prompt": "migration commandが成功したので配信完了とする判断を評価せよ。",
+      "expectedEvidence": "command successとsystem outcomeの区別、reader compatibility、write parity、backfill error、rollback outcome"
+    }
+  ],
+  "transferTask": "backfill error rateだけを変え、同じ移行計画の継続・停止・ロールバック判断を再評価する",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "破壊的DDLを一段で実行し互換期間がない",
+        "developing": "phaseはあるがreader、writer、backfillの互換性が曖昧である",
+        "proficient": "五phaseと観測、停止、rollback、compatibilityを一貫して追跡する",
+        "exemplary": "retry、replication lag、混在versionでも遷移不変条件を検査できる"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "DDL command successだけでcontractへ進む",
+        "developing": "metricは見るが停止thresholdと権限がない",
+        "proficient": "error、drift、互換性、可逆性からcontinue、stop、rollbackを選ぶ",
+        "exemplary": "業務riskと回復時間に応じてphase幅と観測期間を調整する"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "手順書だけで実行観測がない",
+        "developing": "件数はあるがerror rate、reader結果、限界がない",
+        "proficient": "固定入力、threshold、phase observation、decisionを再計算可能に残す",
+        "exemplary": "rollback後のsystem outcomeとcontract前の証拠を監査可能にする"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "DB担当だけが順序を知っている",
+        "developing": "phase名はあるがownerと停止条件が読めない",
+        "proficient": "各phaseの互換性、観測、停止、rollbackを職能横断で共有できる",
+        "exemplary": "application、database、operationsが同じstate machineで異議と再開を判断できる"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "DORA Capability: Database change management (accessed 2026-07-31)",
+      "url": "https://dora.dev/capabilities/database-change-management/",
+      "kind": "primary"
+    },
+    {
+      "title": "PostgreSQL 18 Documentation: ALTER TABLE",
+      "url": "https://www.postgresql.org/docs/18/sql-altertable.html",
+      "kind": "primary"
+    },
+    {
+      "title": "PostgreSQL 18 Documentation: Restrictions",
+      "url": "https://www.postgresql.org/docs/18/logical-replication-restrictions.html",
+      "kind": "primary"
+    }
+  ],
+  "review": {
+    "intervalDays": [1, 7, 30, 90],
+    "prompts": [
+      "expandとcontractの間にold readerを支える理由は何か",
+      "backfillで件数以外に観測すべき結果は何か",
+      "command successとmigration system outcomeをどう分けるか"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}
