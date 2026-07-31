@@ -954,6 +954,8 @@ footer p {
 
   .competency-matrix {
     min-inline-size: 0;
+    font-size: 8pt;
+    line-height: 1.35;
     table-layout: auto;
   }
 
@@ -962,11 +964,21 @@ footer p {
     inline-size: auto;
     min-inline-size: 0;
     max-inline-size: none;
+    padding-block: 0.2rem;
+    padding-inline: 0.25rem;
+  }
+
+  .competency-matrix th:first-child,
+  .competency-matrix td:last-child {
+    inline-size: auto;
+    min-inline-size: 0;
+    max-inline-size: none;
   }
 
   .competency-framework,
   .competency-version,
   .competency-code {
+    font-family: var(--font-mono);
     overflow-wrap: normal;
     white-space: nowrap;
     word-break: keep-all;
