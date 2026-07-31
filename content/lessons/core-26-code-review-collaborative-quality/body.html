@@ -15,8 +15,8 @@
     <ol>
       <li><strong>Scope:</strong> changeとrisk kind、review budgetを固定する。</li>
       <li><strong>Initial review:</strong> priority、evidence、actionable fixを同じ入力から導く。</li>
-      <li><strong>Author fix:</strong> 指摘IDと修正snapshotを対応付ける。</li>
-      <li><strong>Independent re-evaluation:</strong> 初回とは別のreviewerがresolved findingとsystem outcomeを確認する。</li>
+      <li><strong>Author fix:</strong> 指摘IDに対応するpatchをactual artifactへ適用し、patch IDを残す。</li>
+      <li><strong>Independent re-evaluation:</strong> 初回とは別のreviewerがprobeを再実行し、actualとexpectedからblocking findingとsystem outcomeを確認する。</li>
       <li><strong>Enablement:</strong> 判断根拠を残し、他のcontributorが再利用できるようにする。</li>
     </ol>
   </figure>
@@ -29,13 +29,13 @@
     <dt>前提</dt>
     <dd>lesson-defined synthetic sample changeを使う。実repository、実利用者、production authorizationを観測したfixtureではない。</dd>
     <dt>入力</dt>
-    <dd>2件のchange、2件のfinding、30分のreview budget、correctnessまたはauthorizationというrisk kindを与える。</dd>
+    <dd>2件のchange artifact、2件のfinding、2件のpatch、2件のprobe、30分のreview budget、correctnessまたはauthorizationというrisk kindを与える。</dd>
     <dt>操作</dt>
-    <dd>初回reviewをpriority順へ並べ、author fixを別snapshotへ適用する。さらに別reviewerが全findingの解消とoutcome evidenceを独立再評価する。</dd>
+    <dd>初回reviewをpriority順へ並べ、author patchを別artifact snapshotへ適用する。さらに別reviewerがprobe checkerを再実行し、actualとexpectedを比較する。transferでもreview、fix、独立再評価の全cycleを繰り返す。</dd>
     <dt>観測</dt>
-    <dd>baselineのhighest priorityはimportant、risk kindだけをauthorizationへ変えたtransferではcriticalになる。sample change自体は同一である。</dd>
+    <dd>baselineのhighest priorityはimportant、risk kindだけをauthorizationへ変えたtransferではcriticalになる。両cycleでpatch適用後のprobeはactualとexpectedが一致し、blocking findingは0件になる。</dd>
     <dt>結論</dt>
-    <dd>review command successだけではsystem outcomeを証明できない。入力由来evidence、修正snapshot、独立reviewerの再評価が揃って初めてreview cycleを完了できる。</dd>
+    <dd>review command successだけではsystem outcomeを証明できない。入力由来のprobe、actual artifactへのpatch、actual/expected evidence、独立reviewerのapprovalが揃って初めてreview cycleを完了できる。</dd>
   </dl>
   <pre><code>python3.13 - &lt;&lt;'PY'
 import json
@@ -44,6 +44,8 @@ HARNESS = "collaborative_code_review_lab_v1"
 PRIORITY_ORDER = ("critical", "important", "minor")
 CHANGE_ORDER = ("change-correctness", "change-authorization")
 FINDING_ORDER = ("finding-correctness", "finding-authorization")
+PROBE_ORDER = ("probe-negative-quantity", "probe-override-scope")
+PATCH_ORDER = ("patch-negative-quantity", "patch-override-scope")
 BASELINE_REVIEW_CONTEXT = {
     "risk_kind": "correctness",
     "review_budget_minutes": 30,
@@ -83,6 +85,40 @@ FINDING_SPECS = [
         "finding_id": "finding-authorization",
         "change_id": "change-authorization",
         "actionable_fix": "require discount override scope before mutation",
+    },
+]
+CHANGE_PROBES = [
+    {
+        "probe_id": "probe-negative-quantity",
+        "change_id": "change-correctness",
+        "probe_input": {
+            "request_kind": "negative-quantity",
+            "value": -1,
+        },
+        "expected": "rejected",
+    },
+    {
+        "probe_id": "probe-override-scope",
+        "change_id": "change-authorization",
+        "probe_input": {
+            "request_kind": "override-without-scope",
+            "value": 0,
+        },
+        "expected": "denied",
+    },
+]
+AUTHOR_PATCHES = [
+    {
+        "patch_id": "patch-negative-quantity",
+        "change_id": "change-correctness",
+        "field": "fixed",
+        "value": True,
+    },
+    {
+        "patch_id": "patch-override-scope",
+        "change_id": "change-authorization",
+        "field": "fixed",
+        "value": True,
     },
 ]
 COMMAND_INPUT = {"exit_code": 0}
@@ -204,6 +240,86 @@ def validate_finding_specs():
             "review-input-invariant: invalid finding schema"
         )
 
+def validate_change_probes():
+    probe_fields = {
+        "probe_id",
+        "change_id",
+        "probe_input",
+        "expected",
+    }
+    valid = (
+        type(CHANGE_PROBES) is list
+        and bool(CHANGE_PROBES)
+        and all(
+            type(probe) is dict
+            and set(probe) == probe_fields
+            and is_nonempty_text(probe["probe_id"])
+            and probe["change_id"] in CHANGE_ORDER
+            and type(probe["probe_input"]) is dict
+            and set(probe["probe_input"])
+            == {"request_kind", "value"}
+            and probe["probe_input"]["request_kind"]
+            in {"negative-quantity", "override-without-scope"}
+            and type(probe["probe_input"]["value"]) is int
+            and probe["expected"] in {"rejected", "denied"}
+            for probe in CHANGE_PROBES
+        )
+    )
+    probe_ids = (
+        [probe["probe_id"] for probe in CHANGE_PROBES]
+        if valid
+        else []
+    )
+    referenced_changes = (
+        [probe["change_id"] for probe in CHANGE_PROBES]
+        if valid
+        else []
+    )
+    if (
+        not valid
+        or tuple(probe_ids) != PROBE_ORDER
+        or len(set(probe_ids)) != len(probe_ids)
+        or tuple(referenced_changes) != CHANGE_ORDER
+    ):
+        raise AssertionError(
+            "review-input-invariant: invalid change probe schema"
+        )
+
+def validate_author_patches():
+    valid = (
+        type(AUTHOR_PATCHES) is list
+        and bool(AUTHOR_PATCHES)
+        and all(
+            type(patch) is dict
+            and set(patch)
+            == {"patch_id", "change_id", "field", "value"}
+            and is_nonempty_text(patch["patch_id"])
+            and patch["change_id"] in CHANGE_ORDER
+            and patch["field"] == "fixed"
+            and patch["value"] is True
+            for patch in AUTHOR_PATCHES
+        )
+    )
+    patch_ids = (
+        [patch["patch_id"] for patch in AUTHOR_PATCHES]
+        if valid
+        else []
+    )
+    referenced_changes = (
+        [patch["change_id"] for patch in AUTHOR_PATCHES]
+        if valid
+        else []
+    )
+    if (
+        not valid
+        or tuple(patch_ids) != PATCH_ORDER
+        or len(set(patch_ids)) != len(patch_ids)
+        or tuple(referenced_changes) != CHANGE_ORDER
+    ):
+        raise AssertionError(
+            "review-input-invariant: invalid author patch schema"
+        )
+
 def validate_all_inputs():
     if PRIORITY_ORDER != ("critical", "important", "minor"):
         raise AssertionError(
@@ -212,6 +328,8 @@ def validate_all_inputs():
     validate_review_contexts()
     validate_sample_change()
     validate_finding_specs()
+    validate_change_probes()
+    validate_author_patches()
     if (
         type(COMMAND_INPUT) is not dict
         or set(COMMAND_INPUT) != {"exit_code"}
@@ -280,10 +398,64 @@ def apply_author_fix(sample_change, findings):
         finding["change_id"]
         for finding in findings
     }
-    for change in fixed_snapshot["changes"]:
-        if change["change_id"] in finding_change_ids:
-            change["fixed"] = True
-    return fixed_snapshot
+    applied_patch_ids = []
+    changes = {
+        change["change_id"]: change
+        for change in fixed_snapshot["changes"]
+    }
+    for patch in AUTHOR_PATCHES:
+        if patch["change_id"] in finding_change_ids:
+            changes[patch["change_id"]][patch["field"]] = patch[
+                "value"
+            ]
+            applied_patch_ids.append(patch["patch_id"])
+    if tuple(applied_patch_ids) != PATCH_ORDER:
+        raise AssertionError(
+            "review-reevaluation-invariant: patches not fully applied"
+        )
+    return fixed_snapshot, applied_patch_ids
+
+def actual_outcome_evidence(probe, actual):
+    request_kind = probe["probe_input"]["request_kind"]
+    if request_kind == "negative-quantity":
+        return "negative quantity is " + actual
+    return "override without scope is " + actual
+
+def run_change_probes(artifact_snapshot):
+    changes = {
+        change["change_id"]: change
+        for change in artifact_snapshot["changes"]
+    }
+    observations = []
+    for probe in CHANGE_PROBES:
+        change = changes[probe["change_id"]]
+        request_kind = probe["probe_input"]["request_kind"]
+        if request_kind == "negative-quantity":
+            actual = "rejected" if change["fixed"] else "accepted"
+        else:
+            actual = "denied" if change["fixed"] else "allowed"
+        derived_evidence = actual_outcome_evidence(probe, actual)
+        observations.append(
+            {
+                "probe_id": probe["probe_id"],
+                "change_id": probe["change_id"],
+                "probe_input": independent_snapshot(
+                    probe["probe_input"]
+                ),
+                "actual": actual,
+                "expected": probe["expected"],
+                "actual_outcome_evidence": derived_evidence,
+                "expected_outcome_evidence": change[
+                    "expected_outcome_evidence"
+                ],
+                "passed": (
+                    actual == probe["expected"]
+                    and derived_evidence
+                    == change["expected_outcome_evidence"]
+                ),
+            }
+        )
+    return observations
 
 def independently_reevaluate(
     fixed_snapshot,
@@ -299,27 +471,20 @@ def independently_reevaluate(
         finding["change_id"]: finding["finding_id"]
         for finding in findings
     }
-    resolved_findings = [
-        finding_by_change[change["change_id"]]
-        for change in fixed_snapshot["changes"]
-        if (
-            change["change_id"] in finding_by_change
-            and change["fixed"] is True
-            and is_nonempty_text(change["expected_outcome_evidence"])
-        )
-    ]
+    outcome_evidence = run_change_probes(fixed_snapshot)
     failed_outcomes = [
-        change["change_id"]
-        for change in fixed_snapshot["changes"]
-        if (
-            change["change_id"] in finding_by_change
-            and (
-                change["fixed"] is not True
-                or not is_nonempty_text(
-                    change["expected_outcome_evidence"]
-                )
-            )
-        )
+        evidence
+        for evidence in outcome_evidence
+        if not evidence["passed"]
+    ]
+    blocking_findings = [
+        finding_by_change[evidence["change_id"]]
+        for evidence in failed_outcomes
+    ]
+    resolved_findings = [
+        finding["finding_id"]
+        for finding in findings
+        if finding["finding_id"] not in blocking_findings
     ]
     # failed outcomeが0件であることをall(empty)=Trueとして評価する。
     # bool(empty)=Falseとの差がcausal bypassを検出可能にする。
@@ -329,6 +494,7 @@ def independently_reevaluate(
     if (
         set(resolved_findings)
         != {finding["finding_id"] for finding in findings}
+        or blocking_findings
         or not system_outcome_verified
     ):
         raise AssertionError(
@@ -337,15 +503,58 @@ def independently_reevaluate(
     return {
         "reviewer": independent_reviewer,
         "resolved_findings": resolved_findings,
+        "blocking_findings": blocking_findings,
+        "approval": (
+            "approved"
+            if not blocking_findings
+            else "changes-requested"
+        ),
         "system_outcome_verified": system_outcome_verified,
-        "outcome_evidence": [
-            {
-                "change_id": change["change_id"],
-                "evidence": change["expected_outcome_evidence"],
-            }
+        "outcome_evidence": outcome_evidence,
+    }
+
+def execute_review_cycle(
+    sample_change,
+    context,
+    initial_reviewer,
+    author,
+    independent_reviewer,
+):
+    artifact_snapshot = independent_snapshot(sample_change)
+    initial_probe_results = run_change_probes(artifact_snapshot)
+    findings = materialize_findings(artifact_snapshot)
+    initial_review = build_review(findings, context)
+    fixed_snapshot, applied_patch_ids = apply_author_fix(
+        artifact_snapshot,
+        initial_review,
+    )
+    re_evaluation = independently_reevaluate(
+        fixed_snapshot,
+        initial_review,
+        initial_reviewer,
+        independent_reviewer,
+    )
+    author_fix = {
+        "author": author,
+        "applied": bool(applied_patch_ids)
+        and all(
+            change["fixed"] is True
             for change in fixed_snapshot["changes"]
-            if change["change_id"] in finding_by_change
+        ),
+        "applied_patch_ids": applied_patch_ids,
+        "resolved_finding_ids": [
+            finding["finding_id"]
+            for finding in initial_review
         ],
+        "fixed_snapshot": fixed_snapshot,
+    }
+    return {
+        "sample_change": artifact_snapshot,
+        "initial_probe_results": initial_probe_results,
+        "initial_reviewer": initial_reviewer,
+        "initial_review": initial_review,
+        "author_fix": author_fix,
+        "independent_re_evaluation": re_evaluation,
     }
 
 def main():
@@ -356,16 +565,22 @@ def main():
     )
     baseline_change = independent_snapshot(SAMPLE_CHANGE)
     transferred_change = independent_snapshot(SAMPLE_CHANGE)
-    baseline_findings = materialize_findings(baseline_change)
-    transferred_findings = materialize_findings(transferred_change)
-    initial_review = build_review(
-        baseline_findings,
+    baseline_cycle = execute_review_cycle(
+        baseline_change,
         baseline_context,
+        "reviewer-alpha",
+        "author-charlie",
+        "reviewer-bravo",
     )
-    transferred_review = build_review(
-        transferred_findings,
+    transferred_cycle = execute_review_cycle(
+        transferred_change,
         transferred_context,
+        "reviewer-delta",
+        "author-charlie",
+        "reviewer-echo",
     )
+    initial_review = baseline_cycle["initial_review"]
+    transferred_review = transferred_cycle["initial_review"]
     if (
         initial_review[0]["priority"] != "important"
         or transferred_review[0]["priority"] != "critical"
@@ -377,32 +592,11 @@ def main():
         raise AssertionError(
             "review-transfer-invariant: sample snapshots drifted"
         )
-    fixed_snapshot = apply_author_fix(
-        baseline_change,
-        initial_review,
-    )
-    re_evaluation = independently_reevaluate(
-        fixed_snapshot,
-        initial_review,
-        "reviewer-alpha",
-        "reviewer-bravo",
-    )
     changed_fields = context_difference(
         baseline_context,
         transferred_context,
     )
-    author_fix = {
-        "author": "author-charlie",
-        "applied": all(
-            change["fixed"] is True
-            for change in fixed_snapshot["changes"]
-        ),
-        "resolved_finding_ids": [
-            finding["finding_id"]
-            for finding in initial_review
-        ],
-        "fixed_snapshot": fixed_snapshot,
-    }
+    re_evaluation = baseline_cycle["independent_re_evaluation"]
     contributor_enablement = {
         "other_contributor": "reviewer-bravo",
         "review_evidence": re_evaluation["outcome_evidence"],
@@ -412,13 +606,7 @@ def main():
     }
     report = {
         "harness": HARNESS,
-        "review_cycle": {
-            "sample_change": baseline_change,
-            "initial_reviewer": "reviewer-alpha",
-            "initial_review": initial_review,
-            "author_fix": author_fix,
-            "independent_re_evaluation": re_evaluation,
-        },
+        "review_cycle": baseline_cycle,
         "risk_kind_transfer": {
             "changed_fields": changed_fields,
             "same_sample_change": baseline_change
@@ -432,6 +620,7 @@ def main():
                 "priority"
             ],
             "transferred_review": transferred_review,
+            "transferred_review_cycle": transferred_cycle,
         },
         "contributor_enablement": contributor_enablement,
         "input_derived_evidence": {
@@ -450,9 +639,16 @@ def main():
             "synthetic_or_observed_explicit": True,
         },
         "runtime_bound": {
-            "records": len(SAMPLE_CHANGE["changes"]) * 2,
+            "records": (
+                len(SAMPLE_CHANGE["changes"])
+                + len(CHANGE_PROBES)
+            ) * 2,
             "subprocesses": 0,
-            "maximum_iterations": len(FINDING_SPECS),
+            "maximum_iterations": max(
+                len(FINDING_SPECS),
+                len(CHANGE_PROBES),
+                len(AUTHOR_PATCHES),
+            ),
         },
         "external_network_used": False,
         "command_success_distinction": {
@@ -467,9 +663,12 @@ def main():
             "lab_steps": [
                 {"step": 1, "evidence": baseline_context},
                 {"step": 2, "evidence": initial_review},
-                {"step": 3, "evidence": author_fix},
+                {
+                    "step": 3,
+                    "evidence": baseline_cycle["author_fix"],
+                },
                 {"step": 4, "evidence": re_evaluation},
-                {"step": 5, "evidence": transferred_review},
+                {"step": 5, "evidence": transferred_cycle},
             ],
             "assessments": [
                 {
