@@ -1,0 +1,179 @@
+{
+  "version": 1,
+  "id": "core-14-performance-capacity",
+  "title": "負荷曲線と実測profileから安全容量を判断する",
+  "summary": "simulated負荷と実際のlocal profileを混同せず、tail、queue、回復、headroomから安全な容量判断を組み立てる。",
+  "track": "data-scale",
+  "stage": 3,
+  "difficulty": "advanced",
+  "estimatedMinutes": 320,
+  "prerequisiteIds": [
+    "core-02-algorithms-measurement",
+    "core-03-architecture-memory-caches",
+    "core-11-data-modeling-storage"
+  ],
+  "objectives": [
+    {
+      "id": "obj-load-curve",
+      "statement": "offered、accepted、success、tail latency、resource、queueを同じ負荷曲線で比較できる",
+      "evidenceIds": ["performance-report", "assessment"]
+    },
+    {
+      "id": "obj-profile",
+      "statement": "simulated capacity evidenceと実環境で採取したprofileを区別し、bottleneck仮説を反証できる",
+      "evidenceIds": ["performance-report", "teach-back"]
+    },
+    {
+      "id": "obj-capacity",
+      "statement": "Littleの式の適用条件、回復hysteresis、headroomを明示して安全容量を更新できる",
+      "evidenceIds": ["assessment", "transfer"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "performance-report",
+      "kind": "artifact",
+      "description": "ボトルネック証拠、負荷曲線、容量限界を含む性能報告"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "CPU使用率、最大RPS、平均latencyだけでは安全容量を決められない理由の5分説明"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "plateau、tail、error、queue、回復、profileから次の測定を選ぶ回答"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "request mixを変えてbottleneckと安全容量を再測定した比較"
+    }
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "offered load、throughput、percentile、utilization、queue、headroomを区別できる",
+      "evidenceIds": ["performance-report"]
+    },
+    {
+      "level": "explain",
+      "criterion": "最大RPSと安全容量、profile上位関数と根本原因が同義でない理由を説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "低負荷から超過と回復までの曲線を作り、Littleの式を定常区間だけで照合できる",
+      "evidenceIds": ["performance-report"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "tail増大、error、queue、downstream、profileを組み合わせてbottleneck仮説を絞れる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "request mixと成長予測を更新し、headroomと再測定条件を合意できる",
+      "evidenceIds": ["transfer"]
+    }
+  ],
+  "lab": {
+    "title": "注文APIの負荷曲線とlocal profileを分離して検証する",
+    "artifact": "ボトルネック証拠、負荷曲線、容量限界を含む性能報告",
+    "steps": [
+      "read中心の固定request mixと処理容量をsimulated fixtureとして明示する",
+      "低負荷、限界付近、超過、回復のoffered、accepted、success、p50、p95、p99、resource、queue、downstreamを計算する",
+      "throughput plateau、tailとerrorの増加、回復hysteresisからobserved kneeとheadroom付き安全容量を求める",
+      "定常区間だけでLittleの式を照合し、stdlib cProfileによるactual local measurementを別の証拠として採取する",
+      "write中心へrequest mixを変え、bottleneckと安全容量が再計算されることをmutationで検証する"
+    ]
+  },
+  "teachBack": "5分で、CPUが最大の関数が常にbottleneckではない理由、Littleの式が定常平均を前提にする理由、最大RPSを安全容量にできない理由を説明する。",
+  "assessment": [
+    {
+      "prompt": "throughputは横ばいだがCPUは70%でp99とqueueが増えた。何をbottleneck候補にし、どの証拠を追加するか。",
+      "expectedEvidence": "offeredとacceptedの差、downstream latency、queue、tail、memory、profile、負荷生成側限界を分離する診断"
+    },
+    {
+      "prompt": "平均latencyからLittleの式が合ったため超過負荷でも容量予測は正しい、という主張を評価する。",
+      "expectedEvidence": "定常性、平均値、観測窓、dropとretry、回復hysteresis、誤差を使った適用限界"
+    }
+  ],
+  "transferTask": "参照中心から書込み中心へ変わるrequest mixでbottleneckと安全容量を再測定する",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "offered loadと成功throughputを同一視し平均だけを記録する",
+        "developing": "percentileとresourceはあるがqueue、error、回復を結び付けない",
+        "proficient": "負荷曲線、Littleの式、profile、headroomを適用条件付きで整合させる",
+        "exemplary": "負荷生成側と依存先の限界、hysteresis、測定overheadまで反証する"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "最大RPSをそのままproduction容量にする",
+        "developing": "headroomを置くが根拠と再評価条件がない",
+        "proficient": "tail、error、queue、成長、運用余力から安全容量を選ぶ",
+        "exemplary": "request mixと障害時縮退を含む複数容量境界を運用判断へ接続する"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "simulated値または単発profileをproduction実測として提示する",
+        "developing": "simulationとprofileは分けるがbottleneck判断を再現できない",
+        "proficient": "fixture、計算、actual local profile、mutationを再実行可能に残す",
+        "exemplary": "環境差とprofile overheadを明示し、別手法の証拠で仮説を交差検証する"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "一つの最大値だけを示して利用者影響を説明しない",
+        "developing": "曲線は示すが観測値と判断を区別しない",
+        "proficient": "観測、推論、限界、決定、再測定条件を同じ報告で追える",
+        "exemplary": "開発、運用、事業がrequest mixとheadroomのtrade-offを更新できる"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "Diagnostics",
+      "url": "https://go.dev/doc/diagnostics",
+      "kind": "primary"
+    },
+    {
+      "title": "Improving your app’s performance",
+      "url": "https://developer.apple.com/documentation/xcode/improving-your-app-s-performance/",
+      "kind": "primary"
+    },
+    {
+      "title": "Handling Overload",
+      "url": "https://sre.google/sre-book/handling-overload/",
+      "kind": "primary"
+    },
+    {
+      "title": "A Proof for the Queuing Formula: L = λW",
+      "url": "https://doi.org/10.1287/opre.9.3.383",
+      "kind": "peer-reviewed"
+    },
+    {
+      "title": "The Tail at Scale",
+      "url": "https://doi.org/10.1145/2408776.2408794",
+      "kind": "peer-reviewed"
+    }
+  ],
+  "review": {
+    "intervalDays": [1, 7, 30, 90],
+    "prompts": [
+      "offered loadとaccepted throughputが分かれる時に何を観測するか",
+      "Littleの式を使えない非定常な反例を挙げる",
+      "request mix変更でbottleneck仮説をどう更新するか"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}

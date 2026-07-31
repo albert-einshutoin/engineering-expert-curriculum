@@ -1,0 +1,297 @@
+<section id="why">
+  <h2>なぜ重要か</h2>
+  <p>性能は「速いコード」を探す作業ではなく、利用者が送る負荷、受理できた仕事、成功した仕事、待ち行列、依存先、resource、回復を同じ時間軸で結ぶ判断である。平均latencyやCPU使用率だけでは、tailで待たされる利用者、dropされたrequest、負荷を下げても残るqueueを見落とす。</p>
+  <p>最大RPSは観測した一点であり、安全容量ではない。通常のrequest mix、成長、障害時の縮退、測定誤差を含むheadroomを置き、どの観測で再評価するかを決めて初めて運用上の容量になる。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> CPU profileで最大の関数は必ずしもsystem bottleneckではない。Littleの式は定常状態の長期平均を結ぶ関係で、過負荷への立上がりや回復中へ無条件に適用できない。simulated負荷曲線、local profile、production計測は出自の異なる証拠である。</p>
+  </aside>
+</section>
+<section id="mental-model">
+  <h2>メンタルモデル</h2>
+  <p>性能判断を、需要、受理、完了、待機、resource、依存、利用者結果のflowとして扱う。offered loadを上げた時にaccepted throughputが横ばいになり、p99、error、queueのどれが先に変わるかを観測する。負荷を戻した後の値も取り、回復hysteresisを見逃さない。</p>
+  <figure>
+    <figcaption>負荷を証拠へ変えて安全容量を更新する循環</figcaption>
+    <ol>
+      <li><strong>Fixture:</strong> request mix、payload、依存、処理上限、環境を固定する。</li>
+      <li><strong>Curve:</strong> 低負荷、限界付近、超過、回復を同じ列で記録する。</li>
+      <li><strong>Diagnose:</strong> plateau、tail、error、queue、resource、downstreamを結ぶ。</li>
+      <li><strong>Profile:</strong> 仮説に合う実processの局所証拠を別に採取する。</li>
+      <li><strong>Capacity:</strong> observed kneeからheadroomを引き、再測定条件を残す。</li>
+    </ol>
+  </figure>
+  <p>平均同時実行数L、平均到着または完了率λ、平均滞在時間Wの関係L = λWは、単位と観測窓を揃えた定常区間の整合確認に使う。式が合うことは、個別requestのtailや将来の容量を保証しない。</p>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>注文APIのsimulated load curveとactual local profileを分ける</h3>
+  <dl>
+    <dt>前提</dt>
+    <dd>production計測ではない固定simulationを使う。read比率80%、処理上限100 RPS、4段階のoffered loadを与える。profileだけは、この場のCPython 3.13 processで実際に採取する。</dd>
+    <dt>入力</dt>
+    <dd>40、100、150、50 RPSの順で負荷を変え、最後の50 RPSは超過後の回復区間とする。request mix mutationではwrite比率を20%から70%へ変える。</dd>
+    <dt>操作</dt>
+    <dd>accepted、success、p50、p95、p99、CPU、memory、queue、downstreamを計算し、observed kneeから20%のheadroomを引く。定常点ではLittleの式を照合し、cProfileでboundedなlocal関数を測る。</dd>
+    <dt>観測</dt>
+    <dd>100 RPS以降でthroughputがplateauし、150 RPSではtail、error、queueが増える。負荷を50 RPSへ戻してもqueue由来のtailが残る。write中心mutationではstorage側をbottleneckとする容量計算へ変わる。</dd>
+    <dt>結論</dt>
+    <dd>安全容量は最大値ではなく、tailとerrorが急増する前のkneeから運用余力を引いた値である。simulationの数値は教材の因果を検査するfixtureであり、このserviceのproduction性能を表さない。</dd>
+  </dl>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+import cProfile
+import json
+import pstats
+
+HARNESS = "performance_capacity_lab_v1"
+CAPACITY_RPS = 100
+
+def simulate(stage, offered_rps, capacity, previous_queue, write_fraction):
+    if offered_rps > capacity:
+        accepted_rps = capacity
+        queue_depth = previous_queue + offered_rps - capacity
+    else:
+        accepted_rps = offered_rps
+        spare = capacity - offered_rps
+        queue_depth = max(0, previous_queue - spare // 2)
+
+    rejected_rps = max(0, offered_rps - capacity)
+    error_rps = rejected_rps // 5
+    success_rps = accepted_rps - min(accepted_rps, error_rps)
+    utilization = accepted_rps / capacity
+    p50_ms = 30 + int(utilization * 20) + queue_depth
+    p95_ms = p50_ms + 20 + queue_depth
+    p99_ms = p95_ms + 30 + queue_depth
+    return {
+        "stage": stage,
+        "offered_rps": offered_rps,
+        "accepted_rps": accepted_rps,
+        "success_rps": success_rps,
+        "p50_ms": p50_ms,
+        "p95_ms": p95_ms,
+        "p99_ms": p99_ms,
+        "cpu_percent": min(99.0, 20.0 + accepted_rps * 0.65),
+        "memory_mb": 128 + queue_depth * 2,
+        "queue_depth": queue_depth,
+        "downstream_ms": 15 + int(write_fraction * 50) + queue_depth // 2,
+    }
+
+def capacity_for_mix(write_fraction):
+    # write比率が上がると、このfixtureではstorage更新費用が支配的になる。
+    safe_capacity = int((140 - write_fraction * 80) * 0.8)
+    bottleneck = (
+        "storage-write" if write_fraction > 0.5 else "cpu-transform"
+    )
+    return bottleneck, safe_capacity
+
+def profile_target(values):
+    total = 0
+    for value in values:
+        for multiplier in (1, 3, 5, 7):
+            total += (value * multiplier) % 97
+    return total
+
+def main():
+    stages = [
+        ("low", 40),
+        ("near-limit", 100),
+        ("overload", 150),
+        ("recovery", 50),
+    ]
+    curve = []
+    previous_queue = 0
+    for stage, offered_rps in stages:
+        point = simulate(
+            stage,
+            offered_rps,
+            CAPACITY_RPS,
+            previous_queue,
+            write_fraction=0.2,
+        )
+        curve.append(point)
+        previous_queue = point["queue_depth"]
+
+    by_stage = {point["stage"]: point for point in curve}
+    assert by_stage["overload"]["accepted_rps"] == CAPACITY_RPS
+    assert by_stage["overload"]["queue_depth"] > 0
+    assert by_stage["recovery"]["p99_ms"] > by_stage["low"]["p99_ms"]
+
+    throughput_per_second = 80
+    mean_response_seconds = 0.125
+    observed_concurrency = 10.0
+    calculated_concurrency = (
+        throughput_per_second * mean_response_seconds
+    )
+    relative_error = abs(
+        observed_concurrency - calculated_concurrency
+    ) / observed_concurrency
+
+    profiler = cProfile.Profile()
+    profiler.enable()
+    profile_result = profile_target(range(400))
+    profiler.disable()
+    stats = pstats.Stats(profiler)
+    assert profile_result > 0
+
+    baseline_bottleneck, baseline_safe_capacity = capacity_for_mix(0.2)
+    mutated_bottleneck, mutated_safe_capacity = capacity_for_mix(0.7)
+    request_mix_mutation = {
+        "changed_assumption": "request-mix",
+        "baseline_bottleneck": baseline_bottleneck,
+        "mutated_bottleneck": mutated_bottleneck,
+        "baseline_safe_capacity_rps": baseline_safe_capacity,
+        "mutated_safe_capacity_rps": mutated_safe_capacity,
+        "recomputed": (
+            baseline_bottleneck != mutated_bottleneck
+            and baseline_safe_capacity != mutated_safe_capacity
+        ),
+    }
+    assert request_mix_mutation["recomputed"]
+
+    report = {
+        "harness": HARNESS,
+        "fixture": "order-api-load-v1",
+        "simulation_metadata": {
+            "kind": "simulated",
+            "provenance": "lesson-defined deterministic capacity model",
+            "purpose": "負荷変化と容量判断の因果を反証する",
+            "limitations": (
+                "production latency、hardware、network、vendor性能を表さない"
+            ),
+        },
+        "load_curve": curve,
+        "curve_analysis": {
+            "throughput_plateau": (
+                by_stage["near-limit"]["accepted_rps"]
+                == by_stage["overload"]["accepted_rps"]
+            ),
+            "tail_growth": (
+                by_stage["overload"]["p99_ms"]
+                > by_stage["near-limit"]["p99_ms"]
+            ),
+            "error_growth": (
+                by_stage["overload"]["success_rps"]
+                &lt; by_stage["overload"]["accepted_rps"]
+            ),
+            "recovery_hysteresis": (
+                by_stage["recovery"]["p99_ms"]
+                > by_stage["low"]["p99_ms"]
+            ),
+        },
+        "capacity": {
+            "observed_knee_rps": CAPACITY_RPS,
+            "safe_capacity_rps": 80,
+            "headroom_fraction": 0.2,
+            "decision": "80 RPSを通常運用上限として再測定する",
+        },
+        "little_law": {
+            "scope": "near-limit steady-state average only",
+            "throughput_per_second": throughput_per_second,
+            "mean_response_seconds": mean_response_seconds,
+            "observed_concurrency": observed_concurrency,
+            "calculated_concurrency": calculated_concurrency,
+            "relative_error": relative_error,
+        },
+        "local_profile": {
+            "evidence_kind": "actual-local-measurement",
+            "profiler": "cProfile",
+            "total_calls": stats.total_calls,
+            "top_function": "profile_target",
+            "environment_limitations": (
+                "このCPython processのbounded fixtureだけを測り、"
+                "production bottleneckを主張しない"
+            ),
+        },
+        "request_mix_mutation": request_mix_mutation,
+        "runtime_bound": {
+            "iterations": 1600,
+            "subprocesses": 0,
+        },
+        "mastery_evidence": {
+            "lab_steps": [
+                {"step": 1, "evidence": "simulation metadataとrequest mix"},
+                {"step": 2, "evidence": "4段階load_curveの全観測列"},
+                {"step": 3, "evidence": "curve_analysisとcapacity"},
+                {"step": 4, "evidence": "Little照合とcProfile"},
+                {"step": 5, "evidence": "request_mix_mutation"},
+            ],
+            "assessments": [
+                {"assessment": 1, "evidence": "queueとdownstreamを含む診断"},
+                {"assessment": 2, "evidence": "Littleの式のscopeと誤差"},
+            ],
+            "rubric_dimensions": [
+                "technical-correctness",
+                "judgment",
+                "evidence",
+                "communication",
+            ],
+            "transfer": {
+                "task": (
+                    "参照中心から書込み中心へ変わるrequest mixで"
+                    "bottleneckと安全容量を再測定する"
+                ),
+                "changed_assumption": "request-mix",
+                "evidence": "bottleneckとsafe capacityの再計算",
+            },
+        },
+        "external_network_used": False,
+    }
+    assert all(report["curve_analysis"].values())
+    assert report["little_law"]["relative_error"] == 0
+    return report
+
+print(json.dumps(main(), ensure_ascii=False, indent=2))
+PY</code></pre>
+</section>
+<section id="tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <table>
+    <caption>性能証拠と次の行動を選ぶ decision table</caption>
+    <thead>
+      <tr>
+        <th scope="col">観測</th>
+        <th scope="col">次の行動</th>
+        <th scope="col">代償</th>
+        <th scope="col">停止条件</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row">CPU上昇とthroughput plateauが同時</th>
+        <td>CPU profileと実行経路を採取する</td>
+        <td>profile overheadと環境差が入る</td>
+        <td>別resourceまたは負荷生成側が先に飽和した時</td>
+      </tr>
+      <tr>
+        <th scope="row">CPU余裕があるがqueueとdownstreamが増加</th>
+        <td>依存先、pool、lock、I/O待機を分解する</td>
+        <td>cross-systemの相関計測が増える</td>
+        <td>offeredとacceptedの差が負荷生成側で生じた時</td>
+      </tr>
+      <tr>
+        <th scope="row">超過後に負荷を戻してもtailが残る</th>
+        <td>queue drainを容量とrunbookへ含める</td>
+        <td>平常時の利用率を下げる</td>
+        <td>回復時間が利用者目標内で安定した時</td>
+      </tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><strong>誤診:</strong> CPU profileの最大関数を最適化すればsystem bottleneckは必ず消える。<strong>反証:</strong> 待機、lock、downstream、負荷生成器の限界はCPU profileだけでは見えず、変更後のend-to-end曲線が必要である。</li>
+    <li><strong>誤診:</strong> 一度達成した最大RPSがproductionの安全容量である。<strong>反証:</strong> request mix、tail、error、queue、障害時縮退、成長とheadroomを含まず、回復可能性も示していない。</li>
+    <li><strong>失敗モード:</strong> simulationをmeasured production値として共有すると、hardwareと依存先の差を隠した架空の容量計画になる。</li>
+    <li><strong>失敗モード:</strong> 平均latencyだけでは少数の遅いrequestとretry増幅を隠すため、p95とp99、goodputを併記する。</li>
+  </ul>
+</section>
+<section id="knowledge-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>offered、accepted、success throughputを分けると何を診断できるか。</li>
+    <li>Littleの式を回復区間へそのまま適用できない理由を説明せよ。</li>
+    <li>CPU使用率が低いままp99が増える時の候補と追加証拠を三つ挙げよ。</li>
+    <li>request mix変更を容量計画の再評価条件へどう組み込むか。</li>
+  </ol>
+</section>
+<section id="sources-next">
+  <h2>出典と次の学習</h2>
+  <p>profileとtraceの選択はGo DiagnosticsとAppleの性能改善cycle、overload制御はGoogle SRE Chapter 21を一次資料として照合する。平均queueの整合にはLittleの原論文、tailのsystem効果にはThe Tail at Scaleを使う。いずれも特定fixtureの最大RPSを保証する資料ではない。</p>
+  <p>次のcore-15では、容量曲線を利用者journeyのgood event、SLO、error budget、multi-window alertへ接続し、性能劣化をpageとticketへ分ける。</p>
+</section>
