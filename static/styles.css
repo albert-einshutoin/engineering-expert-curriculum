@@ -1011,11 +1011,11 @@ footer p {
   }
 
   .competency-matrix th:nth-child(5) {
-    inline-size: 20%;
+    inline-size: 22%;
   }
 
   .competency-matrix th:nth-child(6) {
-    inline-size: 40%;
+    inline-size: 38%;
   }
 
   .competency-framework,
