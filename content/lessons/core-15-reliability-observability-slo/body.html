@@ -57,9 +57,12 @@ OBSERVATION_END = datetime(
 )
 REQUIRED_RESOURCE_ATTRIBUTES = [
     "service.name",
-    "deployment.environment",
+    "deployment.environment.name",
     "service.version",
 ]
+DEPRECATED_RESOURCE_ATTRIBUTES = {
+    "deployment.environment",
+}
 
 def make_event(event_id, journey, minutes_ago, good):
     return {
@@ -99,6 +102,44 @@ SEARCH_EVENTS = [
     for offset in range(10)
 ]
 FIXTURE_EVENTS = SCENARIO_EVENTS["both"] + SEARCH_EVENTS
+REQUEST_FIXTURE = [
+    {"request_id": "request-1", "trace_id": "trace-a"},
+    {"request_id": "request-2", "trace_id": "trace-b"},
+    {"request_id": "request-3", "trace_id": "trace-c"},
+]
+TRACE_FIXTURE = [
+    {"request_id": "request-1", "trace_id": "trace-a"},
+    {"request_id": "request-2", "trace_id": "trace-b"},
+    {"request_id": "request-3", "trace_id": "trace-c"},
+]
+LOG_FIXTURE = [
+    {"request_id": "request-1", "trace_id": "trace-a"},
+    {"request_id": "request-2", "trace_id": "trace-b"},
+    {"request_id": "request-3", "trace_id": "trace-c"},
+]
+METRIC_SERIES_FIXTURE = [
+    {
+        "journey.name": "purchase-completion",
+        "result": "ok",
+        "deployment.environment.name": "lesson",
+    },
+    {
+        "journey.name": "purchase-completion",
+        "result": "failed",
+        "deployment.environment.name": "lesson",
+    },
+    {
+        "journey.name": "search-success",
+        "result": "ok",
+        "deployment.environment.name": "lesson",
+    },
+    {
+        "journey.name": "purchase-completion",
+        "result": "ok",
+        "deployment.environment.name": "lesson",
+    },
+]
+METRIC_SERIES_BOUND = 4
 
 def derive_sli(events, journey):
     valid = []
@@ -193,10 +234,63 @@ def validate_telemetry(resource_attributes, metric_labels):
     for attribute in REQUIRED_RESOURCE_ATTRIBUTES:
         if not resource_attributes.get(attribute):
             errors.append("missing-resource-attribute:" + attribute)
+    for attribute in DEPRECATED_RESOURCE_ATTRIBUTES:
+        if attribute in resource_attributes:
+            errors.append("deprecated-resource-attribute:" + attribute)
     forbidden = {"email", "user.id", "order.id", "trace_id"}
     if forbidden.intersection(metric_labels):
         errors.append("pii-or-high-cardinality-label")
     return sorted(errors)
+
+def derive_trace_correlation(requests, traces, logs):
+    # A trace ID alone is insufficient evidence: matching request and trace
+    # identities must be present in both the span and log fixtures.
+    trace_pairs = {
+        (item["request_id"], item["trace_id"])
+        for item in traces
+    }
+    log_pairs = {
+        (item["request_id"], item["trace_id"])
+        for item in logs
+    }
+    request_ids = sorted(item["request_id"] for item in requests)
+    correlated_request_ids = sorted(
+        item["request_id"]
+        for item in requests
+        if (
+            (item["request_id"], item["trace_id"]) in trace_pairs
+            and (item["request_id"], item["trace_id"]) in log_pairs
+        )
+    )
+    correlated_requests = len(correlated_request_ids)
+    total_requests = len(request_ids)
+    return {
+        "passed": correlated_requests == total_requests,
+        "correlated_requests": correlated_requests,
+        "total_requests": total_requests,
+        "correlated_request_ids": correlated_request_ids,
+        "request_ids": request_ids,
+        "fixture": {
+            "requests": requests,
+            "traces": traces,
+            "logs": logs,
+        },
+    }
+
+def derive_cardinality(metric_series, series_bound):
+    # Cardinality is counted from unique label sets so duplicate observations
+    # do not falsely consume the bounded-series budget.
+    unique_series = {
+        tuple(sorted(sample.items()))
+        for sample in metric_series
+    }
+    unique_series_count = len(unique_series)
+    return {
+        "bounded": unique_series_count &lt;= series_bound,
+        "unique_series_count": unique_series_count,
+        "series_bound": series_bound,
+        "metric_series_fixture": metric_series,
+    }
 
 def main():
     sli = derive_sli(FIXTURE_EVENTS, "purchase-completion")
@@ -231,12 +325,37 @@ def main():
 
     resources = {
         "service.name": "checkout",
-        "deployment.environment": "lesson",
+        "deployment.environment.name": "lesson",
         "service.version": "1.0.0",
     }
-    metric_labels = {"journey.name", "result", "deployment.environment"}
+    metric_labels = {
+        "journey.name",
+        "result",
+        "deployment.environment.name",
+    }
     telemetry_errors = validate_telemetry(resources, metric_labels)
     assert telemetry_errors == []
+    deprecated_probe_errors = validate_telemetry(
+        {
+            **resources,
+            "deployment.environment": "lesson",
+        },
+        metric_labels,
+    )
+    assert deprecated_probe_errors == [
+        "deprecated-resource-attribute:deployment.environment"
+    ]
+    trace_correlation = derive_trace_correlation(
+        REQUEST_FIXTURE,
+        TRACE_FIXTURE,
+        LOG_FIXTURE,
+    )
+    cardinality_check = derive_cardinality(
+        METRIC_SERIES_FIXTURE,
+        METRIC_SERIES_BOUND,
+    )
+    assert trace_correlation["passed"]
+    assert cardinality_check["bounded"]
 
     baseline_sli = derive_sli(FIXTURE_EVENTS, "search-success")
     transferred_sli = derive_sli(
@@ -324,13 +443,19 @@ def main():
             "otel_specification": "1.59.0",
             "semantic_conventions": "1.43.0",
             "required_resource_attributes": REQUIRED_RESOURCE_ATTRIBUTES,
-            "trace_correlation": True,
+            "schema_validation": {
+                "deprecated_attribute_rejected": bool(
+                    deprecated_probe_errors
+                ),
+                "deprecated_probe_errors": deprecated_probe_errors,
+            },
+            "trace_correlation": trace_correlation,
             "pii_check": {
                 "passed": not telemetry_errors,
                 "forbidden_metric_labels": ["email", "user.id", "order.id"],
             },
             "cardinality_check": {
-                "bounded": True,
+                **cardinality_check,
                 "metric_labels": sorted(metric_labels),
                 "trace_id_location": "span-log-correlation-only",
             },
