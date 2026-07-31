@@ -1031,7 +1031,7 @@ footer p {
   }
 
   .competency-matrix tbody td:nth-child(5)::before {
-    content: "公式識別子・名称：";
+    content: "公式ID・名称：";
   }
 
   .competency-matrix tbody td:nth-child(6)::before {
@@ -1109,9 +1109,12 @@ footer p {
   }
 
   .competency-matrix caption {
+    display: block;
+    inline-size: auto;
     padding-block: 0.1rem;
     font-size: 7pt;
     line-height: 1.15;
+    writing-mode: horizontal-tb;
   }
 
   thead {
