@@ -45,22 +45,38 @@ OBSERVATION_FIXTURE = [
     {
         "dimension": "keyboard",
         "expected": "all-controls-reachable-and-focus-visible",
-        "actual": "all-controls-reachable-and-focus-visible",
+        "actual_by_input_mode": {
+            "pointer-primary": "all-controls-reachable-and-focus-visible",
+            "keyboard-only": "focus-visible-but-navigation-traps",
+        },
     },
     {
         "dimension": "zoom-200",
         "expected": "no-content-loss-or-two-dimensional-scroll",
-        "actual": "no-content-loss-or-two-dimensional-scroll",
+        "actual_by_input_mode": {
+            "pointer-primary": (
+                "no-content-loss-or-two-dimensional-scroll"
+            ),
+            "keyboard-only": (
+                "no-content-loss-or-two-dimensional-scroll"
+            ),
+        },
     },
     {
         "dimension": "reading-order",
         "expected": "dom-order-matches-meaning-order",
-        "actual": "dom-order-matches-meaning-order",
+        "actual_by_input_mode": {
+            "pointer-primary": "dom-order-matches-meaning-order",
+            "keyboard-only": "dom-order-matches-meaning-order",
+        },
     },
     {
         "dimension": "usability",
         "expected": "five-of-five-tasks-completed",
-        "actual": "four-of-five-tasks-completed",
+        "actual_by_input_mode": {
+            "pointer-primary": "four-of-five-tasks-completed",
+            "keyboard-only": "four-of-five-tasks-completed",
+        },
     },
 ]
 
@@ -72,6 +88,9 @@ def derive_observations(fixture, input_mode):
             f"{input_mode}-{index}-{source['dimension']}"
         )
         observation["input_mode"] = input_mode
+        actual = source["actual_by_input_mode"][input_mode]
+        observation["actual"] = actual
+        observation.pop("actual_by_input_mode")
         passed = observation["actual"] == observation["expected"]
         observation["passed"] = passed
         observations.append(observation)
@@ -121,13 +140,33 @@ def main():
         "keyboard-only",
     )
     expected_passes = [
-        item["actual"] == item["expected"]
+        item["actual_by_input_mode"]["pointer-primary"]
+        == item["expected"]
         for item in OBSERVATION_FIXTURE
     ]
     assert (
         [item["passed"] for item in baseline] == expected_passes
     ), "hci-causal-invariant"
     assert summarize(baseline)["failed"] == 1, "hci-causal-invariant"
+    baseline_actual = {
+        item["dimension"]: item["actual"]
+        for item in baseline
+    }
+    transferred_actual = {
+        item["dimension"]: item["actual"]
+        for item in transferred
+    }
+    changed_dimensions = [
+        dimension
+        for dimension in baseline_actual
+        if baseline_actual[dimension] != transferred_actual[dimension]
+    ]
+    assert "keyboard" in changed_dimensions, "hci-input-mode-invariant"
+    baseline_summary = summarize(baseline)
+    transferred_summary = summarize(transferred)
+    assert (
+        baseline_summary != transferred_summary
+    ), "hci-input-mode-invariant"
     report = {
         "harness": HARNESS,
         "site_under_audit": SITE,
@@ -165,6 +204,11 @@ def main():
             "transferred_check_ids": [
                 item["check_id"] for item in transferred
             ],
+            "baseline_observations": baseline,
+            "transferred_observations": transferred,
+            "changed_dimensions": changed_dimensions,
+            "baseline_summary": baseline_summary,
+            "transferred_summary": transferred_summary,
         },
         "fixture_metadata": {
             "kind": "synthetic",
