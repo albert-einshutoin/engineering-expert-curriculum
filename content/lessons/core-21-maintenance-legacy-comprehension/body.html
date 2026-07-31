@@ -125,6 +125,137 @@ BASELINE_CHANGE = {
 TRANSFER_CHANGE = {
     "change_request": "tax-rounding-change",
 }
+FIXTURE_FIELDS = {"fixture_id", "entry_point", "stages", "cases"}
+STAGE_FIELDS = {"id", "change_requests", "owner", "observed"}
+CASE_FIELDS = {
+    "id",
+    "change_request",
+    "input_cents",
+    "discount_basis_points",
+    "tax_basis_points",
+    "tax_rounding_increment",
+    "observed_output_cents",
+}
+CHANGE_FIELDS = {"change_request"}
+
+def validate_legacy_inputs(fixture, baseline_change, transfer_change):
+    if (
+        type(fixture) is not dict
+        or set(fixture) != FIXTURE_FIELDS
+        or type(fixture["fixture_id"]) is not str
+        or not fixture["fixture_id"]
+        or type(fixture["entry_point"]) is not str
+        or not fixture["entry_point"]
+        or type(fixture["stages"]) is not list
+        or not fixture["stages"]
+        or type(fixture["cases"]) is not list
+        or not fixture["cases"]
+    ):
+        raise AssertionError(
+            "maintenance-comprehension-invariant: invalid fixture schema"
+        )
+    stage_ids = []
+    for stage in fixture["stages"]:
+        if (
+            type(stage) is not dict
+            or set(stage) != STAGE_FIELDS
+            or type(stage["id"]) is not str
+            or not stage["id"]
+            or type(stage["change_requests"]) is not list
+            or not stage["change_requests"]
+            or not all(
+                type(request) is str and request
+                for request in stage["change_requests"]
+            )
+            or type(stage["owner"]) is not str
+            or type(stage["observed"]) is not bool
+        ):
+            raise AssertionError(
+                "maintenance-comprehension-invariant: "
+                "invalid stage schema"
+            )
+        stage_ids.append(stage["id"])
+    if len(stage_ids) != len(set(stage_ids)):
+        raise AssertionError(
+            "maintenance-comprehension-invariant: duplicate stage id"
+        )
+    if fixture["entry_point"] not in stage_ids:
+        raise AssertionError(
+            "maintenance-comprehension-invariant: unknown entry point"
+        )
+
+    case_ids = []
+    for case in fixture["cases"]:
+        numeric_fields = (
+            "input_cents",
+            "discount_basis_points",
+            "tax_basis_points",
+            "tax_rounding_increment",
+            "observed_output_cents",
+        )
+        if (
+            type(case) is not dict
+            or set(case) != CASE_FIELDS
+            or type(case["id"]) is not str
+            or not case["id"]
+            or type(case["change_request"]) is not str
+            or not case["change_request"]
+            or not all(type(case[field]) is int for field in numeric_fields)
+            or case["input_cents"] &lt; 0
+            or case["observed_output_cents"] &lt; 0
+            or not 0 &lt;= case["discount_basis_points"] &lt;= 10000
+            or not 0 &lt;= case["tax_basis_points"] &lt;= 10000
+            or case["tax_rounding_increment"] &lt;= 0
+        ):
+            raise AssertionError(
+                "maintenance-comprehension-invariant: "
+                "invalid case schema"
+            )
+        case_ids.append(case["id"])
+    if len(case_ids) != len(set(case_ids)):
+        raise AssertionError(
+            "maintenance-comprehension-invariant: duplicate case id"
+        )
+
+    changes = (baseline_change, transfer_change)
+    if not all(
+        type(change) is dict
+        and set(change) == CHANGE_FIELDS
+        and type(change["change_request"]) is str
+        and change["change_request"]
+        for change in changes
+    ):
+        raise AssertionError(
+            "maintenance-comprehension-invariant: invalid change schema"
+        )
+    changed_fields = [
+        field
+        for field in sorted(CHANGE_FIELDS)
+        if baseline_change[field] != transfer_change[field]
+    ]
+    known_requests = {
+        request
+        for stage in fixture["stages"]
+        for request in stage["change_requests"]
+    }
+    case_requests = {
+        case["change_request"]
+        for case in fixture["cases"]
+    }
+    selected_requests = {
+        baseline_change["change_request"],
+        transfer_change["change_request"],
+    }
+    if (
+        changed_fields != ["change_request"]
+        or not selected_requests &lt;= known_requests
+        or not selected_requests &lt;= case_requests
+    ):
+        raise AssertionError(
+            "maintenance-comprehension-invariant: "
+            "transfer changed wrong input"
+        )
+    return changed_fields
 
 def fixed_legacy_fixture():
     # JSON値だけで構成したfixtureを別objectへ再 materializeし、
@@ -213,6 +344,11 @@ def analyze_change(fixture, change_request):
     }
 
 def main():
+    changed_fields = validate_legacy_inputs(
+        FIXTURE,
+        BASELINE_CHANGE,
+        TRANSFER_CHANGE,
+    )
     baseline_fixture = fixed_legacy_fixture()
     transferred_fixture = fixed_legacy_fixture()
     if (
@@ -221,23 +357,6 @@ def main():
     ):
         raise AssertionError(
             "maintenance-comprehension-invariant: fixture snapshot drift"
-        )
-    change_fields = sorted(
-        set(BASELINE_CHANGE) | set(TRANSFER_CHANGE)
-    )
-    changed_fields = [
-        field
-        for field in change_fields
-        if (
-            field not in BASELINE_CHANGE
-            or field not in TRANSFER_CHANGE
-            or BASELINE_CHANGE[field] != TRANSFER_CHANGE[field]
-        )
-    ]
-    if changed_fields != ["change_request"]:
-        raise AssertionError(
-            "maintenance-comprehension-invariant: "
-            "transfer changed wrong input"
         )
     baseline = analyze_change(
         baseline_fixture,
