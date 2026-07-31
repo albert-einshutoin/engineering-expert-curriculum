@@ -39,6 +39,10 @@ class CurriculumMapPublicationDurabilityError(RuntimeError):
     """The new map is visible but its parent fsync did not complete."""
 
 
+class CurriculumMapPostCommitError(RuntimeError):
+    """The new map is durable, but its parent handle teardown failed."""
+
+
 def _read_document(
     parent: _DirectoryHandle,
 ) -> tuple[bytes, str, tuple[int, int, int, int, int, int], int]:
@@ -266,51 +270,77 @@ def main(
             file=sys.stderr,
         )
         return 1
+    published = False
+    success_message: str | None = None
+    failure_message: str | None = None
     try:
-        with _open_trusted_directory(
-            root / "docs",
-            "curriculum map parent",
-        ) as parent:
-            before_raw, before, signature, mode = _read_document(parent)
-            after = replace_generated_curriculum_map(
-                before,
-                render_generated_curriculum_map(root),
-            )
-            after_raw = after.encode("utf-8")
-            if len(after_raw) > MAX_CURRICULUM_MAP_BYTES:
-                raise CurriculumValidationError(
-                    "generated curriculum map exceeds maximum byte count"
+        try:
+            with _open_trusted_directory(
+                root / "docs",
+                "curriculum map parent",
+            ) as parent:
+                before_raw, before, signature, mode = _read_document(parent)
+                after = replace_generated_curriculum_map(
+                    before,
+                    render_generated_curriculum_map(root),
                 )
-
-            # Rendering may be long enough for another author to save the
-            # document. Re-read before deciding current/stale or publishing.
-            current_raw, _current, current_signature, _current_mode = (
-                _read_document(parent)
-            )
-            if current_raw != before_raw or current_signature != signature:
-                raise CurriculumValidationError(
-                    "curriculum map changed during generation"
-                )
-            if options.check:
-                if before_raw != after_raw:
-                    print(
-                        "docs/curriculum-map.md generated block is stale",
-                        file=sys.stderr,
+                after_raw = after.encode("utf-8")
+                if len(after_raw) > MAX_CURRICULUM_MAP_BYTES:
+                    raise CurriculumValidationError(
+                        "generated curriculum map exceeds maximum byte count"
                     )
-                    return 1
-                print("docs/curriculum-map.md generated block is current")
-                return 0
-            if before_raw != after_raw:
-                _write_document_atomic(
-                    parent,
-                    after_raw,
-                    expected_signature=signature,
-                    target_mode=mode,
+
+                # Rendering may be long enough for another author to save the
+                # document. Re-read before deciding current/stale or publishing.
+                current_raw, _current, current_signature, _current_mode = (
+                    _read_document(parent)
                 )
-                print("updated docs/curriculum-map.md")
-            else:
-                print("docs/curriculum-map.md is already current")
-            return 0
+                if current_raw != before_raw or current_signature != signature:
+                    raise CurriculumValidationError(
+                        "curriculum map changed during generation"
+                    )
+                if options.check:
+                    if before_raw != after_raw:
+                        failure_message = (
+                            "docs/curriculum-map.md generated block is stale"
+                        )
+                    else:
+                        success_message = (
+                            "docs/curriculum-map.md generated block is current"
+                        )
+                elif before_raw != after_raw:
+                    _write_document_atomic(
+                        parent,
+                        after_raw,
+                        expected_signature=signature,
+                        target_mode=mode,
+                    )
+                    # The write helper returned only after file and parent fsync.
+                    # Record this before context teardown so a later close error
+                    # cannot be misreported as a pre-publication failure.
+                    published = True
+                    success_message = "updated docs/curriculum-map.md"
+                else:
+                    success_message = (
+                        "docs/curriculum-map.md is already current"
+                    )
+        except (CurriculumValidationError, OSError, RuntimeError) as error:
+            if published:
+                raise CurriculumMapPostCommitError(
+                    "curriculum map is published and is visible, but parent "
+                    f"handle teardown failed: {error}"
+                ) from error
+            raise
+
+        # User-facing success is emitted only after descriptor identity checks
+        # and close have completed, so stdout never contradicts the exit code.
+        if failure_message is not None:
+            print(failure_message, file=sys.stderr)
+            return 1
+        if success_message is None:
+            raise RuntimeError("curriculum map outcome was not determined")
+        print(success_message)
+        return 0
     except (CurriculumValidationError, OSError, RuntimeError) as error:
         print(f"curriculum map failed: {error}", file=sys.stderr)
         return 1
