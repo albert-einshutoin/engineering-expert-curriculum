@@ -558,6 +558,18 @@ class RepositorySecurityTests(unittest.TestCase):
             runs.count("python tools/check_site.py --root "),
             2,
         )
+        for output in ("site-first", "site-second"):
+            with self.subTest(output=output):
+                self.assertIn(
+                    f"python tools/build.py --output {output}",
+                    runs,
+                )
+                self.assertIn(
+                    "python tools/check_site.py "
+                    f"--root {output} --require-current-release",
+                    runs,
+                )
+                self.assertIn(f"cd {output}", runs)
         self.assertIn("sha256sum", runs)
         self.assertIn("diff -u", runs)
         self.assertEqual(
