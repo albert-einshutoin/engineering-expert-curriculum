@@ -161,7 +161,7 @@ def characterize(fixture, change_request, affected_path):
     return tests
 
 def analyze_change(fixture, change_request):
-    affected_path = trace_execution(FIXTURE, change_request)
+    affected_path = trace_execution(fixture, change_request)
     if not affected_path:
         raise AssertionError(
             "maintenance-comprehension-invariant: empty affected path"
