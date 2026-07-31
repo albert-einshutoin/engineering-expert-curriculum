@@ -1,0 +1,348 @@
+<section id="why">
+  <h2>なぜ重要か</h2>
+  <p>legacy systemの変更で最初に必要なのは編集ではなく、要求がどのentry pointからどの処理とデータを通るかを説明できる証拠である。名前検索だけでは動的な分岐、暗黙の共有状態、運用手順、誰もownerを説明できないunknownを落とす。program comprehensionは、この未知を段階的に減らしながら変更仮説を検査する活動である。</p>
+  <p>SWEBOK Guide Version 4.0aはsoftware maintenanceを知識領域として整理し、ISO/IEC/IEEE 14764:2022はlife cycleにおけるmaintenance processを扱う。2000年のmaintenance roadmapと2007年のprogram comprehension研究は、変更がコード編集だけでなく理解、進化、組織知識の問題でもあることを示す。ここでは標準の章名を暗記せず、change request、system map、characterization test、停止判断へ接続する。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> characterization testが通ることは観測したlegacy behaviorを保存した証拠であり、その振る舞いが現在の業務仕様として正しい証明ではない。command successとsystem outcomeは別で、test commandの終了だけでは利用者影響や未知領域の解消を断定できない。</p>
+  </aside>
+</section>
+<section id="mental-model">
+  <h2>メンタルモデル</h2>
+  <p>変更を「request、execution path、observed behavior、unknown、decision」の連鎖として扱う。先にchange reasonを固定し、小さいfixtureでentry pointから経路を追う。owner、仕様根拠、観測が欠ける場所はunknownとして消さず、追加調査と停止条件へ結ぶ。最後に現在の出力をcharacterization testへ保存し、編集後の差分を意図した変化と回帰へ分ける。</p>
+  <figure>
+    <figcaption>change requestから変更前証拠を作るlegacy comprehension loop</figcaption>
+    <ol>
+      <li><strong>Reason:</strong> 誰のどの結果を変える要求かを一文で固定する。</li>
+      <li><strong>Trace:</strong> entry pointから実際のexecution pathを入力付きで追う。</li>
+      <li><strong>Map:</strong> component、data、side effect、ownerを経路へ結ぶ。</li>
+      <li><strong>Unknown:</strong> 未観測、未所有、仕様不明を仮説から分離する。</li>
+      <li><strong>Characterize:</strong> 現在のexpected、actual、observed pathをtestへ残す。</li>
+      <li><strong>Decide:</strong> 証拠が足りなければ編集せず調査または停止を選ぶ。</li>
+    </ol>
+  </figure>
+  <p>system mapは全systemを描く百科事典ではない。対象change requestに必要な範囲と、範囲外だと判断した根拠を示す作業仮説である。要求が変われば、同じfixtureでもaffected pathと必要なcharacterization testを再計算する。</p>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>小さなlegacy請求fixtureを編集前に地図化する</h3>
+  <dl>
+    <dt>前提</dt>
+    <dd>実サービスではないlesson-defined synthetic fixtureを使う。production traffic、実顧客、実価格を観測したデータではなく、program comprehension手順の因果を検査するための小さな例である。</dd>
+    <dt>入力</dt>
+    <dd>割引率変更と税丸め変更の二つのchange request、四つの処理stage、既存入出力case、ownerと観測状態を固定する。baselineでは割引率変更だけを選ぶ。</dd>
+    <dt>操作</dt>
+    <dd>選んだrequestを扱うstageをexecution pathとして入力から導き、ownerまたは観測が欠けるstageをunknownへ残す。そのpathを使ったcaseだけをcharacterization testへ変換する。</dd>
+    <dt>観測</dt>
+    <dd>baselineとtransferではlegacy fixtureは同じでもaffected pathとcharacterization testが異なる。経路計算を空にするとmaintenance-comprehension-invariantで停止する。</dd>
+    <dt>結論</dt>
+    <dd>変更開始の条件はcommand successではなく、change reason、affected path、unknown、観測済み出力が同じ証拠へ結ばれたsystem outcomeである。</dd>
+  </dl>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+import json
+
+HARNESS = "legacy_comprehension_lab_v1"
+TRANSFER_TASK = (
+    "割引率変更から税丸め変更へchange requestだけを変え、"
+    "同じlegacy fixtureの影響経路、未知領域、特性テストを再構成する"
+)
+FIXTURE = {
+    "fixture_id": "legacy-invoice-v1",
+    "entry_point": "receive-invoice",
+    "stages": [
+        {
+            "id": "receive-invoice",
+            "change_requests": ["discount-rate-change", "tax-rounding-change"],
+            "owner": "billing-intake",
+            "observed": True,
+        },
+        {
+            "id": "lookup-discount",
+            "change_requests": ["discount-rate-change"],
+            "owner": "",
+            "observed": True,
+        },
+        {
+            "id": "calculate-subtotal",
+            "change_requests": ["discount-rate-change", "tax-rounding-change"],
+            "owner": "billing-core",
+            "observed": True,
+        },
+        {
+            "id": "round-tax",
+            "change_requests": ["tax-rounding-change"],
+            "owner": "billing-core",
+            "observed": False,
+        },
+        {
+            "id": "persist-invoice",
+            "change_requests": ["discount-rate-change", "tax-rounding-change"],
+            "owner": "billing-storage",
+            "observed": True,
+        },
+    ],
+    "cases": [
+        {
+            "id": "discount-standard",
+            "change_request": "discount-rate-change",
+            "input_cents": 10000,
+            "discount_basis_points": 1000,
+            "tax_basis_points": 0,
+            "tax_rounding_increment": 1,
+        },
+        {
+            "id": "discount-boundary",
+            "change_request": "discount-rate-change",
+            "input_cents": 10001,
+            "discount_basis_points": 500,
+            "tax_basis_points": 0,
+            "tax_rounding_increment": 1,
+        },
+        {
+            "id": "tax-rounding-standard",
+            "change_request": "tax-rounding-change",
+            "input_cents": 10001,
+            "discount_basis_points": 0,
+            "tax_basis_points": 1000,
+            "tax_rounding_increment": 5,
+        },
+        {
+            "id": "tax-rounding-boundary",
+            "change_request": "tax-rounding-change",
+            "input_cents": 9999,
+            "discount_basis_points": 0,
+            "tax_basis_points": 800,
+            "tax_rounding_increment": 10,
+        },
+    ],
+}
+
+def trace_execution(fixture, change_request):
+    # change requestから経路を再計算し、ファイル名の推測を影響範囲の
+    # 根拠にしない。
+    return [
+        stage["id"]
+        for stage in fixture["stages"]
+        if change_request in stage["change_requests"]
+    ]
+
+def execute_case(case):
+    discounted = (
+        case["input_cents"]
+        * (10000 - case["discount_basis_points"])
+        // 10000
+    )
+    tax = discounted * case["tax_basis_points"] // 10000
+    increment = case["tax_rounding_increment"]
+    rounded_tax = ((tax + increment - 1) // increment) * increment
+    return discounted + rounded_tax
+
+def characterize(fixture, change_request, affected_path):
+    tests = []
+    for case in fixture["cases"]:
+        if case["change_request"] != change_request:
+            continue
+        actual = execute_case(case)
+        # expectedは別仕様ではなく固定fixtureの観測値であるため、
+        # provenanceと限界をreport側に明示して過剰な正しさを主張しない。
+        expected = execute_case(case)
+        tests.append(
+            {
+                "case_id": case["id"],
+                "expected": expected,
+                "actual": actual,
+                "passed": actual == expected,
+                "observed_path": list(affected_path),
+            }
+        )
+    return tests
+
+def analyze_change(fixture, change_request):
+    affected_path = trace_execution(FIXTURE, change_request)
+    if not affected_path:
+        raise AssertionError(
+            "maintenance-comprehension-invariant: empty affected path"
+        )
+    stage_by_id = {
+        stage["id"]: stage
+        for stage in fixture["stages"]
+    }
+    unknowns = [
+        {
+            "stage": stage_id,
+            "reason": (
+                "owner-unknown"
+                if not stage_by_id[stage_id]["owner"]
+                else "behavior-not-observed"
+            ),
+        }
+        for stage_id in affected_path
+        if (
+            not stage_by_id[stage_id]["owner"]
+            or not stage_by_id[stage_id]["observed"]
+        )
+    ]
+    tests = characterize(fixture, change_request, affected_path)
+    if (
+        len(tests) &lt; 2
+        or not all(test["passed"] and test["observed_path"] for test in tests)
+    ):
+        raise AssertionError(
+            "maintenance-comprehension-invariant: evidence incomplete"
+        )
+    return {
+        "fixture_id": fixture["fixture_id"],
+        "change_request": change_request,
+        "affected_path": affected_path,
+        "unknowns": unknowns,
+        "characterization_tests": tests,
+    }
+
+def main():
+    baseline = analyze_change(FIXTURE, "discount-rate-change")
+    transferred = analyze_change(FIXTURE, "tax-rounding-change")
+    if (
+        baseline["affected_path"] == transferred["affected_path"]
+        or baseline["characterization_tests"]
+        == transferred["characterization_tests"]
+    ):
+        raise AssertionError(
+            "maintenance-comprehension-invariant: transfer not causal"
+        )
+    report = {
+        "harness": HARNESS,
+        "fixture_metadata": {
+            "kind": "synthetic",
+            "provenance": "lesson-defined legacy-invoice-v1 input",
+            "limitations": (
+                "小さな決定的fixtureでありproductionの正しさ、"
+                "全経路、業務仕様を表さない"
+            ),
+            "synthetic_or_observed_explicit": (
+                "値はすべてsynthetic入力またはその観測計算結果"
+            ),
+        },
+        "runtime_bound": {
+            "records": len(FIXTURE["stages"]) + len(FIXTURE["cases"]),
+            "subprocesses": 0,
+            "maximum_iterations": (
+                len(FIXTURE["stages"]) * 2 + len(FIXTURE["cases"]) * 2
+            ),
+        },
+        "external_network_used": False,
+        "system_map": {
+            "entry_point": FIXTURE["entry_point"],
+            "execution_path": baseline["affected_path"],
+            "change_reason": baseline["change_request"],
+            "unknowns": baseline["unknowns"],
+        },
+        "change_analysis": {
+            "change_request": baseline["change_request"],
+            "affected_path": baseline["affected_path"],
+        },
+        "characterization_tests": baseline["characterization_tests"],
+        "change_request_transfer": {
+            "changed_assumption": "change-request",
+            "changed_fields": ["change_request"],
+            "same_legacy_fixture": (
+                baseline["fixture_id"] == transferred["fixture_id"]
+            ),
+            "baseline_affected_path": baseline["affected_path"],
+            "transferred_affected_path": transferred["affected_path"],
+            "baseline_characterization_tests": (
+                baseline["characterization_tests"]
+            ),
+            "transferred_characterization_tests": (
+                transferred["characterization_tests"]
+            ),
+        },
+        "command_success_distinction": {
+            "command_completed": True,
+            "system_outcome_checked": bool(
+                baseline["affected_path"]
+                and baseline["characterization_tests"]
+            ),
+            "command_success_equals_system_outcome": False,
+            "outcome_evidence": (
+                "affected path、unknown、characterization testsを検査"
+            ),
+        },
+        "mastery_evidence": {
+            "lab_steps": [
+                {"step": 1, "evidence": baseline["affected_path"]},
+                {"step": 2, "evidence": baseline["characterization_tests"]},
+                {"step": 3, "evidence": transferred["affected_path"]},
+            ],
+            "assessments": [
+                {"assessment": 1, "evidence": baseline["unknowns"]},
+                {
+                    "assessment": 2,
+                    "evidence": baseline["characterization_tests"],
+                },
+            ],
+            "rubric_dimensions": [
+                "technical-correctness",
+                "judgment",
+                "evidence",
+                "communication",
+            ],
+            "transfer": {
+                "task": TRANSFER_TASK,
+                "changed_assumption": "change-request",
+                "evidence": transferred["affected_path"],
+            },
+        },
+    }
+    print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+
+main()
+PY</code></pre>
+</section>
+<section id="tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <table>
+    <caption>legacy変更開始を決めるdecision table</caption>
+    <thead>
+      <tr>
+        <th scope="col">観測</th>
+        <th scope="col">判断</th>
+        <th scope="col">追加証拠</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row">経路とtestがありunknownが所有される</th>
+        <td>小さく可逆な変更へ進む</td>
+        <td>差分、rollback、利用者可視の結果</td>
+      </tr>
+      <tr>
+        <th scope="row">実行経路が空または推測だけ</th>
+        <td>編集を停止する</td>
+        <td>entry point付きtraceとfixture</td>
+      </tr>
+      <tr>
+        <th scope="row">既存出力は観測したが仕様根拠がない</th>
+        <td>behaviorを保存し正しさは断定しない</td>
+        <td>業務owner、履歴、production observation</td>
+      </tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><strong>誤診:</strong> class名にDiscountがあるのでそこだけ直せばよい。<strong>反証:</strong> 入力付きexecution pathは共通subtotalと永続化を通り、名前検索だけではside effectを説明できない。</li>
+    <li><strong>誤診:</strong> characterization testがgreenなので現行動作は正しい。<strong>反証:</strong> testは固定fixtureで観測したactualを保存しただけで、業務仕様とproduction outcomeの妥当性は別途検証が必要である。</li>
+    <li><strong>誤診:</strong> unknownを記録すると理解不足を認めることになる。<strong>反証:</strong> unknownを推測から分離しownerと停止条件へ結ぶ方が、無根拠な全体理解より変更riskを制御できる。</li>
+  </ul>
+</section>
+<section id="knowledge-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>change request、execution path、change reasonはどの証拠で一貫させるか。</li>
+    <li>characterization testのexpectedは何を意味し、何を意味しないか。</li>
+    <li>unknownが一つ残る時、編集へ進む条件と停止する条件を分けよ。</li>
+    <li>割引率変更から税丸め変更へ要求だけが変わった時、再計算すべきartifactは何か。</li>
+  </ol>
+</section>
+<section id="sources">
+  <h2>出典と次の学習</h2>
+  <p>SWEBOK Guide Version 4.0a（September 2025）とISO/IEC/IEEE 14764:2022をmaintenanceの共通語彙に使う。Software maintenance and evolution: a roadmap（2000）で研究課題の広がりを、Comprehension strategies and difficulties in maintaining object-oriented systems（2007）でprogram comprehensionの実証的な難しさを確認する。完全な書誌情報と参照先はlesson metadataに分離している。</p>
+  <p>次はcore-22で、この変更証拠を互換性のあるdatabase schema migrationとexpand-contractの停止・rollback判断へ接続する。</p>
+</section>
