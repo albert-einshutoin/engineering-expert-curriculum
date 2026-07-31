@@ -303,6 +303,6 @@ PY</code></pre>
 </section>
 <section id="sources-next">
   <h2>出典と次の学習</h2>
-  <p>回復とatomicityの基礎は「Principles of Transaction-Oriented Database Recovery」、分離レベルの曖昧さとSnapshot Isolationは「A Critique of ANSI SQL Isolation Levels」を参照する。対象vendorの現在の意味は「PostgreSQL 18 Documentation: 13.2. Transaction Isolation」、Serializable実装の背景は「Serializable Snapshot Isolation in PostgreSQL」で確認する。</p>
+  <p>回復とatomicityの基礎は「Principles of Transaction-Oriented Database Recovery」、分離レベルの曖昧さとSnapshot Isolationは「A Critique of ANSI SQL Isolation Levels」を参照する。対象vendorの現在の意味はPostgreSQL 18の「13.2. Transaction Isolation」、Serializable実装の背景は「Serializable Snapshot Isolation in PostgreSQL」で確認する。</p>
   <p>次はcore-13で、単一database transactionの外へ境界を広げ、network partition、重複、順序変更、部分障害のもとでcoordinationと回復を設計する。実productへ適用する前に、使用vendorとversionで同じscheduleの統合testを実行する。</p>
 </section>

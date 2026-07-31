@@ -149,7 +149,7 @@
       "kind": "peer-reviewed"
     },
     {
-      "title": "PostgreSQL 18 Documentation: 13.2. Transaction Isolation",
+      "title": "13.2. Transaction Isolation",
       "url": "https://www.postgresql.org/docs/18/transaction-iso.html",
       "kind": "primary"
     },
