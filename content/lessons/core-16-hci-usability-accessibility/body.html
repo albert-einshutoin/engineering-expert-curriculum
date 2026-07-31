@@ -30,9 +30,9 @@
     <dt>入力</dt>
     <dd>keyboard、zoom-200、reading-order、usabilityの4観測を使う。各観測は期待値とactualを持ち、usabilityに意図的な差分を1件残す。</dd>
     <dt>操作</dt>
-    <dd>actualとexpectedの等価性からpassedを導出し、合格数と失敗数を計算する。pointer中心からkeyboard-onlyへinput modeだけを変更し、check IDを再構成する。</dd>
+    <dd>actualとexpectedの等価性からpassedを導出し、合格数と失敗数を計算する。pointer中心からkeyboard-onlyへinput modeを変更し、mode別operationとactualを同じ4 dimensionで比較する。</dd>
     <dt>観測</dt>
-    <dd>4件中3件がpassし、1件はmanual reviewが必要になる。transfer後もページ、WCAG target、期待結果は不変だが、入力方式に結び付くcheck IDは変わる。</dd>
+    <dd>pointer-primaryは3/4、keyboard-onlyは2/4がpassする。transfer後もページ、WCAG target、期待結果は不変だが、keyboard dimensionのoperationとactualが変わり、入力方式に結び付くcheck IDとsummaryも変わる。</dd>
     <dt>結論</dt>
     <dd>監査記録は「問題なし」という印象ではなく、差分を保持する因果証拠である。このfixtureだけからサイト全体のconformance claimは行わない。</dd>
   </dl>
