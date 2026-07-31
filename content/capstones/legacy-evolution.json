@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "id": "legacy-evolution",
+  "title": "請求legacy systemを止めずに進化させる",
+  "scenario": "八年間運用されたsubscription billing monolithへ、新しい税丸め規則と顧客名schemaを導入する。仕様書だけでは実挙動を説明できず、batch処理、外部税service、手動運用、隠れた並行更新が存在する。big-bang rewriteを行わず、未知を明示したsystem map、characterization test、段階migration、rollback、保守引継ぎまでを証拠で完成させる課題である。",
+  "constraints": [
+    "既存invoiceの金額と監査履歴を変更せず、新税規則は指定日以降の新規計算だけへ適用する",
+    "big-bang rewriteを禁止し、未知領域を推測で埋めずsystem mapへ明記する",
+    "databaseはsynthetic 2TB相当、旧版と新版のapplicationが7日間共存する",
+    "monthly close中の停止時間は10分以内、利用者journeyのsynthetic SLOは99.95パーセントとする",
+    "backfill、dual read、dual write、cutover、contractに観測、停止、再開、rollback条件を置く",
+    "invoice jobの重複実行、concurrent update、外部税serviceのtimeoutと結果不明を再現する",
+    "保守teamとplatform teamのowner、dependency、SLO、cognitive load、escalationを明示する",
+    "実在顧客情報と実料金を使わず、固定seedとsynthetic価格で再現可能な評価を行う",
+    "二つの投資案をengineering hours、operations hours、信頼性、capacity、option valueで比較する",
+    "rollback後のsystem outcomeと旧新版双方のread compatibilityを15分以内に検証する"
+  ],
+  "lessonIds": [
+    "core-01-systems-tradeoffs",
+    "core-02-algorithms-measurement",
+    "core-03-architecture-memory-caches",
+    "core-04-os-processes-concurrency",
+    "core-05-networks-latency-failure",
+    "core-06-requirements-domain-modeling",
+    "core-07-api-contract-design",
+    "core-08-modularity-evolutionary-architecture",
+    "core-09-test-strategy-tdd",
+    "core-10-threat-modeling-secure-design",
+    "core-11-data-modeling-storage",
+    "core-12-transactions-isolation-consistency",
+    "core-13-distributed-coordination-failure",
+    "core-14-performance-capacity",
+    "core-15-reliability-observability-slo",
+    "core-19-technical-communication-design-docs",
+    "core-20-ethics-privacy-societal-impact",
+    "core-21-maintenance-legacy-comprehension",
+    "core-22-evolution-safe-migrations",
+    "core-23-incident-response-learning",
+    "core-24-delivery-ci-release-safety",
+    "core-25-engineering-economics-capacity",
+    "core-26-code-review-collaborative-quality",
+    "core-27-team-interfaces-sociotechnical-architecture",
+    "core-29-cross-cultural-async-collaboration",
+    "core-30-evidence-based-technical-leadership"
+  ],
+  "primaryExercises": {
+    "core-08-modularity-evolutionary-architecture": "変更理由、dependency direction、cycle、migration seamをsystem mapとADRへ追跡し、境界を更新する",
+    "core-09-test-strategy-tdd": "税丸めをREDから実装し、実process evidence、behavior hash、mutation killで回帰能力を検証する",
+    "core-19-technical-communication-design-docs": "同じmigration evidenceを経営・監査・実装・operations向けviewへ再構成して判断可能性を検証する",
+    "core-21-maintenance-legacy-comprehension": "編集前に実行経路、変更理由、未知領域を地図化し、characterization testで現行挙動を再現する",
+    "core-22-evolution-safe-migrations": "expand、backfill、dual read、cutover、contractへ観測・停止・rollback条件を割り当て実行する",
+    "core-23-incident-response-learning": "migration incidentのimpact、timeline、decision、寄与要因、検証可能な対策を追跡してreviewを更新する",
+    "core-25-engineering-economics-capacity": "engineering・operations時間、capacity、reliability、機会費用、感度を比較して投資案を再評価する",
+    "core-27-team-interfaces-sociotechnical-architecture": "owner、capability、dependency、cognitive load、SLO、enablementをteam interfaceとして検証する"
+  },
+  "evidence": {
+    "build": "実行経路・変更理由・未知領域を持つsystem map、現行挙動を固定するcharacterization test、税丸めmutationをkillするTDD履歴、互換API、storage ADR、transaction不変条件、expand-contract各phaseの実行証拠",
+    "operate": "旧新版のSLI・SLO、backfill progressとerror、負荷・memory profile、外部依存timeout、shadow・canary・rollback結果、重複jobとmigration incident drill、maintenance runbook",
+    "explain": "技術者向け実行経路とmigration詳細、事業・監査向け影響と停止条件、operations向けrunbookを相互参照できる設計文書、非同期decision log、費用と機会損失の説明",
+    "review": "第三者がsystem mapから隠れた経路をfindingとして提出し、author fix後にbackfill error rateという単一制約だけを変更する。characterization、migration、SLO、rollback、economicsを独立再評価する"
+  },
+  "milestones": [
+    "productionを変更せずfixture、runtime trace、dependency、batch、手動操作、未知領域をsystem mapへ固定する",
+    "変更要求をdomain rule、不変条件、API互換性、storage、transaction、threat・privacy constraintへ追跡する",
+    "REDから税丸めとschema compatibilityを実装し、旧新版共存、concurrency、重複job、外部依存失敗を検証する",
+    "expand、backfill、dual read、cutover、contractをcanaryで進め、閾値からstop・resume・rollbackを実行する",
+    "incident drill、第三者review、修正、独立再評価を行い、team interface、投資判断、runbookを更新する"
+  ],
+  "reviewQuestions": [
+    "仕様書と実挙動が異なる箇所はどのcharacterization evidenceで固定され、未知はどこに残るか",
+    "税丸めと顧客名変更を分離した場合の可逆性と運用費用はどう変わるか",
+    "旧新版が共存する各phaseでwrite、read、retry、rollbackの互換性を誰が判定するか",
+    "backfill commandの終了成功ではなくsystem outcomeと監査結果を何で証明するか",
+    "隠れた経路、重複job、外部依存遅延、concurrent updateのどれが停止条件を発火するか",
+    "第三者reviewで発見した未知がtest、migration、runbook、cost、team boundaryへ伝播したか"
+  ],
+  "rubric": {
+    "incomplete": "既存挙動を観測せずrewriteまたは一括migrationを提案し、互換性、停止、rollback、未知領域を証明していない",
+    "developing": "characterization testと段階計画はあるが、旧新版共存、backfill outcome、concurrency、運用指標、第三者再評価のいずれかが欠ける",
+    "proficient": "現行挙動と未知を証拠で固定し、要求・API・data・test・migration・SLO・incident・economicsを追跡して段階実行、rollback、review、独立再評価を残す",
+    "exemplary": "隠れた経路と測定限界を独立に発見し、単一仮定変更で全phaseと投資判断を再計算する。将来の保守者が同じrunbookで安全に復旧できる"
+  }
+}

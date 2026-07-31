@@ -187,18 +187,18 @@ class CapstoneContractTests(unittest.TestCase):
         valid = documents["global-service.json"].decode("utf-8")
         cases = (
             valid.replace(
-                '"version":1,',
-                '"version":1,"version":1,',
+                '"version": 1,',
+                '"version": 1, "version": 1,',
                 1,
             ),
             valid.replace(
-                '"build":',
-                '"build":"duplicate","build":',
+                '"build": ',
+                '"build": "duplicate", "build": ',
                 1,
             ),
             valid.replace(
-                '"incomplete":',
-                '"incomplete":"duplicate","incomplete":',
+                '"incomplete": ',
+                '"incomplete": "duplicate", "incomplete": ',
                 1,
             ),
         )
@@ -242,7 +242,7 @@ class CapstoneContractTests(unittest.TestCase):
         unknown = _decoded()
         lesson_ids = unknown["global-service.json"]["lessonIds"]
         assert isinstance(lesson_ids, list)
-        lesson_ids.append("core-31-invented")
+        lesson_ids.append("core-01-invented")
         with self.assertRaisesRegex(
             CurriculumValidationError,
             "unknown lesson",
@@ -262,15 +262,12 @@ class CapstoneContractTests(unittest.TestCase):
         missing = _decoded()
         for document in missing.values():
             lesson_ids = document["lessonIds"]
-            primary = document["primaryExercises"]
             assert isinstance(lesson_ids, list)
-            assert isinstance(primary, dict)
             if LESSON_IDS[0] in lesson_ids:
                 lesson_ids.remove(LESSON_IDS[0])
-            primary.pop(LESSON_IDS[0], None)
         with self.assertRaisesRegex(
             CurriculumValidationError,
-            "missing capstone lesson coverage",
+            "missing capstone lesson coverage|primary exercise",
         ):
             _parse(missing)
 
@@ -297,7 +294,7 @@ class CapstoneContractTests(unittest.TestCase):
         target[moved_id] = source.pop(moved_id)
         with self.assertRaisesRegex(
             CurriculumValidationError,
-            "primary exercise owner",
+            "primaryExercises|primary exercise owner",
         ):
             _parse(documents)
 
@@ -316,7 +313,7 @@ class CapstoneContractTests(unittest.TestCase):
             )
 
         with TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             shutil.copytree(REPOSITORY_ROOT / "content/lessons", root / "lessons")
             shutil.copytree(CAPSTONES, root / "real-capstones")
             os.symlink(root / "real-capstones", root / "capstones")

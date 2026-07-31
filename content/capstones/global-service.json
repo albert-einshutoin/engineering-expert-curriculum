@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "id": "global-service",
+  "title": "多地域の医療予約サービスを設計・運用する",
+  "scenario": "三地域の利用者と医療機関を結ぶ予約サービスを設計する。低帯域・支援技術利用者を含み、同一枠の二重予約を防ぎながら、地域間分断、重複要求、依存遅延、段階配信、incidentを扱う。機能実装だけでは完了せず、制約から設計・実装・運用・説明・第三者reviewまでを同じ証拠で追跡できる状態を目指す課題である。",
+  "constraints": [
+    "三地域で運用し、地域間network partitionを30分間注入できる決定的simulationを持つ",
+    "同一予約枠のactive reservation数は常に1以下とし、timeout後の結果不明と重複要求を安全に処理する",
+    "予約journeyのsynthetic SLOを30日窓99.9パーセント、通常時p95 2000ms以下として定義する",
+    "氏名、連絡先、健康上の配慮を最小化し、保存地域、保持期間、削除、監査、内部者脅威を明示する",
+    "keyboard、200パーセントzoom、読み上げ、低帯域の各条件で主要journeyを完了できる",
+    "通常、重複、順序入替、依存遅延、地域分断、回復のfixtureを固定して結果を再現可能にする",
+    "需要は通常1000 RPS、peak 10000 RPSのsynthetic入力とし、安全容量と月間運用時間を比較する",
+    "同一artifactを段階配信し、canary悪化時に15分以内でrollback outcomeを検証する",
+    "実在患者情報、live価格、秘密情報、有料外部serviceを証拠へ含めない",
+    "三地域の担当者はUTC基準の非同期RFCで判断し、timezone overlapが0時間でも異論を追跡できる"
+  ],
+  "lessonIds": [
+    "core-01-systems-tradeoffs",
+    "core-02-algorithms-measurement",
+    "core-03-architecture-memory-caches",
+    "core-04-os-processes-concurrency",
+    "core-05-networks-latency-failure",
+    "core-06-requirements-domain-modeling",
+    "core-07-api-contract-design",
+    "core-08-modularity-evolutionary-architecture",
+    "core-09-test-strategy-tdd",
+    "core-10-threat-modeling-secure-design",
+    "core-11-data-modeling-storage",
+    "core-12-transactions-isolation-consistency",
+    "core-13-distributed-coordination-failure",
+    "core-14-performance-capacity",
+    "core-15-reliability-observability-slo",
+    "core-16-hci-usability-accessibility",
+    "core-17-graphics-visual-information",
+    "core-18-product-discovery-experiments",
+    "core-19-technical-communication-design-docs",
+    "core-20-ethics-privacy-societal-impact",
+    "core-23-incident-response-learning",
+    "core-24-delivery-ci-release-safety",
+    "core-25-engineering-economics-capacity",
+    "core-26-code-review-collaborative-quality",
+    "core-27-team-interfaces-sociotechnical-architecture",
+    "core-29-cross-cultural-async-collaboration",
+    "core-30-evidence-based-technical-leadership"
+  ],
+  "primaryExercises": {
+    "core-01-systems-tradeoffs": "同期完了、地域queue、縮退受付を同じ制約で比較し、二次効果と反証条件を含むADRを更新する",
+    "core-02-algorithms-measurement": "予約枠探索の入力分布と件数を固定し、複数案を七回以上反復測定して交差点を検証する",
+    "core-03-architecture-memory-caches": "availability scanの作業集合と走査順だけを変え、memory profileからlocality仮説を検証する",
+    "core-04-os-processes-concurrency": "二重予約のinterleavingを決定的に再現し、不変条件と停止性を保つ同期境界を検証する",
+    "core-05-networks-latency-failure": "DNSから予約完了までのdeadlineを層別に測定し、retryと結果不明の停止条件を導く",
+    "core-06-requirements-domain-modeling": "用語衝突、例外、未宣言ruleをcommand、event、不変条件へ追跡してdomain境界を検証する",
+    "core-07-api-contract-design": "重複要求と旧clientを再現し、冪等key、Problem Details、version互換性をcontract testで検証する",
+    "core-11-data-modeling-storage": "access pattern、整合性、成長、運用、回復を同じcriteriaで比較しstorage ADRを再評価する",
+    "core-12-transactions-isolation-consistency": "二つの予約transaction scheduleを再現し、分離異常、abort、whole-transaction retryを検証する",
+    "core-13-distributed-coordination-failure": "duplicate、reorder、partition、replay、reconciliation後の利用者結果を固定seedで再現する",
+    "core-14-performance-capacity": "tail、error、queue、plateau、回復を測定し、peak需要に対する安全容量とheadroomを導く",
+    "core-15-reliability-observability-slo": "予約journeyからgood event、SLI、SLO、burn alert、runbook、行動ownerを導き検証する",
+    "core-20-ethics-privacy-societal-impact": "affected population、data lifecycle、集団別害、mitigation、残余risk受容者を追跡して影響評価を更新する",
+    "core-30-evidence-based-technical-leadership": "risk、ethics、cost、不確実性、異論から投資順とwithdrawal conditionsを導き再評価する"
+  },
+  "evidence": {
+    "build": "要求・反例・不変条件から追跡できるdomain model、versioned API、冪等性、storage ADR、transaction schedule、分断simulation、脅威model、RED-GREEN-REFACTOR履歴、accessibility regressionを含む実行可能repository",
+    "operate": "利用者journey由来のSLI・SLO・alert・runbook、負荷曲線、memory hot-path測定、地域分断と依存遅延の障害実験、canaryとrollback結果、incident timeline、容量とunit economicsの記録",
+    "explain": "利用者・実装者・security・operations・事業責任者向けのviewを持つ設計文書、選ばなかった案と反証条件を含むADR、UTC基準の非同期RFC、静的図と同等の表・文章",
+    "review": "第三者がpriority付きfindingを提出し、author fix後の別snapshotを独立再評価する。peak需要という単一制約だけを変更して全証拠を再計算し、SLO・risk・cost・ADR・撤退条件を更新する"
+  },
+  "milestones": [
+    "利用者journey、用語衝突、例外、影響集団、success metric、guardrail、停止条件を定義して最初のADRを作る",
+    "API、module、storage、transaction、distributed coordination、threat controlを一つの不変条件traceへ結ぶ",
+    "予約処理とfailure simulatorをTDDで実装し、algorithm、memory、concurrency、deadline、accessibilityを実測する",
+    "負荷・分断・canary悪化を注入し、SLO、runbook、rollback、incident review、capacity investmentを結果で閉じる",
+    "第三者review、author fix、独立再評価、単一制約transferを行い、team interface、RFC、ADRを更新する"
+  ],
+  "reviewQuestions": [
+    "二重予約を防ぐ不変条件はAPI、transaction、dedupe、reconciliationのどこで維持されるか",
+    "2000ms期限はDNS、接続、TLS、service、retry、後処理へどう配分されるか",
+    "三地域配置を棄却すべき反証条件と、別案が有利になる需要・residency条件は何か",
+    "SLO、負荷曲線、incident、capacity、costは同じ利用者journeyとartifactへ結び付くか",
+    "privacy、accessibility、低帯域、高リスク集団の害は平均値に隠れていないか",
+    "reviewとtransfer後に設計・実装・運用証拠を実際に再実行し、変わらない結論も説明したか"
+  ],
+  "rubric": {
+    "incomplete": "happy pathの構成図または実装だけを示し、不変条件、失敗注入、SLO、利用者影響、第三者reviewを証明していない",
+    "developing": "主要機能と文書はあるが、測定条件、分断後回復、privacy・accessibility、rollback outcome、修正後再評価のいずれかが宣言に留まる",
+    "proficient": "制約からdomain、API、data、security、実装、SLO、incident、costまでを追跡し、失敗注入・段階配信・第三者review・修正・独立再評価で結果を証明する",
+    "exemplary": "測定限界と残余riskを明示し、単一制約の変更で全判断を再計算する。別contributorが同期説明なしで証拠を再現しstop・adapt・expandを判断できる"
+  }
+}
