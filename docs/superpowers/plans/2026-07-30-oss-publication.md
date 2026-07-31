@@ -1656,21 +1656,31 @@ Catalog smoke journey.
 Browser safety constraints do not permit treating a local `file://` automation
 result as public-host evidence. Stop here and inspect `$PUBLIC_SITE_URL` over
 public HTTPS in a human-controlled browser. Record the exact URL, merge SHA,
-UTC time, Home → Roadmap → Lesson → Catalog navigation, keyboard focus, 200%
-zoom/reflow, and print result in a new private staging file. Do not mark this
-gate complete from the earlier local review or from a successful Pages job.
+UTC time, reviewer kind, Home → Roadmap → Lesson → Catalog navigation, both
+320px and 1280px viewports, 200% zoom/reflow, keyboard focus, VoiceOver
+headings/landmarks/links, high contrast, forced colors, and print result in a
+new private staging file. Record each check truthfully as `PASS` or `FAIL`; a
+recorded `FAIL` stops publication. Do not mark this gate complete from the
+earlier local review or from a successful Pages job.
 
 ```bash
 PUBLIC_HTTPS_EVIDENCE_SOURCE="${PUBLIC_HTTPS_EVIDENCE_SOURCE:?write the public HTTPS evidence file after manual inspection}"
+PUBLIC_HTTPS_REVIEWER_KIND="${PUBLIC_HTTPS_REVIEWER_KIND:?set human or ai-assisted truthfully}"
+case "$PUBLIC_HTTPS_REVIEWER_KIND" in human|ai-assisted) ;; *) exit 1 ;; esac
 test -f "$PUBLIC_HTTPS_EVIDENCE_SOURCE"
 test ! -L "$PUBLIC_HTTPS_EVIDENCE_SOURCE"
 test -s "$PUBLIC_HTTPS_EVIDENCE_SOURCE"
 grep -Fqx "tested commit: $PUBLIC_MERGE_SHA" "$PUBLIC_HTTPS_EVIDENCE_SOURCE"
 grep -Fqx "public URL: $PUBLIC_SITE_URL" "$PUBLIC_HTTPS_EVIDENCE_SOURCE"
 grep -Fqx "public HTTPS smoke: PASS" "$PUBLIC_HTTPS_EVIDENCE_SOURCE"
+grep -Fqx "reviewerKind: $PUBLIC_HTTPS_REVIEWER_KIND" \
+  "$PUBLIC_HTTPS_EVIDENCE_SOURCE"
 grep -Eq '^checked at UTC: [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$' \
   "$PUBLIC_HTTPS_EVIDENCE_SOURCE"
-for check in navigation keyboard-focus zoom-200-percent print; do
+for check in navigation viewport-320 viewport-1280 zoom-200-percent \
+  keyboard-focus voiceover-headings voiceover-landmarks voiceover-links \
+  high-contrast forced-colors print; do
+  grep -Eq "^${check}: (PASS|FAIL)$" "$PUBLIC_HTTPS_EVIDENCE_SOURCE"
   grep -Fqx "$check: PASS" "$PUBLIC_HTTPS_EVIDENCE_SOURCE"
 done
 ```
