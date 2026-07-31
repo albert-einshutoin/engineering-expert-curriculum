@@ -45,6 +45,13 @@ TRANSFER_TASK = (
     "backfill error rateだけを変え、同じ移行計画の継続・停止・"
     "ロールバック判断を再評価する"
 )
+CANONICAL_PHASE_NAMES = (
+    "expand",
+    "dual-write",
+    "backfill",
+    "dual-read",
+    "contract",
+)
 PHASE_INPUTS = [
     {
         "name": "expand",
@@ -256,6 +263,13 @@ def build_phases(phase_inputs):
     ):
         raise AssertionError(
             "migration-plan-invariant: invalid phase schema"
+        )
+    if (
+        tuple(phase["name"] for phase in phase_inputs)
+        != CANONICAL_PHASE_NAMES
+    ):
+        raise AssertionError(
+            "migration-plan-invariant: noncanonical phase sequence"
         )
     phases = [
         {
