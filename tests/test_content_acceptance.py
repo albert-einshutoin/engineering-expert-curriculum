@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import hashlib
 from html.parser import HTMLParser
 import json
 from pathlib import Path, PurePosixPath
+import re
 import stat
 from tempfile import TemporaryDirectory
 import unicodedata
 import unittest
 
 from curriculum_builder.build import build_site
+from curriculum_builder.capstones import parse_capstone_documents
+from curriculum_builder.competencies import parse_competencies_bytes
+from curriculum_builder.errors import CurriculumValidationError
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -50,6 +55,230 @@ LESSON_IDS = (
     "core-30-evidence-based-technical-leadership",
 )
 CAPSTONE_IDS = ("global-service", "legacy-evolution", "oss-launch")
+CATALOG_SHA256 = (
+    "4f38b5f63931a7f06e13f90f5d9ef90a0a435f30dae5d4fe70720d730a057473"
+)
+FRAMEWORKS = ("CS2023", "SWEBOK", "SFIA")
+FRAMEWORK_VERSIONS = {
+    "CS2023": "Final Report",
+    "SWEBOK": "V4.0a",
+    "SFIA": "9",
+}
+FRAMEWORK_SOURCES = {
+    "CS2023": {
+        "version": "Final Report",
+        "officialUrl": "https://csed.acm.org/final-report/",
+        "verifiedAt": "2026-07-31",
+    },
+    "SWEBOK": {
+        "version": "V4.0a",
+        "officialUrl": (
+            "https://www.computer.org/education/bodies-of-knowledge/"
+            "software-engineering"
+        ),
+        "verifiedAt": "2026-07-31",
+    },
+    "SFIA": {
+        "version": "9",
+        "officialUrl": (
+            "https://sfia-online.org/en/sfia-9/skills/"
+            "all-skills-a-z?set_language=en"
+        ),
+        "verifiedAt": "2026-07-31",
+    },
+}
+EXPECTED_PREREQUISITES = {
+    "core-01-systems-tradeoffs": (),
+    "core-02-algorithms-measurement": ("core-01-systems-tradeoffs",),
+    "core-03-architecture-memory-caches": ("core-01-systems-tradeoffs",),
+    "core-04-os-processes-concurrency": (
+        "core-02-algorithms-measurement",
+        "core-03-architecture-memory-caches",
+    ),
+    "core-05-networks-latency-failure": (
+        "core-04-os-processes-concurrency",
+    ),
+    "core-06-requirements-domain-modeling": (
+        "core-01-systems-tradeoffs",
+    ),
+    "core-07-api-contract-design": (
+        "core-06-requirements-domain-modeling",
+    ),
+    "core-08-modularity-evolutionary-architecture": (
+        "core-06-requirements-domain-modeling",
+        "core-07-api-contract-design",
+    ),
+    "core-09-test-strategy-tdd": (
+        "core-02-algorithms-measurement",
+        "core-08-modularity-evolutionary-architecture",
+    ),
+    "core-10-threat-modeling-secure-design": (
+        "core-07-api-contract-design",
+        "core-09-test-strategy-tdd",
+    ),
+    "core-11-data-modeling-storage": (
+        "core-06-requirements-domain-modeling",
+    ),
+    "core-12-transactions-isolation-consistency": (
+        "core-11-data-modeling-storage",
+    ),
+    "core-13-distributed-coordination-failure": (
+        "core-05-networks-latency-failure",
+        "core-12-transactions-isolation-consistency",
+    ),
+    "core-14-performance-capacity": (
+        "core-02-algorithms-measurement",
+        "core-03-architecture-memory-caches",
+        "core-11-data-modeling-storage",
+    ),
+    "core-15-reliability-observability-slo": (
+        "core-05-networks-latency-failure",
+        "core-13-distributed-coordination-failure",
+        "core-14-performance-capacity",
+    ),
+    "core-16-hci-usability-accessibility": (
+        "core-06-requirements-domain-modeling",
+    ),
+    "core-17-graphics-visual-information": (
+        "core-03-architecture-memory-caches",
+        "core-16-hci-usability-accessibility",
+    ),
+    "core-18-product-discovery-experiments": (
+        "core-06-requirements-domain-modeling",
+        "core-16-hci-usability-accessibility",
+    ),
+    "core-19-technical-communication-design-docs": (
+        "core-01-systems-tradeoffs",
+        "core-06-requirements-domain-modeling",
+    ),
+    "core-20-ethics-privacy-societal-impact": (
+        "core-10-threat-modeling-secure-design",
+        "core-16-hci-usability-accessibility",
+        "core-19-technical-communication-design-docs",
+    ),
+    "core-21-maintenance-legacy-comprehension": (
+        "core-08-modularity-evolutionary-architecture",
+        "core-09-test-strategy-tdd",
+    ),
+    "core-22-evolution-safe-migrations": (
+        "core-08-modularity-evolutionary-architecture",
+        "core-12-transactions-isolation-consistency",
+        "core-21-maintenance-legacy-comprehension",
+    ),
+    "core-23-incident-response-learning": (
+        "core-15-reliability-observability-slo",
+        "core-21-maintenance-legacy-comprehension",
+    ),
+    "core-24-delivery-ci-release-safety": (
+        "core-09-test-strategy-tdd",
+        "core-15-reliability-observability-slo",
+    ),
+    "core-25-engineering-economics-capacity": (
+        "core-14-performance-capacity",
+        "core-15-reliability-observability-slo",
+        "core-24-delivery-ci-release-safety",
+    ),
+    "core-26-code-review-collaborative-quality": (
+        "core-09-test-strategy-tdd",
+        "core-19-technical-communication-design-docs",
+    ),
+    "core-27-team-interfaces-sociotechnical-architecture": (
+        "core-08-modularity-evolutionary-architecture",
+        "core-19-technical-communication-design-docs",
+        "core-26-code-review-collaborative-quality",
+    ),
+    "core-28-oss-governance-stewardship": (
+        "core-10-threat-modeling-secure-design",
+        "core-19-technical-communication-design-docs",
+        "core-26-code-review-collaborative-quality",
+    ),
+    "core-29-cross-cultural-async-collaboration": (
+        "core-19-technical-communication-design-docs",
+        "core-27-team-interfaces-sociotechnical-architecture",
+    ),
+    "core-30-evidence-based-technical-leadership": (
+        "core-20-ethics-privacy-societal-impact",
+        "core-25-engineering-economics-capacity",
+        "core-27-team-interfaces-sociotechnical-architecture",
+        "core-28-oss-governance-stewardship",
+        "core-29-cross-cultural-async-collaboration",
+    ),
+}
+EXPECTED_MASTERY_GATES = (
+    {
+        "id": "foundation",
+        "after": 5,
+        "artifact": "未知システムの診断記録",
+        "review": "機構と証拠を説明できる",
+    },
+    {
+        "id": "builder",
+        "after": 10,
+        "artifact": "契約・テスト・脅威モデル付きサービス",
+        "review": "信頼性を設計へ埋め込める",
+    },
+    {
+        "id": "scaler",
+        "after": 15,
+        "artifact": "負荷・障害・SLO実験",
+        "review": "分散失敗を測定し判断できる",
+    },
+    {
+        "id": "human",
+        "after": 20,
+        "artifact": "アクセシブルな検証済み改善",
+        "review": "人と社会への影響を説明できる",
+    },
+    {
+        "id": "operator",
+        "after": 25,
+        "artifact": "移行・運用・費用計画",
+        "review": "変更を安全かつ経済的に進められる",
+    },
+    {
+        "id": "leader",
+        "after": 30,
+        "artifact": "他者が実行可能な技術方針",
+        "review": "不確実性の中で組織を前進させられる",
+    },
+)
+EXPECTED_PRIMARY_OWNER = {
+    "core-01-systems-tradeoffs": "global-service",
+    "core-02-algorithms-measurement": "global-service",
+    "core-03-architecture-memory-caches": "global-service",
+    "core-04-os-processes-concurrency": "global-service",
+    "core-05-networks-latency-failure": "global-service",
+    "core-06-requirements-domain-modeling": "global-service",
+    "core-07-api-contract-design": "global-service",
+    "core-08-modularity-evolutionary-architecture": "legacy-evolution",
+    "core-09-test-strategy-tdd": "legacy-evolution",
+    "core-10-threat-modeling-secure-design": "oss-launch",
+    "core-11-data-modeling-storage": "global-service",
+    "core-12-transactions-isolation-consistency": "global-service",
+    "core-13-distributed-coordination-failure": "global-service",
+    "core-14-performance-capacity": "global-service",
+    "core-15-reliability-observability-slo": "global-service",
+    "core-16-hci-usability-accessibility": "oss-launch",
+    "core-17-graphics-visual-information": "oss-launch",
+    "core-18-product-discovery-experiments": "oss-launch",
+    "core-19-technical-communication-design-docs": "legacy-evolution",
+    "core-20-ethics-privacy-societal-impact": "global-service",
+    "core-21-maintenance-legacy-comprehension": "legacy-evolution",
+    "core-22-evolution-safe-migrations": "legacy-evolution",
+    "core-23-incident-response-learning": "legacy-evolution",
+    "core-24-delivery-ci-release-safety": "oss-launch",
+    "core-25-engineering-economics-capacity": "legacy-evolution",
+    "core-26-code-review-collaborative-quality": "oss-launch",
+    "core-27-team-interfaces-sociotechnical-architecture": "legacy-evolution",
+    "core-28-oss-governance-stewardship": "oss-launch",
+    "core-29-cross-cultural-async-collaboration": "oss-launch",
+    "core-30-evidence-based-technical-leadership": "global-service",
+}
+CAPSTONE_EVIDENCE_KINDS = ("build", "operate", "explain", "review")
+_LESSON_MAP_ROW = re.compile(
+    r"^\| (?P<ordinal>[1-9]|[12][0-9]|30) \| "
+    r"`(?P<lesson>core-(?:0[1-9]|[12][0-9]|30)-[a-z0-9-]+)`<br>"
+)
 REVIEW_ROLES = (
     "技術的正確性",
     "学習設計・証拠",
@@ -280,7 +509,242 @@ def _snapshot(root: Path) -> dict[PurePosixPath, bytes]:
     }
 
 
+def _json_bytes(document: object) -> bytes:
+    return (
+        json.dumps(document, ensure_ascii=False, separators=(",", ":")) + "\n"
+    ).encode("utf-8")
+
+
+def _extract_generated_map(document: str) -> str:
+    if document.count(BEGIN_GENERATED_MAP) != 1:
+        raise AssertionError("curriculum map needs exactly one start marker")
+    if document.count(END_GENERATED_MAP) != 1:
+        raise AssertionError("curriculum map needs exactly one end marker")
+    start = document.index(BEGIN_GENERATED_MAP)
+    end = document.index(END_GENERATED_MAP)
+    if start >= end:
+        raise AssertionError("curriculum map markers are out of order")
+    return document[start : end + len(END_GENERATED_MAP)]
+
+
+def _assert_generated_map_contract(document: str) -> None:
+    block = _extract_generated_map(document)
+    expected_release_rows = (
+        "| 保存カタログ | 1,140 items |",
+        f"| カタログ SHA-256 | `{CATALOG_SHA256}` |",
+        "| コアレッスン | 30 complete lessons |",
+        "| コンピテンシー対応 | 90 mappings |",
+        "| 統合 Capstone | 3 projects |",
+        "| Primary exercise coverage | 30/30 |",
+    )
+    for row in expected_release_rows:
+        if block.count(row) != 1:
+            raise AssertionError(f"missing or duplicated release row: {row}")
+
+    lesson_rows = tuple(
+        (match, line)
+        for line in block.splitlines()
+        if (match := _LESSON_MAP_ROW.match(line)) is not None
+    )
+    if len(lesson_rows) != 30:
+        raise AssertionError("generated map must contain exactly 30 lesson rows")
+    if tuple(match.group("lesson") for match, _line in lesson_rows) != LESSON_IDS:
+        raise AssertionError("generated map lesson IDs do not match the release")
+    if tuple(int(match.group("ordinal")) for match, _line in lesson_rows) != tuple(
+        range(1, 31)
+    ):
+        raise AssertionError("generated map lesson ordinals are not canonical")
+
+    mapping_cells: list[str] = []
+    for match, line in lesson_rows:
+        cells = tuple(cell.strip() for cell in line[1:-1].split("|"))
+        if len(cells) != 9:
+            raise AssertionError("lesson rows must contain exactly nine cells")
+        framework_cells = cells[5:8]
+        if any(
+            re.fullmatch(
+                r"`[^`]+` .+ \((?:direct|foundational|partial)\)",
+                cell,
+            )
+            is None
+            for cell in framework_cells
+        ):
+            raise AssertionError("framework cells must carry code and alignment")
+        mapping_cells.extend(framework_cells)
+        expected_owner = EXPECTED_PRIMARY_OWNER[match.group("lesson")]
+        if f"Primary: `{expected_owner}`" not in cells[8]:
+            raise AssertionError("generated map has the wrong primary owner")
+    if len(mapping_cells) != 90:
+        raise AssertionError("generated map must expose exactly 90 mapping cells")
+
+    capstone_rows = tuple(
+        line
+        for line in block.splitlines()
+        if re.match(
+            r"^\| `(?:global-service|legacy-evolution|oss-launch)` — ",
+            line,
+        )
+    )
+    if len(capstone_rows) != 3:
+        raise AssertionError("generated map must contain three capstone rows")
+    capstone_ids = tuple(
+        row.split("`", maxsplit=2)[1] for row in capstone_rows
+    )
+    if capstone_ids != CAPSTONE_IDS:
+        raise AssertionError("generated map capstone IDs do not match the release")
+
+
 class ContentAcceptanceTests(unittest.TestCase):
+    def test_catalog_bytes_and_identity_are_bound_to_the_preserved_release(
+        self,
+    ) -> None:
+        raw = (REPOSITORY_ROOT / "content/catalog.json").read_bytes()
+        self.assertEqual(hashlib.sha256(raw).hexdigest(), CATALOG_SHA256)
+
+        document = json.loads(raw)
+        items = document["items"]
+        item_ids = tuple(item["id"] for item in items)
+        self.assertEqual(len(item_ids), 1_140)
+        self.assertEqual(len(set(item_ids)), 1_140)
+        self.assertTrue(
+            {
+                item["coreLessonId"]
+                for item in items
+                if item["coreLessonId"] is not None
+            }.issubset(frozenset(LESSON_IDS))
+        )
+
+    def test_roadmap_matches_fixed_prerequisites_and_six_mastery_gates(
+        self,
+    ) -> None:
+        document = json.loads(
+            (REPOSITORY_ROOT / "content/roadmap.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        nodes = document["nodes"]
+        self.assertEqual(tuple(node["id"] for node in nodes), LESSON_IDS)
+        self.assertEqual(
+            {
+                node["id"]: tuple(node["prerequisiteIds"])
+                for node in nodes
+            },
+            EXPECTED_PREREQUISITES,
+        )
+        self.assertEqual(
+            tuple(document["masteryGates"]),
+            EXPECTED_MASTERY_GATES,
+        )
+
+    def test_competency_matrix_is_one_pinned_official_triple_per_lesson(
+        self,
+    ) -> None:
+        path = REPOSITORY_ROOT / "content/competencies.json"
+        document = json.loads(path.read_bytes())
+        self.assertEqual(document["frameworkVersions"], FRAMEWORK_VERSIONS)
+        self.assertEqual(document["frameworkSources"], FRAMEWORK_SOURCES)
+
+        mappings = document["mappings"]
+        self.assertEqual(len(mappings), 90)
+        pairs = tuple(
+            (mapping["targetId"], mapping["framework"])
+            for mapping in mappings
+        )
+        self.assertEqual(len(set(pairs)), 90)
+        self.assertEqual(
+            frozenset(pairs),
+            frozenset(
+                (lesson_id, framework)
+                for lesson_id in LESSON_IDS
+                for framework in FRAMEWORKS
+            ),
+        )
+
+    def test_competency_parser_rejects_count_preserving_duplicate_and_drift(
+        self,
+    ) -> None:
+        path = REPOSITORY_ROOT / "content/competencies.json"
+        original = json.loads(path.read_bytes())
+
+        duplicated = json.loads(json.dumps(original))
+        duplicated["mappings"][-1] = dict(duplicated["mappings"][0])
+        self.assertEqual(len(duplicated["mappings"]), 90)
+        with self.assertRaises(CurriculumValidationError):
+            parse_competencies_bytes(
+                _json_bytes(duplicated),
+                expected_target_ids=frozenset(LESSON_IDS),
+                source_name="competencies.json",
+            )
+
+        drifted = json.loads(json.dumps(original))
+        drifted["frameworkVersions"]["CS2023"] = "Draft"
+        with self.assertRaises(CurriculumValidationError):
+            parse_competencies_bytes(
+                _json_bytes(drifted),
+                expected_target_ids=frozenset(LESSON_IDS),
+                source_name="competencies.json",
+            )
+
+    def test_capstones_have_fixed_primary_owners_and_four_evidence_kinds(
+        self,
+    ) -> None:
+        root = REPOSITORY_ROOT / "content/capstones"
+        documents = tuple(
+            json.loads((root / f"{capstone_id}.json").read_bytes())
+            for capstone_id in CAPSTONE_IDS
+        )
+        self.assertEqual(tuple(item["id"] for item in documents), CAPSTONE_IDS)
+
+        primary_owners: dict[str, str] = {}
+        for document in documents:
+            with self.subTest(capstone=document["id"]):
+                self.assertEqual(tuple(document["evidence"]), CAPSTONE_EVIDENCE_KINDS)
+                self.assertTrue(
+                    all(
+                        _nonempty(document["evidence"][kind])
+                        for kind in CAPSTONE_EVIDENCE_KINDS
+                    )
+                )
+                self.assertTrue(set(document["lessonIds"]) <= set(LESSON_IDS))
+                for lesson_id, exercise in document["primaryExercises"].items():
+                    self.assertNotIn(lesson_id, primary_owners)
+                    self.assertTrue(_nonempty(exercise))
+                    primary_owners[lesson_id] = document["id"]
+
+        self.assertEqual(primary_owners, EXPECTED_PRIMARY_OWNER)
+        self.assertEqual(len(primary_owners), 30)
+
+    def test_capstone_parser_rejects_one_owner_for_all_primary_exercises(
+        self,
+    ) -> None:
+        root = REPOSITORY_ROOT / "content/capstones"
+        mutated = {
+            capstone_id: json.loads(
+                (root / f"{capstone_id}.json").read_bytes()
+            )
+            for capstone_id in CAPSTONE_IDS
+        }
+        all_exercises = {
+            lesson_id: document["primaryExercises"][lesson_id]
+            for document in mutated.values()
+            for lesson_id in document["primaryExercises"]
+        }
+        self.assertEqual(frozenset(all_exercises), frozenset(LESSON_IDS))
+        for capstone_id, document in mutated.items():
+            document["primaryExercises"] = (
+                all_exercises if capstone_id == "global-service" else {}
+            )
+        mutated["global-service"]["lessonIds"] = list(LESSON_IDS)
+
+        with self.assertRaises(CurriculumValidationError):
+            parse_capstone_documents(
+                {
+                    f"{capstone_id}.json": _json_bytes(mutated[capstone_id])
+                    for capstone_id in CAPSTONE_IDS
+                },
+                expected_lesson_ids=frozenset(LESSON_IDS),
+            )
+
     def test_canonical_lessons_are_complete_regular_file_pairs(self) -> None:
         lessons_root = REPOSITORY_ROOT / "content/lessons"
         self.assertTrue(stat.S_ISDIR(lessons_root.lstat().st_mode))
@@ -436,6 +900,24 @@ class ContentAcceptanceTests(unittest.TestCase):
             document[start:end],
             render_generated_curriculum_map(REPOSITORY_ROOT),
         )
+
+    def test_curriculum_map_independently_proves_release_totals_and_graph(
+        self,
+    ) -> None:
+        document = CURRICULUM_MAP.read_text(encoding="utf-8")
+        _assert_generated_map_contract(document)
+
+        duplicated_marker = BEGIN_GENERATED_MAP + "\n" + document
+        with self.assertRaisesRegex(AssertionError, "one start marker"):
+            _assert_generated_map_contract(duplicated_marker)
+
+        tampered_total = document.replace(
+            "| コンピテンシー対応 | 90 mappings |",
+            "| コンピテンシー対応 | 89 mappings |",
+        )
+        self.assertNotEqual(tampered_total, document)
+        with self.assertRaisesRegex(AssertionError, "release row"):
+            _assert_generated_map_contract(tampered_total)
 
     def test_two_fresh_builds_have_exact_deterministic_static_inventory(self) -> None:
         with TemporaryDirectory(
