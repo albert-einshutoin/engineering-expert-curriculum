@@ -1,0 +1,178 @@
+{
+  "version": 1,
+  "id": "core-29-cross-cultural-async-collaboration",
+  "title": "時差と言語を越える非同期RFCを設計する",
+  "summary": "timezone、language、contextの非対称性を明示し、dissentと応答期限を記録したRFCでmeetingなしにレビュー可能な意思決定を作る。",
+  "track": "lead",
+  "stage": 5,
+  "difficulty": "advanced",
+  "estimatedMinutes": 300,
+  "prerequisiteIds": [
+    "core-19-technical-communication-design-docs",
+    "core-27-team-interfaces-sociotechnical-architecture"
+  ],
+  "objectives": [
+    {
+      "id": "obj-async-context",
+      "statement": "timezone、language、前提、応答期限をRFCへ埋め込み、非同期レビューのcontextを完成できる",
+      "evidenceIds": ["async-rfc", "assessment"]
+    },
+    {
+      "id": "obj-dissent",
+      "statement": "異論を人格から分離して記録し、根拠あるresolutionをdecision logへ残せる",
+      "evidenceIds": ["decision-log", "teach-back"]
+    },
+    {
+      "id": "obj-zero-overlap",
+      "statement": "timezone overlapだけを変え、同じproposal evidenceでmeetingなしのレビュー可能性を再評価できる",
+      "evidenceIds": ["async-rfc", "transfer"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "async-rfc",
+      "kind": "artifact",
+      "description": "時差、言語、文脈差を越える非同期RFCと決定ログ"
+    },
+    {
+      "id": "decision-log",
+      "kind": "reasoning",
+      "description": "異論、応答、理由、期限、決定者を追跡できるdecision log"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "consensusと全員一致を区別し、meeting不要な条件を説明する5分発表"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "言語能力やtimezoneを参加能力と誤認しないレビュー判断"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "timezone overlapを4時間から0時間へ変えた同一proposalの再構成"
+    }
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "timezone、language、context、authorityの非対称性を識別できる",
+      "evidenceIds": ["async-rfc"]
+    },
+    {
+      "level": "explain",
+      "criterion": "consensus、投票、全員一致、沈黙の違いを説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "RFC section、応答期限、dissent responseを再現可能なdecision logへ組み立てられる",
+      "evidenceIds": ["async-rfc", "decision-log"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "meeting依存、暗黙context、言語によるstatus差、異論の消去を反証できる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "zero-overlapでも別のcontributorが判断根拠を再検証できる協働境界を運営できる",
+      "evidenceIds": ["transfer"]
+    }
+  ],
+  "lab": {
+    "title": "4時間のtimezone overlapを0時間へ変えてRFCを再評価する",
+    "artifact": "時差、言語、文脈差を越える非同期RFCと決定ログ",
+    "steps": [
+      "proposal、participant、timezone、working languageのfixtureと限界を固定する",
+      "problemからresponse-windowまでのRFC sectionと応答期限を構成する",
+      "dissentを記録し、evidenceに基づくresponseとreasoned resolutionを残す",
+      "meetingの成否ではなくcontext completenessとreview evidenceを検証する",
+      "timezone overlapだけを4時間から0時間へ変えて同じproposalを再評価する"
+    ]
+  },
+  "teachBack": "5分で、RFC 7282のrough consensus、RFC 7322の明確な文書、W3CのCall for Consensusを、全員一致や沈黙の同意ではなく検証可能な非同期判断へ結ぶ。",
+  "assessment": [
+    {
+      "prompt": "期限まで返答がないparticipantを賛成として数えてよいか。",
+      "expectedEvidence": "timezone、通知到達、language context、response deadline、明示的dissent、decision rule"
+    },
+    {
+      "prompt": "meetingでは合意したがalternativesと異論へのresponseが残っていない。system outcomeをどう判定するか。",
+      "expectedEvidence": "command successとの区別、context completeness、reasoned resolution、reviewable record"
+    }
+  ],
+  "transferTask": "timezone overlapだけを4時間から0時間へ変え、同じproposalをmeetingなしでレビューできるRFCと決定ログへ再構成する",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "結論だけを書き、前提、alternatives、期限がない",
+        "developing": "sectionはあるがtimezone、language、dissentが判断へ結び付かない",
+        "proficient": "全section、participant context、応答期限、異論とresponseを同じ入力から導く",
+        "exemplary": "順序、schema、changed fieldを検証し、zero-overlapでも同じ結果を再現できる"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "meeting参加または沈黙を合意とみなす",
+        "developing": "異論を集めるが重要度やresponseを記録しない",
+        "proficient": "重大な異論を根拠で解消または未解決としてdecision logへ残す",
+        "exemplary": "文化、言語、権限の非対称性を補正し、少数意見から決定を更新できる"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "会議を実施した事実だけを示す",
+        "developing": "文書はあるがinput provenanceとdecision ruleがない",
+        "proficient": "proposal、alternatives、evidence、dissent、response、deadlineを監査可能に残す",
+        "exemplary": "別timezoneのcontributorが同期説明なしで判断を独立再評価できる"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "暗黙知、略語、local timeだけで伝える",
+        "developing": "平易だが読者、用語、期限の基準が曖昧である",
+        "proficient": "plain language、UTC基準、用語、owner、response-windowを明示する",
+        "exemplary": "翻訳可能性と心理的安全性を保ち、異論が意思決定品質を上げる"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "RFC 7282: On Consensus and Humming in the IETF",
+      "url": "https://www.rfc-editor.org/info/rfc7282/",
+      "kind": "standard"
+    },
+    {
+      "title": "RFC 7322: RFC Style Guide",
+      "url": "https://www.rfc-editor.org/info/rfc7322/",
+      "kind": "standard"
+    },
+    {
+      "title": "W3C Process Document, 18 August 2025",
+      "url": "https://www.w3.org/policies/process/",
+      "kind": "standard"
+    },
+    {
+      "title": "The Art of Consensus (W3C Guidebook, accessed 2026-07-31)",
+      "url": "https://www.w3.org/guide/",
+      "kind": "primary"
+    }
+  ],
+  "review": {
+    "intervalDays": [1, 7, 30, 90],
+    "prompts": [
+      "meetingを開かずにcontext completenessを判定する最小証拠は何か",
+      "dissentを記録しただけではaddressedにならない理由は何か",
+      "timezone overlapが0時間のときresponse-windowをどう設計するか"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}
