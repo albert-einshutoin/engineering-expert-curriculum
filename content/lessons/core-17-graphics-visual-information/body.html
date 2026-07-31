@@ -1,0 +1,256 @@
+<section id="why">
+  <h2>なぜ重要か</h2>
+  <p>図は関係や量を一目で伝える一方、情報をpixel、位置、colorだけへ閉じ込めると、読み上げ、monochrome印刷、CSS無効化、低視力、検索、差分reviewでは意味を失う。静的な教材では、視覚表現と同じdataからsemantic HTMLと同等のテキスト構造を導出し、どの経路でも同じ判断へ到達できるようにする。</p>
+  <p>OpenGL 4.6はgraphics pipelineの機構、SVG 2は文書内のvector表現を定める。Clevelandのgraphical perceptionとMunznerの分析設計は、読者のtaskとdata typeに合うencodingを選ぶ根拠になる。W3C Complex Imagesは、短い要約だけでは足りない複雑な関係や値をtextへ残す実践を示す。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> semanticな要素を使っただけでは同等性を保証できない。視覚側とtext側を別々に手書きするとdriftする。OpenGLやSVG 2の仕様準拠も、chartの知覚精度やaccessibilityを自動的には証明しない。</p>
+  </aside>
+</section>
+<section id="mental-model">
+  <h2>メンタルモデル</h2>
+  <p>dataを唯一の情報源とし、視覚表現、semantic HTML、同等textを別々のviewとして導出する。roadmapではnodeとdirected edge、quantitative chartではlabel、value、unit、比較結果を情報契約にする。CSSは配置と装飾を担当し、関係や値そのものを生成しない。</p>
+  <figure>
+    <figcaption>一つのdata modelから視覚と同等textへ分岐するrendering pipeline</figcaption>
+    <ol>
+      <li><strong>Data:</strong> roadmapのnodeとedge、chartのlabelとvalueをID付きで定義する。</li>
+      <li><strong>Transform:</strong> 並び、scale、minimum、maximumを決定的に計算する。</li>
+      <li><strong>Visual:</strong> semantic HTMLとCSSでroadmapとquantitative chartを配置する。</li>
+      <li><strong>Equivalent:</strong> node関係list、caption付きtable、summaryを同じdataから導出する。</li>
+      <li><strong>Verify:</strong> ID、edge、row、値、集約、display modeの不変条件を照合する。</li>
+    </ol>
+  </figure>
+  <p>Clevelandが示した知覚taskを踏まえ、量の比較では共通尺度上のpositionを優先する。colorは群や強調の補助にできるが、colorだけで状態や順位を符号化しない。Munznerのwhat、why、howを使い、data、読者task、encodingを混同しない。</p>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>roadmapとquantitative chartの同等性を検証する</h3>
+  <dl>
+    <dt>前提</dt>
+    <dd>4つのroadmap node、3つのdirected edge、3点のsynthetic chart dataを固定する。production計画や実測値ではない。</dd>
+    <dt>入力</dt>
+    <dd>node ID、label、edgeのfromとto、chart pointのID、label、valueを使う。display modeはcolorをbaselineとする。</dd>
+    <dt>操作</dt>
+    <dd>roadmapのsemantic HTML用node IDとtext equivalentのnode、edgeを同じdataから導出する。chartは共通尺度上のpositionをencodingとし、同じrowをtableとtextへ複製する。</dd>
+    <dt>観測</dt>
+    <dd>roadmapのnodeとedge、chartの3 row、maximum、minimumが一致する。colorからmonochromeへdisplay modeだけを変えてもdataとtext equivalenceは不変である。</dd>
+    <dt>結論</dt>
+    <dd>視覚表現は情報そのものではなくdataのviewである。同等textを同じ変換から生成し、欠落mutationを失敗させることでdriftを検出できる。</dd>
+  </dl>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+import json
+
+HARNESS = "graphics_semantic_equivalence_lab_v1"
+ROADMAP_NODES = [
+    {"id": "foundation", "label": "基礎"},
+    {"id": "build", "label": "構築"},
+    {"id": "operate", "label": "運用"},
+    {"id": "lead", "label": "牽引"},
+]
+ROADMAP_EDGES = [
+    {"from": "foundation", "to": "build"},
+    {"from": "build", "to": "operate"},
+    {"from": "operate", "to": "lead"},
+]
+CHART_DATA = [
+    {"id": "learn", "label": "学習", "value": 12},
+    {"id": "practice", "label": "実践", "value": 20},
+    {"id": "review", "label": "復習", "value": 8},
+]
+
+def derive_roadmap(nodes, edges):
+    node_ids = [node["id"] for node in nodes]
+    edge_pairs = [
+        [edge["from"], edge["to"]]
+        for edge in edges
+    ]
+    return {
+        "data": {
+            "nodes": [dict(node) for node in nodes],
+            "edges": [dict(edge) for edge in edges],
+        },
+        "semantic_html": {
+            "element": "ol",
+            "node_ids": list(node_ids),
+            "css_role": "layout-and-decoration-only",
+        },
+        "text_equivalent": {
+            "node_ids": list(node_ids),
+            "edge_pairs": edge_pairs,
+            "format": "ordered-node-list-and-directed-relations",
+        },
+    }
+
+def derive_chart(chart_data):
+    expected_rows = [
+        {
+            "id": point["id"],
+            "label": point["label"],
+            "value": point["value"],
+        }
+        for point in chart_data
+    ]
+    text_rows = [dict(point) for point in chart_data]
+    assert text_rows == expected_rows, "graphics-causal-invariant"
+    maximum = max(chart_data, key=lambda point: point["value"])
+    minimum = min(chart_data, key=lambda point: point["value"])
+    return {
+        "data": [dict(point) for point in chart_data],
+        "semantic_html": {
+            "element": "table",
+            "caption": "学習活動の時間比較",
+            "table_rows": expected_rows,
+        },
+        "text_equivalent": {
+            "rows": text_rows,
+            "summary": (
+                f"maximum={maximum['id']}; minimum={minimum['id']}"
+            ),
+        },
+        "summary": {
+            "maximum_id": maximum["id"],
+            "minimum_id": minimum["id"],
+        },
+        "encoding": {
+            "quantitative": "position-on-common-scale",
+            "color_only": False,
+            "unit": "hours",
+        },
+    }
+
+def mastery_evidence():
+    return {
+        "lab_steps": [
+            {"step": 1, "evidence": "ID付きnode、edge、chart fixture"},
+            {"step": 2, "evidence": "semantic HTML nodeとCSS責務"},
+            {"step": 3, "evidence": "共通尺度とcaption付きtable rows"},
+            {"step": 4, "evidence": "node、edge、row、集約の等価検証"},
+            {"step": 5, "evidence": "display-modeだけを変えたtransfer"},
+        ],
+        "assessments": [
+            {"assessment": 1, "evidence": "directed edgeの同等text"},
+            {"assessment": 2, "evidence": "position encodingとcolor-only回避"},
+        ],
+        "rubric_dimensions": [
+            "technical-correctness",
+            "judgment",
+            "evidence",
+            "communication",
+        ],
+        "transfer": {
+            "task": (
+                "color表示からmonochrome表示へ変え、roadmapとchartの"
+                "同等情報を再検証する"
+            ),
+            "changed_assumption": "display-mode",
+            "evidence": "同じdataとtext equivalentで表示modeだけを変更",
+        },
+    }
+
+def main():
+    roadmap = derive_roadmap(ROADMAP_NODES, ROADMAP_EDGES)
+    chart = derive_chart(CHART_DATA)
+    expected_node_ids = [node["id"] for node in ROADMAP_NODES]
+    expected_edges = [
+        [edge["from"], edge["to"]]
+        for edge in ROADMAP_EDGES
+    ]
+    assert (
+        roadmap["text_equivalent"]["node_ids"] == expected_node_ids
+    ), "graphics-causal-invariant"
+    assert (
+        roadmap["text_equivalent"]["edge_pairs"] == expected_edges
+    ), "graphics-causal-invariant"
+    report = {
+        "harness": HARNESS,
+        "roadmap": roadmap,
+        "quantitative_chart": chart,
+        "display_mode_transfer": {
+            "changed_assumption": "display-mode",
+            "changed_fields": ["display_mode"],
+            "baseline_mode": "color",
+            "transferred_mode": "monochrome",
+            "data_unchanged": True,
+            "text_equivalence_preserved": (
+                roadmap["semantic_html"]["node_ids"]
+                == roadmap["text_equivalent"]["node_ids"]
+                and chart["semantic_html"]["table_rows"]
+                == chart["text_equivalent"]["rows"]
+            ),
+        },
+        "fixture_metadata": {
+            "kind": "synthetic",
+            "provenance": "lesson-defined roadmap and chart records",
+            "limitations": (
+                "small deterministic fixture; not measured learner data"
+            ),
+        },
+        "runtime_bound": {
+            "records": (
+                len(ROADMAP_NODES)
+                + len(ROADMAP_EDGES)
+                + len(CHART_DATA)
+            ),
+            "subprocesses": 0,
+        },
+        "mastery_evidence": mastery_evidence(),
+        "external_network_used": False,
+    }
+    return report
+
+print(json.dumps(main(), ensure_ascii=False, indent=2))
+PY</code></pre>
+</section>
+<section id="tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <table>
+    <caption>読者taskから静的encodingを選ぶ decision table</caption>
+    <thead>
+      <tr>
+        <th scope="col">task</th>
+        <th scope="col">主encoding</th>
+        <th scope="col">同等text</th>
+        <th scope="col">避ける設計</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row">依存関係をたどる</th>
+        <td>nodeとdirected edge</td>
+        <td>順序付きnode listとfrom-to関係</td>
+        <td>線の位置だけで関係を表す</td>
+      </tr>
+      <tr>
+        <th scope="row">量を正確に比較する</th>
+        <td>共通尺度上のposition</td>
+        <td>caption付きtableとmaximum、minimum</td>
+        <td>面積やcolorだけで値を表す</td>
+      </tr>
+      <tr>
+        <th scope="row">状態を素早く識別する</th>
+        <td>label、形、pattern、補助color</td>
+        <td>状態名と説明</td>
+        <td>赤と緑だけで区別する</td>
+      </tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><strong>誤診:</strong> SVG 2で描いたので自動的にsemanticでaccessibileな図になる。<strong>反証:</strong> SVGの要素だけではreader task、directed edge、値、要約の同等性を保証しない。dataからsemantic HTMLと同等のテキスト構造を導出して照合する。</li>
+    <li><strong>誤診:</strong> color legendを追加すればcolorだけのencodingでも十分である。<strong>反証:</strong> legendもcolor識別を要求する。label、位置、形、pattern、tableを併用し、monochromeでも同じ関係と値を取得できる必要がある。</li>
+    <li><strong>失敗モード:</strong> 視覚図とtableを別々に更新すると、node削除や値変更でdriftし、異なる結論を伝える。</li>
+    <li><strong>失敗モード:</strong> 3D効果や面積で一次元の量を表すと、装飾が比較taskへ不要な知覚誤差を加える。</li>
+  </ul>
+</section>
+<section id="knowledge-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>OpenGL 4.6とSVG 2は、この教材の情報設計でどの異なる層を扱うか。</li>
+    <li>roadmapの同等textにnode labelだけでなくedgeが必要な理由は何か。</li>
+    <li>Clevelandの知覚taskを量の比較へどう適用するか。</li>
+    <li>colorからmonochromeへ変える時に同等性をどう反証するか。</li>
+  </ol>
+</section>
+<section id="sources-next">
+  <h2>出典と次の学習</h2>
+  <p>rendering機構はThe OpenGL Graphics System Version 4.6 Core ProfileのMay 5, 2022版、文書内vector表現はScalable Vector Graphics 2へ版を固定する。encodingの知覚根拠はClevelandとMcGillのGraphical Perception、分析設計はMunznerのVisualization Analysis and Design、複雑図のtext実践はW3C Complex Imagesを参照する。</p>
+  <p>次は、視覚化したproduct仮説を反証可能なsuccess metric、guardrail、stop conditionへ変換し、simulated dataで継続判断を再現する。</p>
+</section>

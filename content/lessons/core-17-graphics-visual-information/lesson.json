@@ -1,0 +1,178 @@
+{
+  "version": 1,
+  "id": "core-17-graphics-visual-information",
+  "title": "静的グラフィックスを同等の情報構造として設計する",
+  "summary": "roadmapとquantitative chartをsemantic HTMLとCSSで表し、色や形だけに依存せず、同じ関係と値をテキスト構造から検証できるようにする。",
+  "track": "human-product",
+  "stage": 3,
+  "difficulty": "advanced",
+  "estimatedMinutes": 320,
+  "prerequisiteIds": [
+    "core-03-architecture-memory-caches",
+    "core-16-hci-usability-accessibility"
+  ],
+  "objectives": [
+    {
+      "id": "obj-pipeline",
+      "statement": "データ、幾何、rasterization、合成というgraphics pipelineと表示上の制約を説明できる",
+      "evidenceIds": ["semantic-visual", "teach-back"]
+    },
+    {
+      "id": "obj-equivalence",
+      "statement": "roadmapのnodeとedge、chartのlabelとvalueをsemantic HTMLと同等のテキスト構造へ保持できる",
+      "evidenceIds": ["semantic-visual", "assessment"]
+    },
+    {
+      "id": "obj-encoding",
+      "statement": "quantitative valueを共通尺度上の位置で表し、colorだけに依存しない表示へ移行できる",
+      "evidenceIds": ["assessment", "transfer"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "semantic-visual",
+      "kind": "artifact",
+      "description": "視覚表現と同等のテキスト構造を持つ静的データ図"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "graphics pipeline、SVG 2、semantic HTML、知覚encodingを説明する5分発表"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "視覚encodingと情報同等性の欠落を診断する回答"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "display modeだけを変えて情報同等性を再検証した記録"
+    }
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "データ、mark、channel、semantic structure、text equivalentを区別できる",
+      "evidenceIds": ["semantic-visual"]
+    },
+    {
+      "level": "explain",
+      "criterion": "OpenGL 4.6とSVG 2の描画機構、ClevelandとMunznerの知覚設計を役割別に説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "roadmapとquantitative chartをCSS付きsemantic HTMLと同等テキストへ変換できる",
+      "evidenceIds": ["semantic-visual"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "欠落したedge、値、単位、順序、color-only encodingをデータから検出できる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "視覚品質、知覚精度、アクセシビリティ、保守性の境界を関係者と合意できる",
+      "evidenceIds": ["transfer"]
+    }
+  ],
+  "lab": {
+    "title": "roadmapとquantitative chartの視覚・意味同等性を作る",
+    "artifact": "視覚表現と同等のテキスト構造を持つ静的データ図",
+    "steps": [
+      "固定synthetic dataからroadmapのnodeとdirected edge、chartのlabel、value、単位を定義する",
+      "roadmapをsemantic HTMLの順序付きnodeと関係listへ変換し、CSSを表示の責務に限定する",
+      "quantitative chartを共通尺度上のpositionで表し、同じ値をcaption付きtableとtext summaryへ変換する",
+      "node、edge、row、maximum、minimumが視覚dataと同等のテキスト構造で一致することを検証する",
+      "同じdataとtext equivalentのままcolorからmonochromeへdisplay modeだけを変え、情報同等性を再検証する"
+    ]
+  },
+  "teachBack": "5分で、OpenGL 4.6のgraphics pipeline、SVG 2の文書表現、Clevelandのgraphical perception、Munznerの分析設計、W3C Complex Imagesのtext equivalentを役割別に説明する。",
+  "assessment": [
+    {
+      "prompt": "色分けしたroadmapが見栄え良く表示されるが、読み上げでは依存関係が分からない。何を直すか。",
+      "expectedEvidence": "data由来のnode ID、directed edge、semantic HTML、同等のテキスト構造、CSS責務の分離"
+    },
+    {
+      "prompt": "barの面積と彩度だけで3つの値を比較するchartをどう再設計するか。",
+      "expectedEvidence": "共通尺度上の位置、label、value、単位、table、summary、color-only回避"
+    }
+  ],
+  "transferTask": "color表示からmonochrome表示へ変え、roadmapとchartの同等情報を再検証する",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "視覚位置と色だけに情報を持たせ、元dataとの対応がない",
+        "developing": "dataと図は対応するがedge、値、単位のいずれかがtextから欠ける",
+        "proficient": "node、edge、row、値、集約をdataから一貫して導出する",
+        "exemplary": "表示変換、順序、精度、fallbackの境界でも同等性を維持する"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "装飾性だけでencodingを選び読者の比較タスクを考慮しない",
+        "developing": "複数encodingを使うが知覚精度と複雑性を比較しない",
+        "proficient": "読者のtask、data type、知覚精度、保守性からencodingを選ぶ",
+        "exemplary": "密度、国際化、印刷、支援技術の緊張を再評価条件へ含める"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "画像だけを提出し元dataと検証結果を残さない",
+        "developing": "元dataはあるが視覚表現とtext equivalentを別々に手書きする",
+        "proficient": "同じfixtureから視覚用dataと同等textを再現可能に導出する",
+        "exemplary": "text欠落mutationを失敗させ、最大値と関係も機械的に照合する"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "凡例、単位、captionがなく図の意図を説明できない",
+        "developing": "説明はあるが意思決定に必要な比較と関係が散在する",
+        "proficient": "caption、summary、table、関係listで同じ結論へ到達できる",
+        "exemplary": "視覚利用者と非視覚利用者が同じ根拠をレビューできる"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "The OpenGL Graphics System: A Specification, Version 4.6 (Core Profile), May 5, 2022",
+      "url": "https://registry.khronos.org/OpenGL/specs/gl/glspec46.core.pdf",
+      "kind": "standard"
+    },
+    {
+      "title": "Scalable Vector Graphics (SVG) 2",
+      "url": "https://www.w3.org/TR/SVG2/",
+      "kind": "standard"
+    },
+    {
+      "title": "Graphical Perception: Theory, Experimentation, and Application to the Development of Graphical Methods",
+      "url": "https://doi.org/10.1080/01621459.1984.10478080",
+      "kind": "peer-reviewed"
+    },
+    {
+      "title": "Visualization Analysis and Design",
+      "url": "https://www.routledge.com/Visualization-Analysis-and-Design/Munzner/p/book/9781466508910",
+      "kind": "primary"
+    },
+    {
+      "title": "Complex Images",
+      "url": "https://www.w3.org/WAI/tutorials/images/complex/",
+      "kind": "primary"
+    }
+  ],
+  "review": {
+    "intervalDays": [1, 7, 30, 90],
+    "prompts": [
+      "roadmapのvisual orderと依存関係dataを分ける理由は何か",
+      "quantitative valueの比較に共通尺度上のpositionを使う利点は何か",
+      "monochrome transferで不変にすべき情報を三つ挙げる"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}
