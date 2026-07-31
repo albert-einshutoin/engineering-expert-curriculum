@@ -66,6 +66,23 @@ class MarkdownCellSafetyTests(unittest.TestCase):
         ):
             curriculum_map._markdown_cell("x" * (maximum + 1))
 
+    def test_bare_autolinks_mentions_and_issue_references_are_neutralized(self) -> None:
+        source = (
+            "https://example.invalid/path www.example.invalid "
+            "maintainer@example.invalid @maintainer #123"
+        )
+
+        rendered = curriculum_map._markdown_cell(source)
+
+        for active_spelling in (
+            "https://",
+            "www.example",
+            "maintainer@example",
+            "@maintainer",
+            "#123",
+        ):
+            self.assertNotIn(active_spelling, rendered)
+
 
 class CurriculumMapCliContractTests(unittest.TestCase):
     def _repository(self, directory: str, generated: str = "old") -> Path:
