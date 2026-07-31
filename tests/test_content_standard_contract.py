@@ -384,16 +384,14 @@ class ContentStandardContractTests(unittest.TestCase):
     ) -> None:
         valid = _valid_standard()
         mutations = {
-            "AI counts as human": valid.replace(
-                "AI支援または自動生成のreviewを `human` approvalとして扱わない",
-                "AI支援または自動生成のreviewを `human` approvalとして扱う",
+            "AI-never-human clause deleted": valid.replace(
+                REQUIRED_CLAUSES[EXPECTED_H2[10]][2],
+                "",
                 1,
             ),
-            "retroactive v0.1.0 approval": valid.replace(
-                "`v0.1.0` から発効するこの開示方針を、既存contentへ遡及してhuman approvalを"
-                "推定または付与するために使わない",
-                "`v0.1.0` から発効するこの開示方針を、既存contentへ遡及してhuman approvalを"
-                "付与するために使う",
+            "prospective nonretroactive clause deleted": valid.replace(
+                REQUIRED_CLAUSES[EXPECTED_H2[11]][1],
+                "",
                 1,
             ),
         }
