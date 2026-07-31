@@ -394,7 +394,14 @@ class SiteCheckerHtmlTests(unittest.TestCase):
             '<a class="skip-link" href="#main">本文へ移動</a>\n'
             '  <main id="main"><h1>検証ページ</h1>'
         )
-        for wrapper in ("template", "div hidden", "div inert"):
+        for wrapper in (
+            "template",
+            "div hidden",
+            "div inert",
+            'div aria-hidden="true"',
+            "dialog",
+            "details",
+        ):
             document = _page().replace(
                 required,
                 f"<{wrapper}>{required}",
@@ -436,6 +443,20 @@ class SiteCheckerHtmlTests(unittest.TestCase):
             _page().replace(
                 '  <meta charset="utf-8">',
                 '  <meta charset="utf-8"><meta charset="utf-8">',
+                1,
+            ),
+            _page().replace(
+                '  <meta charset="utf-8">\n',
+                "",
+                1,
+            ).replace(
+                "</body>",
+                '<meta charset="utf-8"></body>',
+                1,
+            ),
+            _page().replace(
+                '  <meta charset="utf-8">',
+                "<!--" + ("padding" * 150) + '--><meta charset="utf-8">',
                 1,
             ),
         )
