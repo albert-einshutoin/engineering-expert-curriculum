@@ -624,6 +624,47 @@ def _encode_expected_table_row(cells: tuple[str, ...]) -> str:
     return "| " + " | ".join(cells) + " |"
 
 
+def _assert_handwritten_learning_contract(document: str) -> None:
+    """Keep learning guidance independently reviewable from generated data."""
+    block = _extract_generated_map(document)
+    start = document.index(block)
+    handwritten_parts = (
+        document[:start],
+        document[start + len(block) :],
+    )
+    handwritten_lines = tuple(
+        line
+        for part in handwritten_parts
+        for line in part.splitlines()
+    )
+
+    required_headings = (
+        "# Engineering Expert Curriculum Map",
+        "## 地図の読み方",
+        "## 推奨する進み方",
+        "## 更新方法",
+    )
+    for heading in required_headings:
+        if handwritten_lines.count(heading) != 1:
+            raise AssertionError(
+                f"curriculum map needs one handwritten {heading} heading"
+            )
+
+    required_guidance = (
+        "データ表はsource of truthから\n"
+        "機械生成し、学び方と解釈上の注意は人が保守する。",
+        "資格、職位、SFIA責任level\nの認定ではない。",
+        "artifact、teach-back、assessment reasoning、transferを\n"
+        "揃えてからmastery gateへ進む。",
+        "生成表を直接編集してはならない。",
+    )
+    for guidance in required_guidance:
+        if sum(part.count(guidance) for part in handwritten_parts) != 1:
+            raise AssertionError(
+                "curriculum map handwritten learning guidance drifted"
+            )
+
+
 def _map_section(
     block: str,
     heading: str,
@@ -675,6 +716,7 @@ def _assert_generated_map_contract(
     document: str,
     repository_root: Path = REPOSITORY_ROOT,
 ) -> None:
+    _assert_handwritten_learning_contract(document)
     block = _extract_generated_map(document)
     expected_release_rows = (
         "| 保存カタログ | 1,140 items |",
