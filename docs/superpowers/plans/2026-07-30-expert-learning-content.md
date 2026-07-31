@@ -860,10 +860,22 @@ documentation, and the Google SRE or OpenTelemetry primary materials.
 Run:
 
 ```bash
-python3 -m unittest \
+python3.13 -m unittest \
   tests.test_lesson_quality \
-  tests.test_core_tracks.CoreTrackTests.test_data_scale \
   tests.test_lesson_rendering -v
+python3.13 -m unittest \
+  tests.test_core_tracks.CoreTrackTests.test_data_scale \
+  tests.test_core_tracks.CoreTrackTests.test_data_scale_bodies_follow_semantic_contract \
+  tests.test_core_tracks.CoreTrackTests.test_storage_harness_compares_models_and_recomputes_adr \
+  tests.test_core_tracks.CoreTrackTests.test_storage_harness_rejects_access_pattern_mutation \
+  tests.test_core_tracks.CoreTrackTests.test_transaction_harness_reproduces_anomalies_and_retry \
+  tests.test_core_tracks.CoreTrackTests.test_transaction_harness_rejects_serializable_check_mutation \
+  tests.test_core_tracks.CoreTrackTests.test_coordination_harness_replays_partial_failure \
+  tests.test_core_tracks.CoreTrackTests.test_coordination_harness_rejects_partition_mutation \
+  tests.test_core_tracks.CoreTrackTests.test_performance_harness_separates_simulation_and_measurement \
+  tests.test_core_tracks.CoreTrackTests.test_performance_harness_rejects_capacity_mutation \
+  tests.test_core_tracks.CoreTrackTests.test_reliability_harness_derives_slo_alerts_and_runbook \
+  tests.test_core_tracks.CoreTrackTests.test_reliability_harness_rejects_good_event_mutation -v
 ```
 
 Expected: all tests pass.
@@ -883,29 +895,36 @@ git commit -m "content: teach evidence-driven scale and reliability"
   the imprecise PostgreSQL isolation heading, and review RED commit `4ff6fea`
   exposed storage ratings detached from workload frequency, inconsistent
   capacity arithmetic, an untraced Little-law observation, and a hard-coded
-  profile result.
+  profile result. Final spec-review RED commit `bb373e5` then proved that
+  partition mutation failed with an incidental `KeyError`, active concurrency
+  was circularly derived, performance had six sources, and reliability lacked
+  timestamped independent windows and a journey-only transfer.
 - GREEN content commits `cbda1d2`, `2387c10`, `9a29a97`, `f3ab0d5`, and
   `6624daf` implement core-11 through core-15. `b0a0fdb` pins the PostgreSQL 18
   source to `13.2. Transaction Isolation`. Review GREEN commits `60b73c5` and
   `7f1126e` derive storage access-fit ratings from query frequencies, calculate
-  projected records and safe capacity from their inputs, trace Little's law to
-  the near-limit fixture point, and derive the reported cProfile function from
-  `pstats`. The performance lesson now cites the Python 3.13 profiler
-  documentation and records the review date for rolling Go and Apple pages.
+  projected records and safe capacity from their inputs, and derive the
+  reported cProfile function from `pstats`. Final GREEN commits `fc94d74`,
+  `6d8338e`, `ddeca86`, and `7687614` add a causal partition diagnostic,
+  compare Little's formula with an independent synthetic concurrency input,
+  retain exactly five performance sources including Python 3.13 profiler
+  documentation, calculate timestamped 5-minute and 60-minute burn windows,
+  and compute the search-to-purchase journey-only transfer diff.
 - The Data and Scale evidence is 12 named `unittest` methods: two metadata/body
   contracts, five default harness executions, and five source-mutation
   rejections. The default harnesses change exactly one learning assumption
   each—access pattern, concurrency, partition, request mix, or user-visible
   reliability—and the five negative runs prove the relevant decision changes
-  fail closed when causal checks are corrupted. All 12 pass with CPython
-  3.13.5.
-- The formal Task 5 quality command passes 68 tests. The complete repository
-  suite passes all 369 tests.
+  fail closed when causal checks are corrupted. The reliability method also
+  executes normal, short-window-only, and both-window failure scenarios and
+  requires both burn conditions before paging. All 12 focused methods pass
+  with CPython 3.13.5; the separate lesson quality/rendering gate passes 67
+  tests. The complete repository suite passes all 369 tests.
 - Two independent repository-external builds each contain 20 regular
-  artifacts, 19 HTML files, zero JavaScript files, and 630,681 bytes. The
+  artifacts, 19 HTML files, zero JavaScript files, and 635,089 bytes. The
   canonical aggregate algorithm encodes each sorted relative POSIX path,
   byte length, and file payload into one SHA-256 state; both builds produce
-  `a4e23622885e80d311bcae39402d9c14f5130b374cd8273b60284b1852a117a2`.
+  `e5e009f24d7f384a55b963a2ecf6414d4039e2a3bafa7abc83183a5d51b1f5ab`.
 - Task 5 scans report zero unsafe-HTML, secret, dangerous-execution, and body
   external-URL matches. The catalog remains exactly 1,140 items with SHA-256
   `4f38b5f63931a7f06e13f90f5d9ef90a0a435f30dae5d4fe70720d730a057473`.
