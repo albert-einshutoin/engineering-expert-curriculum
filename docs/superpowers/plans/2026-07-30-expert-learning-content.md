@@ -681,7 +681,7 @@ def test_build(self) -> None:
 Run:
 
 ```bash
-python3 -m unittest tests.test_core_tracks.CoreTrackTests.test_build -v
+python3.13 -m unittest tests.test_core_tracks.CoreTrackTests.test_build -v
 ```
 
 Expected: failure listing five missing Build lessons.
@@ -700,9 +700,9 @@ testing literature, and NIST SSDF or OWASP guidance as appropriate.
 Run:
 
 ```bash
-python3 -m unittest \
+python3.13 -m unittest \
   tests.test_lesson_quality \
-  tests.test_core_tracks.CoreTrackTests.test_build \
+  tests.test_core_tracks \
   tests.test_lesson_rendering -v
 ```
 
@@ -735,6 +735,41 @@ git commit -m "content: connect software design to trustworthy evidence"
 - Security scans report zero unsafe HTML patterns, secret patterns, dangerous
   execution patterns, or external URLs in lesson bodies. The catalog remains
   exactly 1,140 items.
+
+**Task 4 review correction evidence (2026-07-31):**
+
+- All commands ran with CPython 3.13.5 at
+  `python3.13` on Darwin 25.5.0
+  arm64. The formal Task 4 RED and quality commands above intentionally name
+  `python3.13`; an unversioned interpreter is not an accepted condition.
+- Review RED commits `8e3c63b`, `8897795`, and `a572593` first exposed the
+  Return/overdue, scoped idempotency, computed architecture, typed threat
+  validation, and isolated TDD evidence gaps. The pre-fix focused runs failed
+  for each missing behavior, including an ambient test that changed the
+  nominal GREEN and REFACTOR exits from `[1, 0, 0]` to `[1, 1, 1]`.
+- GREEN commits `05e0a89`, `9fcb6dd`, `fc7ef12`, `629eb1d`, and `4fb1c72`
+  implement the five review corrections without weakening the original
+  contracts. The NASA source is fixed exactly to the official H1
+  `Appendix C: How to Write a Good Requirement` and direct page
+  `https://www.nasa.gov/reference/appendix-c-how-to-write-a-good-requirement/`.
+- All 11 default and negative Build harness gates pass. The formal Task 4
+  quality command passes 94 tests, and
+  `python3.13 -m unittest discover -s tests` passes all 357 tests.
+- Each of two independent repository-external builds contains 15 regular
+  artifacts, 14 HTML files, zero JavaScript files, and 474,022 bytes. The
+  canonical aggregate algorithm rejects symlinks and non-regular entries,
+  encodes every relative POSIX path as UTF-8, sorts those path bytes bytewise,
+  then feeds, for every artifact in that order,
+  `path bytes + NUL + ASCII decimal byte length + NUL + file bytes` directly
+  into one SHA-256 state. Both builds produce
+  `9375b34c292c5596143f30baf367df374a271d4147a98acdc2d262213c30a4d4`.
+  No per-file-digest concatenation is used.
+- Security scans report zero unsafe HTML, secret, dangerous execution, or body
+  external-URL patterns. The catalog remains exactly 1,140 items with SHA-256
+  `4f38b5f63931a7f06e13f90f5d9ef90a0a435f30dae5d4fe70720d730a057473`.
+  The preserved non-public prototype archive remains independently
+  verifiable: 1,194 files, 16,805,630 bytes, and zero manifest SHA-256
+  mismatches.
 
 ### Task 5: Author the Data and Scale track
 
