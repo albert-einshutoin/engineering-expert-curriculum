@@ -956,6 +956,56 @@ class _PreCodeParser(HTMLParser):
             self._in_pre = False
 
 
+class _StaticArtifactParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.tags: list[str] = []
+        self.ids: list[str] = []
+        self.edge_pairs: list[list[str]] = []
+        self.table_header_scopes: list[str] = []
+        self.unsafe: list[str] = []
+
+    def handle_starttag(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+    ) -> None:
+        normalized_tag = tag.casefold()
+        values = {
+            name.casefold(): value or ""
+            for name, value in attrs
+        }
+        self.tags.append(normalized_tag)
+        if values.get("id"):
+            self.ids.append(values["id"])
+        if normalized_tag == "li" and {
+            "data-from",
+            "data-to",
+        }.issubset(values):
+            self.edge_pairs.append(
+                [values["data-from"], values["data-to"]]
+            )
+        if normalized_tag == "th":
+            self.table_header_scopes.append(values.get("scope", ""))
+        if normalized_tag in {
+            "script",
+            "style",
+            "iframe",
+            "object",
+            "embed",
+        }:
+            self.unsafe.append(normalized_tag)
+        for name, value in attrs:
+            normalized_name = name.casefold()
+            candidate = value or ""
+            if (
+                normalized_name == "style"
+                or normalized_name.startswith("on")
+                or "://" in candidate
+            ):
+                self.unsafe.append(normalized_name)
+
+
 class CoreTrackTests(unittest.TestCase):
     def body_path(self, lesson_id: str) -> Path:
         return (
@@ -3624,6 +3674,58 @@ class CoreTrackTests(unittest.TestCase):
             "hci-causal-invariant",
         )
 
+    def test_hci_transfer_reaudits_mode_specific_outcomes(self) -> None:
+        lesson_id = "core-16-hci-usability-accessibility"
+        report = self.run_python_harness(
+            lesson_id,
+            "hci_accessibility_audit_lab_v1",
+        )
+
+        transfer = report["input_mode_transfer"]
+        baseline = transfer["baseline_observations"]
+        transferred = transfer["transferred_observations"]
+        self.assertEqual(
+            {item["dimension"] for item in baseline},
+            {item["dimension"] for item in transferred},
+        )
+        self.assertTrue(
+            all(item["input_mode"] == "pointer-primary" for item in baseline)
+        )
+        self.assertTrue(
+            all(item["input_mode"] == "keyboard-only" for item in transferred)
+        )
+        baseline_actual = {
+            item["dimension"]: item["actual"]
+            for item in baseline
+        }
+        transferred_actual = {
+            item["dimension"]: item["actual"]
+            for item in transferred
+        }
+        changed_dimensions = {
+            dimension
+            for dimension in baseline_actual
+            if baseline_actual[dimension] != transferred_actual[dimension]
+        }
+        self.assertEqual(
+            set(transfer["changed_dimensions"]),
+            changed_dimensions,
+        )
+        self.assertIn("keyboard", changed_dimensions)
+        self.assertNotEqual(
+            transfer["baseline_summary"],
+            transfer["transferred_summary"],
+        )
+
+    def test_hci_transfer_rejects_input_mode_bypass(self) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-16-hci-usability-accessibility",
+            "hci_accessibility_audit_lab_v1",
+            'actual = source["actual_by_input_mode"][input_mode]',
+            'actual = source["actual_by_input_mode"]["pointer-primary"]',
+            "hci-input-mode-invariant",
+        )
+
     def test_graphics_harness_preserves_semantic_equivalence(self) -> None:
         lesson_id = "core-17-graphics-visual-information"
         report = self.run_python_harness(
@@ -3683,6 +3785,87 @@ class CoreTrackTests(unittest.TestCase):
             "text_rows = [dict(point) for point in chart_data]",
             "text_rows = []",
             "graphics-causal-invariant",
+        )
+
+    def test_graphics_harness_emits_validated_html_css_artifacts(
+        self,
+    ) -> None:
+        report = self.run_python_harness(
+            "core-17-graphics-visual-information",
+            "graphics_semantic_equivalence_lab_v1",
+        )
+
+        roadmap = report["roadmap"]
+        roadmap_artifact = roadmap["artifact"]
+        roadmap_parser = _StaticArtifactParser()
+        roadmap_parser.feed(roadmap_artifact["html"])
+        roadmap_parser.close()
+        self.assertEqual(roadmap_parser.unsafe, [])
+        self.assertTrue(
+            {"figure", "figcaption", "ol", "li"}.issubset(
+                roadmap_parser.tags
+            )
+        )
+        node_ids = [node["id"] for node in roadmap["data"]["nodes"]]
+        self.assertEqual(
+            [item for item in roadmap_parser.ids if item in node_ids],
+            node_ids,
+        )
+        self.assertEqual(
+            roadmap_parser.edge_pairs,
+            roadmap["text_equivalent"]["edge_pairs"],
+        )
+        self.assertTrue(roadmap["artifact_validation"]["valid"])
+
+        chart = report["quantitative_chart"]
+        chart_artifact = chart["artifact"]
+        chart_parser = _StaticArtifactParser()
+        chart_parser.feed(chart_artifact["html"])
+        chart_parser.close()
+        self.assertEqual(chart_parser.unsafe, [])
+        self.assertTrue(
+            {
+                "figure",
+                "figcaption",
+                "table",
+                "caption",
+                "thead",
+                "tbody",
+                "tr",
+                "th",
+                "td",
+            }.issubset(chart_parser.tags)
+        )
+        self.assertTrue(
+            all(
+                scope in {"col", "row"}
+                for scope in chart_parser.table_header_scopes
+            )
+        )
+        self.assertTrue(chart["artifact_validation"]["valid"])
+        self.assertEqual(
+            chart["artifact_validation"]["table_rows"],
+            chart["text_equivalent"]["rows"],
+        )
+        combined_css = (
+            roadmap_artifact["css"] + chart_artifact["css"]
+        )
+        self.assertIn(".roadmap", combined_css)
+        self.assertIn(".quantitative-chart", combined_css)
+        self.assertNotIn("url(", combined_css.casefold())
+        self.assertTrue(
+            "border" in combined_css or "outline" in combined_css
+        )
+
+    def test_graphics_harness_rejects_incomplete_rendered_chart(
+        self,
+    ) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-17-graphics-visual-information",
+            "graphics_semantic_equivalence_lab_v1",
+            "chart_html = render_chart_html(chart_data)",
+            "chart_html = render_chart_html(chart_data[:-1])",
+            "graphics-artifact-invariant",
         )
 
     def test_experiment_harness_derives_metrics_and_stop_decision(
@@ -3907,4 +4090,55 @@ class CoreTrackTests(unittest.TestCase):
             "residual_risk = max(0, inherent_risk - mitigation_reduction)",
             "residual_risk = inherent_risk",
             "ethics-causal-invariant",
+        )
+
+    def test_ethics_harness_traces_every_data_lifecycle_phase(
+        self,
+    ) -> None:
+        report = self.run_python_harness(
+            "core-20-ethics-privacy-societal-impact",
+            "ethics_privacy_impact_lab_v1",
+        )
+
+        assessment = report["data_lifecycle_assessment"]
+        self.assertEqual(
+            [item["phase"] for item in assessment],
+            report["data_lifecycle"],
+        )
+        for item in assessment:
+            self.assertEqual(
+                set(item),
+                {
+                    "phase",
+                    "purpose",
+                    "necessity",
+                    "access",
+                    "deadline",
+                    "control",
+                    "verification",
+                },
+            )
+            self.assertTrue(all(item.values()))
+        transfer = report["affected_population_transfer"]
+        self.assertEqual(
+            transfer["baseline_lifecycle"],
+            assessment,
+        )
+        self.assertEqual(
+            transfer["transferred_lifecycle"],
+            assessment,
+        )
+
+    def test_ethics_harness_rejects_missing_lifecycle_evidence(
+        self,
+    ) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-20-ethics-privacy-societal-impact",
+            "ethics_privacy_impact_lab_v1",
+            (
+                "lifecycle_assessment = "
+                "validate_lifecycle(LIFECYCLE_FIXTURE)"
+            ),
+            "lifecycle_assessment = []",
+            "ethics-lifecycle-invariant",
         )
