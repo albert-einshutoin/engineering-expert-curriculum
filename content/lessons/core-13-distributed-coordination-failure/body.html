@@ -13,7 +13,7 @@
     <figcaption>at-least-once commandを永続dedupeと回復へ接続するmechanism</figcaption>
     <ol>
       <li><strong>receive:</strong> tenant、resource、operationを含むstable keyと入力fingerprintを受け取る。</li>
-      <li><strong>lookup:</strong> 永続dedupe storeにkeyがあれば、状態遷移を再実行せず最初のresultを再利用する。</li>
+      <li><strong>lookup:</strong> 永続dedupe storeにkeyがあれば入力fingerprintを照合し、一致時だけ状態遷移を再実行せず最初のresultを再利用する。不一致はkey衝突として拒否する。</li>
       <li><strong>apply:</strong> keyがなければ現在stateから許可された次stateへ一度だけ遷移する。</li>
       <li><strong>commit:</strong> state、fingerprint、resultを同じdurability境界で保存する。response lossはcommitを取り消さない。</li>
       <li><strong>recover:</strong> partition中のmessageを再開後に処理し、logical sequenceとdelivery orderの差を検査する。</li>
@@ -44,14 +44,15 @@
     <dt>入力</dt>
     <dd>最初のdeliver、partition start、分断中のread、同じdedupe keyのduplicate、reconcile read、partition endからなる6 eventを入力する。logical sequenceとdelivery priorityは独立している。</dd>
     <dt>操作</dt>
-    <dd>partition中の3 messageをbufferし、回復後に固定priorityとseedで解放する。duplicateは永続storeを参照し、状態遷移を再適用せず保存済みresultを返す。同じfixtureを二回replayする。</dd>
+    <dd>partition中の3 messageをbufferし、回復後に固定priorityとseedで解放する。duplicateはcanonical input fingerprintを永続storeと照合し、一致時は状態遷移を再適用せず保存済みresultを返す。不一致時はtyped conflictとして拒否する。同じfixtureを二回replayする。</dd>
     <dt>観測</dt>
-    <dd>二つのtraceは一致し、delivery orderはlogical sequenceと異なる。注文確定の状態遷移は1回、duplicateのresult reuseは1回で、最初と再利用resultは一致する。分断終了を11 tickへ延ばすとdeadline 8を越え、回復outcomeが変わる。</dd>
+    <dd>二つのtraceは一致し、delivery orderはlogical sequenceと異なる。注文確定の状態遷移は1回、同一payloadのduplicateはresultを1回再利用する。同じkeyで異なる遷移を送るmutationはfingerprint不一致として拒否され、storeとstateは変わらない。分断終了を11 tickへ延ばすとdeadline 8を越え、回復outcomeが変わる。</dd>
     <dt>結論</dt>
     <dd>これはexactly-once deliveryではない。duplicateは実際に届くが、business effectをstable key、永続result、冪等state transitionで制御する。長期分断では成功扱いを広げず、不確実な結果とreconciliation責任を利用者へ示す。</dd>
   </dl>
   <p>次のPython 3.13 harnessは標準libraryと固定fixtureだけを使い、network、secret、shell、filesystemへアクセスしない。固定seedの二回replayとpartition duration mutationを内部assertで検証する。</p>
   <pre><code>python3.13 - &lt;&lt;'PY'
+import hashlib
 import json
 import random
 
@@ -109,8 +110,38 @@ EVENTS = [
     },
 ]
 
-def simulate(seed, partition_end_delay=0):
+class IdempotencyConflict(Exception):
+    code = "same-key-different-input"
+
+    def __init__(self, key, stored_fingerprint, attempted_fingerprint):
+        super().__init__(self.code)
+        self.key = key
+        self.stored_fingerprint = stored_fingerprint
+        self.attempted_fingerprint = attempted_fingerprint
+
+def canonical_input_fingerprint(event):
+    # Delivery metadata changes across retries, so only the business input is
+    # canonicalized. This makes semantically identical retries byte-stable.
+    business_input = {"transition": event["transition"]}
+    canonical_input = json.dumps(
+        business_input,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical_input).hexdigest()
+
+def simulate(seed, partition_end_delay=0, conflicting_retry=False):
     rng = random.Random(seed)
+    events = [
+        {
+            **event,
+            "transition": ["confirmed", "cancelled"],
+        }
+        if conflicting_retry and event["id"] == "e4-confirm-retry"
+        else event
+        for event in EVENTS
+    ]
     trace = []
     buffered = []
     delivery_sequences = []
@@ -118,6 +149,9 @@ def simulate(seed, partition_end_delay=0):
     state = {"order-42": "pending"}
     applied_by_key = {}
     result_reuse_by_key = {}
+    reused_result_by_key = {}
+    commit_records = []
+    conflicts = []
     partition_active = False
     partition_started = False
     recovery_tick = None
@@ -125,10 +159,20 @@ def simulate(seed, partition_end_delay=0):
     volatile_generation = 1
 
     def process_message(event, delivery):
+        nonlocal persistent_results, state
         key = event["dedupe_key"]
+        input_fingerprint = canonical_input_fingerprint(event)
         delivery_sequences.append(event["logical_sequence"])
         if key in persistent_results:
+            stored_entry = persistent_results[key]
+            if stored_entry["input_fingerprint"] != input_fingerprint:
+                raise IdempotencyConflict(
+                    key,
+                    stored_entry["input_fingerprint"],
+                    input_fingerprint,
+                )
             result_reuse_by_key[key] = result_reuse_by_key.get(key, 0) + 1
+            reused_result_by_key[key] = stored_entry["result"]
             trace.append(
                 {
                     "tick": delivery["tick"],
@@ -137,12 +181,14 @@ def simulate(seed, partition_end_delay=0):
                     "delivery": delivery["mode"],
                     "logical_sequence": event["logical_sequence"],
                     "effect": "reused-persistent-result",
-                    "result": persistent_results[key],
+                    "input_fingerprint": input_fingerprint,
+                    "result": stored_entry["result"],
                 }
             )
             return
 
         transition = event["transition"]
+        next_state = dict(state)
         if transition is None:
             result = {
                 "order_id": "order-42",
@@ -153,8 +199,7 @@ def simulate(seed, partition_end_delay=0):
         else:
             before, after = transition
             assert state["order-42"] == before
-            state["order-42"] = after
-            applied_by_key[key] = applied_by_key.get(key, 0) + 1
+            next_state["order-42"] = after
             result = {
                 "order_id": "order-42",
                 "state": after,
@@ -162,9 +207,26 @@ def simulate(seed, partition_end_delay=0):
             }
             effect = "state-transition-applied"
 
-        # The result is persisted with the transition so a response loss
-        # cannot cause retry to apply the business effect again.
-        persistent_results[key] = result
+        stored_entry = {
+            "input_fingerprint": input_fingerprint,
+            "result": result,
+        }
+        # The fixture publishes state and dedupe data from one modeled commit
+        # boundary so no retry can observe only half of the business effect.
+        next_persistent_results = {
+            **persistent_results,
+            key: stored_entry,
+        }
+        state, persistent_results = next_state, next_persistent_results
+        if transition is not None:
+            applied_by_key[key] = applied_by_key.get(key, 0) + 1
+        commit_records.append(
+            {
+                "key": key,
+                "state_after": dict(state),
+                "stored_entry": stored_entry,
+            }
+        )
         trace.append(
             {
                 "tick": delivery["tick"],
@@ -173,11 +235,45 @@ def simulate(seed, partition_end_delay=0):
                 "delivery": delivery["mode"],
                 "logical_sequence": event["logical_sequence"],
                 "effect": effect,
+                "input_fingerprint": input_fingerprint,
                 "result": result,
             }
         )
 
-    for event in EVENTS:
+    def deliver_message(event, delivery):
+        state_before = dict(state)
+        stored_entry_before = persistent_results.get(event["dedupe_key"])
+        try:
+            process_message(event, delivery)
+        except IdempotencyConflict as error:
+            stored_entry_unchanged = (
+                state == state_before
+                and persistent_results.get(error.key) == stored_entry_before
+            )
+            conflict = {
+                "error_type": type(error).__name__,
+                "code": error.code,
+                "rejected": True,
+                "key": error.key,
+                "attempted_input_fingerprint": error.attempted_fingerprint,
+                "stored_input_fingerprint": error.stored_fingerprint,
+                "applied_state_transitions": applied_by_key.get(error.key, 0),
+                "stored_entry_unchanged": stored_entry_unchanged,
+            }
+            conflicts.append(conflict)
+            trace.append(
+                {
+                    "tick": delivery["tick"],
+                    "kind": "deliver",
+                    "event_id": event["id"],
+                    "delivery": delivery["mode"],
+                    "logical_sequence": event["logical_sequence"],
+                    "effect": "idempotency-conflict-rejected",
+                    "error": conflict,
+                }
+            )
+
+    for event in events:
         if event["kind"] == "partition_start":
             partition_active = True
             partition_started = True
@@ -218,7 +314,7 @@ def simulate(seed, partition_end_delay=0):
                 ),
             )
             for buffered_event in release_order:
-                process_message(
+                deliver_message(
                     buffered_event,
                     {
                         "tick": recovery_tick,
@@ -247,7 +343,7 @@ def simulate(seed, partition_end_delay=0):
                     "logical_sequence": event["logical_sequence"],
                 }
             )
-            process_message(
+            deliver_message(
                 event,
                 {"tick": event["tick"], "mode": "immediate"},
             )
@@ -272,7 +368,17 @@ def simulate(seed, partition_end_delay=0):
         if recovery_tick is not None and recovery_tick &lt;= RECOVERY_DEADLINE_TICK
         else "recovery-deadline-exceeded"
     )
-    first_result = persistent_results[DEDUPE_KEY]
+    stored_entry = persistent_results[DEDUPE_KEY]
+    matching_commits = [
+        commit
+        for commit in commit_records
+        if commit["key"] == DEDUPE_KEY
+    ]
+    state_fingerprint_result_atomic = (
+        len(matching_commits) == 1
+        and matching_commits[0]["stored_entry"] == stored_entry
+        and matching_commits[0]["state_after"] == state
+    )
     return {
         "trace": trace,
         "partition_started": partition_started,
@@ -283,10 +389,16 @@ def simulate(seed, partition_end_delay=0):
             "key": DEDUPE_KEY,
             "applied_state_transitions": applied_by_key.get(DEDUPE_KEY, 0),
             "result_reuse_count": result_reuse_by_key.get(DEDUPE_KEY, 0),
-            "first_result": first_result,
-            "reused_result": first_result,
+            "input_fingerprint": stored_entry["input_fingerprint"],
+            "stored_entry": stored_entry,
+            "first_result": stored_entry["result"],
+            "reused_result": reused_result_by_key.get(DEDUPE_KEY),
+            "state_fingerprint_result_atomic": (
+                state_fingerprint_result_atomic
+            ),
             "survived_recovery_generation": volatile_generation,
         },
+        "conflicts": conflicts,
         "final_state": state["order-42"],
         "recovery": {
             "tick": recovery_tick,
@@ -303,6 +415,9 @@ def simulate(seed, partition_end_delay=0):
 first = simulate(SEED)
 second = simulate(SEED)
 long_partition = simulate(SEED, partition_end_delay=5)
+conflicting_retry = simulate(SEED, conflicting_retry=True)
+assert len(conflicting_retry["conflicts"]) == 1
+same_key_different_payload = conflicting_retry["conflicts"][0]
 
 # These invariants make partition handling part of the executable contract,
 # instead of trusting a trace label that could survive disabled behavior.
@@ -318,10 +433,21 @@ assert (
     first["persistent_dedupe"]["first_result"]
     == first["persistent_dedupe"]["reused_result"]
 )
+assert first["persistent_dedupe"]["state_fingerprint_result_atomic"]
 assert first["final_state"] == "confirmed"
 assert first["recovery"]["outcome"] == "recovered-before-deadline"
 assert long_partition["recovery"]["outcome"] == "recovery-deadline-exceeded"
 assert first["recovery"]["outcome"] != long_partition["recovery"]["outcome"]
+assert same_key_different_payload["error_type"] == "IdempotencyConflict"
+assert same_key_different_payload["code"] == "same-key-different-input"
+assert same_key_different_payload["rejected"]
+assert (
+    same_key_different_payload["attempted_input_fingerprint"]
+    != same_key_different_payload["stored_input_fingerprint"]
+)
+assert same_key_different_payload["applied_state_transitions"] == 1
+assert same_key_different_payload["stored_entry_unchanged"]
+assert conflicting_retry["final_state"] == "confirmed"
 
 report = {
     "seed": SEED,
@@ -347,6 +473,7 @@ report = {
     },
     "reorder_observed": first["reorder_observed"],
     "persistent_dedupe": first["persistent_dedupe"],
+    "same_key_different_payload": same_key_different_payload,
     "idempotent_state_transition": (
         first["persistent_dedupe"]["applied_state_transitions"] == 1
         and first["final_state"] == "confirmed"
