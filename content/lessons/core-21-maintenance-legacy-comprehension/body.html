@@ -119,6 +119,17 @@ FIXTURE = {
         },
     ],
 }
+BASELINE_CHANGE = {
+    "change_request": "discount-rate-change",
+}
+TRANSFER_CHANGE = {
+    "change_request": "tax-rounding-change",
+}
+
+def fixed_legacy_fixture():
+    # JSON値だけで構成したfixtureを別objectへ再 materializeし、
+    # fixture_idだけの比較で構造driftを見逃さないようにする。
+    return json.loads(json.dumps(FIXTURE, ensure_ascii=False))
 
 def trace_execution(fixture, change_request):
     # change requestから経路を再計算し、ファイル名の推測を影響範囲の
@@ -202,8 +213,40 @@ def analyze_change(fixture, change_request):
     }
 
 def main():
-    baseline = analyze_change(FIXTURE, "discount-rate-change")
-    transferred = analyze_change(FIXTURE, "tax-rounding-change")
+    baseline_fixture = fixed_legacy_fixture()
+    transferred_fixture = fixed_legacy_fixture()
+    if (
+        baseline_fixture is transferred_fixture
+        or baseline_fixture != transferred_fixture
+    ):
+        raise AssertionError(
+            "maintenance-comprehension-invariant: fixture snapshot drift"
+        )
+    change_fields = sorted(
+        set(BASELINE_CHANGE) | set(TRANSFER_CHANGE)
+    )
+    changed_fields = [
+        field
+        for field in change_fields
+        if (
+            field not in BASELINE_CHANGE
+            or field not in TRANSFER_CHANGE
+            or BASELINE_CHANGE[field] != TRANSFER_CHANGE[field]
+        )
+    ]
+    if changed_fields != ["change_request"]:
+        raise AssertionError(
+            "maintenance-comprehension-invariant: "
+            "transfer changed wrong input"
+        )
+    baseline = analyze_change(
+        baseline_fixture,
+        BASELINE_CHANGE["change_request"],
+    )
+    transferred = analyze_change(
+        transferred_fixture,
+        TRANSFER_CHANGE["change_request"],
+    )
     if (
         baseline["affected_path"] == transferred["affected_path"]
         or baseline["characterization_tests"]
@@ -226,15 +269,19 @@ def main():
             ),
         },
         "runtime_bound": {
-            "records": len(FIXTURE["stages"]) + len(FIXTURE["cases"]),
+            "records": (
+                len(baseline_fixture["stages"])
+                + len(baseline_fixture["cases"])
+            ),
             "subprocesses": 0,
             "maximum_iterations": (
-                len(FIXTURE["stages"]) * 2 + len(FIXTURE["cases"]) * 2
+                len(baseline_fixture["stages"]) * 2
+                + len(baseline_fixture["cases"]) * 2
             ),
         },
         "external_network_used": False,
         "system_map": {
-            "entry_point": FIXTURE["entry_point"],
+            "entry_point": baseline_fixture["entry_point"],
             "execution_path": baseline["affected_path"],
             "change_reason": baseline["change_request"],
             "unknowns": baseline["unknowns"],
@@ -246,10 +293,12 @@ def main():
         "characterization_tests": baseline["characterization_tests"],
         "change_request_transfer": {
             "changed_assumption": "change-request",
-            "changed_fields": ["change_request"],
+            "changed_fields": changed_fields,
             "same_legacy_fixture": (
-                baseline["fixture_id"] == transferred["fixture_id"]
+                baseline_fixture == transferred_fixture
             ),
+            "baseline_fixture_snapshot": baseline_fixture,
+            "transferred_fixture_snapshot": transferred_fixture,
             "baseline_affected_path": baseline["affected_path"],
             "transferred_affected_path": transferred["affected_path"],
             "baseline_characterization_tests": (
