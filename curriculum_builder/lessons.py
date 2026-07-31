@@ -287,6 +287,12 @@ def _parse_lesson(raw: dict[str, object]) -> Lesson:
         if "capabilityProgression" in raw
         else ()
     )
+    if status == "complete":
+        _validate_complete_evidence_coverage(
+            evidence,
+            objectives,
+            capability_progression,
+        )
 
     lab = _parse_optional_lab(raw.get("lab"), complete=status == "complete")
     teach_back = _parse_optional_text(
@@ -724,6 +730,42 @@ def _parse_capability_progression(
     return tuple(progression)
 
 
+def _validate_complete_evidence_coverage(
+    evidence: tuple[Evidence, ...],
+    objectives: tuple[Objective, ...],
+    capability_progression: tuple[CapabilityProgression, ...],
+) -> None:
+    expected = {item.id for item in evidence}
+    references = (
+        (
+            "objective",
+            {
+                evidence_id
+                for objective in objectives
+                for evidence_id in objective.evidence_ids
+            },
+        ),
+        (
+            "capability",
+            {
+                evidence_id
+                for level in capability_progression
+                for evidence_id in level.evidence_ids
+            },
+        ),
+    )
+    for label, actual in references:
+        missing = sorted(expected - actual)
+        if missing:
+            # Unknown references fail in their parsers. Requiring every known
+            # ID here therefore makes each reference set exactly equal to the
+            # evidence set and prevents count-only evidence from looking valid.
+            raise CurriculumValidationError(
+                f"complete lesson {label} evidence coverage missing: "
+                f"{', '.join(missing)}"
+            )
+
+
 def _parse_optional_lab(value: object | None, *, complete: bool) -> Lab | None:
     if value is None:
         return None
@@ -758,10 +800,16 @@ def _parse_assessment(
 ) -> tuple[Assessment, ...]:
     if value is None:
         return ()
+    if type(value) is list and complete and len(value) < 2:
+        # Two prompts let the contract require more than one reasoning path;
+        # drafts remain permissive while their learning design is incomplete.
+        raise CurriculumValidationError(
+            "complete lessons need at least two assessments"
+        )
     items = _require_list(
         value,
         "assessment",
-        minimum=1 if complete else 0,
+        minimum=2 if complete else 0,
         maximum=12,
     )
     fields = frozenset({"prompt", "expectedEvidence"})
