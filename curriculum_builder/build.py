@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 import ctypes
@@ -46,6 +46,7 @@ from .render import MAX_TEMPLATE_BYTES, Renderer
 
 MAX_CATALOG_BYTES: Final = 8 * 1024 * 1024
 MAX_ROADMAP_BYTES: Final = 256 * 1024
+MAX_ROADMAP_SOURCE_NAME_CHARS: Final = 255
 MAX_ROADMAP_NODES: Final = 4096
 MAX_ROADMAP_EDGES: Final = 65_536
 MAX_ROADMAP_TEXT_CHARS: Final = 4096
@@ -632,8 +633,21 @@ def parse_roadmap_bytes(
     """
     if type(raw) is not bytes:
         raise _validation("roadmap snapshot must be exact bytes")
-    if type(source_name) is not str or not source_name:
-        raise _validation("roadmap source name must be a non-empty string")
+    if len(raw) > MAX_ROADMAP_BYTES:
+        raise _validation("roadmap exceeds maximum byte count")
+    if (
+        type(source_name) is not str
+        or not source_name
+        or len(source_name) > MAX_ROADMAP_SOURCE_NAME_CHARS
+        or any(
+            unicodedata.category(character)
+            in {"Cc", "Cf", "Cs", "Zl", "Zp"}
+            for character in source_name
+        )
+    ):
+        # The source label prefixes JSON diagnostics. Rejecting unsafe labels
+        # before decoding prevents terminal and structured-log injection.
+        raise _validation("roadmap source name is invalid")
     if type(require_complete) is not bool:
         raise _validation("require_complete must be a boolean")
 
@@ -805,6 +819,31 @@ def parse_roadmap_bytes(
             )
         )
 
+    duplicate_gate_ids = sorted(
+        gate_id
+        for gate_id, count in Counter(
+            gate.id for gate in gates
+        ).items()
+        if count > 1
+    )
+    if duplicate_gate_ids:
+        raise _validation(
+            "duplicate mastery gate ids: "
+            + ", ".join(duplicate_gate_ids)
+        )
+    duplicate_gate_after_values = sorted(
+        after
+        for after, count in Counter(
+            gate.after for gate in gates
+        ).items()
+        if count > 1
+    )
+    if duplicate_gate_after_values:
+        raise _validation(
+            "duplicate mastery gate after values: "
+            + ", ".join(map(str, duplicate_gate_after_values))
+        )
+
     if require_complete and tuple(
         (gate.id, gate.after, gate.artifact, gate.review)
         for gate in gates
@@ -827,6 +866,23 @@ def validate_release_curriculum(
     """Bind the release roadmap to the exact immutable lesson snapshot."""
     if not isinstance(roadmap, Roadmap):
         raise _validation("release roadmap must be a Roadmap")
+    if type(roadmap.version) is not int or roadmap.version != 1:
+        raise _validation("release roadmap version must be 1")
+    if (
+        tuple(
+            (gate.id, gate.after, gate.artifact, gate.review)
+            for gate in roadmap.mastery_gates
+        )
+        != _RELEASE_MASTERY_GATES
+    ):
+        raise _validation(
+            "release roadmap must contain the exact canonical mastery gates"
+        )
+    if (
+        isinstance(lessons, (str, bytes))
+        or not isinstance(lessons, Sequence)
+    ):
+        raise _validation("release lessons must be a sequence")
     if len(lessons) != 30:
         raise _validation("release curriculum must contain exactly 30 lessons")
     if any(not isinstance(lesson, Lesson) for lesson in lessons):
@@ -849,9 +905,42 @@ def validate_release_curriculum(
         raise _validation("release curriculum cannot contain draft lessons")
     if len(roadmap.nodes) != 30:
         raise _validation("release roadmap must contain exactly 30 nodes")
+    if any(not isinstance(node, RoadmapNode) for node in roadmap.nodes):
+        raise _validation("release roadmap nodes must be RoadmapNode values")
+
+    roadmap_ids = tuple(node.id for node in roadmap.nodes)
+    roadmap_ordinals: list[int] = []
+    for node in roadmap.nodes:
+        match = _ROADMAP_LESSON_ID.fullmatch(node.id)
+        if match is None:
+            raise _validation("release roadmap node ID is not canonical")
+        ordinal = int(match.group(1))
+        if node.ordinal != ordinal:
+            raise _validation(
+                "release roadmap node ordinal does not match its ID"
+            )
+        roadmap_ordinals.append(ordinal)
+    if (
+        len(set(roadmap_ids)) != len(roadmap_ids)
+        or tuple(sorted(roadmap_ordinals)) != tuple(range(1, 31))
+    ):
+        raise _validation(
+            "release roadmap ordinals must be exactly 1 through 30"
+        )
+    stages = topological_stages(
+        roadmap_ids,
+        {
+            node.id: node.prerequisite_ids
+            for node in roadmap.nodes
+        },
+    )
+    if stages[0] != ("core-01-systems-tradeoffs",):
+        raise _validation(
+            "release roadmap must have core-01 as its only root"
+        )
 
     lessons_by_id = {lesson.id: lesson for lesson in lessons}
-    if {node.id for node in roadmap.nodes} != set(lessons_by_id):
+    if set(roadmap_ids) != set(lessons_by_id):
         raise _validation("roadmap and release lesson IDs must match exactly")
     for node in roadmap.nodes:
         lesson = lessons_by_id[node.id]
