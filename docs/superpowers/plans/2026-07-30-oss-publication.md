@@ -1088,9 +1088,9 @@ rules:
 ```text
 regex:/(?:Volumes)/[^/]+/Developer/engineering-expert-curriculum-worktrees/static-oss-curriculum==>$FEATURE_WORKTREE
 regex:/(?:Volumes)/[^/]+/Developer/engineering-expert-curriculum==>$REPO_ROOT
-regex:/(?:Volumes)/[^/]+/==>$VOLUME_ROOT/
+regex:/(?:Volumes)/[A-Za-z0-9._ -]+/==>$VOLUME_ROOT/
 regex:/(?:Users)/[^/]+/\.pyenv/versions/[0-9.]+/bin/python3\.13==>python3.13
-regex:/(?:Users)/[^/]+/==>$USER_HOME/
+regex:/(?:Users)/[A-Za-z0-9._-]+/==>$USER_HOME/
 regex:\b[A-Za-z0-9._%+-]+@(?!example\.(?:com|invalid)\b)[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b==>$PRIVATE_EMAIL
 ```
 
@@ -1142,7 +1142,7 @@ git -C "$PUBLICATION_CLONE" log \
 test "$(git -C "$PUBLICATION_CLONE" log \
   refs/heads/main refs/heads/feat/static-oss-curriculum \
   --format='%ae%n%ce' | LC_ALL=C sort -u)" = "$PUBLIC_NOREPLY_EMAIL"
-PRIVATE_PATH_PATTERN='/(Users)/|/(Volumes)/'
+PRIVATE_PATH_PATTERN='/(Users)/[[:alnum:]_.-]+/|/(Volumes)/[[:alnum:]_. -]+/'
 if git -C "$PUBLICATION_CLONE" log \
   refs/heads/main refs/heads/feat/static-oss-curriculum --format='%B' | \
   grep -Eq "$PRIVATE_PATH_PATTERN"; then
@@ -1261,7 +1261,8 @@ printf '%s' "$PREFLIGHT_PAYLOAD" > "$PUBLICATION_PREFLIGHT_TOKEN"
 Expected: local heads are exactly `main` and `feat/static-oss-curriculum`, with
 no tags; every author and committer uses the one verified noreply identity;
 private paths and routable email-like text are absent from every reachable
-blob, while only the two reserved `example` fixture domains remain;
+blob, while only bare platform-root security-test tokens and the two reserved
+`example` fixture domains remain;
 the official Gitleaks CLI and all tests/build checks pass. If any gate fails,
 discard only the publication clone, correct the source feature through TDD,
 and restart from a fresh sibling clone.
