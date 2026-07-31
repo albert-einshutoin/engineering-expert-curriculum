@@ -143,6 +143,18 @@ def _validation(message: str) -> CurriculumValidationError:
     return CurriculumValidationError(message)
 
 
+def _require_descriptor_support() -> None:
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    directory = getattr(os, "O_DIRECTORY", None)
+    if (
+        type(nofollow) is not int
+        or nofollow == 0
+        or type(directory) is not int
+        or directory == 0
+    ):
+        raise _validation("safe capstone descriptors are not supported")
+
+
 def _exact_fields(
     value: Mapping[object, object],
     expected: frozenset[str],
@@ -559,6 +571,7 @@ def load_capstones_from_content_fd(
     expected_lesson_ids: frozenset[str],
 ) -> tuple[Capstone, ...]:
     """Load capstones through a caller-pinned content directory."""
+    _require_descriptor_support()
     if type(content_descriptor) is not int or content_descriptor < 0:
         raise _validation("content descriptor must be a valid integer")
     descriptor: int | None = None
@@ -636,6 +649,7 @@ def _validate_lexical_path(path: Path) -> Path:
 
 def load_capstones(path: Path) -> tuple[Capstone, ...]:
     """Load repository capstones and bind references to complete lessons."""
+    _require_descriptor_support()
     absolute = _validate_lexical_path(path)
     try:
         recorded_parent = os.lstat(absolute.parent)
