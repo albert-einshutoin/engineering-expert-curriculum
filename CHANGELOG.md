@@ -4,6 +4,10 @@ Engineering Expert Curriculumの利用者に影響する変更を記録します
 
 ## [Unreleased]
 
+- 次回releaseの変更は、検証証拠が確定した時点で追記します。
+
+## [0.1.0] - 2026-07-31
+
 ### Added
 
 - 1,140項目を保持する、ブラウザ検索可能な静的カタログ。
@@ -18,4 +22,5 @@ Engineering Expert Curriculumの利用者に影響する変更を記録します
 - authored HTML、structured content、path、決定的publication boundaryを検証するdependency-free build契約。
 - 脆弱性をGitHubの非公開advisoryで受け付ける報告方針。
 
-[Unreleased]: https://github.com/albert-einshutoin/engineering-expert-curriculum/commits/main
+[Unreleased]: https://github.com/albert-einshutoin/engineering-expert-curriculum/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/albert-einshutoin/engineering-expert-curriculum/releases/tag/v0.1.0
