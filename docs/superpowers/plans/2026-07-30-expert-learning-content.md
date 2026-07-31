@@ -772,13 +772,13 @@ git commit -m "content: connect software design to trustworthy evidence"
   ambient-test exclusion. The formal Task 4 quality command passes 94 tests,
   and `python3.13 -m unittest discover -s tests` passes all 357 tests.
 - Each of two independent repository-external builds contains 15 regular
-  artifacts, 14 HTML files, zero JavaScript files, and 483,484 bytes. The
+  artifacts, 14 HTML files, zero JavaScript files, and 483,498 bytes. The
   canonical aggregate algorithm rejects symlinks and non-regular entries,
   encodes every relative POSIX path as UTF-8, sorts those path bytes bytewise,
   then feeds, for every artifact in that order,
   `path bytes + NUL + ASCII decimal byte length + NUL + file bytes` directly
   into one SHA-256 state. Both builds produce
-  `1314176da0c2f74f5b8246b80cacf423572fb8ad2373eba5e3c7f702745e346c`.
+  `f4e4a0e5cd67c9991aee70d7a6d7e3656c5950cd961d9bf7bb7e0c41e3e8339b`.
   No per-file-digest concatenation is used.
 - Security scans report zero unsafe HTML, secret, dangerous execution, or body
   external-URL patterns. The catalog remains exactly 1,140 items with SHA-256
