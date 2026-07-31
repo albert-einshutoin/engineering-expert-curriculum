@@ -49,10 +49,130 @@ FRAMEWORKS = {
     "ai_risk": "NIST AI RMF 1.0",
 }
 DATA_LIFECYCLE = ["collect", "use", "share", "retain", "delete"]
+LIFECYCLE_FIXTURE = [
+    {
+        "phase": "collect",
+        "purpose": "勤務候補を作るため希望時間帯を受け取る",
+        "necessity": "候補生成に必要な時間帯だけを最小収集する",
+        "access": "本人と割当担当者",
+        "retention": "候補確定から30日以内に原入力を削除する",
+        "owner": "data-intake-owner",
+        "harm_ids": [
+            "harm-schedule-opportunity",
+            "harm-history-lock-in",
+        ],
+        "control_ids": [
+            "control-candidate-refusal",
+            "control-history-feature-limit",
+        ],
+        "residual_risk_ids": [
+            "risk-schedule-opportunity",
+            "risk-history-lock-in",
+        ],
+        "verification": "収集schemaと同意撤回fixtureを検査する",
+    },
+    {
+        "phase": "use",
+        "purpose": "制約を満たす勤務候補を計算する",
+        "necessity": "健康情報を順位特徴へ使わない",
+        "access": "候補生成serviceの限定role",
+        "retention": "候補確定時に用途外cacheを失効する",
+        "owner": "ranking-safety-owner",
+        "harm_ids": [
+            "harm-schedule-opportunity",
+            "harm-inaccessible-choice",
+            "harm-history-lock-in",
+        ],
+        "control_ids": [
+            "control-human-review",
+            "control-history-feature-limit",
+            "control-group-monitoring",
+        ],
+        "residual_risk_ids": [
+            "risk-schedule-opportunity",
+            "risk-inaccessible-choice",
+            "risk-history-lock-in",
+        ],
+        "verification": "用途外feature mutationを拒否する",
+    },
+    {
+        "phase": "share",
+        "purpose": "担当者へ候補と理由を提示する",
+        "necessity": "候補判断に不要な個人属性を共有しない",
+        "access": "当該拠点の割当担当者",
+        "retention": "担当期間終了時に閲覧権限を失効する",
+        "owner": "workforce-access-owner",
+        "harm_ids": [
+            "harm-schedule-opportunity",
+            "harm-inaccessible-choice",
+        ],
+        "control_ids": [
+            "control-reason-display",
+            "control-candidate-refusal",
+            "control-semantic-reading-order",
+            "control-keyboard-review",
+            "control-alternate-channel",
+        ],
+        "residual_risk_ids": [
+            "risk-schedule-opportunity",
+            "risk-inaccessible-choice",
+        ],
+        "verification": "別拠点roleのaccess拒否を確認する",
+    },
+    {
+        "phase": "retain",
+        "purpose": "異議申立てと偏りmonitoringを可能にする",
+        "necessity": "決定根拠と集団別集計だけを保持する",
+        "access": "独立review担当とprivacy owner",
+        "retention": "90日後に削除または再承認する",
+        "owner": "privacy-risk-owner",
+        "harm_ids": [
+            "harm-history-lock-in",
+        ],
+        "control_ids": [
+            "control-group-monitoring",
+            "control-appeal",
+        ],
+        "residual_risk_ids": [
+            "risk-history-lock-in",
+        ],
+        "verification": "期限超過fixtureをfail closedにする",
+    },
+    {
+        "phase": "delete",
+        "purpose": "目的を終えた個人データを利用不能にする",
+        "necessity": "法的保存義務のある最小記録だけを分離する",
+        "access": "削除jobと監査担当者",
+        "retention": "削除要求から7日以内に完了する",
+        "owner": "deletion-control-owner",
+        "harm_ids": [
+            "harm-schedule-opportunity",
+            "harm-inaccessible-choice",
+            "harm-history-lock-in",
+        ],
+        "control_ids": [
+            "control-human-review",
+            "control-appeal",
+        ],
+        "residual_risk_ids": [
+            "risk-schedule-opportunity",
+            "risk-inaccessible-choice",
+            "risk-history-lock-in",
+        ],
+        "verification": "再検索不能と削除receiptを確認する",
+    },
+]
 BASELINE_IMPACT_FIXTURE = [
     {
         "affected_people": "general-adult-workers",
+        "harm_id": "harm-schedule-opportunity",
         "harm": "希望と異なる勤務候補が提示される",
+        "control_ids": [
+            "control-human-review",
+            "control-reason-display",
+            "control-candidate-refusal",
+        ],
+        "residual_risk_id": "risk-schedule-opportunity",
         "likelihood": 2,
         "severity": 2,
         "exposure": 2,
@@ -65,7 +185,14 @@ BASELINE_IMPACT_FIXTURE = [
     },
     {
         "affected_people": "low-vision-workers",
+        "harm_id": "harm-inaccessible-choice",
         "harm": "読み上げ不能な候補から選択機会を失う",
+        "control_ids": [
+            "control-semantic-reading-order",
+            "control-keyboard-review",
+            "control-alternate-channel",
+        ],
+        "residual_risk_id": "risk-inaccessible-choice",
         "likelihood": 3,
         "severity": 4,
         "exposure": 3,
@@ -78,7 +205,14 @@ BASELINE_IMPACT_FIXTURE = [
     },
     {
         "affected_people": "night-shift-workers",
+        "harm_id": "harm-history-lock-in",
         "harm": "過去の勤務偏りが次の候補へ固定される",
+        "control_ids": [
+            "control-history-feature-limit",
+            "control-group-monitoring",
+            "control-appeal",
+        ],
+        "residual_risk_id": "risk-history-lock-in",
         "likelihood": 2,
         "severity": 3,
         "exposure": 3,
@@ -92,7 +226,14 @@ BASELINE_IMPACT_FIXTURE = [
 ]
 HIGH_RISK_POPULATION = {
     "affected_people": "income-critical-contract-workers",
+    "harm_id": "harm-schedule-opportunity",
     "harm": "候補順位の低下が生活基盤へ不可逆な損失を与える",
+    "control_ids": [
+        "control-human-review",
+        "control-candidate-refusal",
+        "control-appeal",
+    ],
+    "residual_risk_id": "risk-schedule-opportunity",
     "likelihood": 4,
     "severity": 5,
     "exposure": 4,
@@ -107,6 +248,57 @@ TRANSFER_TASK = (
     "平均的利用者から高リスク集団を含むaffected populationへ"
     "変え、残余riskを再評価する"
 )
+
+def validate_lifecycle(fixture):
+    required_fields = {
+        "phase",
+        "purpose",
+        "necessity",
+        "access",
+        "retention",
+        "owner",
+        "harm_ids",
+        "control_ids",
+        "residual_risk_ids",
+        "verification",
+    }
+    known_references = {
+        "harm_ids": {
+            item["harm_id"] for item in BASELINE_IMPACT_FIXTURE
+        },
+        "control_ids": {
+            control_id
+            for item in BASELINE_IMPACT_FIXTURE
+            for control_id in item["control_ids"]
+        },
+        "residual_risk_ids": {
+            item["residual_risk_id"]
+            for item in BASELINE_IMPACT_FIXTURE
+        },
+    }
+    referenced = {
+        reference_name: set()
+        for reference_name in known_references
+    }
+    assessment = []
+    for expected_phase, source in zip(
+        DATA_LIFECYCLE,
+        fixture,
+        strict=True,
+    ):
+        # phase名だけのchecklistを防ぎ、各段階の目的、最小化、
+        # 権限、保持、owner、impact/control/risk、検証を同じ
+        # recordで追跡する。
+        assert set(source) == required_fields, "ethics-lifecycle-invariant"
+        assert source["phase"] == expected_phase, "ethics-lifecycle-invariant"
+        assert all(source.values()), "ethics-lifecycle-invariant"
+        for reference_name, known_ids in known_references.items():
+            source_ids = set(source[reference_name])
+            assert source_ids &lt;= known_ids, "ethics-lifecycle-invariant"
+            referenced[reference_name].update(source_ids)
+        assessment.append(dict(source))
+    assert referenced == known_references, "ethics-lifecycle-invariant"
+    return assessment
 
 def derive_impact(item):
     inherent_risk = (
@@ -138,6 +330,11 @@ def assess_population(fixture):
     }
 
 def main():
+    lifecycle_assessment = validate_lifecycle(LIFECYCLE_FIXTURE)
+    assert (
+        [item["phase"] for item in lifecycle_assessment]
+        == DATA_LIFECYCLE
+    ), "ethics-lifecycle-invariant"
     baseline = assess_population(BASELINE_IMPACT_FIXTURE)
     transferred = assess_population(
         BASELINE_IMPACT_FIXTURE + [HIGH_RISK_POPULATION]
@@ -148,14 +345,39 @@ def main():
         impact["residual_risk"] &lt; impact["inherent_risk"]
         for impact in baseline["impacts"]
     ), "ethics-causal-invariant"
+    baseline_mitigations = {
+        impact["affected_people"]: impact["mitigations"]
+        for impact in baseline["impacts"]
+    }
+    transferred_mitigations = {
+        impact["affected_people"]: impact["mitigations"]
+        for impact in transferred["impacts"]
+        if impact["affected_people"] in baseline_mitigations
+    }
+    baseline_lifecycle = [dict(item) for item in lifecycle_assessment]
+    transferred_lifecycle = [dict(item) for item in lifecycle_assessment]
     transfer = {
         "changed_assumption": "affected-population",
         "changed_fields": ["affected_population"],
         "unchanged": {
-            "data_lifecycle": True,
-            "mitigations": True,
-            "risk_formula": True,
+            "data_lifecycle": (
+                baseline_lifecycle == transferred_lifecycle
+            ),
+            "mitigations": (
+                baseline_mitigations == transferred_mitigations
+            ),
+            "risk_formula": all(
+                impact["residual_risk"]
+                == max(
+                    0,
+                    impact["inherent_risk"]
+                    - impact["mitigation_reduction"],
+                )
+                for impact in transferred["impacts"]
+            ),
         },
+        "baseline_lifecycle": baseline_lifecycle,
+        "transferred_lifecycle": transferred_lifecycle,
         "baseline_maximum_residual_risk": (
             baseline["uneven_harm"]["maximum"]
         ),
@@ -174,6 +396,7 @@ def main():
         },
         "frameworks": FRAMEWORKS,
         "data_lifecycle": DATA_LIFECYCLE,
+        "data_lifecycle_assessment": lifecycle_assessment,
         "impact_assessment": baseline,
         "privacy_security_relation": {
             "related": True,
@@ -187,7 +410,7 @@ def main():
         "runtime_bound": {
             "records": (
                 len(BASELINE_IMPACT_FIXTURE)
-                + len(DATA_LIFECYCLE)
+                + len(lifecycle_assessment)
                 + len(FRAMEWORKS)
                 + 1
             ),
