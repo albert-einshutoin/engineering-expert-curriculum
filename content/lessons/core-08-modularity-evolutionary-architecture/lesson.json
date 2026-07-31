@@ -19,12 +19,12 @@
     },
     {
       "id": "obj-direction",
-      "statement": "module graphのcycleと依存方向違反を機械的に検出し、変更影響を比較できる",
+      "statement": "module graphのcycleと依存方向違反を検出し、reverse transitive closureで変更影響を再計算できる",
       "evidenceIds": ["module-adr", "assessment"]
     },
     {
       "id": "obj-decision",
-      "statement": "stakeholder concern、選択肢、正負の帰結、確認方法をADRへ残し、高変更moduleへ判断を移せる",
+      "statement": "stakeholder concern、1・3・5のscale anchor、選択肢のevidence、正負の帰結、確認方法をADRへ残し、高変更moduleへ判断を移せる",
       "evidenceIds": ["assessment", "transfer"]
     }
   ],
@@ -42,7 +42,7 @@
     {
       "id": "assessment",
       "kind": "reasoning",
-      "description": "変更結合、依存方向、運用・開発viewの証拠から境界を選ぶ判断記録"
+      "description": "変更結合、reverse impact、scale anchor、optionごとの観測証拠から加重scoreと境界を再計算できる判断記録"
     },
     {
       "id": "transfer",
@@ -83,8 +83,8 @@
     "steps": [
       "料金規則、use case、外部adapterのmoduleと依存edgeを固定fixtureとして列挙する",
       "変更前graphのcycleとdomainから外側へ向く方向違反を検出する",
-      "境界維持、一時的facade、service分離の三案を同じcriteriaとriskで比較する",
-      "選択案で依存を外側から内側へ直し、cycle消失と変更影響範囲を再計算する",
+      "境界維持、一時的facade、service分離の三案を、weightと1・3・5 anchorを固定したcriteria、rating evidence、riskで比較する",
+      "選択案で依存を外側から内側へ直し、変更targetからreverse transitive closureを求め、edge削除・target変更mutationとの差を再計算する",
       "context、decision、alternatives、正負の帰結、confirmationをADRへ記録する"
     ]
   },

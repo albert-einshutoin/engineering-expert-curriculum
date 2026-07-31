@@ -15,6 +15,7 @@
       <li><strong>pricing-domain:</strong> 料金規則と不変条件。UIやDB形式を知らない。</li>
       <li><strong>pricing-application:</strong> use caseを順序付け、domainのportを使う。</li>
       <li><strong>pricing-adapters:</strong> HTTP、DB、batch形式をdomainの語彙へ変換する。</li>
+      <li><strong>reporting:</strong> 料金計算の変更対象外となる独立module。impact計算のfalse positiveを検出する基準にする。</li>
       <li>source dependencyはadaptersからapplication、applicationからdomainへ向ける。</li>
       <li>運用viewでは逆向きのrequest flowを別の矢印として記述し、意味を混ぜない。</li>
     </ol>
@@ -22,27 +23,28 @@
   <table>
     <caption>料金変更hotspotの境界を選ぶdecision table</caption>
     <thead>
-      <tr><th scope="col">案</th><th scope="col">変更局所性</th><th scope="col">移行費</th><th scope="col">主なrisk</th></tr>
+      <tr><th scope="col">案</th><th scope="col">変更局所性</th><th scope="col">移行費</th><th scope="col">加重score</th><th scope="col">主なrisk</th></tr>
     </thead>
     <tbody>
-      <tr><th scope="row">domain境界を維持</th><td>高い</td><td>中</td><td>古いadapterとの二重経路</td></tr>
-      <tr><th scope="row">一時facade</th><td>中</td><td>低い</td><td>暫定層の恒久化</td></tr>
-      <tr><th scope="row">service分離</th><td>高い可能性</td><td>高い</td><td>network・運用・data整合性</td></tr>
+      <tr><th scope="row">domain境界を維持</th><td>5: 週次規則をdomainへ局所化</td><td>3: 二重経路を段階移行</td><td>4.2</td><td>古いadapterとの二重経路</td></tr>
+      <tr><th scope="row">一時facade</th><td>3: 一部の漏洩が残る</td><td>5: 既存consumerを維持</td><td>3.6</td><td>暫定層の恒久化</td></tr>
+      <tr><th scope="row">service分離</th><td>4: process境界へ隔離</td><td>1: data移行を伴う</td><td>2.4</td><td>network・運用・data整合性</td></tr>
     </tbody>
   </table>
+  <p>各criteriaは1・3・5のanchorとweightを先に固定する。optionごとのratingには観測可能なevidenceを添え、加重平均をcodeで再計算するため、好みをscoreへ偽装しにくい。</p>
 </section>
 <section id="worked-example">
   <h2>動く例で考える</h2>
   <h3>cycleを除き、変更impactをADRで確認する</h3>
   <dl>
     <dt>前提</dt>
-    <dd>料金規則、use case、DB変換が三moduleにある。内側から外側へのsource dependencyは禁止し、runtime callはportを介する。</dd>
+    <dd>料金規則、use case、DB変換の三moduleと、変更対象外のreportingがある。内側から外側へのsource dependencyは禁止し、runtime callはportを介する。</dd>
     <dt>入力</dt>
-    <dd>変更前はdomain→adapters→application→domainの3-edge cycleを持つ。選択肢は境界維持、一時facade、service分離の三つ。</dd>
+    <dd>変更前はdomain→adapters→application→domainの3-edge cycleを持つ。選択肢は境界維持、一時facade、service分離の三つで、4 criteriaのscale anchorとevidenceを使う。</dd>
     <dt>操作</dt>
-    <dd>graphを深さ優先探索し、cycleと層rankに反するedgeを抽出する。domainからadapterへのedgeを外し、外側から内側へ二edgeを残す。</dd>
+    <dd>graphを深さ優先探索し、cycleと層rankに反するedgeを抽出する。domainからadapterへのedgeを外し、外側から内側へ二edgeを残す。変更targetからedgeを逆向きにたどるtransitive closureでimpactを計算する。</dd>
     <dt>観測</dt>
-    <dd>変更前はcycleと方向違反が各1件、変更後は各0件。料金規則変更で無関係moduleの変更件数も0になる。</dd>
+    <dd>変更前はcycleと方向違反が各1件、変更後は各0件。料金規則変更はdomain、application、adaptersへ伝播し、reportingは含まれない。edge削除・target変更mutationではimpactの差を検出する。</dd>
     <dt>結論</dt>
     <dd>graphのgreenだけで完了せず、選択肢、負の帰結、confirmationをADRへ残し、実際の変更履歴で再評価する。</dd>
   </dl>
@@ -55,11 +57,13 @@ MODULES = [
     "pricing-domain",
     "pricing-application",
     "pricing-adapters",
+    "reporting",
 ]
 RANK = {
     "pricing-domain": 0,
     "pricing-application": 1,
     "pricing-adapters": 2,
+    "reporting": 2,
 }
 BEFORE_EDGES = [
     ("pricing-domain", "pricing-adapters"),
@@ -70,6 +74,11 @@ AFTER_EDGES = [
     ("pricing-adapters", "pricing-application"),
     ("pricing-application", "pricing-domain"),
 ]
+EXPECTED_IMPACT = {
+    "pricing-domain",
+    "pricing-application",
+    "pricing-adapters",
+}
 
 def cycles(edges):
     graph = {module: [] for module in MODULES}
@@ -111,58 +120,194 @@ def snapshot(edges):
         "direction_violations": direction_violations(edges),
     }
 
-options = [
+def reverse_transitive_impact(edges, target):
+    reverse_graph = {module: [] for module in MODULES}
+    for source, dependency in edges:
+        reverse_graph[dependency].append(source)
+    impacted = {target}
+    pending = [target]
+    while pending:
+        dependency = pending.pop()
+        for dependent in reverse_graph[dependency]:
+            if dependent not in impacted:
+                impacted.add(dependent)
+                pending.append(dependent)
+    return sorted(impacted)
+
+def impact_snapshot(edges, target):
+    impacted = reverse_transitive_impact(edges, target)
+    # Symmetric difference detects both unrelated additions and expected
+    # dependents lost through a broken graph edge.
+    deviation = set(impacted) ^ EXPECTED_IMPACT
+    return {
+        "target": target,
+        "impacted_modules": impacted,
+        "unrelated_modules_changed": len(deviation),
+    }
+
+criteria = {
+    "change_locality": {
+        "weight": 0.4,
+        "scale": {
+            "1": "weekly pricing changes reach every module",
+            "3": "most pricing changes stay behind one interface",
+            "5": "pricing changes stay inside the domain boundary",
+        },
+    },
+    "migration_cost": {
+        "weight": 0.2,
+        "scale": {
+            "1": "requires a coordinated data and consumer migration",
+            "3": "requires a bounded dual-path transition",
+            "5": "preserves consumers during an incremental migration",
+        },
+    },
+    "operability": {
+        "weight": 0.2,
+        "scale": {
+            "1": "adds unowned runtime failure modes",
+            "3": "adds monitored failure modes with manual recovery",
+            "5": "uses existing ownership and automated recovery",
+        },
+    },
+    "reversibility": {
+        "weight": 0.2,
+        "scale": {
+            "1": "rollback requires data reconstruction",
+            "3": "rollback needs a planned compatibility window",
+            "5": "rollback is isolated and rehearsed",
+        },
+    },
+}
+option_inputs = [
     {
         "id": "preserve-domain-boundary",
-        "criteria": {
-            "change_locality": 5,
-            "migration_cost": 3,
-            "operability": 4,
-            "reversibility": 4,
+        "ratings": {
+            "change_locality": {
+                "rating": 5,
+                "evidence": "six recent pricing changes touched only domain tests",
+            },
+            "migration_cost": {
+                "rating": 3,
+                "evidence": "two adapters require a thirty-day dual path",
+            },
+            "operability": {
+                "rating": 4,
+                "evidence": "existing service ownership and alerts remain valid",
+            },
+            "reversibility": {
+                "rating": 4,
+                "evidence": "the old adapter stays readable during migration",
+            },
         },
         "risks": ["dual-path-drift"],
     },
     {
         "id": "temporary-facade",
-        "criteria": {
-            "change_locality": 3,
-            "migration_cost": 5,
-            "operability": 4,
-            "reversibility": 3,
+        "ratings": {
+            "change_locality": {
+                "rating": 3,
+                "evidence": "facade localizes calls but duplicates two rules",
+            },
+            "migration_cost": {
+                "rating": 5,
+                "evidence": "all current consumers keep their contract",
+            },
+            "operability": {
+                "rating": 4,
+                "evidence": "facade uses existing dashboards and ownership",
+            },
+            "reversibility": {
+                "rating": 3,
+                "evidence": "rollback is possible while both routes remain",
+            },
         },
         "risks": ["temporary-layer-becomes-permanent"],
     },
     {
         "id": "extract-service",
-        "criteria": {
-            "change_locality": 4,
-            "migration_cost": 1,
-            "operability": 1,
-            "reversibility": 2,
+        "ratings": {
+            "change_locality": {
+                "rating": 4,
+                "evidence": "process boundary isolates code but not shared data",
+            },
+            "migration_cost": {
+                "rating": 1,
+                "evidence": "requires data ownership and consumer migration",
+            },
+            "operability": {
+                "rating": 1,
+                "evidence": "introduces an unowned network dependency",
+            },
+            "reversibility": {
+                "rating": 2,
+                "evidence": "rollback needs dual writes and data reconciliation",
+            },
         },
         "risks": ["distributed-consistency", "network-failure"],
     },
 ]
+
+def score_option(option):
+    numerator = sum(
+        rating["rating"] * criteria[criterion_id]["weight"]
+        for criterion_id, rating in option["ratings"].items()
+    )
+    denominator = sum(
+        criteria[criterion_id]["weight"]
+        for criterion_id in option["ratings"]
+    )
+    return numerator / denominator
+
+options = [
+    {**option, "score": score_option(option)}
+    for option in option_inputs
+]
+selected_option = max(options, key=lambda option: option["score"])["id"]
+change_impact = impact_snapshot(AFTER_EDGES, "pricing-domain")
+impact_mutations = {
+    "edge_removed": impact_snapshot(
+        [
+            edge
+            for edge in AFTER_EDGES
+            if edge != ("pricing-application", "pricing-domain")
+        ],
+        "pricing-domain",
+    ),
+    "target_changed": impact_snapshot(AFTER_EDGES, "reporting"),
+}
+
+assert abs(sum(item["weight"] for item in criteria.values()) - 1.0) &lt; 1e-9
+assert set(change_impact["impacted_modules"]) == EXPECTED_IMPACT
+assert change_impact["unrelated_modules_changed"] == 0
+assert all(
+    mutation["impacted_modules"] != change_impact["impacted_modules"]
+    and mutation["unrelated_modules_changed"] &gt; 0
+    for mutation in impact_mutations.values()
+)
 report = {
     "harness": HARNESS,
     "fixture": "pricing-change-hotspot-v1",
     "before": snapshot(BEFORE_EDGES),
     "after": snapshot(AFTER_EDGES),
+    "criteria": criteria,
     "options": options,
+    "selected_option": selected_option,
     "adr": {
         "status": "accepted",
         "context": "pricing rules change weekly and leaked into three adapters",
-        "decision": "preserve the domain boundary and depend inward through ports",
-        "alternatives": [option["id"] for option in options[1:]],
+        "decision": selected_option,
+        "alternatives": [
+            option["id"]
+            for option in options
+            if option["id"] != selected_option
+        ],
         "positive_consequences": ["localized rule changes", "testable domain"],
         "negative_consequences": ["temporary dual path", "port maintenance"],
         "confirmation": "dependency gate plus monthly change-impact review",
     },
-    "change_impact": {
-        "changed_modules": ["pricing-domain"],
-        "unrelated_modules_changed": 0,
-        "review_window_days": 30,
-    },
+    "change_impact": change_impact,
+    "impact_mutations": impact_mutations,
     "external_network_used": False,
 }
 print(json.dumps(report, ensure_ascii=False, sort_keys=True))
