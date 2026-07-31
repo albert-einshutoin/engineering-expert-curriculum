@@ -1,0 +1,344 @@
+<section id="why">
+  <h2>なぜ重要か</h2>
+  <p>incident responseの第一目的は利用者影響を止め安全に回復することであり、学習reviewの目的は次の対応能力をsystemとして改善することである。記憶だけの物語、唯一のroot cause、担当者への非難では、意思決定時に利用できたsignalと再発を許したsystem conditionを検証できない。</p>
+  <p>NIST SP 800-61 Rev. 3（April 2025）はincident responseをCybersecurity Risk Managementへ統合する。Google SRE WorkbookのIncident Responseは組織的な応答を、Postmortem Culture — Learning from Failureは学習文化を扱う。ここでは両者をevidence timeline、利用者影響、意思決定、contributing factor、verifiable actionへ落とす。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> timelineが整っても因果関係が自動的に証明されるわけではない。simulated evidenceの欠測と限界を残し、観測事実、解釈、反証条件を区別する。review生成command successと、利用者影響が回復し対策が有効だったsystem outcomeも別々に検証する。</p>
+  </aside>
+</section>
+<section id="mental-model">
+  <h2>メンタルモデル</h2>
+  <p>最初にclockとevidence IDを揃え、何がいつ観測されたかだけを並べる。次にdetectionとrecoveryの入力からimpactを算出し、当時のdecisionをその時点までに利用可能だったevidenceへ結ぶ。contributing factorは個人の性質ではなく、alert、権限、interface、容量、変更境界など変更可能なsystem conditionとして記述する。</p>
+  <figure>
+    <figcaption>incident evidenceを検証可能な学習へ変えるreview chain</figcaption>
+    <ol>
+      <li><strong>Evidence:</strong> timestamp、source、観測値、evidence IDを固定する。</li>
+      <li><strong>Timeline:</strong> clockを揃えて観測事実を時刻順に並べる。</li>
+      <li><strong>Impact:</strong> detection、recovery、affected rateから利用者影響を導く。</li>
+      <li><strong>Decision:</strong> 当時利用可能だったevidenceと判断を結ぶ。</li>
+      <li><strong>Factor:</strong> 複数のsystem conditionと反証可能な仮説を残す。</li>
+      <li><strong>Action:</strong> owner、due、verification、evidenceで完了を定義する。</li>
+    </ol>
+  </figure>
+  <p>non-blamingはaccountabilityを消す言い換えではない。個人の注意力を再発防止策にせず、誰が改善を所有し、どのfixtureとsignalで効果を確認し、失敗時に何を再設計するかを明確にする。</p>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>checkout latency incidentを証拠から再構成する</h3>
+  <dl>
+    <dt>前提</dt>
+    <dd>lesson-defined simulated incidentであり、実利用者、実組織、production logを観測したものではない。限られたevidenceでreview構造とimpact導出を検査するfixtureである。</dd>
+    <dt>入力</dt>
+    <dd>順序を崩した四つのevidence event、baseline detection minute、recovery minute、毎分のaffected request数、二つのdecision、system condition、action定義を与える。</dd>
+    <dt>操作</dt>
+    <dd>eventをminute順に並べ、recoveryからdetectionを引いてimpact durationを算出する。decisionとactionのevidence IDがtimeline内に存在することをfail closedで検査する。</dd>
+    <dt>観測</dt>
+    <dd>detection minuteだけを変えると同じincident evidenceでもimpact minutesが増える。impact式をrecovery minuteだけへ差し替えるとincident-causal-invariantが検知する。</dd>
+    <dt>結論</dt>
+    <dd>command successだけではreviewは完了しない。impact、evidence-linked decision、non-blamingなsystem condition、verifiable actionが揃い、その後のsystem outcomeで対策を検証できることが学習証拠になる。</dd>
+  </dl>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+import json
+
+HARNESS = "incident_learning_review_lab_v1"
+TRANSFER_TASK = (
+    "検知遅延だけを変え、同じincident evidenceから影響時間と"
+    "学習行動を再評価する"
+)
+INCIDENT_EVIDENCE = [
+    {
+        "evidence_id": "ev-recovery",
+        "minute": 48,
+        "source": "checkout-sli",
+        "observation": "latency and success returned inside SLO",
+    },
+    {
+        "evidence_id": "ev-change",
+        "minute": 0,
+        "source": "deployment-record",
+        "observation": "connection pool configuration activated",
+    },
+    {
+        "evidence_id": "ev-mitigation",
+        "minute": 34,
+        "source": "incident-command-log",
+        "observation": "previous connection pool setting restored",
+    },
+    {
+        "evidence_id": "ev-saturation",
+        "minute": 9,
+        "source": "database-metric",
+        "observation": "connection waiters exceeded alert threshold",
+    },
+]
+BASELINE_ASSUMPTION = {
+    "detection_minute": 18,
+}
+TRANSFER_ASSUMPTION = {
+    "detection_minute": 10,
+}
+IMPACT_INPUT = {
+    "recovery_minute": 48,
+    "affected_requests_per_minute": 24,
+}
+DECISION_INPUTS = [
+    {
+        "decision": "declare incident and assign incident commander",
+        "minute": 18,
+        "evidence_ids": ["ev-saturation"],
+    },
+    {
+        "decision": "restore previous connection pool setting",
+        "minute": 31,
+        "evidence_ids": ["ev-change", "ev-saturation"],
+    },
+]
+FACTOR_INPUTS = [
+    {
+        "factor_id": "factor-alert-routing",
+        "system_condition": (
+            "database saturation alert was not routed to checkout on-call"
+        ),
+        "individual_blame": False,
+        "evidence_ids": ["ev-saturation"],
+    },
+    {
+        "factor_id": "factor-change-guard",
+        "system_condition": (
+            "connection pool change lacked a saturation stop condition"
+        ),
+        "individual_blame": False,
+        "evidence_ids": ["ev-change", "ev-saturation"],
+    },
+]
+ACTION_INPUTS = [
+    {
+        "action_id": "action-route-alert",
+        "owner": "observability-owner",
+        "due": "2026-08-14",
+        "verification": (
+            "inject saturation signal and observe checkout on-call receipt"
+        ),
+        "evidence_ids": ["ev-saturation"],
+    },
+    {
+        "action_id": "action-canary-pool",
+        "owner": "database-reliability-owner",
+        "due": "2026-08-21",
+        "verification": (
+            "replay pool-change fixture and require saturation rollback"
+        ),
+        "evidence_ids": ["ev-change", "ev-mitigation"],
+    },
+]
+
+def derive_impact(detection_minute, recovery_minute, affected_rate):
+    impact_minutes = recovery_minute - detection_minute
+    # 単純な出力置換を見逃さないよう、元入力へ戻せる加法不変条件で
+    # impactの因果を検査する。
+    if (
+        impact_minutes &lt;= 0
+        or impact_minutes + detection_minute != recovery_minute
+    ):
+        raise AssertionError(
+            "incident-causal-invariant: impact derivation bypassed"
+        )
+    return {
+        "duration_minutes": impact_minutes,
+        "affected_requests": impact_minutes * affected_rate,
+    }
+
+def validate_evidence_links(items, evidence_ids, item_kind):
+    for item in items:
+        if not set(item["evidence_ids"]).issubset(evidence_ids):
+            raise AssertionError(
+                "incident-causal-invariant: "
+                + item_kind
+                + " has unknown evidence"
+            )
+
+def main():
+    timeline = sorted(
+        INCIDENT_EVIDENCE,
+        key=lambda event: event["minute"],
+    )
+    evidence_ids = {
+        event["evidence_id"]
+        for event in timeline
+    }
+    validate_evidence_links(DECISION_INPUTS, evidence_ids, "decision")
+    validate_evidence_links(FACTOR_INPUTS, evidence_ids, "factor")
+    validate_evidence_links(ACTION_INPUTS, evidence_ids, "action")
+    if (
+        len(FACTOR_INPUTS) &lt; 2
+        or not all(
+            factor["system_condition"]
+            and not factor["individual_blame"]
+            for factor in FACTOR_INPUTS
+        )
+    ):
+        raise AssertionError(
+            "incident-causal-invariant: non-blaming factors missing"
+        )
+    baseline = derive_impact(
+        BASELINE_ASSUMPTION["detection_minute"],
+        IMPACT_INPUT["recovery_minute"],
+        IMPACT_INPUT["affected_requests_per_minute"],
+    )
+    transferred = derive_impact(
+        TRANSFER_ASSUMPTION["detection_minute"],
+        IMPACT_INPUT["recovery_minute"],
+        IMPACT_INPUT["affected_requests_per_minute"],
+    )
+    changed_fields = [
+        field
+        for field in sorted(BASELINE_ASSUMPTION)
+        if BASELINE_ASSUMPTION[field] != TRANSFER_ASSUMPTION[field]
+    ]
+    if (
+        changed_fields != ["detection_minute"]
+        or transferred["duration_minutes"]
+        &lt;= baseline["duration_minutes"]
+    ):
+        raise AssertionError(
+            "incident-causal-invariant: transfer changed wrong cause"
+        )
+    report = {
+        "harness": HARNESS,
+        "fixture_metadata": {
+            "kind": "simulated",
+            "provenance": "lesson-defined checkout incident evidence",
+            "limitations": (
+                "simulated eventsでありproductionの因果、全signal、"
+                "利用者影響を網羅しない"
+            ),
+            "synthetic_or_observed_explicit": (
+                "値はすべてsimulated入力またはその計算結果"
+            ),
+        },
+        "runtime_bound": {
+            "records": (
+                len(INCIDENT_EVIDENCE)
+                + len(DECISION_INPUTS)
+                + len(FACTOR_INPUTS)
+                + len(ACTION_INPUTS)
+            ),
+            "subprocesses": 0,
+            "maximum_iterations": (
+                len(INCIDENT_EVIDENCE)
+                + len(DECISION_INPUTS)
+                + len(FACTOR_INPUTS)
+                + len(ACTION_INPUTS)
+            ),
+        },
+        "external_network_used": False,
+        "evidence_timeline": timeline,
+        "impact": baseline,
+        "decisions": DECISION_INPUTS,
+        "contributing_factors": FACTOR_INPUTS,
+        "verifiable_actions": ACTION_INPUTS,
+        "detection_delay_transfer": {
+            "changed_assumption": "detection-delay",
+            "changed_fields": changed_fields,
+            "same_incident_evidence": (
+                timeline
+                == sorted(
+                    INCIDENT_EVIDENCE,
+                    key=lambda event: event["minute"],
+                )
+            ),
+            "baseline_impact_minutes": baseline["duration_minutes"],
+            "transferred_impact_minutes": (
+                transferred["duration_minutes"]
+            ),
+        },
+        "command_success_distinction": {
+            "command_completed": True,
+            "system_outcome_checked": (
+                baseline["affected_requests"] &gt; 0
+                and transferred["affected_requests"]
+                &gt; baseline["affected_requests"]
+                and all(action["verification"] for action in ACTION_INPUTS)
+            ),
+            "command_success_equals_system_outcome": False,
+            "outcome_evidence": (
+                "impact、evidence links、system factors、action verification"
+            ),
+        },
+        "mastery_evidence": {
+            "lab_steps": [
+                {"step": 1, "evidence": timeline},
+                {"step": 2, "evidence": FACTOR_INPUTS + ACTION_INPUTS},
+                {"step": 3, "evidence": transferred},
+            ],
+            "assessments": [
+                {"assessment": 1, "evidence": FACTOR_INPUTS},
+                {"assessment": 2, "evidence": ACTION_INPUTS},
+            ],
+            "rubric_dimensions": [
+                "technical-correctness",
+                "judgment",
+                "evidence",
+                "communication",
+            ],
+            "transfer": {
+                "task": TRANSFER_TASK,
+                "changed_assumption": "detection-delay",
+                "evidence": transferred,
+            },
+        },
+    }
+    print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+
+main()
+PY</code></pre>
+</section>
+<section id="tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <table>
+    <caption>incident learning reviewのdecision table</caption>
+    <thead>
+      <tr>
+        <th scope="col">観測</th>
+        <th scope="col">判断</th>
+        <th scope="col">追加証拠</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row">利用者影響が継続し回復策が可逆</th>
+        <td>回復を優先してincident responseを継続する</td>
+        <td>SLI、command log、rollback outcome</td>
+      </tr>
+      <tr>
+        <th scope="row">factorが個人の性質だけを指す</th>
+        <td>reviewを完了せずsystem conditionへ再分析する</td>
+        <td>当時のsignal、権限、guard、workload</td>
+      </tr>
+      <tr>
+        <th scope="row">actionにownerかverificationがない</th>
+        <td>完了条件を再設計する</td>
+        <td>due、fixture、成功条件、evidence ID</td>
+      </tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><strong>誤診:</strong> 最初に異常を見た担当者の確認不足がroot causeである。<strong>反証:</strong> evidenceはalert routingと変更時のstop conditionというsystem conditionを示し、別の担当者でも同じ失敗を許す。</li>
+    <li><strong>誤診:</strong> timelineが完成したので因果は確定した。<strong>反証:</strong> timelineは観測順序を示すが、欠測signalやcounterfactualを含まず、contributing factorは反証可能な仮説として残す必要がある。</li>
+    <li><strong>誤診:</strong> 「監視を強化する」をactionにすれば再発防止になる。<strong>反証:</strong> owner、due、対象signal、検証fixture、成功条件がなければ完了もsystem outcomeも確認できない。</li>
+  </ul>
+</section>
+<section id="knowledge-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>evidence timelineで観測事実、解釈、decisionをどう分離するか。</li>
+    <li>non-blamingなcontributing factorと曖昧な一般論をどう区別するか。</li>
+    <li>verifiable actionに必要な四つのfieldとevidenceへの接続を説明せよ。</li>
+    <li>detection minuteだけを変える時、固定すべきincident evidenceは何か。</li>
+  </ol>
+</section>
+<section id="sources">
+  <h2>出典と次の学習</h2>
+  <p>NIST SP 800-61 Rev. 3: Incident Response Recommendations and Considerations for Cybersecurity Risk Management（April 2025）をrisk managementとの接続に使う。Google SRE Workbook: Incident Responseを応答構造に、Postmortem Culture — Learning from Failureをnon-blamingな学習運用に使う。完全な書誌情報と参照先はlesson metadataに分離している。</p>
+  <p>次はcore-24で、incidentから得た停止条件をfail-closed CI、staged delivery、provenance verification、rollback outcomeへ接続する。</p>
+</section>
