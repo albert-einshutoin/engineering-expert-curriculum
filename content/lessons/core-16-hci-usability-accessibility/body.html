@@ -49,6 +49,10 @@ OBSERVATION_FIXTURE = [
             "pointer-primary": "all-controls-reachable-and-focus-visible",
             "keyboard-only": "focus-visible-but-navigation-traps",
         },
+        "operation_by_input_mode": {
+            "pointer-primary": "click-each-control-in-visual-order",
+            "keyboard-only": "tab-and-activate-each-control",
+        },
     },
     {
         "dimension": "zoom-200",
@@ -61,6 +65,10 @@ OBSERVATION_FIXTURE = [
                 "no-content-loss-or-two-dimensional-scroll"
             ),
         },
+        "operation_by_input_mode": {
+            "pointer-primary": "zoom-with-pointer-menu-to-200-percent",
+            "keyboard-only": "zoom-with-keyboard-shortcut-to-200-percent",
+        },
     },
     {
         "dimension": "reading-order",
@@ -69,6 +77,10 @@ OBSERVATION_FIXTURE = [
             "pointer-primary": "dom-order-matches-meaning-order",
             "keyboard-only": "dom-order-matches-meaning-order",
         },
+        "operation_by_input_mode": {
+            "pointer-primary": "inspect-visual-reading-sequence",
+            "keyboard-only": "traverse-focus-and-reading-sequence",
+        },
     },
     {
         "dimension": "usability",
@@ -76,6 +88,10 @@ OBSERVATION_FIXTURE = [
         "actual_by_input_mode": {
             "pointer-primary": "four-of-five-tasks-completed",
             "keyboard-only": "four-of-five-tasks-completed",
+        },
+        "operation_by_input_mode": {
+            "pointer-primary": "complete-five-tasks-with-pointer",
+            "keyboard-only": "complete-five-tasks-with-keyboard-only",
         },
     },
 ]
@@ -90,7 +106,10 @@ def derive_observations(fixture, input_mode):
         observation["input_mode"] = input_mode
         actual = source["actual_by_input_mode"][input_mode]
         observation["actual"] = actual
+        operation = source["operation_by_input_mode"][input_mode]
+        observation["operation"] = operation
         observation.pop("actual_by_input_mode")
+        observation.pop("operation_by_input_mode")
         passed = observation["actual"] == observation["expected"]
         observation["passed"] = passed
         observations.append(observation)
