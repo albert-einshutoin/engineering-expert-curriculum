@@ -233,10 +233,16 @@ def _scan_markup_syntax(document: str) -> None:
 
 
 class _PageParser(HTMLParser):
-    def __init__(self, relative: PurePosixPath, issues: _Issues) -> None:
+    def __init__(
+        self,
+        relative: PurePosixPath,
+        issues: _Issues,
+        document: str,
+    ) -> None:
         super().__init__(convert_charrefs=True)
         self.relative = relative
         self.issues = issues
+        self.document_lines = document.splitlines(keepends=True)
         self.stack: list[str] = []
         self.ids: set[str] = set()
         self.references: list[_LocalReference] = []
@@ -251,6 +257,9 @@ class _PageParser(HTMLParser):
         self.open_heading: int | None = None
         self.skip_targets: list[str | None] = []
         self.charset_values: list[str] = []
+        self.charset_locations: list[bool] = []
+        self.head_count = 0
+        self.head_depth = 0
         self.csp_values: list[str] = []
         self.stylesheet_count = 0
         self.doctype_count = 0
@@ -260,6 +269,13 @@ class _PageParser(HTMLParser):
         if not self.malformed:
             self.issues.add(self.relative, "malformed HTML")
         self.malformed = True
+
+    def _current_tag_end_byte(self) -> int:
+        line_number, column = self.getpos()
+        prefix = "".join(self.document_lines[: line_number - 1])
+        prefix += self.document_lines[line_number - 1][:column]
+        raw_tag = self.get_starttag_text() or ""
+        return len(prefix.encode("utf-8")) + len(raw_tag.encode("utf-8"))
 
     def handle_decl(self, decl: str) -> None:
         if decl.casefold().strip() != "doctype html":
@@ -289,7 +305,17 @@ class _PageParser(HTMLParser):
             values.setdefault(name.casefold(), value)
         if tag in _FORBIDDEN_ELEMENTS:
             self.issues.add(self.relative, f"{tag} is forbidden")
-        if tag == "template" or "hidden" in values or "inert" in values:
+        aria_hidden = (
+            (values.get("aria-hidden") or "").strip().casefold() == "true"
+        )
+        closed_disclosure = tag in {"details", "dialog"} and "open" not in values
+        if (
+            tag == "template"
+            or "hidden" in values
+            or "inert" in values
+            or aria_hidden
+            or closed_disclosure
+        ):
             # The release contract must describe the rendered accessibility
             # tree. Counting required landmarks inside inert DOM would turn a
             # visually empty document into a false success.
@@ -324,6 +350,10 @@ class _PageParser(HTMLParser):
             else:
                 self.ids.add(identifier)
 
+        if tag == "head":
+            self.head_count += 1
+            self.head_depth += 1
+
         if tag == "html":
             self.html_langs.append(values.get("lang") or "")
         elif tag == "title":
@@ -342,6 +372,12 @@ class _PageParser(HTMLParser):
             if "charset" in values:
                 self.charset_values.append(
                     (values.get("charset") or "").casefold()
+                )
+                # HTML encoding declarations are effective only inside head and
+                # when their complete tag occurs within the first 1024 bytes.
+                self.charset_locations.append(
+                    self.head_depth == 1
+                    and self._current_tag_end_byte() <= 1024
                 )
             http_equiv = (values.get("http-equiv") or "").strip().casefold()
             if http_equiv == "refresh":
@@ -445,6 +481,8 @@ class _PageParser(HTMLParser):
         self.stack.pop()
         if tag == "title":
             self.title_depth -= 1
+        elif tag == "head":
+            self.head_depth -= 1
         elif len(tag) == 2 and tag[0] == "h" and tag[1] in "123456":
             self.open_heading = None
 
@@ -487,7 +525,11 @@ class _PageParser(HTMLParser):
                     self.relative,
                     "skip link target must be the main element id",
                 )
-        if self.charset_values != ["utf-8"]:
+        if (
+            self.head_count != 1
+            or self.charset_values != ["utf-8"]
+            or self.charset_locations != [True]
+        ):
             self.issues.add(
                 self.relative,
                 "charset must be declared exactly once as utf-8",
@@ -739,7 +781,7 @@ def _validate_html(
     except SiteValidationError:
         issues.add(relative, "malformed HTML")
         return None
-    parser = _PageParser(relative, issues)
+    parser = _PageParser(relative, issues, document)
     try:
         parser.feed(document)
         parser.close()
