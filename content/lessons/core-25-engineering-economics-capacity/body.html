@@ -1,0 +1,486 @@
+<section id="why">
+  <h2>なぜ重要か</h2>
+  <p>engineering投資はcloud invoiceだけでは比較できない。実装に使う時間は他の価値を遅らせるopportunity costになり、手作業はoperations hoursを消費し、障害はreliability costを生み、capacity不足は安価な案を実行不能にする。</p>
+  <p>FinOps Frameworkのunit economicsはcostをbusiness valueの単位へ結ぶ。AWS Well-ArchitectedとGoogle Cloud Well-Architectedのcost guidanceも、最安serviceの選択ではなく、workload要求、利用量、事業価値、継続的な見直しを扱う。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> lessonの金額はsynthetic fixtureであり、現在のprovider price accuracyを主張しない。実投資では地域、通貨、税、契約、discount、利用形状、観測日を確認し、同じ計算式へ最新入力を入れる必要がある。</p>
+  </aside>
+</section>
+<section id="mental-model">
+  <h2>メンタルモデル</h2>
+  <p>投資候補をcostの一点ではなく、制約を満たしたうえで価値を届けるoptionとして比べる。まず単位と期間を揃え、次にcapacity breachを除外し、残った候補をunit economicsとsensitivityで比較する。</p>
+  <figure>
+    <figcaption>入力からcapacity制約とunit economicsを経て投資判断へ至るchain</figcaption>
+    <ol>
+      <li><strong>Direct:</strong> fixtureで与えた取得・実行費を置く。</li>
+      <li><strong>Opportunity:</strong> engineering hoursと一時間の代替価値を掛ける。</li>
+      <li><strong>Operations:</strong> operations hoursと運用単価を掛ける。</li>
+      <li><strong>Reliability:</strong> 障害確率、時間、時間当たり影響を掛ける。</li>
+      <li><strong>Capacity:</strong> 需要と供給からheadroomとbreachを導く。</li>
+      <li><strong>Decision:</strong> 制約違反を先に、unit costを次に比較する。</li>
+    </ol>
+  </figure>
+  <p>costは精密な一値に見えても仮定の積み重ねである。best case、expected、worst caseを分けるsensitivityが、どの入力で選択が反転するかを示す。過去に支払ったsunk costは将来選択のbenefitへ足さない。</p>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>scale-upとautomationの投資比較</h3>
+  <dl>
+    <dt>前提</dt>
+    <dd>二候補のlesson-defined synthetic fixtureを同じ期間で比較する。金額はproduction forecastでもprovider quoteでもない。</dd>
+    <dt>入力</dt>
+    <dd>direct cost、engineering hours、operations hours、incident確率と影響、capacity、base demand 800 unitsを与える。</dd>
+    <dt>操作</dt>
+    <dd>各cost componentとtotal cost、served units当たりunit cost、capacity headroomを導く。transferではdemand growthだけを0から0.5へ変える。</dd>
+    <dt>観測</dt>
+    <dd>baselineではscale-upのunit costが低い。需要が1.5倍になるとscale-upはrequired capacityを満たさず、同じ候補とcost入力でもautomationが選ばれる。</dd>
+    <dt>結論</dt>
+    <dd>command successとして表を生成できても、system outcomeとして必要容量とreliability制約を満たすとは限らない。制約と感度を含む選択が必要である。</dd>
+  </dl>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+import json
+
+HARNESS = "engineering_economics_lab_v1"
+BASE_DEMAND = 800
+BASELINE_ASSUMPTIONS = {
+    "demand_growth": 0.0,
+    "engineering_hour_value": 100,
+    "operations_hour_cost": 80,
+    "loss_per_incident_hour": 10000,
+}
+TRANSFER_ASSUMPTIONS = {
+    "engineering_hour_value": 100,
+    "operations_hour_cost": 80,
+    "loss_per_incident_hour": 10000,
+    "demand_growth": 0.5,
+}
+INVESTMENT_CANDIDATES = [
+    {
+        "id": "scale-up",
+        "direct_cost": 12000,
+        "engineering_hours": 40,
+        "operations_hours": 20,
+        "failure_probability": 0.05,
+        "expected_incident_hours": 8,
+        "capacity": 1000,
+    },
+    {
+        "id": "automation",
+        "direct_cost": 16000,
+        "engineering_hours": 120,
+        "operations_hours": 5,
+        "failure_probability": 0.01,
+        "expected_incident_hours": 2,
+        "capacity": 1600,
+    },
+]
+PRICE_CONTEXT = {
+    "kind": "synthetic-fixture",
+    "claim_current_market_prices": False,
+    "limitation": (
+        "地域、通貨、税、契約、discount、観測日を含まない"
+    ),
+}
+COMMAND_INPUT = {"exit_code": 0}
+ASSUMPTION_FIELDS = {
+    "demand_growth",
+    "engineering_hour_value",
+    "operations_hour_cost",
+    "loss_per_incident_hour",
+}
+CANDIDATE_FIELDS = {
+    "id",
+    "direct_cost",
+    "engineering_hours",
+    "operations_hours",
+    "failure_probability",
+    "expected_incident_hours",
+    "capacity",
+}
+
+def is_number(value):
+    return type(value) in {int, float} and type(value) is not bool
+
+def validate_assumption_transfer(baseline, transferred):
+    for assumptions in (baseline, transferred):
+        if (
+            type(assumptions) is not dict
+            or set(assumptions) != ASSUMPTION_FIELDS
+            or not all(
+                is_number(value) and value &gt;= 0
+                for value in assumptions.values()
+            )
+        ):
+            raise AssertionError(
+                "economics-transfer-invariant: invalid assumption schema"
+            )
+    changed = [
+        field
+        for field in sorted(set(baseline) | set(transferred))
+        if (
+            field not in baseline
+            or field not in transferred
+            or baseline[field] != transferred[field]
+        )
+    ]
+    if changed != ["demand_growth"]:
+        raise AssertionError(
+            "economics-transfer-invariant: transfer changed wrong input"
+        )
+    return changed
+
+def validate_candidate_snapshot(candidates):
+    valid = (
+        type(candidates) is list
+        and bool(candidates)
+        and all(
+            type(candidate) is dict
+            and set(candidate) == CANDIDATE_FIELDS
+            and type(candidate["id"]) is str
+            and bool(candidate["id"])
+            and all(
+                is_number(candidate[field])
+                and candidate[field] &gt;= 0
+                for field in CANDIDATE_FIELDS - {"id"}
+            )
+            and candidate["capacity"] &gt; 0
+            and candidate["failure_probability"] &lt;= 1
+            for candidate in candidates
+        )
+        and len({candidate["id"] for candidate in candidates})
+        == len(candidates)
+    )
+    if not valid:
+        raise AssertionError(
+            "economics-candidate-invariant: invalid candidate schema"
+        )
+
+def fixed_candidate_snapshot():
+    # JSON値から別々のfull snapshotを作り、ID一致だけでnested costや
+    # capacityのdriftを見逃さない。
+    return json.loads(
+        json.dumps(INVESTMENT_CANDIDATES, ensure_ascii=False)
+    )
+
+def validate_economics_context():
+    if (
+        not is_number(BASE_DEMAND)
+        or BASE_DEMAND &lt;= 0
+        or type(PRICE_CONTEXT) is not dict
+        or set(PRICE_CONTEXT)
+        != {"kind", "claim_current_market_prices", "limitation"}
+        or type(PRICE_CONTEXT["kind"]) is not str
+        or not PRICE_CONTEXT["kind"]
+        or type(PRICE_CONTEXT["claim_current_market_prices"]) is not bool
+        or type(PRICE_CONTEXT["limitation"]) is not str
+        or not PRICE_CONTEXT["limitation"]
+        or type(COMMAND_INPUT) is not dict
+        or set(COMMAND_INPUT) != {"exit_code"}
+        or type(COMMAND_INPUT["exit_code"]) is not int
+    ):
+        raise AssertionError(
+            "economics-candidate-invariant: invalid context schema"
+        )
+
+def compare_investment(candidate, assumptions):
+    required_capacity = round(
+        BASE_DEMAND * (1 + assumptions["demand_growth"])
+    )
+    direct_cost = candidate["direct_cost"]
+    opportunity_cost = (
+        candidate["engineering_hours"]
+        * assumptions["engineering_hour_value"]
+    )
+    operations_cost = (
+        candidate["operations_hours"]
+        * assumptions["operations_hour_cost"]
+    )
+    reliability_cost = (
+        candidate["failure_probability"]
+        * candidate["expected_incident_hours"]
+        * assumptions["loss_per_incident_hour"]
+    )
+    total_cost = direct_cost + opportunity_cost + operations_cost + reliability_cost
+    served_units = min(candidate["capacity"], required_capacity)
+    capacity_headroom = candidate["capacity"] - required_capacity
+    constraint_breaches = int(capacity_headroom &lt; 0)
+    return {
+        "id": candidate["id"],
+        "direct_cost": direct_cost,
+        "opportunity_cost": opportunity_cost,
+        "operations_cost": operations_cost,
+        "reliability_cost": reliability_cost,
+        "total_cost": total_cost,
+        "served_units": served_units,
+        "unit_cost": total_cost / served_units,
+        "operations_hours": candidate["operations_hours"],
+        "capacity": candidate["capacity"],
+        "required_capacity": required_capacity,
+        "capacity_headroom": capacity_headroom,
+        "constraint_breaches": constraint_breaches,
+    }
+
+def compare_all(candidates, assumptions):
+    return [
+        compare_investment(candidate, assumptions)
+        for candidate in candidates
+    ]
+
+def select_investment(comparisons):
+    return min(
+        comparisons,
+        key=lambda option: (
+            option["constraint_breaches"],
+            option["unit_cost"],
+        ),
+    )["id"]
+
+def main():
+    validate_economics_context()
+    changed_fields = validate_assumption_transfer(
+        BASELINE_ASSUMPTIONS,
+        TRANSFER_ASSUMPTIONS,
+    )
+    validate_candidate_snapshot(INVESTMENT_CANDIDATES)
+    baseline_assumptions = json.loads(
+        json.dumps(BASELINE_ASSUMPTIONS, ensure_ascii=False)
+    )
+    transferred_assumptions = json.loads(
+        json.dumps(TRANSFER_ASSUMPTIONS, ensure_ascii=False)
+    )
+    baseline_candidates = fixed_candidate_snapshot()
+    transferred_candidates = fixed_candidate_snapshot()
+    validate_candidate_snapshot(baseline_candidates)
+    validate_candidate_snapshot(transferred_candidates)
+    baseline = compare_all(
+        baseline_candidates,
+        baseline_assumptions,
+    )
+    if baseline_candidates != transferred_candidates:
+        raise AssertionError(
+            "economics-candidate-invariant: candidate snapshots drifted"
+        )
+    transferred = compare_all(
+        transferred_candidates,
+        transferred_assumptions,
+    )
+    for option in baseline + transferred:
+        component_sum = (
+            option["direct_cost"]
+            + option["opportunity_cost"]
+            + option["operations_cost"]
+            + option["reliability_cost"]
+        )
+        assert (
+            option["total_cost"] == component_sum
+        ), "economics-causal-invariant"
+        assert (
+            option["unit_cost"]
+            == option["total_cost"] / option["served_units"]
+        ), "economics-unit-invariant"
+        assert (
+            option["capacity_headroom"]
+            == option["capacity"] - option["required_capacity"]
+        ), "economics-capacity-invariant"
+
+    baseline_selected = select_investment(baseline)
+    transferred_selected = select_investment(transferred)
+    same_candidates = baseline_candidates == transferred_candidates
+    sensitivity_recomputed = (
+        baseline[0]["required_capacity"]
+        != transferred[0]["required_capacity"]
+    )
+    system_outcome = all(
+        option["constraint_breaches"] == 0
+        for option in baseline
+        if option["id"] == baseline_selected
+    )
+    assert baseline_selected == "scale-up", "economics-baseline-invariant"
+    assert transferred_selected == "automation", "economics-transfer-invariant"
+
+    report = {
+        "harness": HARNESS,
+        "investment_comparison": baseline,
+        "decision": {
+            "selected_option": baseline_selected,
+            "selection_order": [
+                "constraint_breaches",
+                "unit_cost",
+            ],
+        },
+        "sensitivity_comparison": transferred,
+        "demand_growth_transfer": {
+            "changed_assumption": "demand-growth",
+            "changed_fields": changed_fields,
+            "baseline_assumptions": baseline_assumptions,
+            "transferred_assumptions": transferred_assumptions,
+            "same_investment_candidates": same_candidates,
+            "baseline_candidate_snapshot": baseline_candidates,
+            "transferred_candidate_snapshot": transferred_candidates,
+            "baseline_selected_option": baseline_selected,
+            "transferred_selected_option": transferred_selected,
+            "baseline_demand_growth": baseline_assumptions[
+                "demand_growth"
+            ],
+            "transferred_demand_growth": transferred_assumptions[
+                "demand_growth"
+            ],
+            "sensitivity_recomputed": sensitivity_recomputed,
+        },
+        "price_claim": {
+            "current_price_claimed": PRICE_CONTEXT[
+                "claim_current_market_prices"
+            ],
+            "fixture_only": PRICE_CONTEXT["kind"]
+            == "synthetic-fixture",
+            "accuracy_limitation": PRICE_CONTEXT["limitation"],
+        },
+        "fixture_metadata": {
+            "kind": "synthetic",
+            "provenance": "lesson-defined engineering economics fixture",
+            "limitations": PRICE_CONTEXT["limitation"],
+            "synthetic_or_observed_explicit": True,
+        },
+        "runtime_bound": {
+            "records": (
+                len(INVESTMENT_CANDIDATES)
+                * len([baseline_assumptions, transferred_assumptions])
+            ),
+            "subprocesses": 0,
+            "maximum_iterations": len(baseline_candidates),
+        },
+        "external_network_used": False,
+        "command_success_distinction": {
+            "command_completed": COMMAND_INPUT["exit_code"] == 0,
+            "system_outcome_checked": system_outcome,
+            "command_success_equals_system_outcome": (
+                COMMAND_INPUT["exit_code"] == 0
+                and not system_outcome
+            ),
+            "outcome_evidence": {
+                "selected": baseline_selected,
+                "constraint_breaches": [
+                    option["constraint_breaches"]
+                    for option in baseline
+                    if option["id"] == baseline_selected
+                ],
+            },
+        },
+        "mastery_evidence": {
+            "lab_steps": [
+                {
+                    "step": index,
+                    "evidence": evidence,
+                }
+                for index, evidence in enumerate(
+                    [
+                        PRICE_CONTEXT,
+                        baseline_candidates,
+                        [
+                            option["capacity_headroom"]
+                            for option in baseline
+                        ],
+                        baseline_selected,
+                        transferred_selected,
+                    ],
+                    start=1,
+                )
+            ],
+            "assessments": [
+                {
+                    "assessment": 1,
+                    "evidence": [
+                        option["total_cost"]
+                        for option in baseline
+                    ],
+                },
+                {
+                    "assessment": 2,
+                    "evidence": PRICE_CONTEXT["limitation"],
+                },
+            ],
+            "rubric_dimensions": [
+                "technical-correctness",
+                "judgment",
+                "evidence",
+                "communication",
+            ],
+            "transfer": {
+                "task": (
+                    "demand growthだけを変え、同じ投資候補の"
+                    "unit economicsと選択を感度分析で再評価する"
+                ),
+                "changed_assumption": "demand-growth",
+                "evidence": {
+                    "baseline": baseline_selected,
+                    "transferred": transferred_selected,
+                },
+            },
+        },
+    }
+    print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+
+try:
+    main()
+except AssertionError as error:
+    raise SystemExit(str(error)) from None
+PY</code></pre>
+</section>
+<section id="tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <table>
+    <caption>制約と感度から投資行動を選ぶdecision table</caption>
+    <thead>
+      <tr>
+        <th scope="col">観測</th>
+        <th scope="col">判断</th>
+        <th scope="col">次の行動</th>
+        <th scope="col">残す証拠</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row">capacity breachあり</th>
+        <td>その需要条件では選ばない</td>
+        <td>需要抑制、分割、別候補を比較</td>
+        <td>required capacityとheadroom</td>
+      </tr>
+      <tr>
+        <th scope="row">制約内でunit costが低い</th>
+        <td>小さく採用</td>
+        <td>実績を観測して入力を校正</td>
+        <td>served unit、cost、reliability</td>
+      </tr>
+      <tr>
+        <th scope="row">仮定で選択が反転</th>
+        <td>段階投資</td>
+        <td>反転入力を先に測定</td>
+        <td>sensitivity rangeとowner</td>
+      </tr>
+      <tr>
+        <th scope="row">価格時点が不明</th>
+        <td>予算断定を停止</td>
+        <td>official quoteと契約を更新</td>
+        <td>地域、通貨、期間、観測日</td>
+      </tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><strong>誤診:</strong> direct costが最小なので最も経済的である。<strong>反証:</strong> opportunity cost、operations hours、reliability loss、capacity breachを同じ期間と単位で加える。</li>
+    <li><strong>誤診:</strong> 小数点まで計算したのでprice accuracyが高い。<strong>反証:</strong> 金額の出自、観測日、地域、契約、uncertaintyを示し、入力範囲でsensitivityを再実行する。</li>
+  </ul>
+</section>
+<section id="knowledge-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>engineering hoursをopportunity costへ変換するときの二重計上をどう防ぐか。</li>
+    <li>unit costが低くてもcapacity不足の候補を選べない理由を説明せよ。</li>
+    <li>reliabilityを金額へ換算できない場合、どの制約と定量証拠を残すか。</li>
+    <li>command successとsystem outcomeを分ける投資後の観測を三つ挙げよ。</li>
+  </ol>
+</section>
+<section id="sources-next">
+  <h2>出典と次の学習</h2>
+  <p>FinOps FrameworkのUnit EconomicsとArchitecting and Workload Placement、AWS Well-Architected Cost Optimization Pillar、Google Cloud Well-Architected cost optimization pillarを、事業価値、workload制約、継続改善の一次guidanceとして使った。</p>
+  <p>次はproviderのcurrent pricing、組織のengineering cost、incident実績、capacity観測を同じschemaへ入れ、fixtureとの差とprice accuracyの限界を明記した投資reviewを行う。</p>
+</section>

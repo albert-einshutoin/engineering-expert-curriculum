@@ -1,0 +1,262 @@
+<section id="why">
+  <h2>なぜ重要か</h2>
+  <p>CPUが命令を実行する速さと、必要なデータが届く速さは同じではない。計算量が同じ二つの実装でも、データの並びと走査順序によって実効帯域が大きく変わる。大きな配列をランダムにたどる処理は、演算よりもキャッシュライン転送やアドレス変換待ちに支配され得る。</p>
+  <p>ここでいうキャッシュは、近くまたは最近使ったデータの複製をCPU近傍へ保持する階層である。TLBはTranslation Lookaside Bufferの略で、仮想ページから物理ページへの変換結果を保持する。似た性能症状を起こすが、同じ機構ではない。誤診すると、配列を小さくすべき場面で巨大ページを試すなど、原因とずれた最適化になる。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> L1は何nsという値を普遍定数として扱わない。世代、周波数、競合、命令、測定法で変わる。coherence、TLB、language memory modelも、それぞれ別の契約である。</p>
+  </aside>
+</section>
+<section id="mental-model">
+  <h2>メンタルモデル</h2>
+  <p>ロード命令がデータへ到達するまでを「変換」と「転送」に分ける。次の図は診断用の論理段階であり、普遍的な逐次時系列ではない。たとえばVIPT方式では、TLBのアドレス変換とL1 cacheのindex lookupが並行し得る。物理tagの照合を含む具体的な重なり方は実装依存なので、実機資料とcounterで仮説を絞る。</p>
+  <figure>
+    <figcaption>一つのロードを診断する論理段階</figcaption>
+    <ol>
+      <li><strong>命令:</strong> 仮想アドレスAの値を要求する。</li>
+      <li><strong>TLB:</strong> Aのページ変換を検索する。missならページテーブルwalkが必要になる。</li>
+      <li><strong>L1 cache:</strong> Aを含むcache lineを検索する。hitなら近い階層で返る。</li>
+      <li><strong>L2と最終レベルcache:</strong> L1 miss後の候補を調べる。L2やLLCがcore-privateか複数coreでsharedかというprivate/shared範囲は機種依存である。</li>
+      <li><strong>memory controller:</strong> 全cacheでmissなら主記憶からline単位で転送する。</li>
+      <li><strong>再利用:</strong> 同じline内の次要素を使えば空間的局所性、短時間に同じ値を使えば時間的局所性を得る。</li>
+    </ol>
+  </figure>
+  <p>データ構造の選択では、オブジェクト数だけでなく、hot pathで同時に読むfieldを考える。Array of Structuresは一要素の全fieldを同時に使う処理に向き、Structure of Arraysは同じfieldを多数要素から読む処理に向き得る。ただし更新の一貫性と可読性の費用も比較する。</p>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>全要素を一回ずつ走査し、サイズとアクセス順だけを変える</h3>
+  <pre><code>python3.13 - &lt;&lt;'PY' &gt; locality-results.json
+import json
+import os
+import platform
+import random
+import statistics
+import time
+
+HARNESS = "memory_lab_v2"
+SEED = 20260731
+REPEAT = 7
+portable_defaults = {
+    "l1_probe": 4096,
+    "llc_probe": 262144,
+    "beyond_llc_probe": 1048576,
+}
+execution_sizes = (
+    {
+        "l1_probe": 1024,
+        "llc_probe": 4096,
+        "beyond_llc_probe": 16384,
+    }
+    if os.environ.get("CURRICULUM_LAB_QUICK") == "1"
+    else portable_defaults
+)
+results = []
+cache_medians = {}
+largest_fixture = None
+for size_label, size in execution_sizes.items():
+    values = tuple(range(size))
+    access_count = size
+    sequential = tuple(range(access_count))
+    stride16 = tuple(
+        index
+        for offset in range(16)
+        for index in range(offset, access_count, 16)
+    )
+    random_pool = list(range(access_count))
+    random.Random(SEED + size).shuffle(random_pool)
+    random_indexes = tuple(random_pool)
+    indexes_by_name = {
+        "sequential": sequential,
+        "stride16": stride16,
+        "random": random_indexes,
+    }
+    assert all(
+        type(indexes) is tuple
+        and len(indexes) == access_count
+        and len(set(indexes)) == access_count
+        and all(type(index) is int for index in indexes)
+        for indexes in indexes_by_name.values()
+    )
+    expected_checksums = {
+        name: sum(values[index] for index in indexes)
+        for name, indexes in indexes_by_name.items()
+    }
+    assert len(set(expected_checksums.values())) == 1
+    for indexes in indexes_by_name.values():
+        # This untimed pass is the explicit warmup; only later samples
+        # contribute to reported medians.
+        assert sum(values[index] for index in indexes) == sum(values)
+    samples = {name: [] for name in indexes_by_name}
+    base_order = tuple(indexes_by_name)
+    for repeat in range(7):
+        offset = repeat % len(base_order)
+        condition_order = base_order[offset:] + base_order[:offset]
+        if repeat % 2:
+            condition_order = tuple(reversed(condition_order))
+        for name in condition_order:
+            indexes = indexes_by_name[name]
+            start = time.perf_counter_ns()
+            checksum = sum(values[index] for index in indexes)
+            elapsed_ns = time.perf_counter_ns() - start
+            assert checksum == expected_checksums[name]
+            samples[name].append(elapsed_ns)
+    for name, indexes in indexes_by_name.items():
+        results.append({
+            "size_label": size_label,
+            "size": size,
+            "pattern": name,
+            "repeat_count": REPEAT,
+            "samples_ns": samples[name],
+            "median_ns": statistics.median(samples[name]),
+            "access_count": len(indexes),
+            "checksum": expected_checksums[name],
+            "checksum_matches": True,
+            "same_index_type": all(
+                type(candidate) is type(indexes)
+                for candidate in indexes_by_name.values()
+            ),
+        })
+    cache_medians[size_label] = {
+        name: statistics.median(samples[name])
+        for name in samples
+    }
+    largest_fixture = (values, expected_checksums["sequential"])
+
+assert largest_fixture is not None
+largest_values, largest_checksum = largest_fixture
+page_stride_indexes = tuple(
+    index
+    for offset in range(512)
+    for index in range(offset, len(largest_values), 512)
+)
+tlb_samples = []
+for repeat in range(7):
+    start = time.perf_counter_ns()
+    checksum = sum(
+        largest_values[index] for index in page_stride_indexes
+    )
+    tlb_samples.append(time.perf_counter_ns() - start)
+    assert checksum == largest_checksum
+
+print(json.dumps({
+    "harness": HARNESS,
+    "python": platform.python_version(),
+    "platform": platform.platform(),
+    "portable_defaults": portable_defaults,
+    "portable_default_units": (
+        "8-byte integer payload bytes; topology-equivalence is not claimed"
+    ),
+    "execution_sizes": execution_sizes,
+    "topology_observation_commands": [
+        "lscpu --caches",
+        "sysctl -a | grep -E 'hw.(cache|memsize|pagesize)'",
+    ],
+    "warmup_excluded": True,
+    "condition_order": "rotate each repeat and reverse odd repeats",
+    "access_patterns": ["sequential", "stride16", "random"],
+    "results": results,
+    "additional_experiments": {
+        "cache_probe": {
+            "working_set_medians_ns": cache_medians,
+            "interpretation": (
+                "size inflection supports but does not prove a cache boundary"
+            ),
+        },
+        "tlb_probe": {
+            "organization": "512-element page-stride lanes",
+            "access_count": len(page_stride_indexes),
+            "samples_ns": tlb_samples,
+            "checksum_matches": True,
+            "interpretation": (
+                "page-stride change supports but does not prove a TLB cause"
+            ),
+        },
+    },
+    "limitations": [
+        "Python interpreter and object/index overhead remains in every sample",
+        "portable defaults are probes, not the measured machine topology",
+        (
+            "512 elements is a nominal 4KiB payload stride; "
+            "Python layout does not establish a physical page boundary"
+        ),
+        "cache and TLB counters are not observed by this timing-only script",
+    ],
+}, ensure_ascii=False, indent=2))
+PY
+python3.13 -m json.tool locality-results.json
+lscpu
+lscpu --caches
+sysctl -n machdep.cpu.brand_string
+sysctl -a | grep -E 'hw.(cache|memsize|pagesize)'</code></pre>
+  <dl>
+    <dt>前提</dt>
+    <dd>入力生成と一回のwarmupを測定外に置き、同一プロセスで各条件を7回、条件順を回転と反転で交互化して測る。Linuxではlscpu、macOSではsysctlの成功した方を実機topology証拠として保存する。</dd>
+    <dt>入力</dt>
+    <dd>各sizeの同じ整数配列を対象に、同じtuple[int]型のsequential、stride16、固定seed random index列を作る。三列とも全indexを重複なく含み、全要素をちょうど一回読む。</dd>
+    <dt>操作</dt>
+    <dd>L1 probe、LLC probe、LLC超過probeの三sizeで三走査を行う。portable defaultは32KiB、2MiB、8MiBの8-byte payloadだが実機相当とは断定せず、topology観測値を記録して調整する。</dd>
+    <dt>観測</dt>
+    <dd>全九conditionの各7値、中央値、全要素数、checksum一致を残す。追加のworking-set sweepをcache probe、512要素間隔のpage-stride lanesをTLB probeとして測る。</dd>
+    <dt>結論</dt>
+    <dd>サイズの折れ曲がりとpage-stride差は各仮説を支持し得るが確定しない。Python interpreter、index object、未取得のhardware counterを限界として報告する。</dd>
+  </dl>
+  <p>観測したL1/L2/LLC容量とprivate/shared topologyを経路図へ転記し、portable defaultや教材図をそのまま実機構成とみなさない。cache probeとTLB probeはアクセス順まで変えるため完全な単独変数実験ではなく、可能ならhardware counterを追加して再検証する。</p>
+  <p><strong>ラボ成果物:</strong> 「アクセス局所性を変えた測定とCPU・メモリ経路図」には、CPU名、OS、処理系、全反復値、走査順、総和、仮説と未観測区間を含める。</p>
+</section>
+<section id="tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <table>
+    <caption>データ配置を選ぶdecision table</caption>
+    <thead>
+      <tr>
+        <th scope="col">アクセス特性</th>
+        <th scope="col">候補配置</th>
+        <th scope="col">期待する機構</th>
+        <th scope="col">採用しない条件</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row">一要素の全fieldを同時に読む</th>
+        <td>Array of Structures</td>
+        <td>同じ要素のデータを近接配置</td>
+        <td>一部fieldだけの大量走査が支配的</td>
+      </tr>
+      <tr>
+        <th scope="row">同じfieldを多数要素から読む</th>
+        <td>Structure of Arrays</td>
+        <td>不要fieldのline転送を減らす</td>
+        <td>要素単位の更新整合性が複雑化する</td>
+      </tr>
+      <tr>
+        <th scope="row">疎なkeyで挿入削除が多い</th>
+        <td>間接参照を許容</td>
+        <td>更新と識別の単純さを優先</td>
+        <td>profileでpointer chasingがhot pathと判明</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3>もっともらしい誤診と反証</h3>
+  <ol>
+    <li><strong>誤診:</strong> 「配列拡大で遅くなったのでL2 cache容量を超えた」。<strong>反証:</strong> 作業集合、ページ数、アクセス順を別々に変える。ページstrideだけで段差が出るならTLB、初回だけならページフォールトも疑う。</li>
+    <li><strong>誤診:</strong> 「別変数を更新しているから共有cacheの競合ではない」。<strong>反証:</strong> 変数間へpaddingを入れて配置だけを変える。同一cache line上のfalse sharingなら、意味上は別変数でもcoherence trafficが減って改善する。</li>
+  </ol>
+  <p>局所性のための平坦化は、境界違反や重複状態を招くことがある。profileで支配的と確認した経路に限定し、同じ入力の正しさ試験と性能測定を対にする。機種が変わればcache構成も変わるため再検証する。</p>
+</section>
+<section id="knowledge-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>TLB hitならcacheにもhitするか。しない。アドレス変換結果とデータ複製は別であり、一方だけhitし得る。</li>
+    <li>連続走査が速ければhardware prefetchが原因と確定できるか。できない。line内再利用、少ないTLB miss、処理系最適化も候補である。</li>
+    <li>paddingで改善したらdata raceも解消したか。解消を意味しない。配置はcoherence trafficを変えるが、language memory model上の同期を置き換えない。</li>
+  </ol>
+  <h3>5分teach-back</h3>
+  <p>ロード一回の経路図を使い、TLB miss、cache miss、主記憶転送を順に説明する。連続とランダムの測定差を図のどこへ結ぶか、確定できない部分を明言する。</p>
+  <h3>未知へのtransfer</h3>
+  <p>データ指向設計を別の処理系へ適用する。画像のRGBA処理または分析DBの列走査を選び、使うfield、更新単位、ベクトル化、メモリ増加を比較し、元のPython測定値を流用せず再測定する。</p>
+</section>
+<section id="sources-next">
+  <h2>出典と次の学習</h2>
+  <p>Intel Optimization Reference Manualはcache階層とデータアクセス最適化、Armv8-A memory model guideは順序と共有メモリの概念、Linux kernelのTLB文書は変換cacheを無効化するOS上の論点を確認するために使う。URLはmetadataのsourcesに集約し、本文は機構を自分の言葉で要約した。</p>
+  <p>次は並行性で、cache coherenceとプログラム上の同期契約を混同せずに扱う。1日後は経路図、7日後はstride実験、30日後は実サービスのprofile、90日後は別CPUで再測定する。</p>
+</section>

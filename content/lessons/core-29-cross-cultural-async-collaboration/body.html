@@ -1,0 +1,664 @@
+<section id="async-why">
+  <h2>なぜ重要か</h2>
+  <p>世界規模の協働では、同じ時間に集まれる人、会議のlanguageを速く話せる人、背景contextをすでに知る人だけが意思決定を支配しやすい。timezone overlapが小さいほど、会議の開催をcommand successとして数える運営は、検証可能なsystem outcomeから離れる。</p>
+  <p>RFC 7282はrough consensusを単純な投票や全員一致から区別し、重大な異論を理解して扱うことを重視する。RFC 7322は読者が一貫して解釈できる明確な文書を求める。W3Cの18 August 2025 ProcessとCall for Consensusも、応答期間と異論の処理を意思決定の一部として扱う。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> このlabはsimulated proposalであり、特定の文化、地域、母語話者の行動を予測しない。timezone、language、contextは参加障壁を調べる入力であり、人の能力や意欲の代理変数ではない。</p>
+  </aside>
+</section>
+<section id="async-mental-model">
+  <h2>メンタルモデル</h2>
+  <p>非同期RFCを、情報を配る文書ではなく、別の時間帯にいるcontributorが判断を独立再実行するinterfaceとして設計する。結論より先にproblem、alternatives、evidence、risksを置き、dissentとresponse-windowを閉じない。</p>
+  <figure>
+    <figcaption>proposal contextからreasoned decisionへ進む非同期review chain</figcaption>
+    <ol>
+      <li><strong>Frame:</strong> problem、decision rights、対象外を固定する。</li>
+      <li><strong>Expose:</strong> alternatives、evidence、uncertaintyを同じ文書に置く。</li>
+      <li><strong>Include:</strong> timezone、working language、用語、UTC期限を示す。</li>
+      <li><strong>Invite:</strong> dissentを安全に記録するresponse-windowを開く。</li>
+      <li><strong>Resolve:</strong> 異論ごとのresponseと採否理由を残す。</li>
+      <li><strong>Replay:</strong> meeting unnecessaryな状態で第三者が判断を再評価する。</li>
+    </ol>
+  </figure>
+  <table>
+    <caption>同期イベントではなくreview evidenceで選ぶdecision table</caption>
+    <thead>
+      <tr>
+        <th scope="col">観測</th>
+        <th scope="col">判断</th>
+        <th scope="col">必要な次の証拠</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row">contextと期限が完全</th>
+        <td>非同期reviewを継続</td>
+        <td>dissentへのreasoned response</td>
+      </tr>
+      <tr>
+        <th scope="row">暗黙の前提が残る</th>
+        <td>decisionを保留</td>
+        <td>用語、owner、制約、反証条件</td>
+      </tr>
+      <tr>
+        <th scope="row">重大なdissentが未処理</th>
+        <td>consensusと呼ばない</td>
+        <td>影響、代替案、採否理由</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>timezone overlapを4時間から0時間へ変える</h3>
+  <dl>
+    <dt>前提</dt>
+    <dd>2人のreviewerが同じsimulated proposalを評価する。能力や文化を推定せず、入力されたtimezoneとworking languageだけを参加設計に使う。</dd>
+    <dt>入力</dt>
+    <dd>7つのRFC section、proposal evidence、2人のparticipant、UTC response deadline、baseline 4時間とtransfer 0時間のoverlapを与える。</dd>
+    <dt>操作</dt>
+    <dd>schemaとsection順をfail-closedで検証し、context completeness、dissent response、meeting necessityを同じ入力から導く。</dd>
+    <dt>観測</dt>
+    <dd>overlapが0時間でもproposal evidence、working language、deadline、異論へのresponseが維持され、reviewはmeetingなしで完了する。</dd>
+    <dt>結論</dt>
+    <dd>文書生成のcommand successは合意というsystem outcomeではない。異論が記録され、addressedで、別のcontributorが理由を再評価できることが成果である。</dd>
+  </dl>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+import json
+
+HARNESS = "async_rfc_decision_lab_v1"
+BASELINE_ASYNC_CONTEXT = {
+    "timezone_overlap_hours": 4,
+    "working_language": "plain-English",
+}
+TRANSFER_ASYNC_CONTEXT = {
+    "timezone_overlap_hours": 0,
+    "working_language": "plain-English",
+}
+PROPOSAL = {
+    "proposal_id": "rfc-async-deploy-window",
+    "problem": "release decision depends on a regional meeting",
+    "decision": "use an evidence-bound asynchronous review window",
+    "alternatives": [
+        "keep a rotating meeting",
+        "delegate without a review record",
+    ],
+    "evidence": [
+        "same proposal snapshot",
+        "UTC response deadline",
+        "independent reviewer acknowledgement",
+    ],
+    "risks": [
+        "missing implicit operational context",
+        "silence misread as agreement",
+    ],
+    "dissent": {
+        "dissent_id": "dissent-rollback-authority",
+        "concern": "rollback authority is unclear",
+        "response": "name the incident commander and fallback owner",
+        "resolution": "accepted and added to the decision record",
+    },
+    "response_deadline_utc": "2026-08-03T09:00:00Z",
+}
+PARTICIPANTS = [
+    {
+        "participant_id": "reviewer-alpha",
+        "timezone": "UTC+09:00",
+        "working_language": "plain-English",
+        "acknowledged": True,
+        "availability": {
+            "baseline_local_hours": [9, 13],
+            "transferred_local_hours": [9, 13],
+        },
+    },
+    {
+        "participant_id": "reviewer-bravo",
+        "timezone": "UTC-07:00",
+        "working_language": "plain-English",
+        "acknowledged": True,
+        "availability": {
+            "baseline_local_hours": [17, 21],
+            "transferred_local_hours": [9, 13],
+        },
+    },
+]
+RFC_SECTION_ORDER = (
+    "problem",
+    "decision",
+    "alternatives",
+    "evidence",
+    "risks",
+    "dissent",
+    "response-window",
+)
+ASYNC_CONTEXT_FIELDS = {
+    "timezone_overlap_hours",
+    "working_language",
+}
+PROPOSAL_FIELDS = {
+    "proposal_id",
+    "problem",
+    "decision",
+    "alternatives",
+    "evidence",
+    "risks",
+    "dissent",
+    "response_deadline_utc",
+}
+DISSENT_FIELDS = {
+    "dissent_id",
+    "concern",
+    "response",
+    "resolution",
+}
+PARTICIPANT_FIELDS = {
+    "participant_id",
+    "timezone",
+    "working_language",
+    "acknowledged",
+    "availability",
+}
+AVAILABILITY_FIELDS = {
+    "baseline_local_hours",
+    "transferred_local_hours",
+}
+
+def is_number(value):
+    return type(value) in {int, float} and type(value) is not bool
+
+def validate_async_context(context):
+    valid = (
+        type(context) is dict
+        and set(context) == ASYNC_CONTEXT_FIELDS
+        and is_number(context["timezone_overlap_hours"])
+        and 0 &lt;= context["timezone_overlap_hours"] &lt;= 24
+        and type(context["working_language"]) is str
+        and bool(context["working_language"])
+    )
+    if not valid:
+        raise AssertionError(
+            "async-transfer-invariant: invalid async context schema"
+        )
+
+def changed_fields(baseline, transferred):
+    validate_async_context(baseline)
+    validate_async_context(transferred)
+    changed = [
+        field
+        for field in sorted(set(baseline) | set(transferred))
+        if baseline.get(field) != transferred.get(field)
+    ]
+    if changed != ["timezone_overlap_hours"]:
+        raise AssertionError(
+            "async-transfer-invariant: transfer changed wrong input"
+        )
+    return changed
+
+def validate_proposal(proposal):
+    valid = (
+        type(proposal) is dict
+        and set(proposal) == PROPOSAL_FIELDS
+        and all(
+            type(proposal[field]) is str and bool(proposal[field])
+            for field in {
+                "proposal_id",
+                "problem",
+                "decision",
+                "response_deadline_utc",
+            }
+        )
+        and all(
+            type(proposal[field]) is list
+            and bool(proposal[field])
+            and all(type(item) is str and bool(item) for item in proposal[field])
+            for field in {"alternatives", "evidence", "risks"}
+        )
+        and type(proposal["dissent"]) is dict
+        and set(proposal["dissent"]) == DISSENT_FIELDS
+        and all(
+            type(value) is str and bool(value)
+            for value in proposal["dissent"].values()
+        )
+        and proposal["response_deadline_utc"].endswith("Z")
+    )
+    if not valid:
+        raise AssertionError(
+            "async-input-invariant: invalid proposal schema"
+        )
+
+def validate_participants(participants):
+    valid = (
+        type(participants) is list
+        and bool(participants)
+        and all(
+            type(participant) is dict
+            and set(participant) == PARTICIPANT_FIELDS
+            and all(
+                type(participant[field]) is str and bool(participant[field])
+                for field in {
+                    "participant_id",
+                    "timezone",
+                    "working_language",
+                }
+            )
+            and type(participant["acknowledged"]) is bool
+            and type(participant["availability"]) is dict
+            and set(participant["availability"])
+            == AVAILABILITY_FIELDS
+            and all(
+                type(window) is list
+                and len(window) == 2
+                and all(type(hour) is int for hour in window)
+                and 0 &lt;= window[0] &lt; window[1] &lt;= 24
+                for window in participant["availability"].values()
+            )
+            for participant in participants
+        )
+        and len(
+            {participant["participant_id"] for participant in participants}
+        ) == len(participants)
+    )
+    if not valid:
+        raise AssertionError(
+            "async-input-invariant: invalid participant schema"
+        )
+
+def timezone_offset_hours(timezone):
+    valid = (
+        type(timezone) is str
+        and len(timezone) == 9
+        and timezone.startswith("UTC")
+        and timezone[3] in {"+", "-"}
+        and timezone[6] == ":"
+        and timezone[4:6].isdigit()
+        and timezone[7:9] == "00"
+    )
+    if not valid:
+        raise AssertionError(
+            "async-timezone-invariant: invalid timezone"
+        )
+    magnitude = int(timezone[4:6])
+    if magnitude &gt; 14:
+        raise AssertionError(
+            "async-timezone-invariant: timezone out of range"
+        )
+    return magnitude if timezone[3] == "+" else -magnitude
+
+def derive_overlap_hours(participants, window_field):
+    utc_windows = []
+    for participant in participants:
+        offset = timezone_offset_hours(participant["timezone"])
+        local_window = participant["availability"][window_field]
+        utc_start = (local_window[0] - offset) % 24
+        utc_end = utc_start + (local_window[1] - local_window[0])
+        if not (0 &lt;= utc_start &lt; utc_end &lt;= 24):
+            raise AssertionError(
+                "async-timezone-invariant: window crosses UTC day"
+            )
+        utc_windows.append([utc_start, utc_end])
+    overlap = min(window[1] for window in utc_windows) - max(
+        window[0] for window in utc_windows
+    )
+    return max(0, overlap)
+
+def response_window_hours(overlap_hours):
+    return 24 if overlap_hours == 0 else 8
+
+def validate_section_order():
+    expected = (
+        "problem",
+        "decision",
+        "alternatives",
+        "evidence",
+        "risks",
+        "dissent",
+        "response-window",
+    )
+    if RFC_SECTION_ORDER != expected:
+        raise AssertionError(
+            "async-order-invariant: invalid RFC section order"
+        )
+
+def validate_all_inputs():
+    validate_async_context(BASELINE_ASYNC_CONTEXT)
+    validate_async_context(TRANSFER_ASYNC_CONTEXT)
+    validate_proposal(PROPOSAL)
+    validate_participants(PARTICIPANTS)
+    validate_section_order()
+    baseline_overlap = derive_overlap_hours(
+        PARTICIPANTS,
+        "baseline_local_hours",
+    )
+    transferred_overlap = derive_overlap_hours(
+        PARTICIPANTS,
+        "transferred_local_hours",
+    )
+    if (
+        baseline_overlap
+        != BASELINE_ASYNC_CONTEXT["timezone_overlap_hours"]
+        or transferred_overlap
+        != TRANSFER_ASYNC_CONTEXT["timezone_overlap_hours"]
+    ):
+        raise AssertionError(
+            "async-timezone-invariant: overlap not availability-derived"
+        )
+
+def evaluate_context_completeness(review_input):
+    proposal = review_input["proposal"]
+    participants = review_input["participants"]
+    context = review_input["context"]
+    complete = (
+        bool(proposal["problem"])
+        and bool(proposal["decision"])
+        and bool(proposal["alternatives"])
+        and bool(proposal["evidence"])
+        and bool(proposal["risks"])
+        and bool(proposal["response_deadline_utc"])
+        and bool(context["working_language"])
+        and all(
+            participant["acknowledged"]
+            and participant["working_language"]
+            == context["working_language"]
+            for participant in participants
+        )
+    )
+    return "complete" if complete else "incomplete"
+
+def evaluate_dissent(review_input):
+    dissent = review_input["proposal"]["dissent"]
+    addressed = (
+        bool(dissent["concern"])
+        and bool(dissent["response"])
+        and bool(dissent["resolution"])
+        and "accepted" in dissent["resolution"]
+    )
+    return "addressed" if addressed else "unaddressed"
+
+def evaluate_meeting_need(context_complete):
+    meeting_required = not context_complete
+    if meeting_required is not (not context_complete):
+        raise AssertionError(
+            "async-context-invariant: meeting derivation bypassed"
+        )
+    return meeting_required
+
+def evaluate_review(
+    proposal,
+    participants,
+    context,
+    derived_overlap,
+    derived_response_window,
+):
+    review_input = {
+        "proposal": proposal,
+        "participants": participants,
+        "context": context,
+    }
+    context_complete = evaluate_context_completeness(
+        review_input
+    )
+    if context_complete != "complete":
+        raise AssertionError(
+            "async-context-invariant: context derivation bypassed"
+        )
+    context_complete = context_complete == "complete"
+    dissent_addressed = evaluate_dissent(
+        review_input
+    )
+    if dissent_addressed != "addressed":
+        raise AssertionError(
+            "async-dissent-invariant: dissent derivation bypassed"
+        )
+    meeting_required = evaluate_meeting_need(context_complete)
+    if (
+        derived_overlap != context["timezone_overlap_hours"]
+        or derived_response_window
+        != response_window_hours(derived_overlap)
+        or evaluate_meeting_need(False) is not True
+    ):
+        raise AssertionError(
+            "async-timezone-invariant: async window derivation bypassed"
+        )
+    return {
+        "context_complete": context_complete,
+        "dissent_addressed": dissent_addressed == "addressed",
+        "meeting_required": meeting_required,
+        "derived_overlap_hours": derived_overlap,
+        "response_window_hours": derived_response_window,
+    }
+
+def main():
+    validate_all_inputs()
+    changed = changed_fields(
+        BASELINE_ASYNC_CONTEXT,
+        TRANSFER_ASYNC_CONTEXT,
+    )
+    proposal = json.loads(
+        json.dumps(PROPOSAL, ensure_ascii=False)
+    )
+    transferred_proposal = json.loads(
+        json.dumps(PROPOSAL, ensure_ascii=False)
+    )
+    participants = json.loads(
+        json.dumps(PARTICIPANTS, ensure_ascii=False)
+    )
+    transferred_participants = json.loads(
+        json.dumps(PARTICIPANTS, ensure_ascii=False)
+    )
+    baseline_context = json.loads(
+        json.dumps(BASELINE_ASYNC_CONTEXT, ensure_ascii=False)
+    )
+    transferred_context = json.loads(
+        json.dumps(TRANSFER_ASYNC_CONTEXT, ensure_ascii=False)
+    )
+    validate_proposal(proposal)
+    validate_proposal(transferred_proposal)
+    validate_participants(participants)
+    validate_participants(transferred_participants)
+    baseline_overlap = derive_overlap_hours(
+        participants,
+        "baseline_local_hours",
+    )
+    transferred_overlap = derive_overlap_hours(
+        transferred_participants,
+        "transferred_local_hours",
+    )
+    baseline_response_window = response_window_hours(
+        baseline_overlap
+    )
+    transferred_response_window = response_window_hours(
+        transferred_overlap
+    )
+    baseline_review = evaluate_review(
+        proposal,
+        participants,
+        baseline_context,
+        baseline_overlap,
+        baseline_response_window,
+    )
+    transferred_review = evaluate_review(
+        transferred_proposal,
+        transferred_participants,
+        transferred_context,
+        transferred_overlap,
+        transferred_response_window,
+    )
+    same_proposal_evidence = (
+        proposal == transferred_proposal
+        and participants == transferred_participants
+    )
+    if not same_proposal_evidence:
+        raise AssertionError(
+            "async-transfer-invariant: proposal evidence drifted"
+        )
+    zero_overlap_review_completed = (
+        transferred_context["timezone_overlap_hours"] == 0
+        and transferred_review["context_complete"]
+        and transferred_review["dissent_addressed"]
+        and not transferred_review["meeting_required"]
+    )
+    if not zero_overlap_review_completed:
+        raise AssertionError(
+            "async-transfer-invariant: zero overlap review incomplete"
+        )
+
+    report = {
+        "harness": HARNESS,
+        "async_rfc": {
+            "context_complete": baseline_review["context_complete"],
+            "meeting_required": baseline_review["meeting_required"],
+            "meeting_need_derived_from_context": (
+                baseline_review["meeting_required"]
+                == (not baseline_review["context_complete"])
+            ),
+            "derived_timezone_overlap_hours": baseline_overlap,
+            "response_window_hours": baseline_response_window,
+            "sections": list(RFC_SECTION_ORDER),
+            "timezone_context": baseline_context,
+            "language_context": baseline_context["working_language"],
+            "response_deadline": proposal["response_deadline_utc"],
+        },
+        "decision_log": {
+            "dissent_recorded": bool(proposal["dissent"]["concern"]),
+            "dissent_addressed": baseline_review["dissent_addressed"],
+            "reasoned_resolution": proposal["dissent"]["resolution"],
+            "reviewable_without_meeting": (
+                baseline_review["context_complete"]
+                and baseline_review["dissent_addressed"]
+                and not baseline_review["meeting_required"]
+            ),
+        },
+        "timezone_overlap_transfer": {
+            "changed_assumption": "timezone-overlap",
+            "changed_fields": changed,
+            "same_proposal_evidence": same_proposal_evidence,
+            "zero_overlap_review_completed": zero_overlap_review_completed,
+            "derived_baseline_overlap_hours": baseline_overlap,
+            "derived_transferred_overlap_hours": transferred_overlap,
+            "baseline_response_window_hours": (
+                baseline_response_window
+            ),
+            "transferred_response_window_hours": (
+                transferred_response_window
+            ),
+            "baseline_context": baseline_context,
+            "transferred_context": transferred_context,
+        },
+        "fixture_metadata": {
+            "kind": "simulated",
+            "provenance": "lesson-defined asynchronous RFC fixture",
+            "limitations": (
+                "not evidence about any culture, language group, or person"
+            ),
+            "synthetic_or_observed_explicit": True,
+            "hidden_assumption": (
+                "acknowledgement means the record was received, not agreement"
+            ),
+        },
+        "input_derived_evidence": {
+            "proposal_id": proposal["proposal_id"],
+            "participant_count": len(participants),
+            "response_deadline": proposal["response_deadline_utc"],
+        },
+        "runtime_bound": {
+            "records": (
+                len(participants)
+                + len(proposal["alternatives"])
+                + len(proposal["evidence"])
+                + len(proposal["risks"])
+            ),
+            "subprocesses": 0,
+            "maximum_iterations": (
+                len(participants) + len(RFC_SECTION_ORDER)
+            ),
+        },
+        "external_network_used": False,
+        "command_success_distinction": {
+            "command_completed": True,
+            "system_outcome_checked": (
+                baseline_review["context_complete"]
+                and baseline_review["dissent_addressed"]
+            ),
+            "command_success_equals_system_outcome": False,
+            "outcome_evidence": {
+                "dissent_id": proposal["dissent"]["dissent_id"],
+                "reviewers": [
+                    item["participant_id"] for item in participants
+                ],
+            },
+        },
+        "mastery_evidence": {
+            "lab_steps": [
+                {"step": 1, "evidence": baseline_context},
+                {"step": 2, "evidence": list(RFC_SECTION_ORDER)},
+                {"step": 3, "evidence": proposal["dissent"]},
+                {"step": 4, "evidence": baseline_review},
+                {"step": 5, "evidence": transferred_review},
+            ],
+            "assessments": [
+                {
+                    "assessment": 1,
+                    "evidence": "silence is not recorded as agreement",
+                },
+                {
+                    "assessment": 2,
+                    "evidence": baseline_review,
+                },
+            ],
+            "rubric_dimensions": [
+                "technical-correctness",
+                "judgment",
+                "evidence",
+                "communication",
+            ],
+            "transfer": {
+                "task": (
+                    "timezone overlapだけを4時間から0時間へ変え、"
+                    "同じproposalをmeetingなしでレビューできるRFCと"
+                    "決定ログへ再構成する"
+                ),
+                "changed_assumption": "timezone-overlap",
+                "evidence": {
+                    "baseline": baseline_review,
+                    "transferred": transferred_review,
+                },
+            },
+            "contributor_enablement": {
+                "other_contributor": "reviewer-bravo",
+                "review_evidence": proposal["evidence"],
+            },
+        },
+    }
+    print(json.dumps(report, ensure_ascii=False, separators=(",", ":")))
+
+if __name__ == "__main__":
+    try:
+        main()
+    except AssertionError as error:
+        raise SystemExit(str(error)) from None
+PY</code></pre>
+</section>
+<section id="async-tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <p>非同期化は記録と参加機会を増やす一方、文書作成時間と応答latencyを増やす。すべてをRFCにせず、不可逆性、影響範囲、異論の可能性に応じて記録量とresponse-windowを調整する。</p>
+  <ul>
+    <li><strong>誤診:</strong> 返答がないのでconsensusである。<strong>反証:</strong> timezone、通知到達、language、期限理解を確認し、沈黙を賛成票に変換しない。</li>
+    <li><strong>誤診:</strong> meetingで全員が頷いたので判断はreview可能である。<strong>反証:</strong> alternatives、evidence、dissent responseが記録されなければ第三者は独立再評価できない。</li>
+    <li><strong>失敗モード:</strong> plain languageを情報量の削減と取り違える。用語を定義し、制約とuncertaintyを残したまま文を短くする。</li>
+    <li><strong>失敗モード:</strong> すべてのdissentを解消済みに見せる。未解決の懸念、owner、観測条件、再検討日をdecision logに保持する。</li>
+  </ul>
+</section>
+<section id="async-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>4時間のtimezone overlapを0時間へ変えるとき、proposal evidenceまで変えてはいけないのはなぜか。</li>
+    <li>Call for Consensusのresponse-windowと沈黙による同意はどう違うか。</li>
+    <li>meeting unnecessaryでもsystem outcomeを確認できる証拠を3つ挙げよ。</li>
+    <li>dissentがrecordedだがaddressedではない具体例を作り、次のactionを説明せよ。</li>
+  </ol>
+</section>
+<section id="async-sources">
+  <h2>出典と次の学習</h2>
+  <p>一次規範としてRFC 7282、RFC 7322、W3C 18 August 2025 Processを読み、W3C GuidebookのThe Art of ConsensusでCall for Consensusと異論処理の実務を確認する。</p>
+  <p>次に、自分の直近のdesign decisionをこの7 sectionへ再構成する。別timezoneのcontributorに同期説明をせず、曖昧なcontext、未処理のdissent、期限の解釈差をreview evidenceとして返してもらう。</p>
+</section>

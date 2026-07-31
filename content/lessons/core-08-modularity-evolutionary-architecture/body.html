@@ -1,0 +1,380 @@
+<section id="why">
+  <h2>なぜ重要か</h2>
+  <p>architectureの価値は箱を増やすことではなく、一つの変更理由が無関係な領域へ波及する範囲を制御することにある。file、package、serviceを増やしても、同じdecisionが各所へ漏れ、相互依存していれば変更費用は下がらない。</p>
+  <p>図とADRは判断を共有する道具であり、判断そのものの正しさを保証しない。誰のconcernを扱うviewか、何を代替案と比較したか、どの観測でdecisionを見直すかまで残して初めて更新可能になる。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> cycleは調査信号であって、個数だけでarchitecture欠陥とは断定できない。依存の種類、公開契約、build・runtimeの方向、変更履歴を分けて解釈する。ISO準拠の記述やaccepted ADRも品質保証ではない。</p>
+  </aside>
+</section>
+<section id="mental-model">
+  <h2>メンタルモデル</h2>
+  <p>moduleは関連する変更を内側へまとめ、変わりやすいdecisionを安定したinterfaceの背後へ隠す。runtimeでdomainがadapterを呼ぶ場合でも、source dependencyはdomainが定義したportへ外側が従うようにできる。</p>
+  <figure>
+    <figcaption>変更理由を内側へ隠蔽する三層の依存graph</figcaption>
+    <ol>
+      <li><strong>pricing-domain:</strong> 料金規則と不変条件。UIやDB形式を知らない。</li>
+      <li><strong>pricing-application:</strong> use caseを順序付け、domainのportを使う。</li>
+      <li><strong>pricing-adapters:</strong> HTTP、DB、batch形式をdomainの語彙へ変換する。</li>
+      <li><strong>reporting:</strong> 料金計算の変更対象外となる独立module。impact計算のfalse positiveを検出する基準にする。</li>
+      <li>source dependencyはadaptersからapplication、applicationからdomainへ向ける。</li>
+      <li>運用viewでは逆向きのrequest flowを別の矢印として記述し、意味を混ぜない。</li>
+    </ol>
+  </figure>
+  <table>
+    <caption>料金変更hotspotの境界を選ぶdecision table</caption>
+    <thead>
+      <tr><th scope="col">案</th><th scope="col">変更局所性</th><th scope="col">移行費</th><th scope="col">加重score</th><th scope="col">主なrisk</th></tr>
+    </thead>
+    <tbody>
+      <tr><th scope="row">domain境界を維持</th><td>5: 週次規則をdomainへ局所化</td><td>3: 二重経路を段階移行</td><td>4.2</td><td>古いadapterとの二重経路</td></tr>
+      <tr><th scope="row">一時facade</th><td>3: 一部の漏洩が残る</td><td>5: 既存consumerを維持</td><td>3.6</td><td>暫定層の恒久化</td></tr>
+      <tr><th scope="row">service分離</th><td>4: process境界へ隔離</td><td>1: data移行を伴う</td><td>2.4</td><td>network・運用・data整合性</td></tr>
+    </tbody>
+  </table>
+  <p>各criteriaは1〜5すべてのanchorとweightを先に固定する。optionごとのratingには観測可能なevidenceを添え、加重平均をcodeで再計算するため、好みをscoreへ偽装しにくい。</p>
+  <p><strong>fixtureの由来:</strong> この例は <code>lesson-defined synthetic scenario</code> であり、学習用に固定したmoduleとedgeからなる。実repositoryの依存解析、変更履歴、運用計測ではないため、scoreやimpactを現実のarchitecture判断へそのまま転用できない。</p>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>cycleを除き、変更impactをADRで確認する</h3>
+  <dl>
+    <dt>前提</dt>
+    <dd>料金規則、use case、DB変換の三moduleと、変更対象外のreportingがある。内側から外側へのsource dependencyは禁止し、runtime callはportを介する。</dd>
+    <dt>入力</dt>
+    <dd>変更前はdomain→adapters→application→domainの3-edge cycleを持つ。選択肢は境界維持、一時facade、service分離の三つで、4 criteriaのscale anchorとevidenceを使う。</dd>
+    <dt>操作</dt>
+    <dd>graphを深さ優先探索し、cycleと層rankに反するedgeを抽出する。domainからadapterへのedgeを外し、外側から内側へ二edgeを残す。変更targetからedgeを逆向きにたどるtransitive closureでimpactを計算する。</dd>
+    <dt>観測</dt>
+    <dd>変更前はcycleと方向違反が各1件、変更後は各0件。料金規則変更はdomain、application、adaptersへ伝播し、reportingは含まれない。edge削除・target変更mutationではimpactの差を検出する。</dd>
+    <dt>結論</dt>
+    <dd>graphのgreenだけで完了せず、選択肢、負の帰結、confirmationをADRへ残し、実際の変更履歴で再評価する。</dd>
+  </dl>
+  <p>次のPython 3.13 fixtureは固定されたmoduleとedgeだけを解析する。repository、network、環境秘密情報へアクセスしない。</p>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+import json
+
+HARNESS = "architecture_lab_v1"
+MODULES = [
+    "pricing-domain",
+    "pricing-application",
+    "pricing-adapters",
+    "reporting",
+]
+RANK = {
+    "pricing-domain": 0,
+    "pricing-application": 1,
+    "pricing-adapters": 2,
+    "reporting": 2,
+}
+BEFORE_EDGES = [
+    ("pricing-domain", "pricing-adapters"),
+    ("pricing-adapters", "pricing-application"),
+    ("pricing-application", "pricing-domain"),
+]
+AFTER_EDGES = [
+    ("pricing-adapters", "pricing-application"),
+    ("pricing-application", "pricing-domain"),
+]
+EXPECTED_IMPACT = {
+    "pricing-domain",
+    "pricing-application",
+    "pricing-adapters",
+}
+
+def cycles(edges):
+    graph = {module: [] for module in MODULES}
+    for source, target in edges:
+        graph[source].append(target)
+    found = set()
+
+    def visit(node, path):
+        if node in path:
+            cycle = path[path.index(node):] + [node]
+            # Rotation-normalization prevents one cycle being counted from
+            # every possible start node.
+            body = cycle[:-1]
+            rotations = [tuple(body[index:] + body[:index]) for index in range(len(body))]
+            found.add(min(rotations))
+            return
+        for target in graph[node]:
+            visit(target, path + [node])
+
+    for module in MODULES:
+        visit(module, [])
+    return [list(cycle) + [cycle[0]] for cycle in sorted(found)]
+
+def direction_violations(edges):
+    return [
+        {"source": source, "target": target}
+        for source, target in edges
+        if RANK[source] &lt;= RANK[target]
+    ]
+
+def snapshot(edges):
+    return {
+        "modules": MODULES,
+        "edges": [
+            {"source": source, "target": target}
+            for source, target in edges
+        ],
+        "cycles": cycles(edges),
+        "direction_violations": direction_violations(edges),
+    }
+
+def reverse_transitive_impact(edges, target):
+    reverse_graph = {module: [] for module in MODULES}
+    for source, dependency in edges:
+        reverse_graph[dependency].append(source)
+    impacted = {target}
+    pending = [target]
+    while pending:
+        dependency = pending.pop()
+        for dependent in reverse_graph[dependency]:
+            if dependent not in impacted:
+                impacted.add(dependent)
+                pending.append(dependent)
+    return sorted(impacted)
+
+def impact_snapshot(edges, target):
+    actual = set(reverse_transitive_impact(edges, target))
+    unexpected = actual - EXPECTED_IMPACT
+    missing = EXPECTED_IMPACT - actual
+    return {
+        "target": target,
+        "actual_impacted_modules": sorted(actual),
+        "expected_impacted_modules": sorted(EXPECTED_IMPACT),
+        "unexpected_impacted_modules": sorted(unexpected),
+        "missing_expected_modules": sorted(missing),
+        "unexpected_count": len(unexpected),
+        "missing_count": len(missing),
+    }
+
+criteria = {
+    "change_locality": {
+        "weight": 0.4,
+        "scale": {
+            "1": "weekly pricing changes reach every module",
+            "2": "pricing changes still reach most adapters",
+            "3": "most pricing changes stay behind one interface",
+            "4": "pricing changes stay local with one known exception",
+            "5": "pricing changes stay inside the domain boundary",
+        },
+    },
+    "migration_cost": {
+        "weight": 0.2,
+        "scale": {
+            "1": "requires a coordinated data and consumer migration",
+            "2": "requires multiple coordinated migration windows",
+            "3": "requires a bounded dual-path transition",
+            "4": "requires one reversible compatibility step",
+            "5": "preserves consumers during an incremental migration",
+        },
+    },
+    "operability": {
+        "weight": 0.2,
+        "scale": {
+            "1": "adds unowned runtime failure modes",
+            "2": "adds owned failure modes without automated recovery",
+            "3": "adds monitored failure modes with manual recovery",
+            "4": "uses owned alerts with rehearsed manual recovery",
+            "5": "uses existing ownership and automated recovery",
+        },
+    },
+    "reversibility": {
+        "weight": 0.2,
+        "scale": {
+            "1": "rollback requires data reconstruction",
+            "2": "rollback requires dual writes and reconciliation",
+            "3": "rollback needs a planned compatibility window",
+            "4": "rollback is isolated but not yet rehearsed",
+            "5": "rollback is isolated and rehearsed",
+        },
+    },
+}
+option_inputs = [
+    {
+        "id": "preserve-domain-boundary",
+        "ratings": {
+            "change_locality": {
+                "rating": 5,
+                "evidence_kind": "synthetic-fixture-observation",
+                "evidence": "six recent pricing changes touched only domain tests",
+            },
+            "migration_cost": {
+                "rating": 3,
+                "evidence_kind": "synthetic-fixture-observation",
+                "evidence": "two adapters require a thirty-day dual path",
+            },
+            "operability": {
+                "rating": 4,
+                "evidence_kind": "synthetic-fixture-observation",
+                "evidence": "existing service ownership and alerts remain valid",
+            },
+            "reversibility": {
+                "rating": 4,
+                "evidence_kind": "synthetic-fixture-observation",
+                "evidence": "the old adapter stays readable during migration",
+            },
+        },
+        "risks": ["dual-path-drift"],
+    },
+    {
+        "id": "temporary-facade",
+        "ratings": {
+            "change_locality": {
+                "rating": 3,
+                "evidence_kind": "synthetic-fixture-observation",
+                "evidence": "facade localizes calls but duplicates two rules",
+            },
+            "migration_cost": {
+                "rating": 5,
+                "evidence_kind": "synthetic-fixture-observation",
+                "evidence": "all current consumers keep their contract",
+            },
+            "operability": {
+                "rating": 4,
+                "evidence_kind": "synthetic-fixture-observation",
+                "evidence": "facade uses existing dashboards and ownership",
+            },
+            "reversibility": {
+                "rating": 3,
+                "evidence_kind": "synthetic-fixture-observation",
+                "evidence": "rollback is possible while both routes remain",
+            },
+        },
+        "risks": ["temporary-layer-becomes-permanent"],
+    },
+    {
+        "id": "extract-service",
+        "ratings": {
+            "change_locality": {
+                "rating": 4,
+                "evidence_kind": "synthetic-fixture-observation",
+                "evidence": "process boundary isolates code but not shared data",
+            },
+            "migration_cost": {
+                "rating": 1,
+                "evidence_kind": "synthetic-fixture-observation",
+                "evidence": "requires data ownership and consumer migration",
+            },
+            "operability": {
+                "rating": 1,
+                "evidence_kind": "synthetic-fixture-observation",
+                "evidence": "introduces an unowned network dependency",
+            },
+            "reversibility": {
+                "rating": 2,
+                "evidence_kind": "synthetic-fixture-observation",
+                "evidence": "rollback needs dual writes and data reconciliation",
+            },
+        },
+        "risks": ["distributed-consistency", "network-failure"],
+    },
+]
+
+def score_option(option):
+    numerator = sum(
+        rating["rating"] * criteria[criterion_id]["weight"]
+        for criterion_id, rating in option["ratings"].items()
+    )
+    denominator = sum(
+        criteria[criterion_id]["weight"]
+        for criterion_id in option["ratings"]
+    )
+    return numerator / denominator
+
+options = [
+    {**option, "score": score_option(option)}
+    for option in option_inputs
+]
+selected_option = max(options, key=lambda option: option["score"])["id"]
+change_impact = impact_snapshot(AFTER_EDGES, "pricing-domain")
+impact_mutations = {
+    "edge_removed": impact_snapshot(
+        [
+            edge
+            for edge in AFTER_EDGES
+            if edge != ("pricing-application", "pricing-domain")
+        ],
+        "pricing-domain",
+    ),
+    "target_changed": impact_snapshot(AFTER_EDGES, "reporting"),
+}
+
+assert abs(sum(item["weight"] for item in criteria.values()) - 1.0) &lt; 1e-9
+assert set(change_impact["actual_impacted_modules"]) == EXPECTED_IMPACT
+assert change_impact["unexpected_impacted_modules"] == []
+assert change_impact["missing_expected_modules"] == []
+assert impact_mutations["edge_removed"]["unexpected_impacted_modules"] == []
+assert set(impact_mutations["edge_removed"]["missing_expected_modules"]) == {
+    "pricing-application",
+    "pricing-adapters",
+}
+assert impact_mutations["target_changed"]["unexpected_impacted_modules"] == [
+    "reporting"
+]
+assert set(
+    impact_mutations["target_changed"]["missing_expected_modules"]
+) == EXPECTED_IMPACT
+report = {
+    "harness": HARNESS,
+    "fixture": "pricing-change-hotspot-v1",
+    "fixture_metadata": {
+        "kind": "synthetic",
+        "purpose": "teach deterministic dependency and decision analysis",
+        "provenance": "lesson-defined synthetic scenario",
+        "limitations": [
+            "not extracted from a repository",
+            "not supported by production change-history measurements",
+            "scores are teaching inputs rather than organizational evidence",
+        ],
+    },
+    "before": snapshot(BEFORE_EDGES),
+    "after": snapshot(AFTER_EDGES),
+    "criteria": criteria,
+    "options": options,
+    "selected_option": selected_option,
+    "adr": {
+        "status": "accepted",
+        "context": "pricing rules change weekly and leaked into three adapters",
+        "decision": selected_option,
+        "alternatives": [
+            option["id"]
+            for option in options
+            if option["id"] != selected_option
+        ],
+        "positive_consequences": ["localized rule changes", "testable domain"],
+        "negative_consequences": ["temporary dual path", "port maintenance"],
+        "confirmation": "dependency gate plus monthly change-impact review",
+    },
+    "change_impact": change_impact,
+    "impact_mutations": impact_mutations,
+    "external_network_used": False,
+}
+print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+PY</code></pre>
+</section>
+<section id="tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <ul>
+    <li><strong>誤診:</strong> file、package、microserviceが多いほどmodularityは高い。 <strong>反証:</strong> 同じdecisionが複製され、変更が同時に波及するなら物理分割は境界を作っていない。</li>
+    <li><strong>誤診:</strong> ISOの要素を満たす図とaccepted ADRがあればarchitecture品質は保証される。 <strong>反証:</strong> 記述はstakeholderの判断を支えるが、観測、代替案、反証条件が誤っていれば判断も誤る。</li>
+    <li><strong>分散化:</strong> 独立deployは有益だが、network、data ownership、障害対応、version互換性の費用を追加する。</li>
+    <li><strong>過剰な抽象:</strong> 仮説上の将来変化だけでinterfaceを増やすと、実際の変更経路が見えにくくなる。</li>
+  </ul>
+</section>
+<section id="knowledge-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>runtimeでadapterを呼ぶdomainから、source dependencyを外向きにしない方法を説明せよ。</li>
+    <li>同じ三moduleでも、どの変更履歴なら境界を分け直すか。</li>
+    <li>cycle検出が0でもmodularityが悪い例を一つ挙げよ。</li>
+    <li>architecture viewの矢印へ最低限どの意味を付けるべきか。</li>
+    <li>ADRのnegative consequenceをconfirmationへどう接続するか。</li>
+  </ol>
+</section>
+<section id="sources-next">
+  <h2>出典と次の学習</h2>
+  <p>Parnasのmodule分解論は処理手順ではなくdesign decisionの隠蔽を中心に置く。ISO/IEC/IEEE 42010とViews and Beyondはstakeholder、concern、viewpoint、viewの記述を整理する。MADRはcontext、decision、alternatives、consequencesを更新可能な記録にする。</p>
+  <p>次はcore09で、module境界の期待を実行可能なtestへ落とす。変更ごとにimpactを記録し、30日reviewで予測と実測がずれたADRを更新する。</p>
+</section>

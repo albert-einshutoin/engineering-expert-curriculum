@@ -1,0 +1,590 @@
+<section id="why">
+  <h2>なぜ重要か</h2>
+  <p>delivery pipelineがexit code 0を返しても、利用者が正しいversionを安全に使えているとは限らない。required checkの取りこぼし、別artifactの配信、信頼しないbuilderが作ったprovenance、canary悪化、rollback後も残る障害は、command successの外側にあるsystem outcomeである。</p>
+  <p>SLSA v1.2はApproved仕様としてsupply-chain integrityを段階化し、NIST SSDF 1.1は安全なsoftware development practiceを組織の工程へ統合する。DORA continuous deliveryは変更を低riskでon demandにreleaseできる能力であり、単にdeployment回数を増やすことではない。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> provenance presence aloneはartifactの信頼を証明しない。subject digest、builder identity、期待したworkflow、検証時点を結ばなければ、正しい形式の来歴が別artifactや攻撃者のbuilderを指す可能性がある。</p>
+  </aside>
+</section>
+<section id="mental-model">
+  <h2>メンタルモデル</h2>
+  <p>配信を、sourceからsystem outcomeへ証拠を引き渡すstate machineとして扱う。各境界は未知を成功へ倒さないfail-closed gateにし、次段へ進む条件と戻る条件を対で定義する。</p>
+  <figure>
+    <figcaption>source変更からrollback outcomeまでを結ぶdelivery evidence chain</figcaption>
+    <ol>
+      <li><strong>CI:</strong> required check集合がすべて観測され成功したか検査する。</li>
+      <li><strong>Artifact:</strong>配信対象bytesからdigestを計算して固定する。</li>
+      <li><strong>Provenance:</strong> subject digestとtrusted builderを独立に検証する。</li>
+      <li><strong>Canary:</strong> 利用者可視のerror rateを閾値と比較する。</li>
+      <li><strong>Decision:</strong> advance、stop、rollbackを入力から導く。</li>
+      <li><strong>Outcome:</strong> command完了後にservice restorationを再観測する。</li>
+    </ol>
+  </figure>
+  <p>DORAのcurrent five metricsはchange lead time、deployment frequency、failed deployment recovery time、change fail rate、deployment rework rateである。指標はrankingのためではなく、throughputとinstabilityを同時に見て改善仮説を検証するために使う。</p>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>同じartifactでcanary観測だけを変える</h3>
+  <dl>
+    <dt>前提</dt>
+    <dd>lesson-defined simulated fixtureを使う。digest、check、canary、rollback healthはproduction観測やvendor保証ではない。</dd>
+    <dt>入力</dt>
+    <dd>required check 3件、artifact bytes、provenance subject、trusted builder、baseline canary error rate 0.01、停止閾値0.02を与える。</dd>
+    <dt>操作</dt>
+    <dd>CIをfail-closedで検証し、bytesからdigestを導き、subjectとbuilderを検証する。canary error rateだけを0.05へ変えて同じ判断関数を再実行する。</dd>
+    <dt>観測</dt>
+    <dd>baselineはadvance、transferはrollbackになる。rollback commandが0でも、post-rollback error rateがtarget以下かを別に検証する。</dd>
+    <dt>結論</dt>
+    <dd>command successとsystem outcomeは同義ではない。配信完了は、同一性、来歴、段階観測、rollback outcomeまで結ばれた証拠で判断する。</dd>
+  </dl>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+import hashlib
+import json
+
+HARNESS = "delivery_safety_lab_v1"
+REQUIRED_CHECKS = ["unit", "security", "integration"]
+CI_CHECKS = [
+    {"name": "unit", "state": "passed"},
+    {"name": "security", "state": "passed"},
+    {"name": "integration", "state": "passed"},
+]
+ARTIFACT_BYTES = "curriculum-release-24"
+TRUSTED_BUILDERS = ["builder://curriculum/release"]
+DORA_METRICS = [
+    "change_lead_time",
+    "deployment_frequency",
+    "failed_deployment_recovery_time",
+    "change_fail_rate",
+    "deployment_rework_rate",
+]
+BASELINE_CANARY = {
+    "canary_error_rate": 0.01,
+    "maximum_error_rate": 0.02,
+}
+TRANSFER_CANARY = {
+    "canary_error_rate": 0.05,
+    "maximum_error_rate": 0.02,
+}
+ROLLBACK_COMMAND_INPUT = {
+    "command_exit_code": 0,
+}
+
+verification_trace = []
+
+def is_number(value):
+    return type(value) in {int, float} and type(value) is not bool
+
+def validate_raw_delivery_inputs():
+    if (
+        type(REQUIRED_CHECKS) is not list
+        or not REQUIRED_CHECKS
+        or not all(
+            type(name) is str and name
+            for name in REQUIRED_CHECKS
+        )
+        or len(REQUIRED_CHECKS) != len(set(REQUIRED_CHECKS))
+        or type(CI_CHECKS) is not list
+        or not CI_CHECKS
+        or type(ARTIFACT_BYTES) is not str
+        or not ARTIFACT_BYTES
+        or type(TRUSTED_BUILDERS) is not list
+        or not TRUSTED_BUILDERS
+        or not all(
+            type(builder) is str and builder
+            for builder in TRUSTED_BUILDERS
+        )
+        or len(TRUSTED_BUILDERS) != len(set(TRUSTED_BUILDERS))
+        or type(DORA_METRICS) is not list
+        or not DORA_METRICS
+        or not all(
+            type(metric) is str and metric
+            for metric in DORA_METRICS
+        )
+        or len(DORA_METRICS) != len(set(DORA_METRICS))
+        or type(BASELINE_CANARY) is not dict
+        or type(TRANSFER_CANARY) is not dict
+        or type(ROLLBACK_COMMAND_INPUT) is not dict
+    ):
+        raise AssertionError(
+            "delivery-input-invariant: invalid raw input collection"
+        )
+    if (
+        any(
+            type(check) is not dict
+            or set(check) != {"name", "state"}
+            or type(check["name"]) is not str
+            or not check["name"]
+            or type(check["state"]) is not str
+            or not check["state"]
+            for check in CI_CHECKS
+        )
+        or len(CI_CHECKS)
+        != len({check["name"] for check in CI_CHECKS})
+        or set(ROLLBACK_COMMAND_INPUT) != {"command_exit_code"}
+        or type(ROLLBACK_COMMAND_INPUT["command_exit_code"]) is not int
+    ):
+        raise AssertionError(
+            "delivery-input-invariant: invalid raw input schema"
+        )
+    for canary in (BASELINE_CANARY, TRANSFER_CANARY):
+        if (
+            set(canary)
+            != {"canary_error_rate", "maximum_error_rate"}
+            or not all(
+                is_number(value) and value &gt;= 0
+                for value in canary.values()
+            )
+        ):
+            raise AssertionError(
+                "delivery-transfer-invariant: invalid canary schema"
+            )
+
+def validate_delivery_input_schema(delivery_input):
+    valid = (
+        type(delivery_input) is dict
+        and set(delivery_input)
+        == {"artifact_bytes", "provenance", "canary"}
+        and type(delivery_input["artifact_bytes"]) is str
+        and bool(delivery_input["artifact_bytes"])
+        and type(delivery_input["provenance"]) is dict
+        and set(delivery_input["provenance"])
+        == {"subject_digest", "builder_id"}
+        and all(
+            type(value) is str and value
+            for value in delivery_input["provenance"].values()
+        )
+        and type(delivery_input["canary"]) is dict
+        and set(delivery_input["canary"])
+        == {"canary_error_rate", "maximum_error_rate"}
+        and all(
+            is_number(value) and value &gt;= 0
+            for value in delivery_input["canary"].values()
+        )
+    )
+    if not valid:
+        raise AssertionError(
+            "delivery-transfer-invariant: invalid delivery input schema"
+        )
+
+def changed_paths(baseline, transferred, prefix=""):
+    if type(baseline) is dict and type(transferred) is dict:
+        paths = []
+        for key in sorted(set(baseline) | set(transferred)):
+            path = key if not prefix else prefix + "." + key
+            if key not in baseline or key not in transferred:
+                paths.append(path)
+            else:
+                paths.extend(
+                    changed_paths(
+                        baseline[key],
+                        transferred[key],
+                        path,
+                    )
+                )
+        return paths
+    return [] if baseline == transferred else [prefix]
+
+def validate_delivery_transfer(baseline, transferred):
+    validate_delivery_input_schema(baseline)
+    validate_delivery_input_schema(transferred)
+    paths = changed_paths(baseline, transferred)
+    if paths != ["canary.canary_error_rate"]:
+        raise AssertionError(
+            "delivery-transfer-invariant: transfer changed wrong path"
+        )
+    return paths
+
+def verify_ci(required, observed):
+    if (
+        type(required) is not list
+        or not required
+        or not all(type(name) is str and name for name in required)
+        or type(observed) is not list
+        or any(
+            type(check) is not dict
+            or set(check) != {"name", "state"}
+            or type(check["name"]) is not str
+            or not check["name"]
+            or type(check["state"]) is not str
+            or not check["state"]
+            for check in observed
+        )
+    ):
+        raise AssertionError(
+            "delivery-ci-invariant: invalid check schema"
+        )
+    observed_by_name = {
+        check["name"]: check["state"]
+        for check in observed
+    }
+    all_observed = all(name in observed_by_name for name in required)
+    all_passed = (
+        all_observed
+        and all(observed_by_name[name] == "passed" for name in required)
+    )
+    return {
+        "failure_policy": "fail-closed",
+        "all_required_checks_observed": all_observed,
+        "all_required_checks_passed": all_passed,
+        "required": list(required),
+        "observed": list(observed),
+    }
+
+def verify_provenance(provenance, expected_digest):
+    if (
+        type(provenance) is not dict
+        or set(provenance) != {"subject_digest", "builder_id"}
+        or not all(
+            type(value) is str and value
+            for value in provenance.values()
+        )
+        or type(expected_digest) is not str
+        or not expected_digest
+    ):
+        raise AssertionError(
+            "delivery-provenance-invariant: invalid provenance schema"
+        )
+    subject_matches = (
+        provenance["subject_digest"] == expected_digest
+    )
+    builder_trusted = (
+        provenance["builder_id"] in TRUSTED_BUILDERS
+    )
+    verification_trace.extend(
+        ["subject-digest-match", "trusted-builder"]
+    )
+    return subject_matches and builder_trusted
+
+def decide_delivery(ci, provenance_ok, observation):
+    gates_passed = (
+        ci["all_required_checks_passed"]
+        and provenance_ok
+    )
+    canary_healthy = (
+        observation["canary_error_rate"]
+        &lt;= observation["maximum_error_rate"]
+    )
+    return "advance" if gates_passed and canary_healthy else "rollback"
+
+def observe_rollback(fixture):
+    if (
+        type(fixture) is not dict
+        or set(fixture)
+        != {
+            "command_exit_code",
+            "before_error_rate",
+            "after_error_rate",
+            "target_error_rate",
+        }
+        or type(fixture["command_exit_code"]) is not int
+        or not all(
+            is_number(fixture[field]) and fixture[field] &gt;= 0
+            for field in (
+                "before_error_rate",
+                "after_error_rate",
+                "target_error_rate",
+            )
+        )
+    ):
+        raise AssertionError(
+            "delivery-outcome-invariant: invalid rollback schema"
+        )
+    command_completed = fixture["command_exit_code"] == 0
+    service_restored = (
+        fixture["after_error_rate"]
+        &lt;= fixture["target_error_rate"]
+        and fixture["after_error_rate"]
+        &lt; fixture["before_error_rate"]
+    )
+    return {
+        "executed": command_completed,
+        "system_outcome_verified": service_restored,
+        "service_restored": service_restored,
+        "before_error_rate": fixture["before_error_rate"],
+        "after_error_rate": fixture["after_error_rate"],
+    }
+
+def main():
+    validate_raw_delivery_inputs()
+    artifact_digest = hashlib.sha256(
+        ARTIFACT_BYTES.encode("utf-8")
+    ).hexdigest()
+    PROVENANCE = {
+        "subject_digest": artifact_digest,
+        "builder_id": TRUSTED_BUILDERS[0],
+    }
+    baseline_delivery_inputs = {
+        "artifact_bytes": ARTIFACT_BYTES,
+        "provenance": dict(PROVENANCE),
+        "canary": dict(BASELINE_CANARY),
+    }
+    transferred_delivery_inputs = {
+        "artifact_bytes": ARTIFACT_BYTES,
+        "provenance": dict(PROVENANCE),
+        "canary": dict(TRANSFER_CANARY),
+    }
+    delivery_changed_paths = validate_delivery_transfer(
+        baseline_delivery_inputs,
+        transferred_delivery_inputs,
+    )
+    baseline_artifact_digest = hashlib.sha256(
+        baseline_delivery_inputs["artifact_bytes"].encode("utf-8")
+    ).hexdigest()
+    transferred_artifact_digest = hashlib.sha256(
+        transferred_delivery_inputs["artifact_bytes"].encode("utf-8")
+    ).hexdigest()
+    ROLLBACK_DRILL = {
+        "command_exit_code": (
+            ROLLBACK_COMMAND_INPUT["command_exit_code"]
+        ),
+        "before_error_rate": (
+            transferred_delivery_inputs["canary"][
+                "canary_error_rate"
+            ]
+        ),
+        "after_error_rate": (
+            baseline_delivery_inputs["canary"]["canary_error_rate"]
+        ),
+        "target_error_rate": (
+            baseline_delivery_inputs["canary"]["maximum_error_rate"]
+        ),
+    }
+    changed_fields = [
+        path.removeprefix("canary.")
+        for path in delivery_changed_paths
+    ]
+
+    ci = verify_ci(REQUIRED_CHECKS, CI_CHECKS)
+    provenance_verified = verify_provenance(PROVENANCE, artifact_digest)
+    assert (
+        provenance_verified
+        and verification_trace
+        == ["subject-digest-match", "trusted-builder"]
+    ), "delivery-provenance-invariant"
+    provenance_present = bool(PROVENANCE)
+    subject_matches = (
+        PROVENANCE["subject_digest"] == artifact_digest
+    )
+    builder_trusted = (
+        PROVENANCE["builder_id"] in TRUSTED_BUILDERS
+    )
+    required_provenance_evidence = list(verification_trace)
+    presence_alone_is_trusted = (
+        len(required_provenance_evidence) == 0
+    )
+
+    baseline_decision = decide_delivery(
+        ci,
+        provenance_verified,
+        BASELINE_CANARY,
+    )
+    transferred_decision = decide_delivery(
+        ci,
+        provenance_verified,
+        TRANSFER_CANARY,
+    )
+    rollback = observe_rollback(ROLLBACK_DRILL)
+    assert baseline_decision == "advance", "delivery-gate-invariant"
+    assert transferred_decision == "rollback", "delivery-canary-invariant"
+    assert rollback["service_restored"], "delivery-outcome-invariant"
+
+    report = {
+        "harness": HARNESS,
+        "ci": ci,
+        "artifact": {
+            "bytes_label": ARTIFACT_BYTES,
+            "digest": artifact_digest,
+        },
+        "provenance_verification": {
+            "present": provenance_present,
+            "subject_digest_matches": subject_matches,
+            "builder_trusted": builder_trusted,
+            "verified": provenance_verified,
+            "presence_alone_is_trusted": presence_alone_is_trusted,
+            "verification_trace": required_provenance_evidence,
+        },
+        "staged_delivery": {
+            "observation": dict(BASELINE_CANARY),
+            "decision": baseline_decision,
+        },
+        "rollback_outcome": rollback,
+        "dora_five_metrics": list(DORA_METRICS),
+        "canary_error_rate_transfer": {
+            "changed_assumption": "canary-error-rate",
+            "changed_fields": changed_fields,
+            "same_artifact": (
+                baseline_artifact_digest
+                == transferred_artifact_digest
+            ),
+            "same_provenance": (
+                baseline_delivery_inputs["provenance"]
+                == transferred_delivery_inputs["provenance"]
+            ),
+            "baseline_artifact_digest": baseline_artifact_digest,
+            "transferred_artifact_digest": (
+                transferred_artifact_digest
+            ),
+            "baseline_provenance": (
+                baseline_delivery_inputs["provenance"]
+            ),
+            "transferred_provenance": (
+                transferred_delivery_inputs["provenance"]
+            ),
+            "baseline_decision": baseline_decision,
+            "transferred_decision": transferred_decision,
+            "baseline_observation": (
+                baseline_delivery_inputs["canary"]
+            ),
+            "transferred_observation": (
+                transferred_delivery_inputs["canary"]
+            ),
+        },
+        "fixture_metadata": {
+            "kind": "simulated",
+            "provenance": "lesson-defined delivery evidence fixture",
+            "limitations": (
+                "not production telemetry, signing, pricing, "
+                "or vendor assurance"
+            ),
+            "synthetic_or_observed_explicit": True,
+        },
+        "runtime_bound": {
+            "records": (
+                len(CI_CHECKS)
+                + len(PROVENANCE)
+                + len(BASELINE_CANARY)
+                + len(ROLLBACK_DRILL)
+            ),
+            "subprocesses": 0,
+            "maximum_iterations": len(CI_CHECKS),
+        },
+        "external_network_used": False,
+        "command_success_distinction": {
+            "command_completed": (
+                ROLLBACK_DRILL["command_exit_code"] == 0
+            ),
+            "system_outcome_checked": rollback[
+                "system_outcome_verified"
+            ],
+            "command_success_equals_system_outcome": (
+                ROLLBACK_DRILL["command_exit_code"] == 0
+                and not rollback["system_outcome_verified"]
+            ),
+            "outcome_evidence": {
+                "before": rollback["before_error_rate"],
+                "after": rollback["after_error_rate"],
+            },
+        },
+        "mastery_evidence": {
+            "lab_steps": [
+                {
+                    "step": index,
+                    "evidence": evidence,
+                }
+                for index, evidence in enumerate(
+                    [
+                        ci,
+                        artifact_digest,
+                        baseline_decision,
+                        rollback,
+                        transferred_decision,
+                    ],
+                    start=1,
+                )
+            ],
+            "assessments": [
+                {
+                    "assessment": 1,
+                    "evidence": ci["failure_policy"],
+                },
+                {
+                    "assessment": 2,
+                    "evidence": required_provenance_evidence,
+                },
+            ],
+            "rubric_dimensions": [
+                "technical-correctness",
+                "judgment",
+                "evidence",
+                "communication",
+            ],
+            "transfer": {
+                "task": (
+                    "canary error rateだけを変え、同じartifactと"
+                    "provenanceで段階配信のadvance・rollback判断を"
+                    "再評価する"
+                ),
+                "changed_assumption": "canary-error-rate",
+                "evidence": {
+                    "baseline": baseline_decision,
+                    "transferred": transferred_decision,
+                },
+            },
+        },
+    }
+    print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+
+try:
+    main()
+except AssertionError as error:
+    raise SystemExit(str(error)) from None
+PY</code></pre>
+</section>
+<section id="tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <table>
+    <caption>delivery gateと観測結果を結ぶdecision table</caption>
+    <thead>
+      <tr>
+        <th scope="col">観測</th>
+        <th scope="col">判断</th>
+        <th scope="col">次の行動</th>
+        <th scope="col">必要証拠</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row">required checkがmissingまたはunknown</th>
+        <td>stop</td>
+        <td>原因を解消して全gateを再実行</td>
+        <td>期待集合と観測集合</td>
+      </tr>
+      <tr>
+        <th scope="row">digestまたはbuilderが不一致</th>
+        <td>reject</td>
+        <td>artifactを隔離してprovenanceを再生成</td>
+        <td>bytes、digest、subject、builder</td>
+      </tr>
+      <tr>
+        <th scope="row">canaryが閾値以内</th>
+        <td>advance</td>
+        <td>次段へ限定的に拡大</td>
+        <td>利用者可視SLIと時間窓</td>
+      </tr>
+      <tr>
+        <th scope="row">canaryが閾値超過</th>
+        <td>rollback</td>
+        <td>復旧後のsystem outcomeを再観測</td>
+        <td>before、after、target</td>
+      </tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><strong>誤診:</strong> CIがgreenなので配信対象も正しく安全である。<strong>反証:</strong> required check集合、artifact digest、provenance subject、trusted builderを別々に検証する。</li>
+    <li><strong>誤診:</strong> rollback commandが成功したのでincidentは解消した。<strong>反証:</strong> 利用者可視error rateと対象versionを再観測し、system outcomeがtargetへ戻ったことを確認する。</li>
+  </ul>
+</section>
+<section id="knowledge-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>required checkのunknownをsuccessへ倒すと、どの証拠境界が壊れるか。</li>
+    <li>SLSA v1.2 Approvedのprovenance presence aloneを拒否するために何を照合するか。</li>
+    <li>DORA five metricsを一つだけ最大化すると起こりうる局所最適を説明せよ。</li>
+    <li>command successとsystem outcomeを分けるrollback証拠を設計せよ。</li>
+  </ol>
+</section>
+<section id="sources-next">
+  <h2>出典と次の学習</h2>
+  <p>supply-chain integrityはSLSA Specification Version 1.2 Approved、安全な開発工程はNIST SSDF 1.1、低riskな配信能力はDORA continuous delivery、評価はDORA current five metricsを基準にした。仕様名やmetricsはversionと更新日を固定して解釈する。</p>
+  <p>次は、core15の利用者可視SLIをcanaryの停止条件へ結び、artifact、provenance、decision、rollback outcomeを一つの監査可能なevidence bundleとして再現する。</p>
+</section>

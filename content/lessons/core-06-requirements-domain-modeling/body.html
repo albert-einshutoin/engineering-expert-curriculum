@@ -1,0 +1,424 @@
+<section id="why">
+  <h2>なぜ重要か</h2>
+  <p>正しく実装された機能でも、解くべき問題を取り違えれば価値を生まない。要求は最初から完全な一覧として存在するものではなく、利害関係者の目的、制約、用語、例外を具体例で照合しながら発見し、検証可能な合意へ変える対象である。要求工学を工程の最初に文書を固定するwaterfallや、テンプレートを埋める作業と同一視すると、学習した事実をモデルへ戻せない。</p>
+  <p>ドメインモデルは名詞を箱へ並べる図でも、データベースschemaの写しでもない。同じ語がどの文脈で何を意味し、どのコマンドがどのイベントを生み、何を常に守るかを共有する判断道具である。例外を後回しにすると、実装後に初めて隠れた業務ルールが現れる。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> 良い要求の構文、用語集、境界図があっても要求の正しさは保証されない。ISO/IEC/IEEE 29148やNASAの要求特性は確認観点であり、対話と妥当性確認の代替ではない。境界づけられた文脈は言語とモデルの適用範囲であり、一つのmicroservice、一つのteam、一つのdatabaseと常に一対一ではない。</p>
+  </aside>
+</section>
+<section id="mental-model">
+  <h2>メンタルモデル</h2>
+  <p>要求から実装へ直進せず、目的、用語、具体例、境界、状態遷移、不変条件、例外、観測を往復する。要求は「何を実装するか」だけでなく、誰にとって何が成立すれば受け入れられるか、どの条件では成立しないかまで持つ。</p>
+  <figure>
+    <figcaption>発言を検証可能なドメインモデルへ変換する循環</figcaption>
+    <ol>
+      <li><strong>発言:</strong> 利害関係者の目的、困り事、制約を発言者と状況付きで記録する。</li>
+      <li><strong>用語:</strong> 語ごとに定義、具体例、反例、所有する文脈を置く。</li>
+      <li><strong>境界:</strong> 同じ語と不変条件が一貫する範囲を決め、境界間の翻訳を示す。</li>
+      <li><strong>振る舞い:</strong> 意図をコマンド、起きた事実をイベント、許される状態変化を不変条件で表す。</li>
+      <li><strong>例外:</strong> 時間切れ、在庫不足、権限不足、外部決済失敗を通常経路と同じ粒度で置く。</li>
+      <li><strong>検証:</strong> 要求から観測までを追跡し、空欄と矛盾を次の質問へ戻す。</li>
+    </ol>
+  </figure>
+  <p>境界づけられた文脈は、あるモデルとユビキタス言語が一貫して使える範囲である。CatalogのAssetは検索可能な機材情報、Rental OperationsのAssetは貸出状態を持つ個体、Billingの対象は請求行かもしれない。これらを一つの巨大な意味へ統合する代わりに、境界で識別子と意味を翻訳する。</p>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>機材レンタルの曖昧な発言を追跡可能なモデルへ変える</h3>
+  <dl>
+    <dt>前提</dt>
+    <dd>店舗はAssetを検索するCatalog、予約から返却までを扱うRental Operations、保証金と請求を扱うBillingを持つ。担当者は「予約できた機材は貸し出せる」と説明した。</dd>
+    <dt>入力</dt>
+    <dd>同じcamera-17に対する通常貸出、貸出中の競合予約、期限内返却、期限切れHold、再貸出、延滞返却という一続きの状態遷移と、「保証金はいくらなら責任者承認が要るか」という未回答の質問を与える。</dd>
+    <dt>操作</dt>
+    <dd>発言を用語、コマンド、イベント、不変条件、例外へ分解する。一つのAsset状態を各操作へ引き継ぎ、active loanの有無で競合を判定する。各要求の追跡先が空でないことを検査し、保証金閾値を未宣言ルールとして検出した後、業務責任者の決定で解決済みにする。</dd>
+    <dt>観測</dt>
+    <dd>5語、3文脈、6操作、3例外と各操作後のstate traceをJSONへ出力する。active loan数の最大値は計算結果として1になり、返却でAssetが利用可能に戻り、延滞時だけ料金評価eventが生じる。すべての不変条件が通り、曖昧性にはdetectedとresolvedの履歴が残る。</dd>
+    <dt>結論</dt>
+    <dd>「予約済み」は貸出の十分条件ではない。取置きが有効で、対象Assetが利用可能で、本人確認と保証金条件を満たす必要がある。例外と未確定事項を追跡して初めて、実装可能かつ反証可能な要求になる。</dd>
+  </dl>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+import json
+
+HARNESS = "domain_model_lab_v1"
+
+GLOSSARY = [
+    {
+        "term": "Asset",
+        "definition": "Rental Operationsで貸出状態を持つ機材個体",
+        "example": "camera-17",
+        "counterexample": "Catalogの商品分類",
+    },
+    {
+        "term": "Reservation",
+        "definition": "顧客と期間を指定した貸出希望",
+        "example": "customer-4がcamera-17を2日間予約",
+        "counterexample": "支払済み請求",
+    },
+    {
+        "term": "Hold",
+        "definition": "指定時刻まで他のCheckoutを防ぐ取置き",
+        "example": "2026-08-01T10:00:00Zまで有効",
+        "counterexample": "期限のない所有権",
+    },
+    {
+        "term": "Checkout",
+        "definition": "本人確認後にAssetを貸出中へ変える業務操作",
+        "example": "clerk-2がreservation-8を貸出確定",
+        "counterexample": "Catalog詳細の閲覧",
+    },
+    {
+        "term": "Return",
+        "definition": "Assetを返却受付し状態と請求判定を更新する操作",
+        "example": "期限内返却を受領",
+        "counterexample": "Reservationの取消",
+    },
+]
+
+BOUNDED_CONTEXTS = [
+    {
+        "name": "Catalog",
+        "responsibility": "検索可能な機材情報と分類",
+        "translation": "商品分類をAsset候補IDへ変換",
+    },
+    {
+        "name": "Rental Operations",
+        "responsibility": "Reservation、Hold、Checkout、Returnの状態",
+        "translation": "Asset IDと貸出結果を境界外へ公開",
+    },
+    {
+        "name": "Billing",
+        "responsibility": "保証金、延滞料金、請求行",
+        "translation": "貸出イベントを金額へ変換",
+    },
+]
+
+SCENARIOS = [
+    {
+        "id": "normal-checkout",
+        "hold_active": True,
+        "identity_verified": True,
+        "command": "CheckoutAsset",
+        "due_at": "2026-08-03T10:00:00Z",
+        "expected": "checked-out",
+    },
+    {
+        "id": "competing-reservation",
+        "hold_active": True,
+        "identity_verified": True,
+        "command": "CheckoutAsset",
+        "expected": "rejected-unavailable",
+    },
+    {
+        "id": "normal-return",
+        "command": "ReturnAsset",
+        "returned_at": "2026-08-03T09:30:00Z",
+        "expected": "accepted-on-time",
+    },
+    {
+        "id": "expired-hold",
+        "hold_active": False,
+        "identity_verified": True,
+        "command": "CheckoutAsset",
+        "expected": "rejected-expired-hold",
+    },
+    {
+        "id": "overdue-checkout",
+        "hold_active": True,
+        "identity_verified": True,
+        "command": "CheckoutAsset",
+        "due_at": "2026-08-03T10:00:00Z",
+        "expected": "checked-out",
+    },
+    {
+        "id": "overdue-return",
+        "command": "ReturnAsset",
+        "returned_at": "2026-08-03T10:30:00Z",
+        "expected": "accepted-overdue",
+    },
+]
+
+def state_name(asset):
+    return "available" if asset["active_loan"] is None else "checked-out"
+
+def checkout_asset(asset, scenario):
+    before = state_name(asset)
+    event = "CheckoutRejected"
+    # Holdの検証を先に置き、期限切れを在庫競合と誤分類しない。
+    if not scenario["hold_active"]:
+        observed = "rejected-expired-hold"
+    elif asset["active_loan"] is not None:
+        # 同じAssetのactive loanを状態として検査するから競合を反証できる。
+        observed = "rejected-unavailable"
+    elif not scenario["identity_verified"]:
+        observed = "rejected-identity"
+    else:
+        asset["active_loan"] = {
+            "checkout_id": scenario["id"],
+            "due_at": scenario["due_at"],
+        }
+        asset["active_loan_count"] += 1
+        observed = "checked-out"
+        event = "AssetCheckedOut"
+    return {
+        "id": scenario["id"],
+        "asset_id": asset["asset_id"],
+        "command": scenario["command"],
+        "event": event,
+        "expected": scenario["expected"],
+        "observed": observed,
+        "state_before": before,
+        "state_after": state_name(asset),
+        "active_loan_count": asset["active_loan_count"],
+    }
+
+def return_asset(asset, scenario):
+    before = state_name(asset)
+    assert asset["active_loan"] is not None
+    due_at = asset["active_loan"]["due_at"]
+    # 固定UTC fixtureでは同形式なので文字列順が時刻順と一致する。
+    overdue = scenario["returned_at"] > due_at
+    observed = "accepted-overdue" if overdue else "accepted-on-time"
+    policy_event = (
+        "OverdueChargeAssessmentRequested" if overdue else None
+    )
+    asset["active_loan"] = None
+    asset["active_loan_count"] -= 1
+    return {
+        "id": scenario["id"],
+        "asset_id": asset["asset_id"],
+        "command": scenario["command"],
+        "event": "LoanReturned",
+        "expected": scenario["expected"],
+        "observed": observed,
+        "due_at": due_at,
+        "returned_at": scenario["returned_at"],
+        "policy_event": policy_event,
+        "asset_available_after": state_name(asset) == "available",
+        "state_before": before,
+        "state_after": state_name(asset),
+        "active_loan_count": asset["active_loan_count"],
+    }
+
+def main():
+    asset = {
+        "asset_id": "camera-17",
+        "active_loan": None,
+        "active_loan_count": 0,
+    }
+    observed = []
+    for scenario in SCENARIOS:
+        if scenario["command"] == "CheckoutAsset":
+            result = checkout_asset(asset, scenario)
+        else:
+            result = return_asset(asset, scenario)
+        observed.append(result)
+
+    scenarios_by_id = {item["id"]: item for item in observed}
+    # Exact fixture identity is part of the lab evidence. The mutation test
+    # proves a removed overdue case cannot leave a false-green report.
+    assert set(scenarios_by_id) == {
+        "normal-checkout",
+        "competing-reservation",
+        "normal-return",
+        "expired-hold",
+        "overdue-checkout",
+        "overdue-return",
+    }
+    max_active_loan_count = max(
+        item["active_loan_count"] for item in observed
+    )
+    invariants = [
+        {
+            "name": "one-active-checkout-per-asset",
+            "passed": max_active_loan_count == 1,
+            "evidence": {
+                "asset_id": asset["asset_id"],
+                "max_active_loan_count": max_active_loan_count,
+            },
+        },
+        {
+            "name": "checkout-requires-active-hold",
+            "passed": all(
+                item["observed"] != "checked-out"
+                for item in observed
+                if item["id"] == "expired-hold"
+            ),
+        },
+        {
+            "name": "unavailable-asset-is-not-checked-out",
+            "passed": all(
+                item["observed"] != "checked-out"
+                for item in observed
+                if item["id"] == "competing-reservation"
+            ),
+        },
+        {
+            "name": "return-restores-availability",
+            "passed": all(
+                item["asset_available_after"]
+                for item in observed
+                if item["command"] == "ReturnAsset"
+            ),
+        },
+        {
+            "name": "overdue-return-emits-policy-event",
+            "passed": (
+                scenarios_by_id["overdue-return"]["policy_event"]
+                == "OverdueChargeAssessmentRequested"
+                and scenarios_by_id["normal-return"]["policy_event"] is None
+            ),
+        },
+    ]
+    assert all(item["expected"] == item["observed"] for item in observed)
+    assert all(item["passed"] for item in invariants)
+    assert [item["active_loan_count"] for item in observed] == [
+        1,
+        1,
+        0,
+        0,
+        1,
+        0,
+    ]
+
+    traceability = [
+        {
+            "requirement": "REQ-01 active Holdから一つのCheckoutだけを作る",
+            "commands": ["CheckoutAsset"],
+            "events": ["AssetCheckedOut", "CheckoutRejected"],
+            "invariants": ["one-active-checkout-per-asset"],
+        },
+        {
+            "requirement": "REQ-02 期限切れHoldを拒否する",
+            "commands": ["CheckoutAsset"],
+            "events": ["CheckoutRejected"],
+            "invariants": ["checkout-requires-active-hold"],
+        },
+        {
+            "requirement": "REQ-03 利用不能Assetを二重貸出しない",
+            "commands": ["CheckoutAsset"],
+            "events": ["CheckoutRejected"],
+            "invariants": ["unavailable-asset-is-not-checked-out"],
+        },
+        {
+            "requirement": (
+                "REQ-04 返却を受理して在庫を戻し、延滞時は料金評価を依頼する"
+            ),
+            "commands": ["ReturnAsset"],
+            "events": ["LoanReturned", "OverdueChargeAssessmentRequested"],
+            "invariants": [
+                "return-restores-availability",
+                "overdue-return-emits-policy-event",
+            ],
+        },
+    ]
+    assert all(
+        item["commands"] and item["events"] and item["invariants"]
+        for item in traceability
+    )
+
+    return {
+        "harness": HARNESS,
+        "fixture": "equipment-rental-v1",
+        "glossary": GLOSSARY,
+        "bounded_contexts": BOUNDED_CONTEXTS,
+        "example_scenarios": observed,
+        "asset_state_machine": {
+            "asset_id": asset["asset_id"],
+            "state_trace": observed,
+            "max_active_loan_count": max_active_loan_count,
+            "final_state": state_name(asset),
+        },
+        "exceptions": [
+            {
+                "code": "asset-unavailable",
+                "event": "CheckoutRejected",
+                "recovery": "別のAsset候補を提示",
+            },
+            {
+                "code": "hold-expired",
+                "event": "CheckoutRejected",
+                "recovery": "在庫を再確認して新しいHoldを要求",
+            },
+            {
+                "code": "overdue-return",
+                "event": "LoanReturned",
+                "policy_event": True,
+                "recovery": "Billingへ延滞料金評価を依頼",
+            },
+        ],
+        "invariants": invariants,
+        "traceability": traceability,
+        "ambiguities": [
+            {
+                "rule": "保証金承認の金額閾値",
+                "status": "detected",
+                "evidence": "担当者二名の回答が不一致",
+            },
+            {
+                "rule": "保証金承認の金額閾値",
+                "status": "resolved",
+                "evidence": "Billing責任者が50000円以上と決定",
+            },
+        ],
+        "external_network_used": False,
+    }
+
+print(json.dumps(main(), ensure_ascii=False, indent=2))
+PY</code></pre>
+</section>
+<section id="tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <table>
+    <caption>境界と要求表現を選ぶ decision table</caption>
+    <thead>
+      <tr>
+        <th scope="col">観測</th>
+        <th scope="col">選択</th>
+        <th scope="col">代償</th>
+        <th scope="col">再評価条件</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row">同じ語の意味と変更理由が部門間で異なる</th>
+        <td>文脈を分け、境界で翻訳する</td>
+        <td>翻訳と整合の実装が増える</td>
+        <td>差が消え、独立変更がほぼなくなった時</td>
+      </tr>
+      <tr>
+        <th scope="row">一つの不変条件を同時に守る必要がある</th>
+        <td>同じ整合性境界で扱う</td>
+        <td>範囲が広いほど結合と競合が増える</td>
+        <td>補償可能で、独立性の便益が上回る時</td>
+      </tr>
+      <tr>
+        <th scope="row">規則が未確定で判断者も不明</th>
+        <td>仮説と保留事項として所有者を割り当てる</td>
+        <td>即時の実装着手を遅らせる</td>
+        <td>期限付きの実験で安全に学べる時</td>
+      </tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><strong>誤診:</strong> 要求が変わったのはwaterfallを採用しなかったからだ。<strong>反証:</strong> 要求工学は一括固定ではなく、発見、分析、仕様化、妥当性確認、管理を反復する。変更理由と影響を追跡できることが品質であり、変化ゼロが品質ではない。</li>
+    <li><strong>誤診:</strong> 三つの境界づけられた文脈があるので三つのmicroserviceへ分割すればよい。<strong>反証:</strong> 文脈はモデルと言語の境界、microserviceは配置と運用の選択である。独立配置の費用、通信失敗、team能力を評価しない分割は根拠にならない。</li>
+    <li><strong>失敗モード:</strong> 名詞だけを抽出し、時間、権限、失敗を動詞と状態遷移で確かめないと、例外が実装後まで隠れる。</li>
+    <li><strong>失敗モード:</strong> 貸出、競合、返却を独立した成功例として数えるだけでは、同じAssetの状態が操作間で保存されることを証明できない。識別子とstate traceを共有し、最大active loan数を履歴から計算する。</li>
+    <li><strong>失敗モード:</strong> 未回答の規則を実装者が暗黙に決めると、コードが唯一の仕様になり、業務責任者が妥当性を検証できない。</li>
+  </ul>
+</section>
+<section id="knowledge-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>「予約」の意味が営業と店舗で違う時、用語を一つへ統一する前に何を記録するか。</li>
+    <li>要求からコマンド、イベント、不変条件までの追跡で空欄が見つかった時、実装を始める前に何を反証するか。</li>
+    <li>境界づけられた文脈とmicroserviceが一対一にならない二つの状況を説明せよ。</li>
+    <li>「使いやすいこと」を、観測可能でsolutionに過度依存しない要求へ書き換えよ。</li>
+  </ol>
+</section>
+<section id="sources-next">
+  <h2>出典と次の学習</h2>
+  <p>要求の発見、分析、仕様化、妥当性確認、管理の全体像はISO/IEC/IEEE 29148:2018を基準にする。単一で必要、明確、実現可能、検証可能といった要求の書き方はNASA Systems Engineering Handbook Appendix Cで照合する。用語、モデル、境界づけられた文脈はDomain-Driven Design Referenceの定義とpattern summaryに戻って確認する。</p>
+  <p>次はcore-07で、このドメインのコマンド、イベント、例外をAPIのwire形式、HTTP意味論、認可、互換性へ写す。モデルをそのまま外部へ露出せず、consumerが依存してよい契約面を選ぶ。</p>
+</section>

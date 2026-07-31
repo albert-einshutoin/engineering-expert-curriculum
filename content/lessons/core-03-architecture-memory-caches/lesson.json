@@ -1,0 +1,165 @@
+{
+  "version": 1,
+  "id": "core-03-architecture-memory-caches",
+  "title": "CPU・メモリ経路とアクセス局所性",
+  "summary": "キャッシュ、TLB、主記憶までの経路を観測し、データ配置から性能を判断する。",
+  "track": "foundations",
+  "stage": 1,
+  "difficulty": "foundation",
+  "estimatedMinutes": 240,
+  "prerequisiteIds": ["core-01-systems-tradeoffs"],
+  "objectives": [
+    {
+      "id": "obj-path",
+      "statement": "仮想アドレスからTLB、キャッシュ階層、主記憶までの経路と各段の役割を図示できる",
+      "evidenceIds": ["locality-report", "teach-back"]
+    },
+    {
+      "id": "obj-locality",
+      "statement": "同一データ量で連続、stride、ランダムの三アクセスを測定し、帯域または所要時間の差を報告できる",
+      "evidenceIds": ["locality-report", "assessment"]
+    },
+    {
+      "id": "obj-transfer",
+      "statement": "キャッシュミスとTLBミスの仮説を追加測定で切り分け、別処理系のデータ配置へ適用できる",
+      "evidenceIds": ["assessment", "transfer"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "locality-report",
+      "kind": "artifact",
+      "description": "アクセス順序別の測定値、CPU・メモリ経路図、実行環境を含む記録"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "局所性が実効帯域へ作用する機構を示す5分説明"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "キャッシュ、TLB、割り当て、処理系の競合仮説を反証する診断"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "列指向または画像処理へデータ指向設計を移した設計案"
+    }
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "キャッシュライン、アクセス局所性、TLB、ページを異なる階層の概念として識別できる",
+      "evidenceIds": ["locality-report"]
+    },
+    {
+      "level": "explain",
+      "criterion": "時間的局所性と空間的局所性が再利用と転送量を通じて性能へ効く経路を説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "データ量を固定してアクセス順序だけを変え、環境付きの再現可能な測定を作成できる",
+      "evidenceIds": ["locality-report"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "作業集合、stride、ページ数を独立に変え、キャッシュとTLBの影響を切り分けられる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "可読性、更新頻度、ベクトル化、メモリ量を含むデータ配置レビューを別処理系で主導できる",
+      "evidenceIds": ["transfer"]
+    }
+  ],
+  "lab": {
+    "title": "走査順序だけを変えてメモリ経路を観測する",
+    "artifact": "アクセス局所性を変えた測定とCPU・メモリ経路図",
+    "steps": [
+      "同じ整数配列を連続、16要素stride、固定seedランダムの順で一巡する処理を用意する",
+      "入力生成とウォームアップを測定から外し、各走査を7回以上実行して中央値を記録する",
+      "配列サイズをL1相当、最終レベルキャッシュ相当、それを超える三段階へ変える",
+      "仮想アドレス、TLB、キャッシュライン、主記憶を測定結果と結ぶ経路図を描く",
+      "キャッシュミス説とTLBミス説を区別する追加実験を一つずつ行い、限界を報告する"
+    ]
+  },
+  "teachBack": "5分で、連続走査が速くなり得る機構、TLBとキャッシュの違い、測定値を普遍的な遅延定数として扱えない理由を説明する。",
+  "assessment": [
+    {
+      "prompt": "配列を2倍にした途端に所要時間が3倍になった。『L2キャッシュからあふれた』以外の仮説を二つ挙げ、反証測定を示す。",
+      "expectedEvidence": "TLB、ページフォールト、割り当て、CPU周波数、処理系最適化の少なくとも二つを独立変数で切り分ける計画"
+    },
+    {
+      "prompt": "二つのスレッドが別変数を更新すると遅くなった。キャッシュ容量不足と断定できない理由は何か。",
+      "expectedEvidence": "同一キャッシュライン上の書込み競合、coherence、配置変更による反証を含む説明"
+    }
+  ],
+  "transferTask": "データ指向設計を別の処理系へ適用",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "キャッシュ、TLB、coherenceを同一機構として説明する",
+        "developing": "階層は区別するが、仮想アドレス変換またはキャッシュライン転送が抜ける",
+        "proficient": "TLB、各キャッシュ、主記憶の役割とミス時の経路を正しく図示する",
+        "exemplary": "書込み共有とlanguage memory modelを区別し、機種依存の反例にも対応する"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "局所性を常に最優先し、可読性や更新費用を無視する",
+        "developing": "高速な配置を選ぶが、作業集合やアクセス頻度の成立条件が曖昧である",
+        "proficient": "測定したhot pathに限定し、局所性、メモリ量、変更容易性を比較する",
+        "exemplary": "段階的な配置変更と撤回条件を設け、異なるCPUで再評価する"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "一回のwall-clock値だけでキャッシュミスを断定する",
+        "developing": "反復測定はあるが、作業集合とアクセス順序を同時に変えている",
+        "proficient": "データ量を固定し、走査順序別の中央値と環境情報で仮説を比較する",
+        "exemplary": "作業集合、stride、ページ数の感度を測り、計測器の限界も記録する"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "結果表と経路図が対応せず、どの操作を測ったか分からない",
+        "developing": "測定手順は読めるが、図の各段と仮説の対応が曖昧である",
+        "proficient": "入力、操作、観測、結論を経路図の段へ一対一で結び付ける",
+        "exemplary": "ハードウェア依存の留保を明示し、設計レビューで再現手順を共有できる"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "Intel® 64 and IA-32 Architectures Optimization",
+      "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel64-and-ia32-architectures-optimization.html",
+      "kind": "primary"
+    },
+    {
+      "title": "Armv8-A memory model",
+      "url": "https://developer.arm.com/-/media/Arm%20Developer%20Community/PDF/Learn%20the%20Architecture/Armv8-A%20memory%20model%20guide.pdf?revision=58b1dd0a-3800-4218-b21a-f95a0332034c",
+      "kind": "primary"
+    },
+    {
+      "title": "The TLB",
+      "url": "https://docs.kernel.org/arch/x86/tlb.html",
+      "kind": "primary"
+    }
+  ],
+  "review": {
+    "intervalDays": [1, 7, 30, 90],
+    "prompts": [
+      "TLBミスとキャッシュミスを区別する独立変数は何か",
+      "作業集合が最終レベルキャッシュを超えると予測はどう変わるか",
+      "局所性改善を採用しない方がよい保守上の条件は何か"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}

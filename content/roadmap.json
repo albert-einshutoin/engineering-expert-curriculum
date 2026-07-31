@@ -1,0 +1,312 @@
+{
+  "version": 1,
+  "nodes": [
+    {
+      "id": "core-01-systems-tradeoffs",
+      "title": "システム思考とエンジニアリングのトレードオフ",
+      "track": "foundations",
+      "prerequisiteIds": []
+    },
+    {
+      "id": "core-02-algorithms-measurement",
+      "title": "アルゴリズム選択を計算量と測定で検証する",
+      "track": "foundations",
+      "prerequisiteIds": [
+        "core-01-systems-tradeoffs"
+      ]
+    },
+    {
+      "id": "core-03-architecture-memory-caches",
+      "title": "CPU・メモリ経路とアクセス局所性",
+      "track": "foundations",
+      "prerequisiteIds": [
+        "core-01-systems-tradeoffs"
+      ]
+    },
+    {
+      "id": "core-04-os-processes-concurrency",
+      "title": "プロセス・スレッド・並行性の不変条件",
+      "track": "foundations",
+      "prerequisiteIds": [
+        "core-02-algorithms-measurement",
+        "core-03-architecture-memory-caches"
+      ]
+    },
+    {
+      "id": "core-05-networks-latency-failure",
+      "title": "ネットワーク遅延と部分失敗を層別に診断する",
+      "track": "foundations",
+      "prerequisiteIds": [
+        "core-04-os-processes-concurrency"
+      ]
+    },
+    {
+      "id": "core-06-requirements-domain-modeling",
+      "title": "要求を発見し、境界と例外をドメインモデルへ結ぶ",
+      "track": "build",
+      "prerequisiteIds": [
+        "core-01-systems-tradeoffs"
+      ]
+    },
+    {
+      "id": "core-07-api-contract-design",
+      "title": "API契約を失敗、再送、進化まで設計する",
+      "track": "build",
+      "prerequisiteIds": [
+        "core-06-requirements-domain-modeling"
+      ]
+    },
+    {
+      "id": "core-08-modularity-evolutionary-architecture",
+      "title": "変更理由でモジュール境界を設計しADRで更新する",
+      "track": "build",
+      "prerequisiteIds": [
+        "core-06-requirements-domain-modeling",
+        "core-07-api-contract-design"
+      ]
+    },
+    {
+      "id": "core-09-test-strategy-tdd",
+      "title": "TDDとリスク別テスト戦略で変更を証明する",
+      "track": "build",
+      "prerequisiteIds": [
+        "core-02-algorithms-measurement",
+        "core-08-modularity-evolutionary-architecture"
+      ]
+    },
+    {
+      "id": "core-10-threat-modeling-secure-design",
+      "title": "脅威モデルを設計・検証・残余リスクへ接続する",
+      "track": "build",
+      "prerequisiteIds": [
+        "core-07-api-contract-design",
+        "core-09-test-strategy-tdd"
+      ]
+    },
+    {
+      "id": "core-11-data-modeling-storage",
+      "title": "アクセスパターンと制約からストレージADRを再計算する",
+      "track": "data-scale",
+      "prerequisiteIds": [
+        "core-06-requirements-domain-modeling"
+      ]
+    },
+    {
+      "id": "core-12-transactions-isolation-consistency",
+      "title": "分離異常を再現し、abortとretryまで設計する",
+      "track": "data-scale",
+      "prerequisiteIds": [
+        "core-11-data-modeling-storage"
+      ]
+    },
+    {
+      "id": "core-13-distributed-coordination-failure",
+      "title": "重複・順序・分断を再現し復旧境界を設計する",
+      "track": "data-scale",
+      "prerequisiteIds": [
+        "core-05-networks-latency-failure",
+        "core-12-transactions-isolation-consistency"
+      ]
+    },
+    {
+      "id": "core-14-performance-capacity",
+      "title": "負荷曲線と実測profileから安全容量を判断する",
+      "track": "data-scale",
+      "prerequisiteIds": [
+        "core-02-algorithms-measurement",
+        "core-03-architecture-memory-caches",
+        "core-11-data-modeling-storage"
+      ]
+    },
+    {
+      "id": "core-15-reliability-observability-slo",
+      "title": "利用者journeyからSLI、SLO、alert、runbookを導く",
+      "track": "data-scale",
+      "prerequisiteIds": [
+        "core-05-networks-latency-failure",
+        "core-13-distributed-coordination-failure",
+        "core-14-performance-capacity"
+      ]
+    },
+    {
+      "id": "core-16-hci-usability-accessibility",
+      "title": "人間中心設計で静的サイトの利用可能性を監査する",
+      "track": "human-product",
+      "prerequisiteIds": [
+        "core-06-requirements-domain-modeling"
+      ]
+    },
+    {
+      "id": "core-17-graphics-visual-information",
+      "title": "静的グラフィックスを同等の情報構造として設計する",
+      "track": "human-product",
+      "prerequisiteIds": [
+        "core-03-architecture-memory-caches",
+        "core-16-hci-usability-accessibility"
+      ]
+    },
+    {
+      "id": "core-18-product-discovery-experiments",
+      "title": "反証可能な仮説から停止判断までを事前に設計する",
+      "track": "human-product",
+      "prerequisiteIds": [
+        "core-06-requirements-domain-modeling",
+        "core-16-hci-usability-accessibility"
+      ]
+    },
+    {
+      "id": "core-19-technical-communication-design-docs",
+      "title": "読者の判断を支える設計文書とADRを構成する",
+      "track": "human-product",
+      "prerequisiteIds": [
+        "core-01-systems-tradeoffs",
+        "core-06-requirements-domain-modeling"
+      ]
+    },
+    {
+      "id": "core-20-ethics-privacy-societal-impact",
+      "title": "倫理・privacy・社会的影響を設計制約へ変える",
+      "track": "human-product",
+      "prerequisiteIds": [
+        "core-10-threat-modeling-secure-design",
+        "core-16-hci-usability-accessibility",
+        "core-19-technical-communication-design-docs"
+      ]
+    },
+    {
+      "id": "core-21-maintenance-legacy-comprehension",
+      "title": "未知を残したままlegacy systemを安全に変更する",
+      "track": "sustain",
+      "prerequisiteIds": [
+        "core-08-modularity-evolutionary-architecture",
+        "core-09-test-strategy-tdd"
+      ]
+    },
+    {
+      "id": "core-22-evolution-safe-migrations",
+      "title": "互換性を保つschema migrationを段階実行する",
+      "track": "sustain",
+      "prerequisiteIds": [
+        "core-08-modularity-evolutionary-architecture",
+        "core-12-transactions-isolation-consistency",
+        "core-21-maintenance-legacy-comprehension"
+      ]
+    },
+    {
+      "id": "core-23-incident-response-learning",
+      "title": "incident responseを検証可能な学習へ変える",
+      "track": "sustain",
+      "prerequisiteIds": [
+        "core-15-reliability-observability-slo",
+        "core-21-maintenance-legacy-comprehension"
+      ]
+    },
+    {
+      "id": "core-24-delivery-ci-release-safety",
+      "title": "CI・段階配信・supply chainを結果証拠で閉じる",
+      "track": "sustain",
+      "prerequisiteIds": [
+        "core-09-test-strategy-tdd",
+        "core-15-reliability-observability-slo"
+      ]
+    },
+    {
+      "id": "core-25-engineering-economics-capacity",
+      "title": "engineering economicsで信頼性と容量へ投資する",
+      "track": "sustain",
+      "prerequisiteIds": [
+        "core-14-performance-capacity",
+        "core-15-reliability-observability-slo",
+        "core-24-delivery-ci-release-safety"
+      ]
+    },
+    {
+      "id": "core-26-code-review-collaborative-quality",
+      "title": "コードレビューを協働品質システムとして運営する",
+      "track": "lead",
+      "prerequisiteIds": [
+        "core-09-test-strategy-tdd",
+        "core-19-technical-communication-design-docs"
+      ]
+    },
+    {
+      "id": "core-27-team-interfaces-sociotechnical-architecture",
+      "title": "チームインターフェースで社会技術アーキテクチャを設計する",
+      "track": "lead",
+      "prerequisiteIds": [
+        "core-08-modularity-evolutionary-architecture",
+        "core-19-technical-communication-design-docs",
+        "core-26-code-review-collaborative-quality"
+      ]
+    },
+    {
+      "id": "core-28-oss-governance-stewardship",
+      "title": "OSS governanceで貢献とリリースを持続可能にする",
+      "track": "lead",
+      "prerequisiteIds": [
+        "core-10-threat-modeling-secure-design",
+        "core-19-technical-communication-design-docs",
+        "core-26-code-review-collaborative-quality"
+      ]
+    },
+    {
+      "id": "core-29-cross-cultural-async-collaboration",
+      "title": "時差と言語を越える非同期RFCを設計する",
+      "track": "lead",
+      "prerequisiteIds": [
+        "core-19-technical-communication-design-docs",
+        "core-27-team-interfaces-sociotechnical-architecture"
+      ]
+    },
+    {
+      "id": "core-30-evidence-based-technical-leadership",
+      "title": "証拠と撤退条件で技術方針を率いる",
+      "track": "lead",
+      "prerequisiteIds": [
+        "core-20-ethics-privacy-societal-impact",
+        "core-25-engineering-economics-capacity",
+        "core-27-team-interfaces-sociotechnical-architecture",
+        "core-28-oss-governance-stewardship",
+        "core-29-cross-cultural-async-collaboration"
+      ]
+    }
+  ],
+  "masteryGates": [
+    {
+      "id": "foundation",
+      "after": 5,
+      "artifact": "未知システムの診断記録",
+      "review": "機構と証拠を説明できる"
+    },
+    {
+      "id": "builder",
+      "after": 10,
+      "artifact": "契約・テスト・脅威モデル付きサービス",
+      "review": "信頼性を設計へ埋め込める"
+    },
+    {
+      "id": "scaler",
+      "after": 15,
+      "artifact": "負荷・障害・SLO実験",
+      "review": "分散失敗を測定し判断できる"
+    },
+    {
+      "id": "human",
+      "after": 20,
+      "artifact": "アクセシブルな検証済み改善",
+      "review": "人と社会への影響を説明できる"
+    },
+    {
+      "id": "operator",
+      "after": 25,
+      "artifact": "移行・運用・費用計画",
+      "review": "変更を安全かつ経済的に進められる"
+    },
+    {
+      "id": "leader",
+      "after": 30,
+      "artifact": "他者が実行可能な技術方針",
+      "review": "不確実性の中で組織を前進させられる"
+    }
+  ]
+}

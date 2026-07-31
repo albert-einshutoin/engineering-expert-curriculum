@@ -1,0 +1,529 @@
+<section id="why">
+  <h2>なぜ重要か</h2>
+  <p>「APIが遅い」という一つの観測には、名前解決、接続、暗号handshake、request送信、server処理、response転送という異なる区間が含まれる。総時間だけを見てnetwork担当またはserver担当へ責任を移すと、原因を反証できず、timeoutとretryで負荷を増幅し得る。</p>
+  <p>networkでは、相手が処理して応答だけ失われた状態と、相手へ届かなかった状態をclientから完全には区別できないことがある。特に状態を変えるPOSTを無条件にretryすると二重処理を生む。deadline、冪等key、結果照会を一つの契約として設計する必要がある。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> TCP接続成功はTLS認証、HTTP成功、業務処理成功を保証しない。DNS cache、TLS 0-RTT、retryも常に安全または高速ではなく、stale情報、replay、retry stormという条件を持つ。exactly-onceは輸送層だけからは得られない。</p>
+  </aside>
+</section>
+<section id="mental-model">
+  <h2>メンタルモデル</h2>
+  <p>一要求を層ではなくイベント列として観測する。各イベントに単調時計の開始・完了、残りdeadline、request IDを付ける。層の境界を越えるたびに「何が完了したと言えるか」を更新する。</p>
+  <figure>
+    <figcaption>DNSから業務結果までの時系列</figcaption>
+    <ol>
+      <li><strong>名前解決:</strong> DNS queryを送り、候補addressとTTLを得る。</li>
+      <li><strong>輸送接続:</strong> TCP SYN、SYN-ACK、ACKで接続状態を確立する。</li>
+      <li><strong>暗号接続:</strong> TLSでversion、鍵、相手のidentityを検証する。</li>
+      <li><strong>request送信:</strong> HTTP method、target、header、bodyを送る。</li>
+      <li><strong>server処理:</strong> handlerと依存serviceが状態を読み書きする。</li>
+      <li><strong>最初のbyte:</strong> statusとheaderを受け始める。</li>
+      <li><strong>本文完了:</strong> responseを読み終える。ただし業務結果はstatusとbodyの契約で判定する。</li>
+      <li><strong>結果確定:</strong> clientが結果を永続化し、必要なら冪等keyで後から照会できる。</li>
+    </ol>
+  </figure>
+  <p>timeoutは各層へ同じ値を配るのではなく、利用者の総deadlineから逆算する。再試行を許すなら、一回目のtimeout、backoff、二回目、後処理の合計が総deadline以下でなければならない。下流にも残りdeadlineを伝えないと、clientが諦めた後もserverが仕事を続ける。</p>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>2000msの利用者期限へ一回のretryを収める</h3>
+  <dl>
+    <dt>前提</dt>
+    <dd>総deadlineは2000ms。UI更新と結果保存に200ms、retry間のjitter付きbackoffに100msを確保する。状態変更操作は冪等key対応済み。</dd>
+    <dt>入力</dt>
+    <dd>一要求についてDNS、connect、TLS、time to first byte、body完了を単調時計で記録する。</dd>
+    <dt>操作</dt>
+    <dd>一回目へ800ms、backoffへ100ms、二回目へ700ms、後処理へ200ms、cancel伝播へ100msを配り、残り100ms未満では新しい試行を開始しない。</dd>
+    <dt>観測</dt>
+    <dd>localhost simulatorでcold/warmを各7回測り、制御したDNS/TLS delayを含む単調時刻を保存する。最悪時は800 + 100 + 700 + 200 + 100 = 1900msで期限内に収まる。</dd>
+    <dt>結論</dt>
+    <dd>各段へ2000msを設定すると、二試行で4000ms以上になり得る。試行ごとに残りdeadlineを再計算し、未開始区間を明示する。</dd>
+  </dl>
+  <p>次の<code>trace-fixture.csv</code>相当のlocalhost simulatorは、外部network、秘密情報、curlを必要としない。DNS cacheとTLS handshakeは制御可能な待ち時間として模擬し、実protocol測定ではないことを出力へ明記する。</p>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+import json
+import re
+import socket
+import statistics
+import threading
+import time
+
+HARNESS = "network_lab_v2"
+MAX_LINE_BYTES = 256
+SOCKET_DEADLINE_SECONDS = 0.25
+MAX_REQUEST_ID_BYTES = 64
+MAX_DELAY_MS = 1000
+REQUEST_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+
+class ProtocolError(Exception):
+    def __init__(self, code):
+        super().__init__(code)
+        self.code = code
+
+def receive_line(
+    connection,
+    timeline=None,
+    deadline_seconds=SOCKET_DEADLINE_SECONDS,
+):
+    connection.settimeout(deadline_seconds)
+    payload = bytearray()
+    while True:
+        try:
+            part = connection.recv(min(64, MAX_LINE_BYTES + 1))
+        except TimeoutError as error:
+            raise ProtocolError("receive_timeout") from error
+        if not part:
+            raise ProtocolError("newline_required")
+        newline = part.find(b"\n")
+        fragment = part if newline == -1 else part[:newline]
+        payload.extend(fragment)
+        if len(payload) &gt; MAX_LINE_BYTES:
+            raise ProtocolError("line_too_long")
+        if timeline is not None and "first_byte" not in timeline:
+            timeline["first_byte"] = time.monotonic_ns()
+        if newline != -1:
+            if part[newline + 1:]:
+                raise ProtocolError("multiple_lines")
+            break
+    if timeline is not None:
+        timeline["body_finish"] = time.monotonic_ns()
+    try:
+        return payload.decode("ascii")
+    except UnicodeDecodeError as error:
+        raise ProtocolError("non_ascii_line") from error
+
+def validate_request_id(request_id):
+    if (
+        len(request_id.encode("ascii", errors="ignore"))
+        &gt; MAX_REQUEST_ID_BYTES
+        or REQUEST_ID_PATTERN.fullmatch(request_id) is None
+    ):
+        raise ProtocolError("invalid_request_id")
+    return request_id
+
+def parse_command(line):
+    fields = line.split()
+    if not fields:
+        raise ProtocolError("empty_command")
+    command = fields[0]
+    if command == "APPLY":
+        if len(fields) != 4:
+            raise ProtocolError("invalid_arity")
+        request_id = validate_request_id(fields[1])
+        if not fields[2].isascii() or not fields[2].isdecimal():
+            raise ProtocolError("invalid_delay_ms")
+        delay_ms = int(fields[2])
+        if not 0 &lt;= delay_ms &lt;= MAX_DELAY_MS:
+            raise ProtocolError("invalid_delay_ms")
+        if fields[3] not in {"reply", "drop"}:
+            raise ProtocolError("invalid_mode")
+        return command, request_id, delay_ms, fields[3]
+    if command == "LOOKUP":
+        if len(fields) != 2:
+            raise ProtocolError("invalid_arity")
+        return command, validate_request_id(fields[1])
+    if command == "STOP":
+        if len(fields) != 1:
+            raise ProtocolError("invalid_arity")
+        return (command,)
+    raise ProtocolError("unknown_command")
+
+class LocalFixture:
+    def __init__(self, injected_failure_id):
+        self.results = {}
+        self.injected_failure_id = injected_failure_id
+        self.injected_exceptions = []
+        self.stopped = threading.Event()
+        self.terminated = threading.Event()
+        self.listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            self.listener.setsockopt(
+                socket.SOL_SOCKET,
+                socket.SO_REUSEADDR,
+                1,
+            )
+            self.listener.bind(("127.0.0.1", 0))
+            self.listener.listen()
+            self.listener.settimeout(0.05)
+        except Exception:
+            self.listener.close()
+            raise
+        self.port = self.listener.getsockname()[1]
+        self.started = False
+        # A non-daemon thread makes cleanup failures visible instead of hiding
+        # a leaked server at interpreter shutdown.
+        self.server = threading.Thread(
+            target=self.serve,
+            name="localhost-fixture",
+            daemon=False,
+        )
+
+    def start(self):
+        try:
+            self.server.start()
+            self.started = True
+        except Exception:
+            self.listener.close()
+            raise
+
+    def handle(self, connection, command):
+        if command[0] == "APPLY":
+            _, request_id, delay_ms, mode = command
+            if request_id == self.injected_failure_id:
+                raise RuntimeError("controlled handler failure")
+            self.results.setdefault(request_id, "applied")
+            time.sleep(delay_ms / 1000)
+            if mode == "reply":
+                connection.sendall(
+                    f"RESULT {request_id} applied\n".encode("ascii")
+                )
+        elif command[0] == "LOOKUP":
+            _, request_id = command
+            value = self.results.get(request_id, "missing")
+            connection.sendall(
+                f"RESULT {request_id} {value}\n".encode("ascii")
+            )
+        else:
+            self.stopped.set()
+            connection.sendall(b"STOPPED\n")
+
+    def serve(self):
+        try:
+            while not self.stopped.is_set():
+                try:
+                    connection, _ = self.listener.accept()
+                except TimeoutError:
+                    continue
+                except OSError:
+                    if self.stopped.is_set():
+                        break
+                    raise
+                # The accepted socket receives its own deadline immediately;
+                # a slow client therefore cannot retain the sole worker.
+                connection.settimeout(SOCKET_DEADLINE_SECONDS)
+                with connection:
+                    try:
+                        self.handle(
+                            connection,
+                            parse_command(receive_line(connection)),
+                        )
+                    except ProtocolError as error:
+                        connection.sendall(
+                            f"ERROR {error.code}\n".encode("ascii")
+                        )
+                    except Exception as error:
+                        self.injected_exceptions.append(type(error).__name__)
+                        connection.sendall(b"ERROR internal\n")
+        finally:
+            self.terminated.set()
+
+    def close(self):
+        self.stopped.set()
+        try:
+            self.listener.close()
+        finally:
+            if self.started:
+                self.server.join(timeout=1)
+        if self.started and self.server.is_alive():
+            raise RuntimeError("localhost fixture did not stop")
+        if self.started and not self.terminated.is_set():
+            raise RuntimeError("localhost fixture termination not observed")
+
+def open_connection(port, connector=socket.create_connection):
+    return connector(("127.0.0.1", port), timeout=1)
+
+def send_line(port, payload, *, shutdown_write=False, send=True):
+    with open_connection(port) as connection:
+        if send:
+            connection.sendall(payload)
+        if shutdown_write:
+            connection.shutdown(socket.SHUT_WR)
+        return receive_line(connection, deadline_seconds=1)
+
+def rejection_code(port, payload=b"", **options):
+    response = send_line(port, payload, **options)
+    prefix, separator, code = response.partition(" ")
+    assert prefix == "ERROR" and separator
+    return code
+
+def request(port, request_id, resolver_mode, delay_ms=0, drop=False,
+            connector=socket.create_connection):
+    timeline = {}
+    timeline["dns_start"] = time.monotonic_ns()
+    socket.getaddrinfo("localhost", port, type=socket.SOCK_STREAM)
+    # These injected waits make the fixture deterministic enough to compare;
+    # they do not claim to flush or observe the operating-system DNS cache.
+    time.sleep(0.002 if resolver_mode == "cold" else 0.0001)
+    timeline["dns_end"] = time.monotonic_ns()
+    timeline["connect_start"] = time.monotonic_ns()
+    with open_connection(port, connector) as connection:
+        timeline["connect_end"] = time.monotonic_ns()
+        timeline["tls_start"] = time.monotonic_ns()
+        time.sleep(0.0002)
+        timeline["tls_end"] = time.monotonic_ns()
+        mode = "drop" if drop else "reply"
+        connection.sendall(
+            f"APPLY {request_id} {delay_ms} {mode}\n".encode("ascii")
+        )
+        try:
+            body = receive_line(connection, timeline)
+        except ProtocolError as error:
+            if not drop or error.code != "newline_required":
+                raise
+            now = time.monotonic_ns()
+            timeline.setdefault("first_byte", now)
+            timeline["body_finish"] = now
+            body = ""
+    return {
+        "request_id": request_id,
+        "resolver_mode": resolver_mode,
+        "monotonic_ns": timeline,
+        "body": body,
+        "duration_ms": (
+            timeline["body_finish"] - timeline["dns_start"]
+        ) / 1_000_000,
+    }
+
+def main():
+    fixture = LocalFixture(injected_failure_id="inject-error")
+    baseline = {"cold": [], "warm": []}
+    protocol_rejections = {}
+    connection_failure = "not_injected"
+    real_connector_calls = [0]
+    real_connector_calls_at_refusal = None
+    injector_calls = [0]
+    ambiguous = None
+    lookup_result = None
+    delayed = None
+    baseline_median_ms = None
+    try:
+        fixture.start()
+        for mode in baseline:
+            for repeat in range(7):
+                baseline[mode].append(
+                    request(fixture.port, f"{mode}-{repeat}", mode)
+                )
+        baseline_values = [
+            sample["duration_ms"]
+            for samples in baseline.values()
+            for sample in samples
+        ]
+        baseline_median_ms = statistics.median(baseline_values)
+
+        delayed = request(
+            fixture.port,
+            "delay-fixture",
+            "warm",
+            delay_ms=25,
+        )
+        protocol_rejections = {
+            "unterminated": rejection_code(
+                fixture.port,
+                b"LOOKUP never-finished",
+                shutdown_write=True,
+            ),
+            "oversized": rejection_code(
+                fixture.port,
+                b"X" * (MAX_LINE_BYTES + 1) + b"\n",
+            ),
+            "timeout": rejection_code(fixture.port, send=False),
+            "invalid_id": rejection_code(
+                fixture.port,
+                b"LOOKUP bad/id\n",
+            ),
+            "excessive_delay": rejection_code(
+                fixture.port,
+                b"APPLY too-slow 1001 reply\n",
+            ),
+            "invalid_arity": rejection_code(
+                fixture.port,
+                b"APPLY missing-mode 0\n",
+            ),
+            "invalid_mode": rejection_code(
+                fixture.port,
+                b"APPLY wrong-mode 0 maybe\n",
+            ),
+        }
+        assert send_line(
+            fixture.port,
+            b"APPLY inject-error 0 reply\n",
+        ) == "ERROR internal"
+
+        # The fault injector raises before the real connector can create a
+        # socket. The counters prove the refusal did not call the real path.
+        def real_connector(address, timeout):
+            real_connector_calls[0] += 1
+            return socket.create_connection(address, timeout=timeout)
+
+        def refused_connector(address, timeout):
+            del address, timeout
+            injector_calls[0] += 1
+            raise ConnectionRefusedError(
+                "controlled refusal before socket creation"
+            )
+
+        try:
+            request(
+                fixture.port,
+                "refused-fixture",
+                "warm",
+                connector=refused_connector,
+            )
+        except ConnectionRefusedError:
+            connection_failure = "injected_before_socket_creation"
+        real_connector_calls_at_refusal = real_connector_calls[0]
+        assert real_connector_calls_at_refusal == 0
+        assert injector_calls[0] == 1
+
+        ambiguous = request(
+            fixture.port,
+            "order-001",
+            "warm",
+            drop=True,
+            connector=real_connector,
+        )
+        lookup_result = send_line(
+            fixture.port,
+            b"LOOKUP order-001\n",
+        ).split()[-1]
+        assert send_line(fixture.port, b"STOP\n") == "STOPPED"
+    finally:
+        fixture.close()
+
+    budget = {
+        "deadline_ms": 2000,
+        "first_attempt_ms": 800,
+        "backoff_ms": 100,
+        "second_attempt_ms": 700,
+        "post_processing_ms": 200,
+        "cancel_propagation_ms": 100,
+    }
+    budget["worst_case_ms"] = sum(
+        value
+        for name, value in budget.items()
+        if name != "deadline_ms"
+    )
+    assert budget["worst_case_ms"] &lt;= budget["deadline_ms"]
+    assert ambiguous is not None
+    assert delayed is not None
+    assert baseline_median_ms is not None
+
+    return {
+        "harness": HARNESS,
+        "fixture": "trace-fixture.csv",
+        "bind_address": "127.0.0.1",
+        "external_network_used": False,
+        "tls_simulated": True,
+        "dns_cache_simulated": True,
+        "baseline": baseline,
+        "baseline_median_ms": baseline_median_ms,
+        "budget": budget,
+        "retry_stop_conditions": [
+            "remaining deadline is below 100ms",
+            "non-idempotent APPLY has an unknown result",
+        ],
+        "faults": {
+            "dependency_delay_ms": delayed["duration_ms"],
+            "connection_failure": connection_failure,
+            "real_connector_calls": real_connector_calls_at_refusal,
+            "injector_calls": injector_calls[0],
+        },
+        "non_idempotent": {
+            "request_id": "order-001",
+            "first_response": ambiguous["body"] or "response-lost",
+            "automatic_retry": "stopped",
+            "lookup_result": lookup_result,
+        },
+        "protocol_security": {
+            "max_line_bytes": MAX_LINE_BYTES,
+            "socket_deadline_ms": int(
+                SOCKET_DEADLINE_SECONDS * 1000
+            ),
+            "request_id_ascii_allowlist": REQUEST_ID_PATTERN.pattern,
+            "max_request_id_bytes": MAX_REQUEST_ID_BYTES,
+            "max_delay_ms": MAX_DELAY_MS,
+            "rejections": protocol_rejections,
+        },
+        "cleanup": {
+            "injected_exception": (
+                "observed"
+                if fixture.injected_exceptions == ["RuntimeError"]
+                else "not_observed"
+            ),
+            "server_stopped": fixture.terminated.is_set(),
+            "thread_alive": fixture.server.is_alive(),
+            "listener_closed": fixture.listener.fileno() == -1,
+        },
+    }
+
+if __name__ == "__main__":
+    print(json.dumps(main(), ensure_ascii=False, indent=2))
+PY</code></pre>
+  <p>cold/warmは各7回だが、このfixtureのcoldは注入delay、warmは短い注入delayであり、OS resolver cacheのflushを証明しない。TLS区間も暗号処理のsimulationである。実環境へ移すときだけ管理下の検証先とcurl等を用い、同じrequest IDでclient/serverを相関する。</p>
+  <p>同じrequest IDでclientとserverを相関する。clientのconnect区間と再送が増え、serverにrequestが届いていなければ損失説を支持する。connectは平常でserver内部のDB spanだけが伸びれば依存遅延説を支持する。どちらも観測できなければ原因確定ではなく観測不足である。</p>
+  <p><strong>ラボ成果物:</strong> 「DNSからHTTPまでの時系列トレースとタイムアウト予算」には、coldとwarmの両経路、単位、単調時計、request ID、最悪時の足し算、retry停止条件を含める。</p>
+</section>
+<section id="tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <table>
+    <caption>失敗時のclient actionを選ぶdecision table</caption>
+    <thead>
+      <tr>
+        <th scope="col">観測と操作</th>
+        <th scope="col">action</th>
+        <th scope="col">必要な契約</th>
+        <th scope="col">避ける失敗</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row">接続前失敗、read-only</th>
+        <td>予算内で別addressへretry</td>
+        <td>残りdeadlineとbackoff</td>
+        <td>同時retryによる集中</td>
+      </tr>
+      <tr>
+        <th scope="row">送信後timeout、状態変更</th>
+        <td>まず結果照会</td>
+        <td>冪等keyと結果endpoint</td>
+        <td>処理済みrequestの二重実行</td>
+      </tr>
+      <tr>
+        <th scope="row">依存serviceの持続的遅延</th>
+        <td>縮退またはfail fast</td>
+        <td>機能別の許容損失</td>
+        <td>queue滞留とdeadline超過の連鎖</td>
+      </tr>
+      <tr>
+        <th scope="row">名前解決結果が疑わしい</th>
+        <td>TTLとresolver経路を確認</td>
+        <td>cache更新規則</td>
+        <td>stale addressへの接続継続</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3>もっともらしい誤診と反証</h3>
+  <ol>
+    <li><strong>誤診:</strong> 「HTTP p99悪化はpacket loss」。<strong>反証:</strong> TCP再送、connect時間、複数地点の同時刻を確認し、serverの依存spanと比較する。再送が平常でDB区間だけ増えていれば損失説を退ける。</li>
+    <li><strong>誤診:</strong> 「DNS時間が0msなのでDNSに問題はない」。<strong>反証:</strong> warm cacheとcold queryを分け、TTL、負のcache、複数addressを確認する。測定がresolver callを含んでいない可能性も検証する。</li>
+  </ol>
+  <p>retryは成功率を上げる可能性と、障害中の負荷を増やす可能性を同時に持つ。全clientが同時に再試行しないようjitterを入れ、総試行数を制限し、server側のcapacityと期限を共有する。TLS 0-RTTを使う場合はreplay可能性に適した操作かを確認する。</p>
+</section>
+<section id="knowledge-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>TCP ACKを受けたら注文は確定済みか。分からない。byteの輸送確認とapplicationの状態遷移は別である。</li>
+    <li>HTTP 200なら利用者操作は成功か。契約次第である。body内の業務結果、後続処理、client保存まで別の失敗点がある。</li>
+    <li>DNS cacheは常に遅延を減らすか。通常はqueryを省けるが、stale addressや負のcacheにより回復を遅らせることがある。</li>
+    <li>timeoutを長くすれば成功率は上がるか。待てば成功する原因には効くが、queueとresource占有を増やし、利用者deadlineを破り得る。</li>
+  </ol>
+  <h3>5分teach-back</h3>
+  <p>八イベントの時系列を使い、各段で保証されたことと未確定なことを説明する。2000ms予算の足し算と、POST timeout後に直ちにretryしない理由を一分ずつ含める。</p>
+  <h3>未知へのtransfer</h3>
+  <p>パケット損失と依存遅延を区別する診断を、CDN、API gateway、二つの内部service、databaseからなる未知経路で行う。観測点が欠ける区間を明示し、責任を断定する前に追加する時刻とrequest IDを設計する。</p>
+</section>
+<section id="sources-next">
+  <h2>出典と次の学習</h2>
+  <p>RFC 1035はDNS、RFC 9293はTCP、RFC 6298はTCP再送timeout、RFC 8446はTLS 1.3、RFC 9110はHTTP semanticsの正準として使う。各層の仕様を横断して要約し、長い引用や原図の転載はしていない。正確なURLはlesson metadataのsourcesに集約した。</p>
+  <p>次の学習では、要求とdomain modelへ進み、networkの結果不明状態をapplication契約として表現する。1日後は時系列、7日後は予算計算、30日後は実trace、90日後はretryによる障害増幅を再レビューする。</p>
+</section>

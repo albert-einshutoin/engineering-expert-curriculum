@@ -1,0 +1,166 @@
+{
+  "version": 1,
+  "id": "core-23-incident-response-learning",
+  "title": "incident responseを検証可能な学習へ変える",
+  "summary": "時系列の証拠から影響と意思決定を再構成し、個人を責めずsystem conditionを調べ、ownerと検証方法を持つ対策へ接続する。",
+  "track": "sustain",
+  "stage": 4,
+  "difficulty": "advanced",
+  "estimatedMinutes": 300,
+  "prerequisiteIds": [
+    "core-15-reliability-observability-slo",
+    "core-21-maintenance-legacy-comprehension"
+  ],
+  "objectives": [
+    {
+      "id": "obj-evidence",
+      "statement": "複数signalを時刻順のevidence timelineへ揃え、影響と意思決定を根拠へ結べる",
+      "evidenceIds": ["incident-review", "teach-back"]
+    },
+    {
+      "id": "obj-learning",
+      "statement": "個人の性質ではなくsystem conditionとして複数のcontributing factorを分析できる",
+      "evidenceIds": ["incident-review", "assessment"]
+    },
+    {
+      "id": "obj-action",
+      "statement": "検知条件が変わる時に影響を再計算し、対策のowner、期限、検証を更新できる",
+      "evidenceIds": ["assessment", "transfer"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "incident-review",
+      "kind": "artifact",
+      "description": "影響、意思決定、証拠、寄与要因、検証可能な対策を含むレビュー"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "NIST incident responseとGoogle SREのpostmortem cultureを比較する5分発表"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "証拠不足、個人非難、検証不能な対策を診断する回答"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "検知時刻だけを変えて影響時間と学習行動を再評価した記録"
+    }
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "観測事実、解釈、意思決定、contributing factor、actionを区別できる",
+      "evidenceIds": ["incident-review"]
+    },
+    {
+      "level": "explain",
+      "criterion": "non-blaming reviewが責任をなくすのではなくsystem改善を可能にする理由を説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "evidence timelineから影響と意思決定を再構成し対策へ追跡できる",
+      "evidenceIds": ["incident-review"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "後知恵、単一原因、個人非難、action itemの曖昧さを反証できる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "incident response、学習review、対策検証、再発時の更新を職能横断で主導できる",
+      "evidenceIds": ["transfer"]
+    }
+  ],
+  "lab": {
+    "title": "checkout latency incidentの学習reviewを作る",
+    "artifact": "影響、意思決定、証拠、寄与要因、検証可能な対策を含むレビュー",
+    "steps": [
+      "固定simulated evidenceを時刻順に並べ、検知から回復までの影響と意思決定を算出する",
+      "個人非難を除き、証拠へ結び付くsystem conditionと検証可能なactionを構成する",
+      "incident evidenceを固定したままdetection minuteだけを変え、影響時間と学習行動を再評価する"
+    ]
+  },
+  "teachBack": "5分で、NIST SP 800-61 Rev. 3（April 2025）のCybersecurity Risk Managementとの統合と、Google SRE WorkbookのIncident Response、Postmortem Culture — Learning from Failureを、responseとlearningの異なる目的へ結ぶ。",
+  "assessment": [
+    {
+      "prompt": "担当者が確認を忘れたことをroot causeとしてreviewを閉じる提案を評価せよ。",
+      "expectedEvidence": "利用可能だったsignal、alert設計、権限、手順、workload、decision context、system condition"
+    },
+    {
+      "prompt": "監視を強化するというaction itemを検証可能に書き直せ。",
+      "expectedEvidence": "owner、due、対象signal、閾値、test fixture、成功条件、evidence ID"
+    }
+  ],
+  "transferTask": "検知遅延だけを変え、同じincident evidenceから影響時間と学習行動を再評価する",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "時系列と影響を推測で記述し証拠へ結ばない",
+        "developing": "timelineはあるがdecision、factor、actionとの対応が曖昧である",
+        "proficient": "時系列、影響、decision、factor、actionをevidence IDで追跡できる",
+        "exemplary": "signal遅延や欠測が変わっても因果不変条件を検査できる"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "一人の誤りを唯一の原因とする",
+        "developing": "non-blamingと書くがsystem conditionを具体化しない",
+        "proficient": "意思決定時に利用可能だった情報と複数の寄与要因から改善を選ぶ",
+        "exemplary": "応答速度、証拠保全、心理的安全、対策費用のtradeoffを調整する"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "記憶と印象だけをreviewへ記載する",
+        "developing": "metricはあるがprovenance、時刻、decisionとの接続がない",
+        "proficient": "固定入力、timeline、impact式、evidence-linked decisionを再計算可能に残す",
+        "exemplary": "actionのverification結果と次回incidentの比較を監査可能にする"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "責任者名と結論だけを共有する",
+        "developing": "長い物語だが観測と解釈が混ざる",
+        "proficient": "利用者影響、証拠、decision、system condition、actionを明確に分ける",
+        "exemplary": "利用者、経営、開発、運用が同じ証拠から異議と優先順位を検討できる"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "NIST SP 800-61 Rev. 3: Incident Response Recommendations and Considerations for Cybersecurity Risk Management (April 2025)",
+      "url": "https://doi.org/10.6028/NIST.SP.800-61r3",
+      "kind": "standard"
+    },
+    {
+      "title": "Google SRE Workbook: Incident Response",
+      "url": "https://sre.google/workbook/incident-response/",
+      "kind": "primary"
+    },
+    {
+      "title": "Google SRE Workbook: Postmortem Culture — Learning from Failure",
+      "url": "https://sre.google/workbook/postmortem-culture/",
+      "kind": "primary"
+    }
+  ],
+  "review": {
+    "intervalDays": [1, 7, 30, 90],
+    "prompts": [
+      "evidence timelineで観測事実と解釈を分ける方法は何か",
+      "non-blamingとaccountabilityを両立するsystem conditionの書き方は何か",
+      "verifiable actionにowner、due、verificationが必要な理由は何か"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}

@@ -1,0 +1,172 @@
+{
+  "version": 1,
+  "id": "core-12-transactions-isolation-consistency",
+  "title": "分離異常を再現し、abortとretryまで設計する",
+  "summary": "決定的schedulerでnon-repeatable readとwrite skewを再現し、Serializableのabort後にトランザクション全体をretryして業務不変条件を回復する。",
+  "track": "data-scale",
+  "stage": 3,
+  "difficulty": "advanced",
+  "estimatedMinutes": 300,
+  "prerequisiteIds": [
+    "core-11-data-modeling-storage"
+  ],
+  "objectives": [
+    {
+      "id": "obj-anomaly",
+      "statement": "同じ並行scheduleからRead Committedのnon-repeatable readとSnapshot Isolationのwrite skewをevent traceで再現できる",
+      "evidenceIds": ["transaction-experiment", "teach-back"]
+    },
+    {
+      "id": "obj-serializable",
+      "statement": "Serializableで競合する一方をabortし、トランザクション全体のretry後に明示した業務不変条件が回復したことを検証できる",
+      "evidenceIds": ["transaction-experiment", "assessment"]
+    },
+    {
+      "id": "obj-scope",
+      "statement": "ACID、MVCC、Snapshot Isolation、SQL分離レベルの保証範囲とvendor差を区別し、並行性変更へ判断を移せる",
+      "evidenceIds": ["assessment", "transfer"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "transaction-experiment",
+      "kind": "artifact",
+      "description": "固定schedule、event trace、二つの分離異常、serialization failure、whole-transaction retryを含む決定的トランザクション実験"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "ACIDのconsistencyが業務ルールを自動推論せず、MVCCまたはSnapshot IsolationがSerializableと同義でない理由を説明する6分間の解説"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "不変条件、読み書き集合、event trace、vendor仕様から分離レベルとretry境界を選ぶ判断記録"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "同時購入者数が増えた在庫引当について分離レベル、競合処理、retry境界を再評価した報告"
+    }
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "atomicity、consistency、isolation、durabilityと、dirty read、non-repeatable read、phantom、write skewを区別できる",
+      "evidenceIds": ["transaction-experiment"]
+    },
+    {
+      "level": "explain",
+      "criterion": "MVCCが読取り待ちを減らしても直列化可能性を自動的に保証せず、業務不変条件をdatabaseが推論しない理由を説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "固定scheduleで二つの分離異常を再現し、Serializableのabortをトランザクション境界からretryできる",
+      "evidenceIds": ["transaction-experiment"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "event trace、snapshot、読み書き集合から異常を分類し、単なるlost updateや実装bugという誤診を反証できる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "不変条件、競合率、latency、vendor保証、retry副作用をレビューし、運用可能な分離方針を合意できる",
+      "evidenceIds": ["transfer"]
+    }
+  ],
+  "lab": {
+    "title": "当直割当の分離異常とSerializable retryを再現する",
+    "artifact": "二つの分離異常を再現するトランザクション実験",
+    "steps": [
+      "二人のうち一人以上が当直であるという業務不変条件と、lesson-authored simulated fixtureの由来・限界を明示する",
+      "Read Committedで同じrowを二回読む間に別transactionをcommitし、値が100から80へ変わるevent traceを保存する",
+      "Snapshot Isolation相当の並行scheduleで二transactionが同じsnapshotから別rowを更新し、双方commit後に当直者が0人になるwrite skewを再現する",
+      "PostgreSQL 18のSerializable相当で一方の競合transactionをabortし、トランザクション全体を新しいsnapshotからretryして不変条件を回復する",
+      "scheduleを直列順へ変えた対照実験とSerializable競合判定mutationを実行し、結果差とmutation検出を証拠へ残す"
+    ]
+  },
+  "teachBack": "6分で、ACID consistencyが業務ルールを自動推論しない理由、Read CommittedとSnapshot Isolationで起きる異常、Serializableのabortを正常系としてwhole-transaction retryする理由を説明する。",
+  "assessment": [
+    {
+      "prompt": "PostgreSQLのRepeatable Readで各transaction内の読取り値は安定しているのに、二人とも当直を外れてしまった。何が起きたか。",
+      "expectedEvidence": "同じsnapshot、別rowへのwrite、読み書き依存、write skew、不変条件違反、Serializableとの差を示すevent trace"
+    },
+    {
+      "prompt": "Serializableへ変更したらserialization failureが発生した。失敗したSQL文だけを再実行すればよいか。",
+      "expectedEvidence": "transaction開始後の全readと判断が古い可能性、rollback、backoff、上限、idempotentな外部副作用を含むwhole-transaction retry境界"
+    }
+  ],
+  "transferTask": "同時購入者数が増える在庫引当の並行性変更で分離レベルとretry境界を再評価する",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "transactionを使えばすべての並行異常が消えるとみなし、分離レベルとscheduleを示さない",
+        "developing": "異常名は挙げるが、snapshot、読み書き集合、commit順、不変条件を対応付けない",
+        "proficient": "non-repeatable readとwrite skewを再現し、Serializable abort後のwhole-transaction retryで不変条件を回復する",
+        "exemplary": "predicate依存、retry飽和、外部副作用、vendor差、hotspot設計まで反証条件へ含める"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "最強の分離レベルまたはlockを無条件に選び、競合率と失敗処理を考えない",
+        "developing": "正しさとthroughputを比較するが、業務不変条件またはretry費用が曖昧である",
+        "proficient": "不変条件、異常影響、競合率、latency、abort率から分離とretry方針を選ぶ",
+        "exemplary": "schema制約、明示lock、直列化、業務補償を組み合わせ、負荷変化で再評価する"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "最終値だけを示し、transactionとeventの順序を残さない",
+        "developing": "event traceはあるが、異常を起こすscheduleまたは対照実験を固定しない",
+        "proficient": "同じfixtureのschedule、snapshot、commit・abort、attempt、retry結果とmutation検出を保存する",
+        "exemplary": "実vendor統合test、競合率、abort histogram、待機時間をsimulationの限界と分離して追跡する"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "ACIDやMVCCという語だけで業務上の保証を断定する",
+        "developing": "分離レベルを示すが、保証対象の不変条件とvendor差を説明しない",
+        "proficient": "業務不変条件、異常schedule、vendor scope、abort・retry責任、残余riskを関係者へ説明する",
+        "exemplary": "利用者影響と運用指標を用いて、開発・DBA・SRE間の変更判断を主導する"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "Principles of Transaction-Oriented Database Recovery",
+      "url": "https://doi.org/10.1145/289.291",
+      "kind": "peer-reviewed"
+    },
+    {
+      "title": "A Critique of ANSI SQL Isolation Levels",
+      "url": "https://sigmodrecord.org/1995/06/06/a-critique-of-ansi-sql-isolation-levels/",
+      "kind": "peer-reviewed"
+    },
+    {
+      "title": "13.2. Transaction Isolation",
+      "url": "https://www.postgresql.org/docs/18/transaction-iso.html",
+      "kind": "primary"
+    },
+    {
+      "title": "Serializable Snapshot Isolation in PostgreSQL",
+      "url": "https://doi.org/10.14778/2367502.2367523",
+      "kind": "peer-reviewed"
+    }
+  ],
+  "review": {
+    "intervalDays": [1, 7, 30, 90],
+    "prompts": [
+      "ACID consistencyと業務不変条件の責任境界を一つの反例で示す",
+      "Snapshot Isolationでwrite skewが起きる四つのeventを順に説明する",
+      "serialization failure後に一文だけでなくtransaction全体をretryする理由を述べる"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}

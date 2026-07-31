@@ -1,0 +1,178 @@
+{
+  "version": 1,
+  "id": "core-10-threat-modeling-secure-design",
+  "title": "脅威モデルを設計・検証・残余リスクへ接続する",
+  "summary": "資産、actor、trust boundary、data flowから外部・内部者脅威を導き、controlと検証を追跡可能にする。",
+  "track": "build",
+  "stage": 2,
+  "difficulty": "intermediate",
+  "estimatedMinutes": 300,
+  "prerequisiteIds": [
+    "core-07-api-contract-design",
+    "core-09-test-strategy-tdd"
+  ],
+  "objectives": [
+    {
+      "id": "obj-model",
+      "statement": "資産、ID・type・scopeを持つactor、trust boundary、参照整合したdata flow、攻撃経路を一つの脅威モデルとして追跡できる",
+      "evidenceIds": ["threat-model", "teach-back"]
+    },
+    {
+      "id": "obj-control",
+      "statement": "各脅威を型付けしたprevent・detect・recover controlと、control単位の具体的なverificationへ対応付けられる",
+      "evidenceIds": ["threat-model", "assessment"]
+    },
+    {
+      "id": "obj-insider",
+      "statement": "悪意、誤操作、資格情報悪用を区別し、過剰監視に依存しない内部者脅威対策を設計できる",
+      "evidenceIds": ["assessment", "transfer"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "threat-model",
+      "kind": "artifact",
+      "description": "資産、境界、data flow、外部・内部者脅威、型付けcontrol、verification、decisionとuncertaintyを持つ残余riskを結ぶ機械可読モデル"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "secure by designとchecklist適合が同義ではない理由を説明する6分間の解説"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "脅威仮説ごとに予防・検知・回復と検証を選び、残余riskを受容または低減する判断記録"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "正規権限を持つ委託運用者の誤操作と資格情報悪用を含む内部者脅威へ移したモデル"
+    }
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "資産、actor、entry point、trust boundary、data flow、threat、controlを区別できる",
+      "evidenceIds": ["threat-model"]
+    },
+    {
+      "level": "explain",
+      "criterion": "secure by design、secure by default、defense in depth、least privilegeの責任境界を説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "固定scenarioから外部・内部者の攻撃経路を列挙し、各脅威のprevent・detect・recover controlとverificationを追跡できる",
+      "evidenceIds": ["threat-model"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "controlが未検証、迂回可能、または検知・回復不足である状態を反証できる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "開発、運用、人事、法務、privacy担当と残余riskのowner・期限を合意し、脅威モデルreviewを主導できる",
+      "evidenceIds": ["transfer"]
+    }
+  ],
+  "lab": {
+    "title": "運用portalの外部・内部者脅威を安全に追跡する",
+    "artifact": "資産、境界、攻撃経路、検証を結ぶ脅威モデル",
+    "steps": [
+      "customer data、deployment credential、audit logを資産として、外部利用者、委託運用者、管理者をactorとして列挙する",
+      "internet、operations zone、productionのtrust boundaryを越えるdata flowを固定fixtureへ記録し、fromをactor ID、toを既知zoneへ参照させる",
+      "外部actorと内部者について、対象資産とflowを結ぶharmlessな攻撃経路仮説を作る",
+      "各脅威へ型付けしたprevent・detect・recover controlを割り当て、controlごとのverification IDと結果を対応付ける",
+      "verificationと残余riskのIDを一意にし、残余riskへthreat ID、decision、uncertainty、owner、canonical ISO review dateを付け、actor・ID・dateを含む13 mutationがrejectされることを確認する"
+    ]
+  },
+  "teachBack": "6分で、frameworkやchecklist適合が安全を保証しない理由、内部者が悪意ある従業員だけではない理由、least privilegeとprivacyを両立する方法を説明する。",
+  "assessment": [
+    {
+      "prompt": "正規権限を持つ委託運用者のcredentialが盗用された。通常操作との違いをどのcontrolと証拠で検知するか。",
+      "expectedEvidence": "短命credential、step-up認証、操作範囲、承認分離、改ざん耐性audit、異常検知、revoke演習の対応"
+    },
+    {
+      "prompt": "ASVS項目を満たしたため安全だという主張を、どのように反証可能へ変えるか。",
+      "expectedEvidence": "対象assetとthreat、実装control、具体的test、結果、残余risk、再review条件へのtraceability"
+    }
+  ],
+  "transferTask": "正規権限を持つ委託運用者の誤操作・資格情報悪用を含む内部者脅威へモデルを移す",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "脆弱性名だけを列挙し、資産、境界、flowと結ばない",
+        "developing": "脅威とcontrolはあるが、内部者またはverificationが抜ける",
+        "proficient": "外部・内部者脅威を資産、flow、control、verification、残余riskへ追跡する",
+        "exemplary": "予防・検知・回復、credential lifecycle、supply chain、privacy境界まで統合する"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "すべてのriskを監視強化または利用者設定へ転嫁する",
+        "developing": "controlを追加するが、利用者負担、privacy、運用失敗を比較しない",
+        "proficient": "影響、可能性、control費用、privacy、回復性から優先順位を選ぶ",
+        "exemplary": "安全なdefaultと顧客成果を製品責任として扱い、残余riskを経営判断へ上げる"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "checklistのchecked状態だけを示し、実行結果がない",
+        "developing": "test結果はあるが、どのthreatとassetを検証したか分からない",
+        "proficient": "threat ID、control ID、verification ID、result、owner、review dateを結ぶ",
+        "exemplary": "設計変更、incident、test失敗を脅威モデル更新へ自動的に戻す"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "内部者を一括して疑い、過剰な個人監視を結論にする",
+        "developing": "技術用語はあるが、責任・privacy・残余riskが不明である",
+        "proficient": "actorの意図を断定せず、行為、資産、境界、control、ownerを明示する",
+        "exemplary": "開発・運用・法務・privacy担当が同じmodelで優先順位と期限を合意できる"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "Secure Software Development Framework (SSDF) Version 1.1: Recommendations for Mitigating the Risk of Software Vulnerabilities",
+      "url": "https://csrc.nist.gov/pubs/sp/800/218/final",
+      "kind": "standard"
+    },
+    {
+      "title": "Shifting the Balance of Cybersecurity Risk: Principles and Approaches for Secure by Design Software",
+      "url": "https://www.cisa.gov/sites/default/files/2023-10/Shifting-the-Balance-of-Cybersecurity-Risk-Principles-and-Approaches-for-Secure-by-Design-Software.pdf",
+      "kind": "primary"
+    },
+    {
+      "title": "Threat Modeling Cheat Sheet",
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/Threat_Modeling_Cheat_Sheet.html",
+      "kind": "primary"
+    },
+    {
+      "title": "OWASP Application Security Verification Standard 5.0.0",
+      "url": "https://github.com/OWASP/ASVS/releases/tag/v5.0.0_release",
+      "kind": "standard"
+    },
+    {
+      "title": "Insider Threat Mitigation Guide",
+      "url": "https://www.cisa.gov/sites/default/files/2022-11/Insider%20Threat%20Mitigation%20Guide_Final_508.pdf",
+      "kind": "primary"
+    }
+  ],
+  "review": {
+    "intervalDays": [1, 7, 30, 90],
+    "prompts": [
+      "checklist適合を安全保証へ読み替えられない理由を一つの反例で示す",
+      "内部者脅威で悪意を仮定せずに設計できるcontrolを三つ挙げる",
+      "一つの残余riskをowner、review date、verificationへ接続する"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}

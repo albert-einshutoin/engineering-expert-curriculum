@@ -1,0 +1,165 @@
+{
+  "version": 1,
+  "id": "core-01-systems-tradeoffs",
+  "title": "システム思考とエンジニアリングのトレードオフ",
+  "summary": "境界、制約、代替案、反証条件を結び、変化に耐える意思決定を記録する。",
+  "track": "foundations",
+  "stage": 1,
+  "difficulty": "foundation",
+  "estimatedMinutes": 210,
+  "prerequisiteIds": [],
+  "objectives": [
+    {
+      "id": "obj-boundary",
+      "statement": "利用者、運用者、外部依存を含むシステム境界と三つ以上の制約を図示できる",
+      "evidenceIds": ["lab-record", "assessment"]
+    },
+    {
+      "id": "obj-alternatives",
+      "statement": "二つ以上の代替案を遅延、整合性、運用費、可逆性の観測値で比較できる",
+      "evidenceIds": ["lab-record", "teach-back"]
+    },
+    {
+      "id": "obj-falsification",
+      "statement": "選択案を棄却または再評価する反証条件を二つ以上定義し、未知領域で判断を再実施できる",
+      "evidenceIds": ["assessment", "transfer"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "lab-record",
+      "kind": "artifact",
+      "description": "境界図、制約、代替案比較、反証条件、決定者を含む意思決定記録"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "選ばなかった案が有利になる条件まで含む5分説明"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "平均値による誤診を反証し、判断の更新条件を示す回答"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "医療予約システムの新しい制約下で再構成した判断"
+    }
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "提示された状況からシステム境界、利害関係者、固定制約と仮定を区別できる",
+      "evidenceIds": ["lab-record"]
+    },
+    {
+      "level": "explain",
+      "criterion": "局所最適が再試行や運用負荷を通じて全体へ波及する因果経路を説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "複数案を同じ測定軸で比較し、期限と決定者を持つ意思決定記録を作成できる",
+      "evidenceIds": ["lab-record"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "結果の悪化について少なくとも二つの仮説を立て、反証可能な観測で切り分けられる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "不確実性と対立する価値を明示し、別領域の関係者と再評価可能な合意を形成できる",
+      "evidenceIds": ["transfer"]
+    }
+  ],
+  "lab": {
+    "title": "同期受付と非同期キューを比較する意思決定レビュー",
+    "artifact": "制約、代替案、反証条件を含む意思決定記録",
+    "steps": [
+      "利用者、運用者、課金基盤、通知基盤を境界図に置き、成功指標と制約を分離する",
+      "同期完了、受付後キュー処理、負荷時のみキュー処理の三案を同じ入力で比較する",
+      "p95応答時間、重複率、復旧時間、月間運用時間を測定し、値と測定条件を記録する",
+      "各案が有利になる条件と、選択案を棄却する反証条件を二つ以上書く",
+      "決定者、見直し日、未解決リスクを付けてレビュー可能な一ページへまとめる"
+    ]
+  },
+  "teachBack": "5分で境界図を示し、採用案の因果経路、選ばなかった案が勝つ条件、次に判断を見直す観測値を説明する。",
+  "assessment": [
+    {
+      "prompt": "平均応答が400msから250msへ改善した一方、問い合わせが倍増した。『性能は改善した』という診断をどう反証するか。",
+      "expectedEvidence": "p95またはp99、受付後の完了時間、失敗率、再試行、重複、利用者別分布を境界図と結び付けた切り分け"
+    },
+    {
+      "prompt": "意思決定記録に必ず残すべき反証条件を、数値閾値と観測期間を含めて二つ示す。",
+      "expectedEvidence": "案の前提に直接対応し、誰がいつ再評価するかまで実行可能な条件"
+    }
+  ],
+  "transferTask": "医療予約システムで同じ判断を再実施",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "同期処理とキューの境界を混同し、完了保証や重複の説明に誤りがある",
+        "developing": "主要な処理経路は正しいが、再試行または外部依存の状態遷移が欠ける",
+        "proficient": "受付、永続化、実行、通知の境界と失敗時の状態を一貫して説明する",
+        "exemplary": "部分失敗、補償、観測不能区間まで含め、反例でも境界図の整合性を保つ"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "一案を唯一解として提示し、制約、代替案、再評価条件がない",
+        "developing": "二案を比較するが、利害関係者の衝突または可逆性を扱っていない",
+        "proficient": "制約に優先順位を付け、代替案と反証条件から期限付きの判断を導く",
+        "exemplary": "二次効果と不確実性を定量化し、段階導入で判断の可逆性を高める"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "印象または平均値だけで結論を出し、測定条件を示さない",
+        "developing": "複数指標を示すが、入力条件と観測期間が揃っていない",
+        "proficient": "同じ負荷条件の分布、失敗率、運用記録で案と反証を支える",
+        "exemplary": "測定誤差、欠測、標本の偏りを明示し、結論が変わる感度を検討する"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "結論だけで、対象範囲、決定者、実行担当が分からない",
+        "developing": "背景と結論は読めるが、選ばなかった案と未解決リスクが見えない",
+        "proficient": "一ページで境界、比較、決定、反証条件、見直し日を追跡できる",
+        "exemplary": "利用者、運用、事業の異なる関心へ同じ判断根拠を誤解なく翻訳する"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "NASA Systems Engineering Handbook",
+      "url": "https://www.nasa.gov/reference/systems-engineering-handbook/",
+      "kind": "primary"
+    },
+    {
+      "title": "NIST SP 800-160 Vol. 1 Rev. 1: Engineering Trustworthy Secure Systems",
+      "url": "https://doi.org/10.6028/NIST.SP.800-160v1r1",
+      "kind": "standard"
+    },
+    {
+      "title": "The Architecture Tradeoff Analysis Method",
+      "url": "https://www.sei.cmu.edu/library/the-architecture-tradeoff-analysis-method/",
+      "kind": "primary"
+    }
+  ],
+  "review": {
+    "intervalDays": [1, 7, 30, 90],
+    "prompts": [
+      "決定を支える最も壊れやすい仮定と、その反証観測は何か",
+      "境界を一つ広げると、選択案の費用とリスクはどう変わるか",
+      "選ばなかった案が有利になる具体的な負荷または規制条件は何か"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}

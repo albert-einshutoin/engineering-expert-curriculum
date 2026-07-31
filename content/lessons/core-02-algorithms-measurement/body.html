@@ -1,0 +1,301 @@
+<section id="why">
+  <h2>なぜ重要か</h2>
+  <p>アルゴリズムの選択は、教科書の計算量だけでも、手元の一回の速さだけでも決められない。Big-Oは漸近上界であり、入力が十分大きい範囲で関数が定数倍の上限を超えないことを表す。同じ次数で上下から抑える厳密な成長率はΘで表し、特定のCPUで何秒かかるかを表すものではない。一方、実測値はそのコード、入力分布、処理系、同時負荷に拘束される。</p>
+  <p>誤った選択は、小さいテストでは見えず、本番データの偏りや増加で急に顕在化する。シニアは、操作回数の予測、再現可能な測定、差を説明する仮説を一つの報告に接続し、分布が変わったら選び直せるようにする。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> 支配操作がΘ(n)の実装がΘ(n log n)の実装より常に速いとは限らず、平均時間が最も小さい実装が常に安全でもない。入力分布、定数項、実装、処理系、GC、他負荷、統計要約を明示する。</p>
+  </aside>
+</section>
+<section id="mental-model">
+  <h2>メンタルモデル</h2>
+  <p>予測と測定を二本の独立した鎖として作り、最後に照合する。予測を見て測定値を捨てたり、測定値を見て都合のよい計算量を後付けしたりしない。</p>
+  <figure>
+    <figcaption>アルゴリズム再選択の検証経路</figcaption>
+    <ol>
+      <li><strong>操作モデル:</strong> 比較、hash計算、割り当てなど、支配的な操作を決める。</li>
+      <li><strong>成長率予測:</strong> 支配操作がΘ(n)ならnを2倍にしたとき約2倍、Θ(n²)なら約4倍と予測する。</li>
+      <li><strong>入力モデル:</strong> サイズだけでなく、順序、重複率、問い合わせ位置を固定する。</li>
+      <li><strong>測定設計:</strong> 準備と対象区間を分け、ウォームアップ後に複数回測る。</li>
+      <li><strong>統計要約:</strong> 全値、中央値、範囲を残し、除外規則を先に決める。</li>
+      <li><strong>差の診断:</strong> 定数項、キャッシュ、GC、処理系、外れ値を追加測定で反証する。</li>
+      <li><strong>再選択条件:</strong> 本番のn、分布、呼出回数の変化を監視する。</li>
+    </ol>
+  </figure>
+  <p>集合を使う探索は、一回だけなら通常のhashを仮定しても期待Θ(n)の構築と参照の両方を負担する。同じ集合へ多数回問い合わせるなら構築費用を償却できる。この「何回使うか」はnと別の独立変数である。</p>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>実行可能な線形探索と集合参照の比較</h3>
+  <pre><code>python3.13 - &lt;&lt;'PY' &gt; benchmark-results.json
+import hashlib
+import json
+import platform
+import random
+import statistics
+import time
+
+HARNESS = "algorithm_lab_v2"
+SEED = 20260731
+SIZES = [1000, 10000, 100000]
+DISTRIBUTIONS = ["unique", "duplicate_90", "front_biased"]
+REPEAT = 7
+QUERY_COUNT = 8
+
+def make_data(distribution, size):
+    if distribution == "duplicate_90":
+        duplicate_count = size * 9 // 10
+        tail = list(range(size, size + size - duplicate_count))
+        data = [7] * duplicate_count + tail
+        random.Random(SEED + size).shuffle(data)
+        return data
+    return list(range(size))
+
+def make_queries(distribution, size):
+    if distribution == "front_biased":
+        return [index % max(1, size // 100) for index in range(QUERY_COUNT)]
+    if distribution == "duplicate_90":
+        return [7, size // 20, 7, size // 30, 7, size // 40, 7, -1]
+    generator = random.Random(SEED + size)
+    return [
+        generator.randrange(size)
+        for _ in range(QUERY_COUNT - 1)
+    ] + [-1]
+
+def timed(operation):
+    start = time.perf_counter_ns()
+    value = operation()
+    return time.perf_counter_ns() - start, value
+
+def summarize(samples):
+    return {
+        "median": statistics.median(samples),
+        "minimum": min(samples),
+        "maximum": max(samples),
+    }
+
+conditions = []
+for distribution in DISTRIBUTIONS:
+    for size in SIZES:
+        data = make_data(distribution, size)
+        queries = make_queries(distribution, size)
+        lookup_set = set(data)
+        samples = {
+            "generation": [],
+            "set_build": [],
+            "linear_lookup": [],
+            "set_lookup": [],
+        }
+        expected = [query in data for query in queries]
+        for repeat in range(7):
+            elapsed, generated = timed(
+                lambda d=distribution, n=size: make_data(d, n)
+            )
+            assert len(generated) == size
+            samples["generation"].append(elapsed)
+            elapsed, built = timed(lambda values=data: set(values))
+            assert built == lookup_set
+            samples["set_build"].append(elapsed)
+            elapsed, observed = timed(
+                lambda values=data, qs=queries: [
+                    query in values for query in qs
+                ]
+            )
+            assert observed == expected
+            samples["linear_lookup"].append(elapsed)
+            elapsed, observed = timed(
+                lambda values=lookup_set, qs=queries: [
+                    query in values for query in qs
+                ]
+            )
+            assert observed == expected
+            samples["set_lookup"].append(elapsed)
+        summaries = {
+            name: summarize(values)
+            for name, values in samples.items()
+        }
+        linear_per_query = (
+            summaries["linear_lookup"]["median"] / len(queries)
+        )
+        set_per_query = summaries["set_lookup"]["median"] / len(queries)
+        advantage = linear_per_query - set_per_query
+        crossover = (
+            summaries["set_build"]["median"] / advantage
+            if advantage &gt; 0
+            else 0
+        )
+        conditions.append({
+            "distribution": distribution,
+            "size": size,
+            "repeat": REPEAT,
+            "query_count": len(queries),
+            "query_digest": hashlib.sha256(
+                json.dumps(queries).encode("utf-8")
+            ).hexdigest(),
+            "samples_ns": samples,
+            "median_ns": {
+                name: values["median"]
+                for name, values in summaries.items()
+            },
+            "range_ns": {
+                name: [values["minimum"], values["maximum"]]
+                for name, values in summaries.items()
+            },
+            "crossover_queries": max(0, round(crossover, 2)),
+            "distribution_facts": (
+                {
+                    "dominant_value_fraction": (
+                        data.count(7) / len(data)
+                    ),
+                }
+                if distribution == "duplicate_90"
+                else {
+                    "front_query_fraction": sum(
+                        query in range(max(1, size // 100))
+                        for query in queries
+                    ) / len(queries),
+                }
+                if distribution == "front_biased"
+                else {
+                    "unique_fraction": len(set(data)) / len(data),
+                }
+            ),
+        })
+
+growth_rates = []
+for distribution in DISTRIBUTIONS:
+    selected = [
+        item for item in conditions
+        if item["distribution"] == distribution
+    ]
+    for previous, current in zip(selected, selected[1:]):
+        growth_rates.append({
+            "distribution": distribution,
+            "from_size": previous["size"],
+            "to_size": current["size"],
+            "linear_lookup_ratio": round(
+                current["median_ns"]["linear_lookup"]
+                / max(1, previous["median_ns"]["linear_lookup"]),
+                3,
+            ),
+            "predicted_linear_ratio": (
+                current["size"] / previous["size"]
+            ),
+        })
+
+probe_data = make_data("unique", 10000)
+probe_queries = make_queries("unique", 10000)
+prebuilt = set(probe_data)
+prebuilt_samples = []
+rebuild_samples = []
+for repeat in range(7):
+    elapsed, _ = timed(
+        lambda: [query in prebuilt for query in probe_queries]
+    )
+    prebuilt_samples.append(elapsed)
+    elapsed, _ = timed(
+        lambda: [
+            query in set(probe_data)
+            for query in probe_queries
+        ]
+    )
+    rebuild_samples.append(elapsed)
+additional_measurement = {
+    "hypothesis": "集合参照そのものが構築込み費用を支配する",
+    "prebuilt_lookup_samples_ns": prebuilt_samples,
+    "rebuild_per_query_samples_ns": rebuild_samples,
+    "falsified": (
+        statistics.median(rebuild_samples)
+        &gt; statistics.median(prebuilt_samples) * 2
+    ),
+}
+
+print(json.dumps({
+    "harness": HARNESS,
+    "seed": SEED,
+    "sizes": SIZES,
+    "distributions": DISTRIBUTIONS,
+    "query_contract": "各condition内で両方式へ同じquery列を使用",
+    "conditions": conditions,
+    "growth_rates": growth_rates,
+    "hypotheses": [
+        "入力増加時の非線形差はcache階層の境界で説明できる",
+        "少数queryではset構築費が参照短縮を上回る",
+    ],
+    "additional_measurement": additional_measurement,
+    "python": platform.python_version(),
+    "platform": platform.platform(),
+}, ensure_ascii=False, indent=2))
+PY
+python3.13 -m json.tool benchmark-results.json</code></pre>
+  <dl>
+    <dt>前提</dt>
+    <dd>同じPython 3.13実行系、固定seed 20260731、他負荷を抑えた環境で各条件をrepeat=7に固定する。</dd>
+    <dt>入力</dt>
+    <dd>重複なし、90%同値、探索対象が先頭1%寄りの三分布を、1000、10000、100000要素で生成する。各condition内では同じquery列をlistとsetへ渡す。</dd>
+    <dt>操作</dt>
+    <dd>入力生成、set構築、list参照、構築済みset参照を分離し、各区間の全7反復値、中央値、範囲をJSONへ保存する。</dd>
+    <dt>観測</dt>
+    <dd>実行結果には入力を10倍にしたときの線形参照の実測増加率、理論上の予測率10、set構築を償却できるquery回数の交差点が全九条件について出る。</dd>
+    <dt>結論</dt>
+    <dd>二仮説を宣言し、追加測定で「集合参照そのものが構築込み費用を支配する」を反証する。交差点と増加率は環境固有なので、自分の全値から再計算する。</dd>
+  </dl>
+  <p>nを1000、10000、100000へ10倍ずつ増やす。線形探索の時間比が概ね10倍なら予測と整合する。比が急に大きくなっても、直ちに計算量が変わったとは言えない。キャッシュ階層やGCの変化を追加測定する。</p>
+  <p><strong>ラボ成果物:</strong> 「計算量予測と実測値の差を説明するベンチマーク報告」には、実行コマンド、全反復値、Python版、OS、CPU、入力生成、除外規則を残す。</p>
+</section>
+<section id="tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <table>
+    <caption>問い合わせ処理のdecision table</caption>
+    <thead>
+      <tr>
+        <th scope="col">条件</th>
+        <th scope="col">候補</th>
+        <th scope="col">支払う費用</th>
+        <th scope="col">再評価信号</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row">小さい列へ一回だけ問い合わせ</th>
+        <td>線形探索</td>
+        <td>問い合わせごとの比較</td>
+        <td>nまたは問い合わせ回数が交差点を超える</td>
+      </tr>
+      <tr>
+        <th scope="row">同じ集合へ多数回問い合わせ</th>
+        <td>hash集合</td>
+        <td>構築、追加メモリ、hash品質</td>
+        <td>更新頻度またはメモリ圧力が上がる</td>
+      </tr>
+      <tr>
+        <th scope="row">順序付き範囲検索も必要</th>
+        <td>整列列と二分探索</td>
+        <td>整列または更新時の維持費用</td>
+        <td>更新が参照より支配的になる</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3>もっともらしい誤診と反証</h3>
+  <ol>
+    <li><strong>誤診:</strong> 「支配操作がΘ(n log n)の実装がΘ(n²)の実装より遅いので、解析が誤り」。<strong>反証:</strong> nを段階的に増やして時間比と交差点を測る。小さいnの定数項による逆転なら、増加率は解析と整合する。</li>
+    <li><strong>誤診:</strong> 「一回だけ20倍遅いのでアルゴリズムが不安定」。<strong>反証:</strong> 同じ入力でGC、他プロセス負荷、ページフォールト、CPU周波数を記録する。外れ値を消す前に原因と事前規則を確認する。</li>
+  </ol>
+  <p>平均だけでは裾の遅さを隠し、最小値だけでは実運用の競合を隠す。ベンチマーク専用環境の値は機構比較に役立つが、本番容量計画には同時負荷を含む別測定が要る。</p>
+</section>
+<section id="knowledge-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>nを2倍にして時間が4倍なら支配操作がΘ(n²)と確定できるか。できない。一範囲の比は仮説を支持するだけで、入力生成や階層変化も反証する必要がある。</li>
+    <li>timeitの最小値だけを採用すべきか。最小値は干渉の少ない実行を示し得るが、本番の代表値とは限らない。目的に応じて全値と中央値も報告する。</li>
+    <li>平均O(1)のhash参照なら分布を無視できるか。できない。hash衝突、構築、メモリ局所性、更新頻度が選択を変える。</li>
+  </ol>
+  <h3>5分teach-back</h3>
+  <p>一枚の表で、漸近上界Big-O、厳密な次数Θ、絶対時間、構築費用、問い合わせ回数を区別する。n=10000の実測が逆転した理由を二仮説で説明し、次に変える独立変数を一つ宣言する。</p>
+  <h3>未知へのtransfer</h3>
+  <p>データ分布が変わる場合のアルゴリズム再選択を行う。90%が同じkeyになるログ、ほぼ整列済みの入力、更新が参照より多い入力を与え、元の勝者を自動採用せず、交差点を再測定する。</p>
+</section>
+<section id="sources-next">
+  <h2>出典と次の学習</h2>
+  <p>NIST DADSはBig-OとΘの区別、SPEC CPU 2017のrulesは比較可能な実行と報告の規律、Python timeitは短いコード片の反復測定、Princeton COS226の資料はQuicksortの分布依存性を確認するために使う。本文では一次資料を要約し、URLはlesson metadataのsourcesだけに置く。</p>
+  <p>次はCPU・メモリ経路を学び、同じ計算量でも実測が変わる機構を掘り下げる。復習では1日後に予測式、7日後に別分布、30日後に本番相当入力、90日後に再選択条件を再検証する。</p>
+</section>

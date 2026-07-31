@@ -1,0 +1,78 @@
+name: "教材ギャップの提案"
+description: "不足している学習成果を、実装可能な教材改善として提案します。"
+title: "[Content gap] "
+labels: ["content"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        既存の教材、Issue、Pull Requestを検索してから記入してください。機密情報や未修正の脆弱性は記載せず、SECURITY.mdの非公開経路を使ってください。
+  - type: dropdown
+    id: audience
+    attributes:
+      label: "対象となる学習者"
+      description: "この不足によって最も学習を妨げられている層を選び、なぜその層かをscope欄で説明してください。"
+      options:
+        - "基礎を身につける学習者"
+        - "実務へ移行する学習者"
+        - "設計・判断を担う学習者"
+        - "チームや組織をリードする学習者"
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: "不足範囲と影響"
+      description: "不足している知識・実践・説明・判断・成果物、既存教材との境界、学習者が現在失敗する具体的な場面を記載してください。"
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: "なぜ必要か"
+      description: "誰のどの課題を解決するのか、放置した場合の学習・実務上の影響、既存教材では解消できない理由を説明してください。"
+    validations:
+      required: true
+  - type: textarea
+    id: sources
+    attributes:
+      label: "根拠となる出典"
+      description: "一次資料を優先し、URL、版、該当箇所、各出典が提案を支える理由を記載してください。異なる2件以上のHTTPS出典が必要です。"
+    validations:
+      required: true
+  - type: textarea
+    id: implementation
+    attributes:
+      label: "実装・執筆方法"
+      description: "変更するlesson、catalog、mapping、roadmap、Capstoneを特定し、Learn → Practice → Explain → Prove → Transfer → Reviewと既存構造へどう接続するかを手順化してください。"
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: "注意点・リスク"
+      description: "前提知識、重複、誤解を招く表現、版の陳腐化、アクセシビリティ、セキュリティ、保守負担、失敗モードと軽減策を記載してください。"
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: "GOAL"
+      description: "学習者が最終的に何を理解し、実践し、説明し、判断し、どの成果物で証明できれば完了かを観測可能な形で定義してください。"
+    validations:
+      required: true
+  - type: textarea
+    id: quality
+    attributes:
+      label: "守る品質"
+      description: "技術的正確性、学習設計・証拠、アクセシビリティ、編集・出典の基準と、CS2023・SWEBOK・SFIAへの影響を明記してください。"
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: "受け入れ条件・検証証拠"
+      description: "Given/When/Thenまたはチェックリストで合格条件を定義し、実行するテスト、build、目視確認、成果物、4観点reviewの記録方法を示してください。"
+    validations:
+      required: true

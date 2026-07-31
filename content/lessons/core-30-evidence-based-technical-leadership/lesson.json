@@ -1,0 +1,176 @@
+{
+  "version": 1,
+  "id": "core-30-evidence-based-technical-leadership",
+  "title": "証拠と撤退条件で技術方針を率いる",
+  "summary": "delivery metrics、倫理、security、cost、uncertainty、dissentを同じstrategy optionsへ結び、可逆な第一歩とwithdrawal conditionsを持つ技術方針を作る。",
+  "track": "lead",
+  "stage": 5,
+  "difficulty": "advanced",
+  "estimatedMinutes": 360,
+  "prerequisiteIds": [
+    "core-20-ethics-privacy-societal-impact",
+    "core-25-engineering-economics-capacity",
+    "core-27-team-interfaces-sociotechnical-architecture",
+    "core-28-oss-governance-stewardship",
+    "core-29-cross-cultural-async-collaboration"
+  ],
+  "objectives": [
+    {
+      "id": "obj-strategy-evidence",
+      "statement": "技術方針をmetrics、risks、ethics、costs、uncertainties、dissentへ分解して監査可能にできる",
+      "evidenceIds": ["technical-strategy", "assessment"]
+    },
+    {
+      "id": "obj-reversible-leadership",
+      "statement": "投資順、decision rights、可逆な第一歩、withdrawal conditionsを明示できる",
+      "evidenceIds": ["technical-strategy", "teach-back"]
+    },
+    {
+      "id": "obj-risk-transfer",
+      "statement": "risk toleranceだけを変え、同じstrategy optionsの選択を再評価できる",
+      "evidenceIds": ["technical-strategy", "transfer"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "technical-strategy",
+      "kind": "artifact",
+      "description": "戦略、指標、リスク、投資順、撤退条件を含む技術方針"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "良い指標が目標そのものではなく意思決定を校正する証拠であることを説明する7分発表"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "speed、security、ethics、cost、uncertaintyの衝突を隠さない投資判断"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "risk toleranceだけを変えた同一strategy optionsの再選択"
+    }
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "metric、risk、ethical duty、cost、uncertainty、dissentを異なる判断入力として識別できる",
+      "evidenceIds": ["technical-strategy"]
+    },
+    {
+      "level": "explain",
+      "criterion": "metric改善、事業成果、社会的影響が自動的に一致しない理由を説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "budgetとrisk toleranceからstrategy optionsを順位付けし可逆な第一歩を選べる",
+      "evidenceIds": ["technical-strategy"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "metric gaming、cost外部化、倫理の後付け、撤退不能なbig bangを反証できる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "別のcontributorがdecision rightsと証拠を使い方針を独立再評価できる環境を作れる",
+      "evidenceIds": ["transfer"]
+    }
+  ],
+  "lab": {
+    "title": "同じstrategy optionsを異なるrisk toleranceで再評価する",
+    "artifact": "戦略、指標、リスク、投資順、撤退条件を含む技術方針",
+    "steps": [
+      "strategy context、options、metric、倫理、costのsynthetic fixtureと限界を固定する",
+      "riskとbudgetの制約を満たすoptionを根拠付きで順位付けする",
+      "選択したoptionへ可逆な第一歩とwithdrawal conditionsを結ぶ",
+      "dissentとdecision rightsを記録し別contributorが再評価できる証拠を作る",
+      "risk toleranceだけを変え同じstrategy optionsの選択を再計算する"
+    ]
+  },
+  "teachBack": "7分で、DORAのfive metrics、FinOps Framework 2026、NIST CSF 2.0、ACM Code of Ethicsを、単一scorecardではなく相互に反証する意思決定入力として使う理由を説明する。",
+  "assessment": [
+    {
+      "prompt": "delivery throughputは改善したがchange fail rateと利用者へのharmが増えた。方針を継続できるか。",
+      "expectedEvidence": "five metricsの関係、ethical impact、risk owner、withdrawal conditions、system outcome"
+    },
+    {
+      "prompt": "replatformの期待値は高いがuncertaintyが大きく撤退費用も高い。第一歩をどう設計するか。",
+      "expectedEvidence": "reversible slice、budget cap、evidence deadline、dissent、stopまたはexpand条件"
+    }
+  ],
+  "transferTask": "risk toleranceだけを変え、同じstrategy optionsの指標、倫理、cost、投資順、可逆な第一歩とwithdrawal条件を再評価する",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "一つのmetricまたは主観だけで方針を決める",
+        "developing": "複数入力はあるが単位、owner、選択式が結び付かない",
+        "proficient": "metrics、risk、ethics、cost、uncertainty、dissentを同じoption schemaから導く",
+        "exemplary": "入力schema、順位、changed field、withdrawal derivationをfail-closedで検証する"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "権威または最大期待値へ追従する",
+        "developing": "trade-offを挙げるが撤退条件がない",
+        "proficient": "risk tolerance、budget、倫理、可逆性から選び反証条件を置く",
+        "exemplary": "不可逆な害を先に制約し、観測に応じてstop、adapt、expandできる"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "目標値だけを示し入力出自がない",
+        "developing": "dashboardはあるが意思決定とdissentに接続しない",
+        "proficient": "provenance、limitations、metric、cost、risk、decision logを再実行可能に残す",
+        "exemplary": "別のcontributorが同じoptionを独立再評価し選択差を説明できる"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "技術刷新を目的として宣言する",
+        "developing": "benefitはあるが影響を受ける人とdecision rightsが不明である",
+        "proficient": "目的、非目標、owner、dissent、投資順、撤退条件を平易に伝える",
+        "exemplary": "経営、product、security、operations、contributorが同じ証拠で異議を検証できる"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "ACM Code of Ethics and Professional Conduct (2018)",
+      "url": "https://www.acm.org/code-of-ethics",
+      "kind": "standard"
+    },
+    {
+      "title": "DORA's software delivery performance metrics (updated January 5, 2026)",
+      "url": "https://dora.dev/guides/dora-metrics/",
+      "kind": "primary"
+    },
+    {
+      "title": "FinOps Framework 2026 (accessed 2026-07-31)",
+      "url": "https://www.finops.org/framework/",
+      "kind": "primary"
+    },
+    {
+      "title": "The NIST Cybersecurity Framework (CSF) 2.0",
+      "url": "https://doi.org/10.6028/NIST.CSWP.29",
+      "kind": "standard"
+    }
+  ],
+  "review": {
+    "intervalDays": [1, 7, 30, 90],
+    "prompts": [
+      "five metricsを一つの生産性scoreへ潰すと何を見失うか",
+      "reversible first stepとwithdrawal conditionsはどう接続するか",
+      "dissentを方針の遅延ではなく品質証拠に変えるには何を残すか"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}

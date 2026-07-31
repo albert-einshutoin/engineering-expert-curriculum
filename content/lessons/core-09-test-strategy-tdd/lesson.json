@@ -1,0 +1,178 @@
+{
+  "version": 1,
+  "id": "core-09-test-strategy-tdd",
+  "title": "TDDとリスク別テスト戦略で変更を証明する",
+  "summary": "RED-GREEN-REFACTORを実行履歴として残し、単体・統合・契約・性質・メタモルフィックテストを失敗リスクへ割り当てる。",
+  "track": "build",
+  "stage": 2,
+  "difficulty": "intermediate",
+  "estimatedMinutes": 300,
+  "prerequisiteIds": [
+    "core-02-algorithms-measurement",
+    "core-08-modularity-evolutionary-architecture"
+  ],
+  "objectives": [
+    {
+      "id": "obj-cycle",
+      "statement": "同じ振る舞い要求に対するRED、GREEN、REFACTORを別々の実行結果とsource hashで証明できる",
+      "evidenceIds": ["tdd-history", "teach-back"]
+    },
+    {
+      "id": "obj-strategy",
+      "statement": "単体、統合、契約、性質、メタモルフィックの各テストを、検出したい失敗と費用へ対応付けられる",
+      "evidenceIds": ["tdd-history", "assessment"]
+    },
+    {
+      "id": "obj-diagnose",
+      "statement": "順序と時刻へ依存する非決定的障害を固定seedと時計で再現し、mutationでテスト感度を検証できる",
+      "evidenceIds": ["assessment", "transfer"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "tdd-history",
+      "kind": "artifact",
+      "description": "実subprocessのreturn code、source hash、behavior hash、mutation結果を含むRED-GREEN-REFACTOR履歴"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "TDD cycleと製品全体のテスト戦略が同義ではない理由を説明する6分間の解説"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "失敗影響、観測境界、実行費用からテスト層を選び、過剰・不足を反証する判断記録"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "順序と時刻に依存する未知の非決定的障害について再現条件と回帰戦略を組み立てた報告"
+    }
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "失敗する期待、最小実装、振る舞いを保つ整理をRED-GREEN-REFACTORとして識別できる",
+      "evidenceIds": ["tdd-history"]
+    },
+    {
+      "level": "explain",
+      "criterion": "テスト層ごとの観測境界、実行費用、偽陰性と偽陽性の違いを説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "一つの要求を実行可能な例へ落とし、失敗を確認してから最小実装とrefactorを行える",
+      "evidenceIds": ["tdd-history"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "固定seed、時計、順序、環境差を分離し、flaky testの再現条件を証拠で特定できる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "変更リスクへ複数のテスト技法を配分し、mutationと本番観測を含む品質戦略を更新できる",
+      "evidenceIds": ["transfer"]
+    }
+  ],
+  "lab": {
+    "title": "割引計算をREDからmutation killまで証明する",
+    "artifact": "RED-GREEN-REFACTOR履歴とリスク別テスト戦略",
+    "steps": [
+      "harness自身が作る専用一時workspaceで、明示した単体test IDをNotImplementedErrorの未実装へ実行し、期待したfailure reasonを持つREDを記録する",
+      "最小実装のGREENと入力検証を分離したREFACTORへ同じ単体test IDを個別subprocessで実行し、source hashの差とbehavior hashの一致を保存する",
+      "純粋関数、stdlib SQLite repository adapter、consumer-provider schemaと意味、2205件のbounded exhaustive property、入力変換metamorphic関係を別test ID・別subprocessで実行する",
+      "固定seed・schedule・時計を組み合わせ、順序だけと時計だけを変える対照実験で非決定的障害のpassとfailを切り分ける",
+      "割引式を意図的に変えた安全なproduction mutantをSQLite integration test IDで実行し、AssertionErrorでkillした証拠を記録する"
+    ]
+  },
+  "teachBack": "6分で、REDを先に観測する意味、coverageが正しさを保証しない理由、TDDだけでは契約・統合・運用リスクを覆えない理由を説明する。",
+  "assessment": [
+    {
+      "prompt": "同じテストがCIでだけ1%失敗する。すぐretryしてgreenにする前に何を固定し、何を保存するか。",
+      "expectedEvidence": "seed、時刻、実行順序、環境、入力、return codeを固定・保存し、仮説ごとの再現率を比較する計画"
+    },
+    {
+      "prompt": "100% statement coverageの割引機能に誤計算が残った。次にどの証拠を追加するか。",
+      "expectedEvidence": "境界値、性質、メタモルフィック関係、mutant、契約相手の期待をリスクへ対応付けた説明"
+    }
+  ],
+  "transferTask": "順序と時刻に依存する非決定的障害を再現し、リスク別テスト戦略で診断する",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "失敗を観測せず、実装後に常に成功するテストだけを書く",
+        "developing": "REDとGREENはあるが、refactor後の振る舞い同一性またはmutation感度を確かめない",
+        "proficient": "未実装REDを確認し、三段階と五つの固有境界を明示test ID・隔離workspaceで別実行し、mutationで感度を検証する",
+        "exemplary": "oracleの限界、ambient discovery、symlink、flakiness、contract version、実行環境差まで反証条件に含める"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "すべてを同じ層のtestで覆うか、coverage値だけで完了を判断する",
+        "developing": "複数層を使うが、失敗影響と実行費用の対応が曖昧である",
+        "proficient": "リスク、観測境界、速度、保守費用に応じて技法を選ぶ",
+        "exemplary": "偽陰性・偽陽性・検出時間を追跡し、portfolioを継続的に入れ替える"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "greenという画面だけを示し、実行commandや失敗履歴を残さない",
+        "developing": "return codeはあるが、source、振る舞い、再現条件を相関できない",
+        "proficient": "test ID、専用cwd、command、return code、failure reason、source hash、behavior hash、seed、schedule、mutation結果を保存する",
+        "exemplary": "証拠を要求・risk・変更commitへ追跡し、再実行可能なfixtureとして公開する"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "testが足りないという結論だけで、守るriskを示さない",
+        "developing": "test一覧はあるが、各testが反証する失敗を説明できない",
+        "proficient": "要求、失敗仮説、test層、結果、残余riskを一つの記録で説明する",
+        "exemplary": "開発者、reviewer、運用者が同じ証拠から停止・出荷判断を再現できる"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "ISTQB Certified Tester Foundation Level Syllabus v4.0.1",
+      "url": "https://istqb.org/wp-content/uploads/2024/11/ISTQB_CTFL_Syllabus_v4.0.1.pdf",
+      "kind": "standard"
+    },
+    {
+      "title": "Test Driven Development: By Example",
+      "url": "https://www.informit.com/store/test-driven-development-by-example-9780321146533",
+      "kind": "primary"
+    },
+    {
+      "title": "An Empirical Analysis of Flaky Tests",
+      "url": "https://doi.org/10.1145/2635868.2635920",
+      "kind": "peer-reviewed"
+    },
+    {
+      "title": "Metamorphic Testing: A New Approach for Generating Next Test Cases",
+      "url": "https://www.cse.ust.hk/~scc/publ/CS98-01-metamorphictesting.pdf",
+      "kind": "primary"
+    },
+    {
+      "title": "Pact Specification",
+      "url": "https://docs.pact.io/getting_started/specification",
+      "kind": "primary"
+    }
+  ],
+  "review": {
+    "intervalDays": [1, 7, 30, 90],
+    "prompts": [
+      "REDが実装の欠如ではなくtest自体の誤りである可能性をどう反証するか",
+      "性質testとメタモルフィックtestのoracleは何が違うか",
+      "flaky testのretryを許す前に保存すべき再現条件を四つ挙げる"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}

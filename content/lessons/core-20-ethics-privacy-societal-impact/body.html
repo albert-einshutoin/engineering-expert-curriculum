@@ -1,0 +1,628 @@
+<section id="why">
+  <h2>なぜ重要か</h2>
+  <p>技術システムの品質は、要求された機能が動くかだけでは決まらない。利益と害を誰が受けるか、どのデータがどの目的で生涯を通じて扱われるか、異議申立てや退出が可能かを設計時に扱う必要がある。平均的な成功率は、少数集団へ集中するuneven harmを隠す。</p>
+  <p>ACM Code of Ethicsは専門職としての公共への責任を、NIST Privacy Framework 1.0はprivacy riskを組織的に扱う共通言語を与える。RFC 6973はprotocolにおけるprivacy threat、RFC 9620は人権への配慮、NIST AI RMF 1.0はAI riskの統治を補う。いずれもチェックを埋めれば倫理的になる認証ではない。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> 法令遵守、同意取得、匿名化、暗号化は重要でも、それぞれ単独では害がない証明にならない。privacyとsecurityは同義ではない。安全に保護されたデータでも、収集目的、推論、共有、保持、意思決定への利用が人の自律性や公平な機会を損なうことがある。</p>
+  </aside>
+</section>
+<section id="mental-model">
+  <h2>メンタルモデル</h2>
+  <p>system boundaryを利用者の画面で止めず、直接利用者、非利用者、労働者、低accessibility環境の人、将来のデータ主体までaffected peopleを広げる。次にdata lifecycleをcollect、use、share、retain、deleteへ分け、各段階でapproved purpose、data class、necessity、allowed role、retention日数、delete SLA、削除可否を構造化して検査する。</p>
+  <figure>
+    <figcaption>affected peopleから残余riskの意思決定へ至るimpact chain</figcaption>
+    <ol>
+      <li><strong>People:</strong> 利益、害、権力、退出可能性が異なる集団を列挙する。</li>
+      <li><strong>Lifecycle:</strong> collect、use、share、retain、deleteの目的とownerを追う。</li>
+      <li><strong>Harm:</strong> privacy、security、accessibility、人権、労働への害を具体化する。</li>
+      <li><strong>Inherent risk:</strong> likelihood、severity、exposureを軽減前に評価する。</li>
+      <li><strong>Mitigation:</strong> 回避、最小化、検知、救済、退出を設計する。</li>
+      <li><strong>Residual risk:</strong> 残る害、uneven harm、owner、期限、停止条件を記録する。</li>
+    </ol>
+  </figure>
+  <p>risk scoreは議論を置き換える真理ではなく、前提と分布を可視化する道具である。同じscoreでも不可逆な害、子どもや生活基盤への影響、異議申立て不能、強い権力差があれば判断は変わる。定量値と当事者の経験を別々の証拠として保持する。</p>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>勤務割当支援機能の集団別residual riskを計算する</h3>
+  <dl>
+    <dt>前提</dt>
+    <dd>勤務希望と過去実績から候補を提示するlesson-defined simulated scenarioを使う。数値は実在の人、組織、production modelを測定したものではない。</dd>
+    <dt>入力</dt>
+    <dd>一般成人、低視力利用者、夜勤労働者についてlikelihood、severity、exposure、mitigation reductionを固定する。data lifecycleはpurpose、data class、role、retention、delete policyを構造化し、risk式とともに全集団で共通にする。</dd>
+    <dt>操作</dt>
+    <dd>過剰収集、publicまたは全role公開、無期限保持、削除無効をpolicy境界でfail closedにする。そのうえでinherent riskを三入力の積で計算し、具体的なmitigation後のresidual riskとuneven harmを求める。</dd>
+    <dt>観測</dt>
+    <dd>baselineの最大residual riskは低視力利用者へ偏る。transferで生活基盤への影響が大きい高リスク集団だけをaffected populationへ加えると、同じ式とmitigationでも最大残余riskが増える。</dd>
+    <dt>結論</dt>
+    <dd>平均利用者だけの評価はreleaseの根拠にならない。affected peopleの境界が変われば、許容できるresidual risk、追加mitigation、停止条件、意思決定参加者を再評価する必要がある。</dd>
+  </dl>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+import json
+
+HARNESS = "ethics_privacy_impact_lab_v1"
+FRAMEWORKS = {
+    "professional_ethics": "ACM Code of Ethics 2018",
+    "privacy": "NIST Privacy Framework 1.0",
+    "privacy_protocol": "RFC 6973",
+    "human_rights": "RFC 9620",
+    "ai_risk": "NIST AI RMF 1.0",
+}
+DATA_LIFECYCLE = ["collect", "use", "share", "retain", "delete"]
+LIFECYCLE_POLICY = {
+    "approved_purposes": {
+        "collect": "collect-availability-for-candidates",
+        "use": "generate-constraint-compatible-candidates",
+        "share": "present-candidates-and-reasons",
+        "retain": "support-appeals-and-bias-monitoring",
+        "delete": "make-expired-personal-data-unavailable",
+    },
+    "allowed_data_classes": {
+        "collect": ["availability-window"],
+        "use": ["availability-window"],
+        "share": ["candidate-result", "decision-reason"],
+        "retain": ["decision-reason", "group-aggregate"],
+        "delete": [
+            "availability-window",
+            "candidate-result",
+            "decision-reason",
+        ],
+    },
+    "allowed_roles": {
+        "collect": ["data-subject", "assignment-operator"],
+        "use": ["candidate-service"],
+        "share": ["site-assignment-operator"],
+        "retain": ["independent-reviewer", "privacy-owner"],
+        "delete": ["deletion-job", "audit-reviewer"],
+    },
+    "max_retention_days": {
+        "collect": 30,
+        "use": 1,
+        "share": 30,
+        "retain": 90,
+        "delete": 7,
+    },
+    "max_delete_sla_days": 7,
+    "forbidden_data_classes": [
+        "health-diagnosis",
+        "protected-trait",
+        "raw-biometric",
+    ],
+}
+LIFECYCLE_INPUTS = [
+    {
+        "phase": "collect",
+        "approved_purpose": "collect-availability-for-candidates",
+        "data_classes": ["availability-window"],
+        "necessity": True,
+        "allowed_roles": ["data-subject", "assignment-operator"],
+        "retention_days": 30,
+        "delete_sla_days": 7,
+        "deletion_enabled": True,
+        "owner": "data-intake-owner",
+        "harm_ids": [
+            "harm-schedule-opportunity",
+            "harm-history-lock-in",
+        ],
+        "control_ids": [
+            "control-candidate-refusal",
+            "control-history-feature-limit",
+        ],
+        "residual_risk_ids": [
+            "risk-schedule-opportunity",
+            "risk-history-lock-in",
+        ],
+        "verification": "収集schemaと同意撤回fixtureを検査する",
+    },
+    {
+        "phase": "use",
+        "approved_purpose": "generate-constraint-compatible-candidates",
+        "data_classes": ["availability-window"],
+        "necessity": True,
+        "allowed_roles": ["candidate-service"],
+        "retention_days": 1,
+        "delete_sla_days": 7,
+        "deletion_enabled": True,
+        "owner": "ranking-safety-owner",
+        "harm_ids": [
+            "harm-schedule-opportunity",
+            "harm-inaccessible-choice",
+            "harm-history-lock-in",
+        ],
+        "control_ids": [
+            "control-human-review",
+            "control-history-feature-limit",
+            "control-group-monitoring",
+        ],
+        "residual_risk_ids": [
+            "risk-schedule-opportunity",
+            "risk-inaccessible-choice",
+            "risk-history-lock-in",
+        ],
+        "verification": "用途外feature mutationを拒否する",
+    },
+    {
+        "phase": "share",
+        "approved_purpose": "present-candidates-and-reasons",
+        "data_classes": ["candidate-result", "decision-reason"],
+        "necessity": True,
+        "allowed_roles": ["site-assignment-operator"],
+        "retention_days": 30,
+        "delete_sla_days": 7,
+        "deletion_enabled": True,
+        "owner": "workforce-access-owner",
+        "harm_ids": [
+            "harm-schedule-opportunity",
+            "harm-inaccessible-choice",
+        ],
+        "control_ids": [
+            "control-reason-display",
+            "control-candidate-refusal",
+            "control-semantic-reading-order",
+            "control-keyboard-review",
+            "control-alternate-channel",
+        ],
+        "residual_risk_ids": [
+            "risk-schedule-opportunity",
+            "risk-inaccessible-choice",
+        ],
+        "verification": "別拠点roleのaccess拒否を確認する",
+    },
+    {
+        "phase": "retain",
+        "approved_purpose": "support-appeals-and-bias-monitoring",
+        "data_classes": ["decision-reason", "group-aggregate"],
+        "necessity": True,
+        "allowed_roles": ["independent-reviewer", "privacy-owner"],
+        "retention_days": 90,
+        "delete_sla_days": 7,
+        "deletion_enabled": True,
+        "owner": "privacy-risk-owner",
+        "harm_ids": [
+            "harm-history-lock-in",
+        ],
+        "control_ids": [
+            "control-group-monitoring",
+            "control-appeal",
+        ],
+        "residual_risk_ids": [
+            "risk-history-lock-in",
+        ],
+        "verification": "期限超過fixtureをfail closedにする",
+    },
+    {
+        "phase": "delete",
+        "approved_purpose": "make-expired-personal-data-unavailable",
+        "data_classes": [
+            "availability-window",
+            "candidate-result",
+            "decision-reason",
+        ],
+        "necessity": True,
+        "allowed_roles": ["deletion-job", "audit-reviewer"],
+        "retention_days": 7,
+        "delete_sla_days": 7,
+        "deletion_enabled": True,
+        "owner": "deletion-control-owner",
+        "harm_ids": [
+            "harm-schedule-opportunity",
+            "harm-inaccessible-choice",
+            "harm-history-lock-in",
+        ],
+        "control_ids": [
+            "control-human-review",
+            "control-appeal",
+        ],
+        "residual_risk_ids": [
+            "risk-schedule-opportunity",
+            "risk-inaccessible-choice",
+            "risk-history-lock-in",
+        ],
+        "verification": "再検索不能と削除receiptを確認する",
+    },
+]
+
+def derive_lifecycle_fixture(inputs):
+    # Policy-owned forbidden classes are attached during derivation so every
+    # phase is checked against one boundary rather than copied prose.
+    return [
+        {
+            **source,
+            "forbidden_data_classes": list(
+                LIFECYCLE_POLICY["forbidden_data_classes"]
+            ),
+        }
+        for source in inputs
+    ]
+
+LIFECYCLE_FIXTURE = derive_lifecycle_fixture(LIFECYCLE_INPUTS)
+BASELINE_IMPACT_FIXTURE = [
+    {
+        "affected_people": "general-adult-workers",
+        "harm_id": "harm-schedule-opportunity",
+        "harm": "希望と異なる勤務候補が提示される",
+        "control_ids": [
+            "control-human-review",
+            "control-reason-display",
+            "control-candidate-refusal",
+        ],
+        "residual_risk_id": "risk-schedule-opportunity",
+        "likelihood": 2,
+        "severity": 2,
+        "exposure": 2,
+        "mitigation_reduction": 5,
+        "mitigations": [
+            "人による確認",
+            "理由表示",
+            "候補の拒否",
+        ],
+    },
+    {
+        "affected_people": "low-vision-workers",
+        "harm_id": "harm-inaccessible-choice",
+        "harm": "読み上げ不能な候補から選択機会を失う",
+        "control_ids": [
+            "control-semantic-reading-order",
+            "control-keyboard-review",
+            "control-alternate-channel",
+        ],
+        "residual_risk_id": "risk-inaccessible-choice",
+        "likelihood": 3,
+        "severity": 4,
+        "exposure": 3,
+        "mitigation_reduction": 22,
+        "mitigations": [
+            "semantic reading order",
+            "keyboard-only review",
+            "代替窓口",
+        ],
+    },
+    {
+        "affected_people": "night-shift-workers",
+        "harm_id": "harm-history-lock-in",
+        "harm": "過去の勤務偏りが次の候補へ固定される",
+        "control_ids": [
+            "control-history-feature-limit",
+            "control-group-monitoring",
+            "control-appeal",
+        ],
+        "residual_risk_id": "risk-history-lock-in",
+        "likelihood": 2,
+        "severity": 3,
+        "exposure": 3,
+        "mitigation_reduction": 10,
+        "mitigations": [
+            "履歴特徴の上限",
+            "集団別monitoring",
+            "異議申立て",
+        ],
+    },
+]
+HIGH_RISK_POPULATION = {
+    "affected_people": "income-critical-contract-workers",
+    "harm_id": "harm-schedule-opportunity",
+    "harm": "候補順位の低下が生活基盤へ不可逆な損失を与える",
+    "control_ids": [
+        "control-human-review",
+        "control-candidate-refusal",
+        "control-appeal",
+    ],
+    "residual_risk_id": "risk-schedule-opportunity",
+    "likelihood": 4,
+    "severity": 5,
+    "exposure": 4,
+    "mitigation_reduction": 20,
+    "mitigations": [
+        "自動順位の停止",
+        "独立した人による再審査",
+        "不利益の救済",
+    ],
+}
+TRANSFER_TASK = (
+    "平均的利用者から高リスク集団を含むaffected populationへ"
+    "変え、残余riskを再評価する"
+)
+
+def validate_lifecycle(fixture):
+    required_fields = {
+        "phase",
+        "approved_purpose",
+        "data_classes",
+        "necessity",
+        "allowed_roles",
+        "retention_days",
+        "delete_sla_days",
+        "deletion_enabled",
+        "forbidden_data_classes",
+        "owner",
+        "harm_ids",
+        "control_ids",
+        "residual_risk_ids",
+        "verification",
+    }
+    known_references = {
+        "harm_ids": {
+            item["harm_id"] for item in BASELINE_IMPACT_FIXTURE
+        },
+        "control_ids": {
+            control_id
+            for item in BASELINE_IMPACT_FIXTURE
+            for control_id in item["control_ids"]
+        },
+        "residual_risk_ids": {
+            item["residual_risk_id"]
+            for item in BASELINE_IMPACT_FIXTURE
+        },
+    }
+    referenced = {
+        reference_name: set()
+        for reference_name in known_references
+    }
+    assessment = []
+    for expected_phase, source in zip(
+        DATA_LIFECYCLE,
+        fixture,
+        strict=True,
+    ):
+        # phase名だけのchecklistを防ぎ、各段階の目的、最小化、
+        # 権限、保持、owner、impact/control/risk、検証を同じ
+        # recordで追跡する。
+        assert set(source) == required_fields, "ethics-lifecycle-invariant"
+        assert source["phase"] == expected_phase, "ethics-lifecycle-invariant"
+        assert (
+            source["owner"]
+            and source["harm_ids"]
+            and source["control_ids"]
+            and source["residual_risk_ids"]
+            and source["verification"]
+        ), "ethics-lifecycle-invariant"
+        approved_data_classes = set(
+            LIFECYCLE_POLICY["allowed_data_classes"][expected_phase]
+        )
+        approved_roles = set(
+            LIFECYCLE_POLICY["allowed_roles"][expected_phase]
+        )
+        forbidden_data_classes = set(
+            LIFECYCLE_POLICY["forbidden_data_classes"]
+        )
+        data_classes = source["data_classes"]
+        allowed_roles = source["allowed_roles"]
+        assert (
+            type(source["approved_purpose"]) is str
+            and source["approved_purpose"]
+            == LIFECYCLE_POLICY["approved_purposes"][expected_phase]
+            and source["necessity"] is True
+            and type(data_classes) is list
+            and bool(data_classes)
+            and all(type(item) is str and item for item in data_classes)
+            and len(data_classes) == len(set(data_classes))
+            and set(data_classes) &lt;= approved_data_classes
+            and not set(data_classes) & forbidden_data_classes
+            and source["forbidden_data_classes"]
+            == LIFECYCLE_POLICY["forbidden_data_classes"]
+            and type(allowed_roles) is list
+            and bool(allowed_roles)
+            and all(type(role) is str and role for role in allowed_roles)
+            and len(allowed_roles) == len(set(allowed_roles))
+            and set(allowed_roles) &lt;= approved_roles
+            and not {"public", "all-roles"} & set(allowed_roles)
+            and type(source["retention_days"]) is int
+            and 0 &lt; source["retention_days"]
+            &lt;= LIFECYCLE_POLICY["max_retention_days"][expected_phase]
+            and type(source["delete_sla_days"]) is int
+            and 0 &lt; source["delete_sla_days"]
+            &lt;= LIFECYCLE_POLICY["max_delete_sla_days"]
+            and source["deletion_enabled"] is True
+        ), "ethics-lifecycle-policy-invariant"
+        for reference_name, known_ids in known_references.items():
+            source_ids = set(source[reference_name])
+            assert source_ids &lt;= known_ids, "ethics-lifecycle-invariant"
+            referenced[reference_name].update(source_ids)
+        assessment.append(dict(source))
+    assert referenced == known_references, "ethics-lifecycle-invariant"
+    return assessment
+
+def derive_impact(item):
+    inherent_risk = (
+        item["likelihood"]
+        * item["severity"]
+        * item["exposure"]
+    )
+    mitigation_reduction = item["mitigation_reduction"]
+    # 軽減前後を分離し、controlが存在するだけでriskをゼロと
+    # 見なさないため、残る量を明示的に導出する。
+    residual_risk = max(0, inherent_risk - mitigation_reduction)
+    return {
+        **item,
+        "inherent_risk": inherent_risk,
+        "residual_risk": residual_risk,
+    }
+
+def assess_population(fixture):
+    impacts = [derive_impact(item) for item in fixture]
+    residuals = [item["residual_risk"] for item in impacts]
+    return {
+        "impacts": impacts,
+        "uneven_harm": {
+            "maximum": max(residuals),
+            "minimum": min(residuals),
+            "gap": max(residuals) - min(residuals),
+        },
+        "residual_risk_owner": "product-safety-council",
+    }
+
+def main():
+    lifecycle_assessment = validate_lifecycle(LIFECYCLE_FIXTURE)
+    assert (
+        [item["phase"] for item in lifecycle_assessment]
+        == DATA_LIFECYCLE
+    ), "ethics-lifecycle-invariant"
+    baseline = assess_population(BASELINE_IMPACT_FIXTURE)
+    transferred = assess_population(
+        BASELINE_IMPACT_FIXTURE + [HIGH_RISK_POPULATION]
+    )
+    # mitigation計算を無効化するmutationが平均値に隠れないよう、
+    # 全baseline集団でriskが実際に減ったことを不変条件にする。
+    assert all(
+        impact["residual_risk"] &lt; impact["inherent_risk"]
+        for impact in baseline["impacts"]
+    ), "ethics-causal-invariant"
+    baseline_mitigations = {
+        impact["affected_people"]: impact["mitigations"]
+        for impact in baseline["impacts"]
+    }
+    transferred_mitigations = {
+        impact["affected_people"]: impact["mitigations"]
+        for impact in transferred["impacts"]
+        if impact["affected_people"] in baseline_mitigations
+    }
+    baseline_lifecycle = [dict(item) for item in lifecycle_assessment]
+    transferred_lifecycle = [dict(item) for item in lifecycle_assessment]
+    transfer = {
+        "changed_assumption": "affected-population",
+        "changed_fields": ["affected_population"],
+        "unchanged": {
+            "data_lifecycle": (
+                baseline_lifecycle == transferred_lifecycle
+            ),
+            "mitigations": (
+                baseline_mitigations == transferred_mitigations
+            ),
+            "risk_formula": all(
+                impact["residual_risk"]
+                == max(
+                    0,
+                    impact["inherent_risk"]
+                    - impact["mitigation_reduction"],
+                )
+                for impact in transferred["impacts"]
+            ),
+        },
+        "baseline_lifecycle": baseline_lifecycle,
+        "transferred_lifecycle": transferred_lifecycle,
+        "baseline_maximum_residual_risk": (
+            baseline["uneven_harm"]["maximum"]
+        ),
+        "transferred_maximum_residual_risk": (
+            transferred["uneven_harm"]["maximum"]
+        ),
+        "added_affected_people": HIGH_RISK_POPULATION["affected_people"],
+    }
+    report = {
+        "fixture_metadata": {
+            "kind": "simulated",
+            "provenance": "lesson-defined simulated scenario",
+            "limitations": (
+                "入力値は教材用で当事者調査やproduction影響測定ではない"
+            ),
+        },
+        "frameworks": FRAMEWORKS,
+        "data_lifecycle": DATA_LIFECYCLE,
+        "lifecycle_policy": LIFECYCLE_POLICY,
+        "data_lifecycle_assessment": lifecycle_assessment,
+        "impact_assessment": baseline,
+        "privacy_security_relation": {
+            "related": True,
+            "distinct": True,
+            "privacy_equals_security": False,
+            "evidence": (
+                "機密性を保ってもpurpose外利用と推論の害は残る"
+            ),
+        },
+        "affected_population_transfer": transfer,
+        "runtime_bound": {
+            "records": (
+                len(BASELINE_IMPACT_FIXTURE)
+                + len(lifecycle_assessment)
+                + len(FRAMEWORKS)
+                + 1
+            ),
+            "subprocesses": 0,
+        },
+        "mastery_evidence": {
+            "lab_steps": [
+                {"step": 1, "evidence": "frameworkの目的と限界"},
+                {"step": 2, "evidence": "三つのaffected people"},
+                {"step": 3, "evidence": "五段階のdata lifecycle"},
+                {"step": 4, "evidence": "集団別inherentとresidual"},
+                {"step": 5, "evidence": "affected population transfer"},
+            ],
+            "assessments": [
+                {"assessment": 1, "evidence": "uneven harmと停止条件"},
+                {"assessment": 2, "evidence": "privacyとsecurityの区別"},
+            ],
+            "rubric_dimensions": [
+                "technical-correctness",
+                "judgment",
+                "evidence",
+                "communication",
+            ],
+            "transfer": {
+                "task": TRANSFER_TASK,
+                "changed_assumption": "affected-population",
+                "evidence": "高リスク集団追加後の最大残余risk",
+            },
+        },
+        "external_network_used": False,
+    }
+    assert (
+        transfer["transferred_maximum_residual_risk"]
+        &gt; transfer["baseline_maximum_residual_risk"]
+    ), "affected-population-must-change-risk"
+    print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+
+main()
+PY</code></pre>
+</section>
+<section id="tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <table>
+    <caption>害の性質から設計行動を選ぶdecision table</caption>
+    <thead>
+      <tr>
+        <th scope="col">観測した条件</th>
+        <th scope="col">判断</th>
+        <th scope="col">必要なmitigation</th>
+        <th scope="col">残す証拠</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row">可逆で小さい害</th>
+        <td>限定pilot</td>
+        <td>monitoring、退出、期限</td>
+        <td>集団別indicatorとowner</td>
+      </tr>
+      <tr>
+        <th scope="row">不均等で重大な害</th>
+        <td>release範囲を縮小</td>
+        <td>当事者参加、救済、人による再審査</td>
+        <td>uneven harmと停止条件</td>
+      </tr>
+      <tr>
+        <th scope="row">不可逆または未知</th>
+        <td>停止して代替案を検討</td>
+        <td>収集回避、機能分離、独立review</td>
+        <td>未知、反証条件、決定権者</td>
+      </tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><strong>誤診:</strong> 平均精度が上がったため社会的利益も増えた。<strong>反証:</strong> affected people別にbenefit、severity、exposure、退出可能性を分解し、最大と最小のresidual riskを比較する。</li>
+    <li><strong>誤診:</strong> 暗号化とaccess controlがあるためprivacy riskは解消した。<strong>反証:</strong> collect、use、share、retain、deleteごとにpurpose、necessity、推論、共有先、削除実効性を検査する。</li>
+  </ul>
+</section>
+<section id="knowledge-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>直接利用者ではないaffected peopleを二種類挙げ、その影響経路を説明せよ。</li>
+    <li>privacyとsecurityがrelatedだがdistinctである事例を一つ作れ。</li>
+    <li>mitigation reductionを大きく見積もりすぎたことをどの証拠で反証するか。</li>
+    <li>residual risk ownerがrelease teamだけでは不十分になる条件は何か。</li>
+  </ol>
+</section>
+<section id="sources-next">
+  <h2>出典と次の学習</h2>
+  <p>professional ethicsはACM Code of Ethics and Professional Conduct 2018、組織的なprivacy risk管理はNIST Privacy Framework Version 1.0、protocol privacyはRFC 6973、人権への設計配慮はRFC 9620、AI固有の統治はNIST AI RMF 1.0を基準にした。各資料のscopeを混同せず、影響を受ける人の証言、利用状況、法域、最新の組織方針で補う。</p>
+  <p>次は、core19の設計文書へimpact assessmentを制約として統合し、代替案のscoreだけでなく、誰が利益と残余riskを負うかをdecision evidenceへ追加する。</p>
+</section>

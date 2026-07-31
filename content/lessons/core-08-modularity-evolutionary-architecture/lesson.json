@@ -1,0 +1,173 @@
+{
+  "version": 1,
+  "id": "core-08-modularity-evolutionary-architecture",
+  "title": "変更理由でモジュール境界を設計しADRで更新する",
+  "summary": "同時に変わる知識を隠蔽し、依存方向と複数viewを検証可能なADRへ記録する。",
+  "track": "build",
+  "stage": 2,
+  "difficulty": "intermediate",
+  "estimatedMinutes": 280,
+  "prerequisiteIds": [
+    "core-06-requirements-domain-modeling",
+    "core-07-api-contract-design"
+  ],
+  "objectives": [
+    {
+      "id": "obj-boundary",
+      "statement": "fileやserviceの個数ではなく、変更理由と隠蔽するdecisionからmodule境界を説明できる",
+      "evidenceIds": ["module-adr", "teach-back"]
+    },
+    {
+      "id": "obj-direction",
+      "statement": "module graphのcycleと依存方向違反を検出し、reverse transitive closureで変更影響を再計算できる",
+      "evidenceIds": ["module-adr", "assessment"]
+    },
+    {
+      "id": "obj-decision",
+      "statement": "stakeholder concern、1〜5の全anchorを定義したscale、選択肢のevidence、正負の帰結、確認方法をADRへ残し、高変更moduleへ判断を移せる",
+      "evidenceIds": ["assessment", "transfer"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "module-adr",
+      "kind": "artifact",
+      "description": "変更理由、依存方向、cycle検査、選択肢、正負の帰結、確認方法を含むmodule図とADR"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "module分割数とmodularityが同義ではない理由を説明する5分間の解説"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "変更結合、reverse impact、scale anchor、optionごとの観測証拠から加重scoreと境界を再計算できる判断記録"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "変更頻度が高い料金計算moduleの依存方向を再設計し、観測結果でADRを更新した報告"
+    }
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "module、interface、dependency、view、ADRの役割を識別できる",
+      "evidenceIds": ["module-adr"]
+    },
+    {
+      "level": "explain",
+      "criterion": "information hidingと変更理由が境界安定性へ与える影響を具体例で説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "依存graphからcycleと方向違反を検出し、外側からdomainへ向く構成へ直せる",
+      "evidenceIds": ["module-adr"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "変更履歴と影響範囲を用いて、境界漏洩と不適切な依存を反証できる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "複数stakeholderのconcernとviewを統合し、ADRを廃止・置換するreviewを主導できる",
+      "evidenceIds": ["transfer"]
+    }
+  ],
+  "lab": {
+    "title": "料金計算hotspotの依存を反転しADRへ残す",
+    "artifact": "変更理由と依存方向を説明するモジュール図とADR",
+    "steps": [
+      "料金規則、use case、外部adapterのmoduleと依存edgeを固定fixtureとして列挙する",
+      "変更前graphのcycleとdomainから外側へ向く方向違反を検出する",
+      "境界維持、一時的facade、service分離の三案を、weightと1〜5の全anchorを固定したcriteria、rating evidence、riskで比較する",
+      "選択案で依存を外側から内側へ直し、変更targetからreverse transitive closureを求め、edge削除・target変更mutationとの差を再計算する",
+      "context、decision、alternatives、正負の帰結、confirmationをADRへ記録する"
+    ]
+  },
+  "teachBack": "5分で、module数を増やすだけではmodularityが改善しない理由、依存方向とruntime call方向の違い、ADRがarchitecture品質を保証しない理由を説明する。",
+  "assessment": [
+    {
+      "prompt": "料金規則の変更でUI、DB、batchの三moduleが毎回変わる。どの証拠を集め、何を隠蔽するか。",
+      "expectedEvidence": "変更履歴、知識の重複、interface、依存edge、consumer影響を基にした境界仮説と反証"
+    },
+    {
+      "prompt": "ADRはacceptedだが運用障害が増えた。記録があることと判断が妥当であることをどう区別するか。",
+      "expectedEvidence": "confirmation、負の帰結、観測指標、置換条件、stakeholder concernを用いた再評価"
+    }
+  ],
+  "transferTask": "変更頻度が高い料金計算モジュールの依存方向を再設計し、ADRで判断を更新する",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "directoryやserviceの個数だけをmodule境界の根拠にする",
+        "developing": "変更理由を挙げるが、依存方向またはcycleを検査しない",
+        "proficient": "隠蔽するdecision、interface、依存方向、cycle、複数viewを整合させる",
+        "exemplary": "build-timeとruntimeの関係、移行edge、観測可能なfitness条件まで表現する"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "選択肢なしに分割またはservice化を結論とする",
+        "developing": "複数案はあるが、criteriaと負の帰結が揃わない",
+        "proficient": "変更結合、独立性、運用費、可逆性を同じ尺度で比較する",
+        "exemplary": "移行期間、組織境界、将来の不確実性を反証条件へ変換する"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "理想図だけを示し、現状edgeや変更履歴がない",
+        "developing": "graphはあるが、cycle検査または変更影響の比較が再現できない",
+        "proficient": "変更前後のedge、cycle、方向違反、impactを同じfixtureで出力する",
+        "exemplary": "repositoryのdependency検査と運用指標をADR confirmationへ自動接続する"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "箱と矢印だけで、矢印の意味と対象stakeholderが不明である",
+        "developing": "一つのviewは説明するが、異なるconcernを混在させる",
+        "proficient": "viewごとの目的、element、関係、decision、帰結を明示する",
+        "exemplary": "新規参加者が図とADRだけで変更経路と再評価条件を追跡できる"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "On the Criteria To Be Used in Decomposing Systems into Modules",
+      "url": "https://doi.org/10.1145/361598.361623",
+      "kind": "primary"
+    },
+    {
+      "title": "ISO/IEC/IEEE 42010:2022 - Software, systems and enterprise — Architecture description",
+      "url": "https://www.iso.org/standard/74393.html",
+      "kind": "standard"
+    },
+    {
+      "title": "Documenting Software Architectures: Views and Beyond, Second Edition",
+      "url": "https://www.sei.cmu.edu/library/documenting-software-architectures-views-and-beyond-second-edition/",
+      "kind": "primary"
+    },
+    {
+      "title": "MADR 4.0.0 — The Markdown Architectural Decision Records",
+      "url": "https://adr.github.io/madr/",
+      "kind": "primary"
+    }
+  ],
+  "review": {
+    "intervalDays": [1, 7, 30, 90],
+    "prompts": [
+      "変更理由とruntime call方向が一致しない例を一つ示す",
+      "accepted ADRを置換するconfirmationと反証条件を挙げる",
+      "module graphのcycleが常に悪いと断定できない理由を説明する"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}

@@ -1,0 +1,562 @@
+<section id="why">
+  <h2>なぜ重要か</h2>
+  <p>distributed systemでは、timeoutは処理が失敗した証拠ではない。requestが届かなかった、処理後のresponseだけ失われた、遅れて到着した、別経路で順序が入れ替わった、networkが分断された、という複数の状態を同じ観測からは区別できない。client retryだけを加えると、元の処理が成功していた場合に副作用を重複させる。</p>
+  <p>安全な設計は、message deliveryとbusiness state transitionを分ける。at-least-once配信を前提にstableなdedupe key、入力fingerprint、最初のresult、状態遷移をatomicに永続化し、duplicateには保存済みresultを返す。さらに順序入替、分断期間、dedupe retention、recovery deadlineを変更して保証範囲を再評価する。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> FLPはCAPの別名ではなく、完全非同期modelで一つの停止故障がある決定的consensusの終了保証に関する結果である。「実用的なconsensusは不可能」という結論ではない。timeout、randomization、failure detector、quorumなど追加仮定を明示する。simulationはfailure仮説の実行例でありformal proofではない。</p>
+  </aside>
+</section>
+<section id="mental-model">
+  <h2>メンタルモデル</h2>
+  <p>safetyは悪い状態へ到達しない性質、livenessは望む処理が最終的に進む性質である。分断中に安全を守るため処理を保留すると可用性やlatencyへ影響し、応答を優先すると後でconflict resolutionが必要になる。保証はnetwork model、fault model、clock、storage durability、quorum assumptionと一緒に読む。</p>
+  <figure>
+    <figcaption>at-least-once commandを永続dedupeと回復へ接続するmechanism</figcaption>
+    <ol>
+      <li><strong>receive:</strong> tenant、resource、operationを含むstable keyと入力fingerprintを受け取る。</li>
+      <li><strong>lookup:</strong> 永続dedupe storeにkeyがあれば入力fingerprintを照合し、一致時だけ状態遷移を再実行せず最初のresultを再利用する。不一致はkey衝突として拒否する。</li>
+      <li><strong>apply:</strong> keyがなければ現在stateから許可された次stateへ一度だけ遷移する。</li>
+      <li><strong>commit:</strong> state、fingerprint、resultを同じdurability境界で保存する。response lossはcommitを取り消さない。</li>
+      <li><strong>recover:</strong> partition中のmessageを再開後に処理し、logical sequenceとdelivery orderの差を検査する。</li>
+      <li><strong>re-evaluate:</strong> partitionがdeadlineを越えたら、queue、retention、stale command、reconciliation、利用者結果を更新する。</li>
+    </ol>
+  </figure>
+  <table>
+    <caption>部分障害時のcommand処理を選ぶdecision table</caption>
+    <thead>
+      <tr><th scope="col">方針</th><th scope="col">safety</th><th scope="col">liveness・latency</th><th scope="col">必要な証拠</th><th scope="col">主な残留risk</th></tr>
+    </thead>
+    <tbody>
+      <tr><th scope="row">無条件retry</th><td>duplicate effectを防げない</td><td>短い障害では進みやすい</td><td>副作用回数と重複率</td><td>二重課金・二重確定</td></tr>
+      <tr><th scope="row">永続dedupe・result再利用</th><td>同じkeyの状態遷移を一度に制限</td><td>store lookupとretentionが必要</td><td>atomic commit、key scope、duplicate replay</td><td>key衝突・期限切れ後の再送</td></tr>
+      <tr><th scope="row">分断中保留・回復後replay</th><td>矛盾した更新を抑制</td><td>分断期間だけ結果が遅れる</td><td>queue上限、順序、不変条件、recovery deadline</td><td>長期分断・stale command</td></tr>
+      <tr><th scope="row">両側受付・後でreconcile</th><td>conflict rule次第</td><td>受付可用性を保ちやすい</td><td>merge rule、利用者意味、compensation</td><td>不可逆なbusiness conflict</td></tr>
+    </tbody>
+  </table>
+  <p><strong>model scope:</strong> 教材は一つの注文state machine、永続dedupe store、delay・duplicate・reorder・partitionを起こすasynchronous networkを模した決定的scenarioである。Byzantine fault、real clock、disk故障、multi-leader consensus、実networkの確率分布は扱わない。</p>
+  <p><strong>fixtureの由来:</strong> event、tick、recovery deadlineはlesson-authored simulationであり、production incidentやprotocol証明ではない。実systemでは匿名化trace、brokerのdelivery契約、storage durability、retention、chaos rehearsalで仮定を置き換える。</p>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>重複commandを一度だけ適用し、長期分断を再評価する</h3>
+  <dl>
+    <dt>前提</dt>
+    <dd>固定seed 20260731、注文 <code>order-42</code> の <code>pending→confirmed</code> 遷移、recovery deadline 8 tickを使う。配信はat-least-onceで、処理後responseが失われる可能性がある。</dd>
+    <dt>入力</dt>
+    <dd>最初のdeliver、partition start、分断中のread、同じdedupe keyのduplicate、reconcile read、partition endからなる6 eventを入力する。logical sequenceとdelivery priorityは独立している。</dd>
+    <dt>操作</dt>
+    <dd>partition中の3 messageをbufferし、回復後に固定priorityとseedで解放する。duplicateはcanonical input fingerprintを永続storeと照合し、一致時は状態遷移を再適用せず保存済みresultを返す。不一致時はtyped conflictとして拒否する。同じfixtureを二回replayする。</dd>
+    <dt>観測</dt>
+    <dd>二つのtraceは一致し、delivery orderはlogical sequenceと異なる。注文確定の状態遷移は1回、同一payloadのduplicateはresultを1回再利用する。同じkeyで異なる遷移を送るmutationはfingerprint不一致として拒否され、storeとstateは変わらない。分断終了を11 tickへ延ばすとdeadline 8を越え、回復outcomeが変わる。</dd>
+    <dt>結論</dt>
+    <dd>これはexactly-once deliveryではない。duplicateは実際に届くが、business effectをstable key、永続result、冪等state transitionで制御する。長期分断では成功扱いを広げず、不確実な結果とreconciliation責任を利用者へ示す。</dd>
+  </dl>
+  <p>次のPython 3.13 harnessは標準libraryと固定fixtureだけを使い、network、secret、shell、filesystemへアクセスしない。固定seedの二回replayとpartition duration mutationを内部assertで検証する。</p>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+import hashlib
+import json
+import random
+
+HARNESS = "coordination_simulator_lab_v1"
+SEED = 20260731
+RECOVERY_DEADLINE_TICK = 8
+DEDUPE_KEY = "tenant-7:order-42:confirm:v1"
+
+EVENTS = [
+    {
+        "id": "e1-confirm",
+        "tick": 1,
+        "kind": "deliver",
+        "logical_sequence": 2,
+        "delivery_priority": 0,
+        "dedupe_key": DEDUPE_KEY,
+        "transition": ["pending", "confirmed"],
+    },
+    {
+        "id": "e2-partition-start",
+        "tick": 2,
+        "kind": "partition_start",
+    },
+    {
+        "id": "e3-status-read",
+        "tick": 3,
+        "kind": "deliver",
+        "logical_sequence": 4,
+        "delivery_priority": 1,
+        "dedupe_key": "read:order-42:status:1",
+        "transition": None,
+    },
+    {
+        "id": "e4-confirm-retry",
+        "tick": 4,
+        "kind": "duplicate",
+        "logical_sequence": 2,
+        "delivery_priority": 2,
+        "dedupe_key": DEDUPE_KEY,
+        "transition": ["pending", "confirmed"],
+    },
+    {
+        "id": "e5-reconcile-read",
+        "tick": 5,
+        "kind": "deliver",
+        "logical_sequence": 3,
+        "delivery_priority": 0,
+        "dedupe_key": "read:order-42:reconcile:1",
+        "transition": None,
+    },
+    {
+        "id": "e6-partition-end",
+        "tick": 6,
+        "kind": "partition_end",
+    },
+]
+
+class IdempotencyConflict(Exception):
+    code = "same-key-different-input"
+
+    def __init__(self, key, stored_fingerprint, attempted_fingerprint):
+        super().__init__(self.code)
+        self.key = key
+        self.stored_fingerprint = stored_fingerprint
+        self.attempted_fingerprint = attempted_fingerprint
+
+def canonical_input_fingerprint(event):
+    # Delivery metadata changes across retries, so only the business input is
+    # canonicalized. This makes semantically identical retries byte-stable.
+    business_input = {"transition": event["transition"]}
+    canonical_input = json.dumps(
+        business_input,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical_input).hexdigest()
+
+def simulate(seed, partition_end_delay=0, conflicting_retry=False):
+    rng = random.Random(seed)
+    events = [
+        {
+            **event,
+            "transition": ["confirmed", "cancelled"],
+        }
+        if conflicting_retry and event["id"] == "e4-confirm-retry"
+        else event
+        for event in EVENTS
+    ]
+    trace = []
+    buffered = []
+    delivery_sequences = []
+    persistent_results = {}
+    state = {"order-42": "pending"}
+    applied_by_key = {}
+    result_reuse_by_key = {}
+    reused_result_by_key = {}
+    commit_records = []
+    conflicts = []
+    partition_active = False
+    partition_started = False
+    recovery_tick = None
+    released_message_count = 0
+    volatile_generation = 1
+
+    def process_message(event, delivery):
+        nonlocal persistent_results, state
+        key = event["dedupe_key"]
+        input_fingerprint = canonical_input_fingerprint(event)
+        delivery_sequences.append(event["logical_sequence"])
+        if key in persistent_results:
+            stored_entry = persistent_results[key]
+            if stored_entry["input_fingerprint"] != input_fingerprint:
+                raise IdempotencyConflict(
+                    key,
+                    stored_entry["input_fingerprint"],
+                    input_fingerprint,
+                )
+            result_reuse_by_key[key] = result_reuse_by_key.get(key, 0) + 1
+            reused_result_by_key[key] = stored_entry["result"]
+            trace.append(
+                {
+                    "tick": delivery["tick"],
+                    "kind": "deliver",
+                    "event_id": event["id"],
+                    "delivery": delivery["mode"],
+                    "logical_sequence": event["logical_sequence"],
+                    "effect": "reused-persistent-result",
+                    "input_fingerprint": input_fingerprint,
+                    "result": stored_entry["result"],
+                }
+            )
+            return
+
+        transition = event["transition"]
+        next_state = dict(state)
+        if transition is None:
+            result = {
+                "order_id": "order-42",
+                "state": state["order-42"],
+                "observation": event["id"],
+            }
+            effect = "read-only"
+        else:
+            before, after = transition
+            assert state["order-42"] == before
+            next_state["order-42"] = after
+            result = {
+                "order_id": "order-42",
+                "state": after,
+                "confirmation": "confirmed-once",
+            }
+            effect = "state-transition-applied"
+
+        stored_entry = {
+            "input_fingerprint": input_fingerprint,
+            "result": result,
+        }
+        # The fixture publishes state and dedupe data from one modeled commit
+        # boundary so no retry can observe only half of the business effect.
+        next_persistent_results = {
+            **persistent_results,
+            key: stored_entry,
+        }
+        state, persistent_results = next_state, next_persistent_results
+        if transition is not None:
+            applied_by_key[key] = applied_by_key.get(key, 0) + 1
+        commit_records.append(
+            {
+                "key": key,
+                "state_after": dict(state),
+                "stored_entry": stored_entry,
+            }
+        )
+        trace.append(
+            {
+                "tick": delivery["tick"],
+                "kind": "deliver",
+                "event_id": event["id"],
+                "delivery": delivery["mode"],
+                "logical_sequence": event["logical_sequence"],
+                "effect": effect,
+                "input_fingerprint": input_fingerprint,
+                "result": result,
+            }
+        )
+
+    def deliver_message(event, delivery):
+        state_before = dict(state)
+        stored_entry_before = persistent_results.get(event["dedupe_key"])
+        try:
+            process_message(event, delivery)
+        except IdempotencyConflict as error:
+            stored_entry_unchanged = (
+                state == state_before
+                and persistent_results.get(error.key) == stored_entry_before
+            )
+            conflict = {
+                "error_type": type(error).__name__,
+                "code": error.code,
+                "rejected": True,
+                "key": error.key,
+                "attempted_input_fingerprint": error.attempted_fingerprint,
+                "stored_input_fingerprint": error.stored_fingerprint,
+                "applied_state_transitions": applied_by_key.get(error.key, 0),
+                "stored_entry_unchanged": stored_entry_unchanged,
+            }
+            conflicts.append(conflict)
+            trace.append(
+                {
+                    "tick": delivery["tick"],
+                    "kind": "deliver",
+                    "event_id": event["id"],
+                    "delivery": delivery["mode"],
+                    "logical_sequence": event["logical_sequence"],
+                    "effect": "idempotency-conflict-rejected",
+                    "error": conflict,
+                }
+            )
+
+    for event in events:
+        if event["kind"] == "partition_start":
+            partition_active = True
+            partition_started = True
+            trace.append(
+                {
+                    "tick": event["tick"],
+                    "kind": "partition_start",
+                    "event_id": event["id"],
+                }
+            )
+        elif event["kind"] == "partition_end":
+            recovery_tick = event["tick"] + partition_end_delay
+            partition_active = False
+            volatile_generation += 1
+            trace.append(
+                {
+                    "tick": recovery_tick,
+                    "kind": "partition_end",
+                    "event_id": event["id"],
+                }
+            )
+            trace.append(
+                {
+                    "tick": recovery_tick,
+                    "kind": "recovery",
+                    "event_id": "node-recovered",
+                    "volatile_generation": volatile_generation,
+                    "persistent_dedupe_entries": len(persistent_results),
+                }
+            )
+            # Priority models an explicit recovery policy; seeded jitter only
+            # resolves ties so replay remains deterministic.
+            release_order = sorted(
+                buffered,
+                key=lambda item: (
+                    item["delivery_priority"],
+                    rng.random(),
+                ),
+            )
+            for buffered_event in release_order:
+                deliver_message(
+                    buffered_event,
+                    {
+                        "tick": recovery_tick,
+                        "mode": "released-after-partition",
+                    },
+                )
+                released_message_count += 1
+        elif partition_active:
+            buffered.append(event)
+            trace.append(
+                {
+                    "tick": event["tick"],
+                    "kind": event["kind"],
+                    "event_id": event["id"],
+                    "delivery": "buffered-by-partition",
+                    "logical_sequence": event["logical_sequence"],
+                }
+            )
+        elif event["kind"] in {"deliver", "duplicate"}:
+            trace.append(
+                {
+                    "tick": event["tick"],
+                    "kind": event["kind"],
+                    "event_id": event["id"],
+                    "delivery": "received",
+                    "logical_sequence": event["logical_sequence"],
+                }
+            )
+            deliver_message(
+                event,
+                {"tick": event["tick"], "mode": "immediate"},
+            )
+        else:
+            # A control event reaching the message path means partition
+            # handling was disabled. Diagnose that causal contract explicitly
+            # instead of failing later on message-only fields by accident.
+            raise AssertionError(
+                "partition-causal-invariant: "
+                f"unhandled control event {event['kind']}"
+            )
+
+    reorder_observed = any(
+        current &gt; following
+        for current, following in zip(
+            delivery_sequences,
+            delivery_sequences[1:],
+        )
+    )
+    recovery_outcome = (
+        "recovered-before-deadline"
+        if recovery_tick is not None and recovery_tick &lt;= RECOVERY_DEADLINE_TICK
+        else "recovery-deadline-exceeded"
+    )
+    stored_entry = persistent_results[DEDUPE_KEY]
+    matching_commits = [
+        commit
+        for commit in commit_records
+        if commit["key"] == DEDUPE_KEY
+    ]
+    state_fingerprint_result_atomic = (
+        len(matching_commits) == 1
+        and matching_commits[0]["stored_entry"] == stored_entry
+        and matching_commits[0]["state_after"] == state
+    )
+    return {
+        "trace": trace,
+        "partition_started": partition_started,
+        "buffered_message_count": len(buffered),
+        "delivery_sequences": delivery_sequences,
+        "reorder_observed": reorder_observed,
+        "persistent_dedupe": {
+            "key": DEDUPE_KEY,
+            "applied_state_transitions": applied_by_key.get(DEDUPE_KEY, 0),
+            "result_reuse_count": result_reuse_by_key.get(DEDUPE_KEY, 0),
+            "input_fingerprint": stored_entry["input_fingerprint"],
+            "stored_entry": stored_entry,
+            "first_result": stored_entry["result"],
+            "reused_result": reused_result_by_key.get(DEDUPE_KEY),
+            "state_fingerprint_result_atomic": (
+                state_fingerprint_result_atomic
+            ),
+            "survived_recovery_generation": volatile_generation,
+        },
+        "conflicts": conflicts,
+        "final_state": state["order-42"],
+        "recovery": {
+            "tick": recovery_tick,
+            "deadline_tick": RECOVERY_DEADLINE_TICK,
+            "outcome": recovery_outcome,
+            "released_message_count": released_message_count,
+            "residual_message_count": (
+                len(buffered) - released_message_count
+            ),
+            "buffer_drained": released_message_count == len(buffered),
+        },
+    }
+
+first = simulate(SEED)
+second = simulate(SEED)
+long_partition = simulate(SEED, partition_end_delay=5)
+conflicting_retry = simulate(SEED, conflicting_retry=True)
+assert len(conflicting_retry["conflicts"]) == 1
+same_key_different_payload = conflicting_retry["conflicts"][0]
+
+# These invariants make partition handling part of the executable contract,
+# instead of trusting a trace label that could survive disabled behavior.
+assert first == second
+assert first["partition_started"], (
+    "partition-causal-invariant: partition start must activate buffering"
+)
+assert first["buffered_message_count"] == 3
+assert first["reorder_observed"]
+assert first["persistent_dedupe"]["applied_state_transitions"] == 1
+assert first["persistent_dedupe"]["result_reuse_count"] == 1
+assert (
+    first["persistent_dedupe"]["first_result"]
+    == first["persistent_dedupe"]["reused_result"]
+)
+assert first["persistent_dedupe"]["state_fingerprint_result_atomic"]
+assert first["final_state"] == "confirmed"
+assert first["recovery"]["outcome"] == "recovered-before-deadline"
+assert long_partition["recovery"]["outcome"] == "recovery-deadline-exceeded"
+assert first["recovery"]["outcome"] != long_partition["recovery"]["outcome"]
+assert same_key_different_payload["error_type"] == "IdempotencyConflict"
+assert same_key_different_payload["code"] == "same-key-different-input"
+assert same_key_different_payload["rejected"]
+assert (
+    same_key_different_payload["attempted_input_fingerprint"]
+    != same_key_different_payload["stored_input_fingerprint"]
+)
+assert same_key_different_payload["applied_state_transitions"] == 1
+assert same_key_different_payload["stored_entry_unchanged"]
+assert conflicting_retry["final_state"] == "confirmed"
+
+report = {
+    "seed": SEED,
+    "fixture_metadata": {
+        "kind": "simulated",
+        "provenance": "lesson-authored deterministic partial-failure fixture",
+        "limitations": [
+            "not a formal proof or production network distribution",
+            "does not model Byzantine faults, disk loss, or multi-leader consensus",
+            "tick duration and recovery deadline are pedagogical assumptions",
+        ],
+    },
+    "model_assumptions": [
+        "the network may delay, duplicate, and reorder messages",
+        "a partition buffers messages until recovery in this bounded model",
+        "dedupe keys and results survive volatile process recovery",
+        "one order state machine rejects an invalid transition",
+    ],
+    "replay": {
+        "identical": first["trace"] == second["trace"],
+        "first_trace": first["trace"],
+        "second_trace": second["trace"],
+    },
+    "reorder_observed": first["reorder_observed"],
+    "persistent_dedupe": first["persistent_dedupe"],
+    "same_key_different_payload": same_key_different_payload,
+    "idempotent_state_transition": (
+        first["persistent_dedupe"]["applied_state_transitions"] == 1
+        and first["final_state"] == "confirmed"
+    ),
+    "recovery": first["recovery"],
+    "partition_mutation": {
+        "changed_assumption": "network-partition",
+        "description": "partition end moves from tick 6 to tick 11",
+        "detected": (
+            first["recovery"]["outcome"]
+            != long_partition["recovery"]["outcome"]
+        ),
+        "baseline_outcome": first["recovery"]["outcome"],
+        "mutated_outcome": long_partition["recovery"]["outcome"],
+        "dedupe_preserved": (
+            long_partition["persistent_dedupe"]["applied_state_transitions"]
+            == 1
+        ),
+        "residual_messages": long_partition["recovery"]["residual_message_count"],
+        "reconciliation": "surface uncertain completion until replay and state comparison finish",
+    },
+    "scope": {
+        "flp_is_asynchronous_consensus_scope": True,
+        "flp_means_practical_consensus_impossible": False,
+        "simulation_is_formal_proof": False,
+        "retry_semantics": "at-least-once-with-idempotent-result-reuse",
+    },
+    "mastery_evidence": {
+        "lab_steps": [
+            {"step": 1, "evidence": "fixed seed, provenance, limits, and six-event fixture"},
+            {"step": 2, "evidence": "buffer trace and logical-versus-delivery sequence comparison"},
+            {"step": 3, "evidence": "persistent key, one transition, and reused first result"},
+            {"step": 4, "evidence": "two identical traces and recovered baseline outcome"},
+            {"step": 5, "evidence": "long-partition deadline outcome and reconciliation update"},
+        ],
+        "assessments": [
+            {"assessment": 1, "evidence": "stable key, atomic result, retention, and duplicate replay"},
+            {"assessment": 2, "evidence": "deadline, buffer, retention, stale command, and reconciliation evidence"},
+        ],
+        "rubric_dimensions": [
+            "technical-correctness",
+            "judgment",
+            "evidence",
+            "communication",
+        ],
+        "transfer": {
+            "task": "拠点間ネットワーク分断が長期化する条件へ変え、重複排除と復旧結果を再評価する",
+            "changed_assumption": "network-partition",
+            "evidence": "moving recovery past the deadline changes outcome while dedupe survives",
+        },
+    },
+    "external_network_used": False,
+}
+
+print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+PY</code></pre>
+</section>
+<section id="tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <ul>
+    <li><strong>誤診:</strong> HTTP retryを同じ回数に固定すればexactly-onceになる。<strong>反証:</strong> response loss後のretryでは同じcommandが複数回届く。stable dedupe keyで状態遷移回数を数え、保存済みresponseがbyte-equivalentに再利用されることをreplayする。</li>
+    <li><strong>誤診:</strong> timeoutしたためserver側の処理は失敗している。<strong>反証:</strong> commit後にresponseだけ失われたtraceと、request未到達traceはclient観測が同じになりうる。serverの永続result照合なしに再実行しない。</li>
+    <li><strong>誤診:</strong> FLPによりRaftなど実用consensusは動作できない。<strong>反証:</strong> FLPの完全非同期・停止故障・決定的protocol・終了保証というscopeと、実装が用いるtimeout、leader election、quorum、randomized timingの仮定を分ける。</li>
+    <li><strong>key設計:</strong> key範囲が広すぎると異なる入力を誤って同一視し、狭すぎるとretryを重複排除できない。tenant、resource、operation、versionと入力fingerprintを検証する。</li>
+    <li><strong>retention:</strong> dedupe entryを早く削除すると遅延retryを新規commandとして実行する。無期限保持は容量とprivacy費用を増やすため、最大retry期間とbusiness重複riskから期限を決める。</li>
+    <li><strong>順序:</strong> transport sequenceだけでbusiness causal orderを推論しない。前提state・versionをcommandに含め、stale transitionをrejectまたはreconcileする。</li>
+    <li><strong>長期分断:</strong> queueが回復後にdrainできても利用者deadlineは既に破られている。buffer件数だけを成功条件にせず、結果の鮮度、不確実性、compensationを確認する。</li>
+  </ul>
+</section>
+<section id="knowledge-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>timeoutだけからrequest未到達とresponse lossを区別できない理由は何か。</li>
+    <li>at-least-once retryで永続化すべきdedupe key、fingerprint、result、stateの関係を説明する。</li>
+    <li>同じcommandのduplicateで「状態が同じ」だけでなく、何を数えて一回適用を確認するか。</li>
+    <li>logical sequenceとdelivery orderを別に記録することで、どの誤診を防げるか。</li>
+    <li>FLPの結果がCAPの言い換えでも実用consensus不可能の宣言でもない理由を述べる。</li>
+    <li>partitionがrecovery deadlineを越えた時、dedupe以外に再評価する項目を四つ挙げる。</li>
+  </ol>
+</section>
+<section id="sources-next">
+  <h2>出典と次の学習</h2>
+  <p>完全非同期consensusの終了保証はFLP論文、実用的leader・log replicationの設計はRaft論文、HTTP methodとretryの意味はRFC 9110、分散transactional key-value architectureの実例はFoundationDB論文で確認する。完全なtitle、URL、kindはlesson metadataに分離した。</p>
+  <p>次は「性能・容量設計」で、recovery後のqueue drainがlatency、throughput、安全容量へ与える影響を測る。その後「信頼性・可観測性・SLO」で、利用者から見た不確実な結果、burn rate、alert、runbookへfailure modelを接続する。</p>
+  <p><strong>復習:</strong> 1日後にduplicate result、7日後にreorder trace、30日後にpartition mutation、90日後に実systemのretry・dedupe・recovery contractを同じ観測項目で再評価する。</p>
+</section>

@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "id": "oss-launch",
+  "title": "アクセシブルな静的レポート生成器をOSSとして公開・運営する",
+  "scenario": "local prototypeを、監査済みJSONからJavaScriptなしの静的HTML・CSSレポートを生成するMIT OSSへ育てる。図はCSSとsemantic HTMLで表現しfile URLでも閲覧できる。公開repository、untrusted input、accessibility、deterministic build、CI、provenance、security response、第三者contribution、maintainer権限、90日roadmapまでを実証する課題である。",
+  "constraints": [
+    "MIT licenseで公開し、prototype原本、秘密情報、個人情報、private archiveを公開履歴へ含めない",
+    "生成物はHTMLとCSSだけでfile URLから閲覧でき、client-side JavaScriptを含めない",
+    "すべての図に同等のheading、table、listまたは文章構造を持たせ、keyboard、読み上げ、zoomを監査する",
+    "入力JSONをuntrusted dataとして扱い、unknown、duplicate key、型違反、path traversal、unsafe HTMLを拒否する",
+    "同一source snapshotから二回生成したartifactのbyte digestを一致させる",
+    "CI green表示だけでなくtest、artifact digest、provenance subject、builder、release outcomeを独立検証する",
+    "第三者はissue、change、test、PR、review修正まで完遂できるがmergeとrelease権限はmaintainerに限定する",
+    "SECURITY、Code of Conduct、CONTRIBUTING、governance、support、Errata、release policyを用意する",
+    "clean-roomの第三者contributionを一件実施し、観測されたjourneyとblocked条件を記録する",
+    "90日間のsynthetic maintenance budget、bus factor、issue response SLO、release cadence、縮小条件を定義する"
+  ],
+  "lessonIds": [
+    "core-01-systems-tradeoffs",
+    "core-02-algorithms-measurement",
+    "core-06-requirements-domain-modeling",
+    "core-07-api-contract-design",
+    "core-08-modularity-evolutionary-architecture",
+    "core-09-test-strategy-tdd",
+    "core-10-threat-modeling-secure-design",
+    "core-14-performance-capacity",
+    "core-15-reliability-observability-slo",
+    "core-16-hci-usability-accessibility",
+    "core-17-graphics-visual-information",
+    "core-18-product-discovery-experiments",
+    "core-19-technical-communication-design-docs",
+    "core-20-ethics-privacy-societal-impact",
+    "core-21-maintenance-legacy-comprehension",
+    "core-23-incident-response-learning",
+    "core-24-delivery-ci-release-safety",
+    "core-25-engineering-economics-capacity",
+    "core-26-code-review-collaborative-quality",
+    "core-27-team-interfaces-sociotechnical-architecture",
+    "core-28-oss-governance-stewardship",
+    "core-29-cross-cultural-async-collaboration",
+    "core-30-evidence-based-technical-leadership"
+  ],
+  "primaryExercises": {
+    "core-10-threat-modeling-secure-design": "資産、境界、攻撃経路、prevent・detect・recover、verification、残余riskを一つのtraceへ追跡する",
+    "core-16-hci-usability-accessibility": "keyboard、zoom、読み上げを手動・機械監査し、適合と実利用journey成功を分けて検証する",
+    "core-17-graphics-visual-information": "CSS-only graphと同等のtable・heading・文章について順序、単位、関係の同等性を検証する",
+    "core-18-product-discovery-experiments": "反証可能な利用者仮説、success metric、guardrail、停止条件を事前定義して継続判断を導く",
+    "core-24-delivery-ci-release-safety": "CI、digest、provenance、canary、rollback outcomeを同一artifactへ追跡してreleaseを検証する",
+    "core-26-code-review-collaborative-quality": "priority、input evidence、actionable fix、author snapshot、別contributor再評価を一続きで実行する",
+    "core-28-oss-governance-stewardship": "observed contribution journey、readiness条件、maintainer boundary、approval、release outcomeを監査する",
+    "core-29-cross-cultural-async-collaboration": "plain language、UTC期限、alternatives、dissent、response、reasoned resolutionを非同期RFCへ追跡する"
+  },
+  "evidence": {
+    "build": "MIT repository、strict input contract、deterministic static renderer、CSS-only graph、semantic equivalent、RED-GREEN-REFACTOR履歴、mutation、security test、accessibility audit、bounded performance report",
+    "operate": "fail-closed CI、verified digestとprovenance、releaseとrollback evidence、SECURITY・Errata・support route、issue response SLO、release incident drill、90日maintenance capacityとcost記録",
+    "explain": "初参加者が同期説明なしでdiscover・prepare・submitできるcontribution journey、architecture・API・security・accessibility文書、plain-language governance、UTC decision log、公開roadmapと撤退条件",
+    "review": "clean-room第三者がfindingを含むissue・change・test・PRを提出し、maintainer review後にauthor fixを行う。別contributorが独立再評価し、入力schemaという単一制約だけを変更してdocs・CI・governance・release evidenceを再検証する"
+  },
+  "milestones": [
+    "対象利用者、problem、非目標、success metric、guardrail、privacy・accessibility impact、停止条件を定義する",
+    "strict schemaと静的rendererをTDDで作り、unsafe input、determinism、performance、semantic equivalentを検証する",
+    "repositoryをsanitizationし、OSS文書、template、review rule、CI、digest、provenance、release経路を整える",
+    "clean-room第三者contributionを実施し、discoverからauthor fix・独立再評価までのobserved evidenceを監査する",
+    "release incident drillを行い、issue SLO、maintenance cost、async governance、90日roadmapを更新する"
+  ],
+  "reviewQuestions": [
+    "公開価値はREADME上の主張ではなく、どの利用者journeyと反証可能な観測で確認されたか",
+    "untrusted inputがHTML、path、log、resource consumptionへ到達する境界で何を拒否するか",
+    "CSS-onlyの図と同等のsemantic structureは情報量、順序、単位、関係を保持するか",
+    "CI、digest、provenance、maintainer approval、release outcomeは同じartifactへ結び付くか",
+    "第三者contributorの成功が既存権限や口頭説明によらないことを何で証明するか",
+    "open contributionとrelease decision rightsを分けながらappeal、bus factor、emergencyを扱えるか"
+  ],
+  "rubric": {
+    "incomplete": "source公開またはlicense追加だけでOSS完成とし、利用者価値、安全な入力、accessibility、release outcome、第三者journeyを証明していない",
+    "developing": "repository、CI、文書、静的artifactはあるが、determinism、semantic equivalent、provenance検証、maintainer boundary、observed contributionのいずれかが宣言に留まる",
+    "proficient": "利用者仮説から実装・accessibility・security・CI・release・governanceを追跡し、第三者contribution、修正、独立再評価、verified outcomeで価値を証明する",
+    "exemplary": "未知入力、権限失効、security incident、maintainer不在でもfail closedかつ回復可能である。別timezoneの第三者が同期説明なしで再現しgovernanceを更新できる"
+  }
+}

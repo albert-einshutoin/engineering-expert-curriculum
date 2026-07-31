@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: "SECURITY.md / 非公開脆弱性報告"
+    url: "https://github.com/albert-einshutoin/engineering-expert-curriculum/security/advisories/new"
+    about: "SECURITY.mdを確認し、脆弱性の詳細はGitHub Security Advisoryから非公開で報告してください。"

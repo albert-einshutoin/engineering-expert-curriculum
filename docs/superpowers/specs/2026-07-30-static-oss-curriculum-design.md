@@ -2,7 +2,7 @@
 
 Date: 2026-07-30
 
-Status: Approved design, awaiting written-spec review
+Status: Approved for implementation
 
 License: MIT
 
@@ -187,17 +187,16 @@ Each `lesson.json` contains:
 - Rubric dimensions and four performance levels
 - Review prompts and a printable review schedule
 
-`body.html` is an authored semantic fragment. It must contain:
+`body.html` is an authored semantic fragment. It must contain exactly these six sections in order:
 
 1. Why this matters
 2. Mental model
 3. Worked example
 4. Trade-offs and failure modes
-5. Practical lab
-6. Knowledge checks
-7. Transfer task
-8. Rubric
-9. Sources and further study
+5. Knowledge checks
+6. Sources and further study
+
+`lesson.json` has exactly nine structured responsibilities that the renderer generates outside the authored body: objectives, capability progression, lab, teach-back, assessment, transfer, review, rubric, and sources.
 
 The validator rejects scriptable or embedding elements, inline event handlers,
 unsafe URL schemes, forms, and inline styles in lesson bodies. Authored body
@@ -206,7 +205,10 @@ always HTML-escaped by the renderer.
 
 ### 6.3 Definition of textbook quality
 
-A lesson may display the `complete` status only when:
+`status: complete` is a machine-validated structural state; it does not prove human review, factual correctness, publication approval, or learner mastery.
+
+A lesson may display the `complete` status only when its checked-in structure
+satisfies all of these conditions:
 
 - Every required section and metadata field exists.
 - Objectives use observable verbs and map to lab or assessment evidence.
@@ -215,12 +217,24 @@ A lesson may display the `complete` status only when:
 - Assessment answers include reasoning, not only the correct option.
 - The rubric distinguishes incomplete, developing, proficient, and exemplary
   work using observable evidence.
-- Sources are relevant, reachable HTTPS links, and include primary or
-  standards-based material where available.
-- The content has passed technical, pedagogical, accessibility, and editorial
-  review.
+- Sources have valid metadata and at least two syntactically valid, distinct
+  HTTPS URLs, and include primary or standards-based material where available.
+
+The dependency-free validator checks source metadata and the syntax and distinctness of at least two HTTPS URLs; it does not make network requests or guarantee reachability.
+
+Source reachability remains an editorial responsibility. An optional planned scheduled link audit is not implemented in v0.1.0, so neither the dependency-free build nor current CI claims network reachability.
 
 CI treats any lesson marked complete but failing this contract as an error.
+
+Review evidence covers four dimensions: technical accuracy, learning design and evidence, accessibility, and editorial and source quality.
+
+`reviewerKind` is one of `human`, `ai-assisted`, or `automated`; AI-assisted and automated reviews never count as human approval.
+
+Publishability is decided per commit from PR and release evidence plus an explicit decision by an authenticated maintainer.
+
+Initial governance uses Model B for one authenticated maintainer. The decision record discloses the commit, all four review dimensions, each `reviewerKind`, unresolved-thread state, residual risk, and whether independent human approval exists. AI-assisted or automated evidence is never relabeled as independent human approval. Model A, where another qualified human gives the final approval, becomes enforceable only after the project has enough maintainers or reviewers to satisfy it honestly.
+
+Starting with `v0.1.0`, this disclosure policy applies prospectively and does not infer or retroactively grant human approval to existing content.
 
 ## 7. Curated core
 
@@ -407,16 +421,88 @@ Before public-repository files replace the current root layout:
 
 1. Enumerate the existing prototype files using an explicit allowlist.
 2. Calculate SHA-256 checksums and a file-count/byte-count manifest.
-3. Move the prototype into `.archive/prototype-v1/`.
+3. Copy while retaining the source into `.archive/prototype-v1/`.
 4. Recalculate and compare checksums.
-5. Stop immediately if any file is absent or changed.
+5. Stop immediately if any file is absent or changed; retire the source only in a
+   separate reviewed task.
 
 `.archive/` and `.superpowers/` remain local and gitignored. The public
 repository receives the canonical catalog data and new authored content, not
-the 1,140 duplicated generated HTML pages. The migration tool is idempotent and
-refuses to overwrite an existing archive.
+the 1,140 duplicated generated HTML pages. The migration tool is one-shot and
+rerun-safe: it never clobbers an existing archive.
+
+Before running the tool, the operator prepares the archive parent through a
+root-to-repository `dir_fd` traversal: open `/`, then each absolute repository
+path component with `O_DIRECTORY|O_NOFOLLOW`. Through the pinned repository FD,
+create `.archive` with mode `0o700` only when absent; record its no-follow
+identity, open it with the same flags, and compare `fstat` identity before
+validating its directory type, owner, and permissions. This rejects intermediate
+or final symlinks and existing non-directories, foreign owners, or
+group/world-writable directories without changing them. If this creates a new
+parent, it is `0o700` (subject to umask). After validation, `fsync` the pinned
+archive FD and then the pinned repository FD that holds its name. This sequence
+is required for every valid parent, new or existing, so a retry can repair a
+prior repository `fsync` failure and complete the durability boundary. Every
+preparation `fsync` failure stops the migration before it begins. Every opened
+FD is closed, and close failures are reported rather than retried through a
+pathname.
+
+The tool requires that parent to already exist as a canonical directory owned by
+the current effective user and not group/world writable. It never creates or
+deletes the parent: this removes `mkdir`/`stat` ownership races and lets its
+validation helper return the same pinned file descriptor it verified, rather
+than reopening the pathname.
+
+It builds the copy, checksum verification, and manifest in a randomly named
+private staging directory below the archive parent. Regular data files, nested
+directories, the staging root, and the manifest are `fsync`ed before publication;
+the staging root is also `fsync`ed after its internal manifest rename. The only
+publication commit point is a no-overwrite native directory rename:
+`renameatx_np(RENAME_EXCL)` on macOS or `renameat2(RENAME_NOREPLACE)` on Linux.
+The parent file descriptor is `fsync`ed immediately after that rename so the
+final name is durable. If this final fsync fails, the tool raises
+`PrototypePublicationDurabilityError`: the archive and manifest are already
+published, no rollback occurs, power-loss durability is unknown, and operator
+inspection is required.
+
+Native source and target names must be nonempty basenames, not `.`, `..`, slash,
+or NUL-containing strings. The wrapper resets `errno` before its native call and
+fails closed for an unsupported platform, unavailable primitive, or failure with
+no errno.
 
 ## 13. Accessibility, security, and privacy
+
+The static-site builder pins every source root and the output parent by file
+descriptor, then revalidates both the descriptor inode and its canonical
+pathname binding before publication, after publication, and during descriptor
+teardown. A persistent rename/replacement is therefore detected. Portable POSIX
+directory-FD APIs cannot atomically predicate a rename on that pathname binding,
+however, so a same-euid process that moves and restores the namespace entirely
+between checks cannot be excluded. Static builds require an exclusive
+workspace/namespace with no concurrent same-euid writer; the checks detect
+violations but do not make that writer a supported trust boundary.
+
+Recursive staging and recovery cleanup pins the cleanup root filesystem device
+and rejects nested directories that cross to another device, change identity,
+are owned by another user, or are group/world writable. `st_dev` cannot identify
+a same-device bind mount on every supported OS, so generated output and recovery
+trees must be mount-free. On ambiguous cleanup state the published site is not
+rolled back and the recovery entry is retained for inspection.
+
+Catalog import pins a current-euid-owned, non-group/world-writable output parent
+by file descriptor and rejects intermediate/final symlinks, untrusted checkout
+parents, and pathname replacement outside that descriptor. POSIX rename cannot
+atomically predicate publication on the source inode. Therefore imports must run
+as an exclusive operation with no concurrent same-euid writer; post-rename inode
+verification detects a boundary race and fails without rolling back or deleting a
+foreign entry. This is detection, not a privilege boundary or rollback guarantee.
+
+The catalog contract is schema version 1 with 1,140 items. It records the source
+SHA-256 `a55a0d0b1cfa3773031e787c2ce7ca0df34534e16a70b65ed1baa91975c82da8` and
+checked-in artifact SHA-256 `4f38b5f63931a7f06e13f90f5d9ef90a0a435f30dae5d4fe70720d730a057473`.
+Its ordered root fields are `version`, `generatedFrom`, `sourceSha256`, and `items`.
+Repository verification reads the artifact once, validates both hashes from those
+same bytes, then performs strict duplicate-key and canonical serialization checks.
 
 Every generated page must meet [WCAG 2.2][wcag22] Level AA and include:
 

@@ -1,0 +1,93 @@
+name: "標準・フレームワーク版の更新"
+description: "外部標準の版更新を、根拠と移行計画を伴うmapping変更として提案します。"
+title: "[Framework update] "
+labels: ["framework-update"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        版番号だけを置換せず、規範の差分、教材への波及、移行と検証を一つの判断記録として提示してください。
+  - type: dropdown
+    id: framework
+    attributes:
+      label: "対象フレームワーク"
+      description: "更新する規範または標準を選択してください。"
+      options:
+        - "ACM/IEEE-CS CS2023"
+        - "IEEE Computer Society SWEBOK"
+        - "SFIA"
+        - "W3C WCAG"
+        - "その他の公開標準"
+    validations:
+      required: true
+  - type: input
+    id: current_version
+    attributes:
+      label: "現在使用している版"
+      description: "repository内で現在参照している正式な版名と公開日を記載してください。"
+    validations:
+      required: true
+  - type: input
+    id: target_version
+    attributes:
+      label: "移行先の版"
+      description: "採用を提案する正式な版名、公開日、安定版かどうかを記載してください。"
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: "なぜ必要か"
+      description: "変更された能力・知識領域、旧版を維持する影響、学習者と下流利用者への価値、今更新すべき根拠を説明してください。"
+    validations:
+      required: true
+  - type: textarea
+    id: sources
+    attributes:
+      label: "公式出典と差分根拠"
+      description: "公式仕様、release note、migration guideのHTTPS URLと該当箇所を示し、追加・変更・廃止された要件を要約してください。"
+    validations:
+      required: true
+  - type: textarea
+    id: migration
+    attributes:
+      label: "移行計画と影響範囲"
+      description: "competency mapping、30のコアレッスン、roadmap、Capstone、出典、validation、release noteを調査し、段階的移行・互換性・撤回条件を示してください。"
+    validations:
+      required: true
+  - type: textarea
+    id: implementation
+    attributes:
+      label: "実装・執筆方法"
+      description: "変更ファイルとデータ項目、mappingの変換規則、廃止項目の扱い、決定的buildを保つ手順を実装順に記載してください。"
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: "注意点・リスク"
+      description: "版の誤認、破壊的変更、mappingの欠落、複数標準間のずれ、下流利用者への影響、rollback困難性と軽減策を記載してください。"
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: "GOAL"
+      description: "どの版へ、どのcoverageと追跡可能性を保って移行できれば完了かを、旧版参照の許容範囲も含めて定義してください。"
+    validations:
+      required: true
+  - type: textarea
+    id: quality
+    attributes:
+      label: "守る品質"
+      description: "公式一次資料、mapping完全性、学習成果の一貫性、アクセシビリティ、互換性、Errata・CHANGELOGの記録基準を明記してください。"
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: "受け入れ条件・検証証拠"
+      description: "旧版と新版のimpact matrix、対象件数、欠落を検出するテスト、full validation、生成差分、4観点reviewの合格条件を示してください。"
+    validations:
+      required: true

@@ -1,0 +1,308 @@
+<section id="why">
+  <h2>なぜ重要か</h2>
+  <p>transactionは複数の操作を一つの成功または失敗へまとめるが、並行実行時にどの履歴まで許すかは分離レベルで変わる。単体testで正しい在庫引当や当直割当も、二つのtransactionが同じ古い状態を根拠に判断すると業務不変条件を壊し得る。</p>
+  <p>設計対象は分離レベル名だけではない。不変条件を明示し、異常を起こすscheduleを再現し、abortを正常な競合解決として扱い、外部副作用を含めたトランザクション全体のretry境界を決める。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> ACIDのconsistencyはdatabaseが未知の業務ルールを自動推論するという意味ではない。MVCCやSnapshot Isolationも、それだけでSerializableを保証しない。分離レベル名と挙動はvendorで異なるため、ここではPostgreSQL 18の用語と保証範囲を明示する。</p>
+  </aside>
+</section>
+<section id="mental-model">
+  <h2>メンタルモデル</h2>
+  <p>transactionを、開始時点の観測、読み集合、判断、書き集合、commitまたはabortからなる履歴として見る。最終値だけでなく、どの値を根拠に各書込みを決めたかをevent traceへ残す。</p>
+  <figure>
+    <figcaption>snapshotから依存関係、commit判定、retryへ進む分離異常の因果経路</figcaption>
+    <ol>
+      <li><strong>不変条件:</strong> 「aliceまたはbobの少なくとも一人が当直」をdatabaseのrowとは別に明示する。</li>
+      <li><strong>snapshot:</strong> T1とT2が同じ開始状態 <code>{alice: on, bob: on}</code> を読む。</li>
+      <li><strong>局所判断:</strong> T1はbobが当直なのでaliceを外し、T2はaliceが当直なのでbobを外す。</li>
+      <li><strong>検証:</strong> Snapshot Isolationでは別rowへのwriteが双方commitし得る。Serializableでは危険な依存を検出して一方をabortする。</li>
+      <li><strong>retry:</strong> abortされたT2は古い判断を再利用せず、transaction開始から読み直す。aliceが外れているためbobを当直に残す。</li>
+    </ol>
+  </figure>
+  <table>
+    <caption>業務不変条件から分離とretryを選ぶdecision table</caption>
+    <thead>
+      <tr><th scope="col">選択</th><th scope="col">このlessonでの観測</th><th scope="col">守れること</th><th scope="col">残る責任</th></tr>
+    </thead>
+    <tbody>
+      <tr><th scope="row">Read Committed</th><td>二回のreadが100、80</td><td>未commit値を読まない</td><td>再読値の変化を許せる処理に限定する</td></tr>
+      <tr><th scope="row">PostgreSQL Repeatable Read</th><td>同じsnapshotから別rowを更新</td><td>transaction内のsnapshotを安定させる</td><td>write skewで壊れる複数row不変条件を検証する</td></tr>
+      <tr><th scope="row">Serializable</th><td>一方をabortし全体retry</td><td>成功した履歴を直列順として説明できる</td><td>serialization failure、backoff、上限、外部副作用を扱う</td></tr>
+    </tbody>
+  </table>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>決定的schedulerで二つの異常とSerializable retryを比較する</h3>
+  <dl>
+    <dt>前提</dt>
+    <dd>これはlesson-definedのpedagogical simulationであり実databaseではない。aliceとbobの少なくとも一人が当直という明示的な業務不変条件を使う。</dd>
+    <dt>入力</dt>
+    <dd>残高100、別transactionによる80への更新、当直状態 <code>{alice: true, bob: true}</code>、並行read-first scheduleと直列scheduleを固定する。</dd>
+    <dt>操作</dt>
+    <dd>Read Committedでread間へcommitを挿入し、Snapshot Isolationで二transactionを同じsnapshotから進める。Serializableでは競合する一方をabortし、トランザクション全体を新しいsnapshotからretryする。</dd>
+    <dt>観測</dt>
+    <dd>Read Committedの二回の値は100と80、Snapshot Isolationでは2件ともcommitして当直者0人、Serializableでは1件をabortし、合計3 attempt後に当直者1人となる。</dd>
+    <dt>結論</dt>
+    <dd>異常は最終値だけでは診断できない。isolation、schedule、snapshot、commit・abort、retry attempt、不変条件を同じ証拠へ結ぶ。</dd>
+  </dl>
+  <p>次のPython 3.13 harnessは固定fixtureだけを使う。network、secret、shell、実databaseへアクセスせず、実vendorの性能や完全な実装挙動を測定したとは主張しない。</p>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+import json
+
+HARNESS = "transaction_scheduler_lab_v1"
+
+
+def read_committed_non_repeatable_read():
+    value = 100
+    trace = []
+    first_read = value
+    trace.append({"event": "T1-read-1", "value": first_read})
+    trace.append({"event": "T2-write", "before": value, "after": 80})
+    value = 80
+    trace.append({"event": "T2-commit", "value": value})
+    second_read = value
+    trace.append({"event": "T1-read-2", "value": second_read})
+    trace.append({"event": "T1-commit"})
+    return {
+        "id": "read-committed-non-repeatable-read",
+        "isolation": "Read Committed",
+        "first_read": first_read,
+        "second_read": second_read,
+        "anomaly": "non-repeatable-read",
+        "event_trace": trace,
+    }
+
+
+def snapshot_write_skew():
+    state = {"alice": True, "bob": True}
+    alice_snapshot = dict(state)
+    bob_snapshot = dict(state)
+    trace = [
+        {"event": "T1-read", "snapshot": alice_snapshot},
+        {"event": "T2-read", "snapshot": bob_snapshot},
+    ]
+    if alice_snapshot["bob"]:
+        state["alice"] = False
+        trace.append({"event": "T1-write", "doctor": "alice", "on_call": False})
+    trace.append({"event": "T1-commit"})
+    if bob_snapshot["alice"]:
+        state["bob"] = False
+        trace.append({"event": "T2-write", "doctor": "bob", "on_call": False})
+    trace.append({"event": "T2-commit"})
+    return {
+        "id": "snapshot-write-skew",
+        "isolation": "PostgreSQL Repeatable Read",
+        "committed_transactions": 2,
+        "invariant_after": any(state.values()),
+        "anomaly": "write-skew",
+        "final_state": state,
+        "event_trace": trace,
+    }
+
+
+def serializable_with_retry():
+    state = {"alice": True, "bob": True}
+    shared_snapshot = dict(state)
+    attempts = []
+    trace = [
+        {"event": "T1-read", "snapshot": shared_snapshot},
+        {"event": "T2-read", "snapshot": shared_snapshot},
+    ]
+
+    state["alice"] = False
+    attempts.append(
+        {"transaction": "T1", "attempt": 1, "result": "committed"}
+    )
+    trace.extend(
+        [
+            {"event": "T1-write", "doctor": "alice", "on_call": False},
+            {"event": "T1-commit"},
+        ]
+    )
+
+    # Serializableは危険な依存を一方のabortへ変える。この分岐を
+    # mutationした場合、下の不変条件assertがfalse greenを防ぐ。
+    isolation = "serializable"
+    active_conflict = shared_snapshot["alice"] and not state["alice"]
+    if isolation == "serializable" and active_conflict:
+        attempts.append(
+            {
+                "transaction": "T2",
+                "attempt": 1,
+                "result": "aborted",
+                "reason": "serialization-failure",
+            }
+        )
+        trace.append(
+            {
+                "event": "T2-abort",
+                "reason": "serialization-failure",
+            }
+        )
+        aborted_transactions = 1
+    else:
+        state["bob"] = False
+        attempts.append(
+            {"transaction": "T2", "attempt": 1, "result": "committed"}
+        )
+        trace.append({"event": "T2-commit-with-stale-decision"})
+        aborted_transactions = 0
+
+    # 古いstatementだけでなくtransaction開始から読み直すため、
+    # retryはaliceのcommitを観測し、bobを当直に残せる。
+    retry_snapshot = dict(state)
+    if not retry_snapshot["alice"]:
+        retry_action = "keep-bob-on-call"
+    else:
+        state["bob"] = False
+        retry_action = "set-bob-off-call"
+    attempts.append(
+        {
+            "transaction": "T2",
+            "attempt": 2,
+            "result": "committed",
+            "action": retry_action,
+        }
+    )
+    trace.extend(
+        [
+            {"event": "T2-retry-read", "snapshot": retry_snapshot},
+            {"event": "T2-retry-commit", "action": retry_action},
+        ]
+    )
+    return {
+        "id": "serializable-retry",
+        "isolation": "Serializable",
+        "aborted_transactions": aborted_transactions,
+        "retry_scope": "whole-transaction",
+        "invariant_after_retry": any(state.values()),
+        "final_state": state,
+        "attempts": attempts,
+        "event_trace": trace,
+    }
+
+
+def compare_schedule_mutation():
+    # 同じ局所ルールでも、readを先に揃えるか一方をcommit後に読むかで
+    # outcomeが変わることを計算し、scheduleを証拠の一部にする。
+    parallel = snapshot_write_skew()
+    serial_state = {"alice": True, "bob": True}
+    if serial_state["bob"]:
+        serial_state["alice"] = False
+    if serial_state["alice"]:
+        serial_state["bob"] = False
+    baseline = (
+        "invariant-preserved"
+        if parallel["invariant_after"]
+        else "write-skew-invariant-violated"
+    )
+    mutated = (
+        "invariant-preserved"
+        if any(serial_state.values())
+        else "invariant-violated"
+    )
+    return {
+        "baseline_schedule": [
+            "T1-read",
+            "T2-read",
+            "T1-write-commit",
+            "T2-write-commit",
+        ],
+        "mutated_schedule": [
+            "T1-read-write-commit",
+            "T2-read-noop-commit",
+        ],
+        "baseline_outcome": baseline,
+        "mutated_outcome": mutated,
+        "detected": baseline != mutated,
+    }
+
+
+serializable = serializable_with_retry()
+report = {
+    "simulator": "pedagogical-deterministic-scheduler",
+    "fixture_metadata": {
+        "kind": "simulated",
+        "real_database": False,
+        "purpose": "reproduce isolation anomalies with a fixed event schedule",
+        "provenance": "lesson-authored synthetic on-call and balance fixture",
+        "limitations": [
+            "does not execute PostgreSQL or measure its runtime",
+            "models only the dependencies needed for these three scenarios",
+            "does not estimate contention, latency, or retry saturation",
+        ],
+    },
+    "isolation_scope": {
+        "vendor": "PostgreSQL",
+        "version": "18",
+        "vendor_differences": [
+            "SQL isolation names do not imply identical behavior across vendors",
+            "PostgreSQL Repeatable Read uses snapshot isolation semantics",
+        ],
+    },
+    "scenarios": [
+        read_committed_non_repeatable_read(),
+        snapshot_write_skew(),
+        serializable,
+    ],
+    "schedule_mutation": compare_schedule_mutation(),
+    "consistency_scope": "business-invariant-is-explicit-not-inferred-by-ACID",
+    "mastery_evidence": {
+        "lab_steps": [
+            {"step": 1, "evidence": "fixture provenance, limits, and invariant"},
+            {"step": 2, "evidence": "Read Committed event trace 100 to 80"},
+            {"step": 3, "evidence": "two commits and failed on-call invariant"},
+            {"step": 4, "evidence": "abort plus whole-transaction retry trace"},
+            {"step": 5, "evidence": "schedule and guard mutation detection"},
+        ],
+        "assessments": [
+            {"assessment": 1, "evidence": "write-skew dependency diagnosis"},
+            {"assessment": 2, "evidence": "whole-transaction retry boundary"},
+        ],
+        "rubric_dimensions": [
+            "technical-correctness",
+            "judgment",
+            "evidence",
+            "communication",
+        ],
+        "transfer": {
+            "task": "同時購入者数が増える在庫引当の並行性変更で分離レベルとretry境界を再評価する",
+            "changed_assumption": "concurrency",
+            "evidence": "contention and retry policy reevaluation record",
+        },
+    },
+    "external_network_used": False,
+}
+
+assert serializable["aborted_transactions"] == 1
+assert len(serializable["attempts"]) == 3
+assert serializable["invariant_after_retry"]
+assert report["schedule_mutation"]["detected"]
+print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+PY</code></pre>
+</section>
+<section id="tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <p>強い分離は不変条件の推論を単純にする一方、競合時のabortや待機を増やし得る。弱い分離を選ぶなら、許容する異常、schema制約や明示lockで守る範囲、補償、観測を具体化する。Serializableを選んでもretry loopが無限、即時再試行、外部通知の重複なら利用者成果は守れない。</p>
+  <ul>
+    <li><strong>誤診:</strong> 二人とも別rowを更新したのでlost updateである。 <strong>反証:</strong> 同じrowのwrite上書きはなく、各transactionが別rowを書いたまま複数row不変条件を壊すwrite skewである。</li>
+    <li><strong>誤診:</strong> transaction内の二回のreadが違うのでcacheのstale readである。 <strong>反証:</strong> event traceはT1のread間にT2のwriteとcommitを置き、Read Committedが各statement開始時のcommit済み値を読むnon-repeatable readを再現している。</li>
+    <li><strong>誤診:</strong> serialization failureはdatabase障害なので同じSQL文だけ再送すればよい。 <strong>反証:</strong> そのSQLに至るreadと業務判断も古いためrollback後にtransaction全体を新しいsnapshotから再実行する。</li>
+  </ul>
+  <p>実装ではretry回数と時間に上限を置き、jitter付きbackoff、idempotency、transaction外のmessage送信をoutboxなどで分離する。abort率、lock待機、tail latency、retry枯渇を観測し、並行性の仮定が変わったら判断を更新する。</p>
+</section>
+<section id="knowledge-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>ACID consistencyが「当直者を一人以上にする」という規則を自動的に守らないのはなぜか。規則をdatabaseが検証できる形へ変える方法も一つ挙げる。</li>
+    <li>PostgreSQL 18のRepeatable Readで同じsnapshotを使う二transactionが、なぜ別rowへのwrite skewを起こせるか。read、write、commitの順で説明する。</li>
+    <li>serialization failure後のretryで、上限、backoff、外部副作用、利用者への失敗表示をどう設計するか。</li>
+  </ol>
+  <p>合格証拠は異常名の暗記ではなく、固定event traceから不変条件違反を再現し、対照scheduleとretry後の履歴で原因を反証できることである。</p>
+</section>
+<section id="sources-next">
+  <h2>出典と次の学習</h2>
+  <p>回復とatomicityの基礎は「Principles of Transaction-Oriented Database Recovery」、分離レベルの曖昧さとSnapshot Isolationは「A Critique of ANSI SQL Isolation Levels」を参照する。対象vendorの現在の意味はPostgreSQL 18の「13.2. Transaction Isolation」、Serializable実装の背景は「Serializable Snapshot Isolation in PostgreSQL」で確認する。</p>
+  <p>次はcore-13で、単一database transactionの外へ境界を広げ、network partition、重複、順序変更、部分障害のもとでcoordinationと回復を設計する。実productへ適用する前に、使用vendorとversionで同じscheduleの統合testを実行する。</p>
+</section>

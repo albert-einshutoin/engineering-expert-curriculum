@@ -1,0 +1,18 @@
+cff-version: "1.2.0"
+message: "If you use this curriculum, please cite it using this metadata."
+title: "Engineering Expert Curriculum"
+type: software
+version: "0.1.0"
+authors:
+  - name: "Engineering Expert Curriculum contributors"
+abstract: >-
+  A Japanese-first static OSS textbook for learning, practicing, explaining,
+  proving, transferring, and reviewing engineering judgment.
+license: MIT
+repository-code: "https://github.com/albert-einshutoin/engineering-expert-curriculum"
+url: "https://github.com/albert-einshutoin/engineering-expert-curriculum"
+keywords:
+  - software engineering education
+  - engineering judgment
+  - static textbook
+  - open source curriculum

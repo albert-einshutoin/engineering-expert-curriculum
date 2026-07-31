@@ -1,0 +1,73 @@
+name: "コード・ビルド基盤の変更"
+description: "build、validation、rendering、CIの変更を、テスト可能な技術計画として提案します。"
+title: "[Code change] "
+labels: ["code"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        公開できる変更だけを記載してください。未修正の脆弱性、secret、攻撃可能な詳細は公開Issueに含めず、SECURITY.mdの非公開経路を使ってください。
+  - type: dropdown
+    id: affected_area
+    attributes:
+      label: "主な変更領域"
+      description: "最も影響を受ける責任境界を選択し、implementation欄で副次的な影響も列挙してください。"
+      options:
+        - "domain model・validation"
+        - "rendering・template・static asset"
+        - "build・migration tool"
+        - "test・quality gate"
+        - "CI・release・GitHub Pages"
+        - "repository運用・開発者体験"
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: "なぜ必要か"
+      description: "利用者・Contributor・Maintainerの具体的な問題、再現条件、現行挙動を維持した場合の影響、今取り組む理由を説明してください。"
+    validations:
+      required: true
+  - type: textarea
+    id: implementation
+    attributes:
+      label: "実装・執筆方法"
+      description: "責任境界、変更ファイル、データフロー、失敗時の扱い、RED → GREEN → REFACTORの順序を、別の実装者が再現できる粒度で示してください。"
+    validations:
+      required: true
+  - type: textarea
+    id: migration
+    attributes:
+      label: "互換性・移行計画"
+      description: "schema、CLI、生成物、既存content、公開URL、CIへの互換性を評価し、必要な移行、段階導入、廃止、rollback手順を記載してください。該当しない場合も根拠を示してください。"
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: "注意点・リスク"
+      description: "security、path・symlink、HTML escape、決定性、性能、アクセシビリティ、権限、下流互換性のfailure modeと軽減策を記載してください。"
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: "GOAL"
+      description: "利用者に見える変更後の振る舞い、不変条件、エラー時の振る舞い、性能または品質の達成値を観測可能に定義してください。"
+    validations:
+      required: true
+  - type: textarea
+    id: quality
+    attributes:
+      label: "守る品質"
+      description: "Python標準ライブラリだけのbuild、決定的出力、fail-closed validation、安全なpathとHTML、WCAG 2.2 AA、保守可能性から該当基準を明記してください。"
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: "受け入れ条件・検証証拠"
+      description: "失敗する契約テスト、最小実装後のfocused test、全テスト、build、git diff --check、必要な性能・UI・security確認のコマンドと期待結果を列挙してください。"
+    validations:
+      required: true

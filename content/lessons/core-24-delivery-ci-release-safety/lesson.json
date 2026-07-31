@@ -1,0 +1,173 @@
+{
+  "version": 1,
+  "id": "core-24-delivery-ci-release-safety",
+  "title": "CI・段階配信・supply chainを結果証拠で閉じる",
+  "summary": "CIをfail-closedに保ち、artifact digestとprovenanceを検証し、段階配信の観測からadvanceまたはrollbackを決め、command成功ではなくsystem outcomeを証拠化する。",
+  "track": "sustain",
+  "stage": 4,
+  "difficulty": "advanced",
+  "estimatedMinutes": 340,
+  "prerequisiteIds": [
+    "core-09-test-strategy-tdd",
+    "core-15-reliability-observability-slo"
+  ],
+  "objectives": [
+    {
+      "id": "obj-ci",
+      "statement": "必須checkの欠落、失敗、未知を成功へ倒さないfail-closed CIを設計できる",
+      "evidenceIds": ["delivery-evidence", "assessment"]
+    },
+    {
+      "id": "obj-provenance",
+      "statement": "artifact digest、subject、builderを結びprovenanceの存在と信頼を区別できる",
+      "evidenceIds": ["delivery-evidence", "teach-back"]
+    },
+    {
+      "id": "obj-outcome",
+      "statement": "段階配信の観測からadvanceとrollbackを決め、実行後のsystem outcomeまで検証できる",
+      "evidenceIds": ["delivery-evidence", "transfer"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "delivery-evidence",
+      "kind": "artifact",
+      "description": "失敗を閉じるCI、段階配信、来歴、ロールバックの実行証拠"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "provenanceが存在することと検証済みであることの差を説明する5分発表"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "未知check、digest不一致、canary悪化を含むrelease判断"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "canary error rateだけを変えたadvance・rollback再評価"
+    }
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "CI成功、artifact同一性、provenance検証、配信結果を別の証拠として識別できる",
+      "evidenceIds": ["delivery-evidence"]
+    },
+    {
+      "level": "explain",
+      "criterion": "command successだけではsystem outcomeを証明できない理由を説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "必須check、digest、builder、canary指標から配信判断を再現できる",
+      "evidenceIds": ["delivery-evidence"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "provenance presence、green表示、rollback commandを結果証拠と誤認する経路を反証できる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "停止条件、rollback責任者、DORA five metrics、改善ループを合意できる",
+      "evidenceIds": ["transfer"]
+    }
+  ],
+  "lab": {
+    "title": "検証可能な段階配信evidence bundleを作る",
+    "artifact": "失敗を閉じるCI、段階配信、来歴、ロールバックの実行証拠",
+    "steps": [
+      "必須CI checkの観測状態とfail-closed規則を固定する",
+      "artifact bytesからdigestを導きprovenance subjectとtrusted builderを検証する",
+      "baseline canary error rateを停止閾値と比較しadvanceを判断する",
+      "rollbackを実行したfixtureでservice restorationを別観測として検証する",
+      "canary error rateだけを変えて同じartifactとprovenanceの判断を再評価する"
+    ]
+  },
+  "teachBack": "5分で、SLSA v1.2 Approved、NIST SSDF 1.1、DORA continuous deliveryとfive metricsを使い、署名またはprovenanceの存在だけでは信頼できない理由を説明する。",
+  "assessment": [
+    {
+      "prompt": "required checkが一件unknownだが他はgreenである。配信可否と追加証拠を答えよ。",
+      "expectedEvidence": "fail-closed規則、観測済みcheck集合、unknownの解消、承認境界"
+    },
+    {
+      "prompt": "provenance fileはあるがsubject digestがartifactと異なる。なぜ拒否し、何を再検証するか。",
+      "expectedEvidence": "artifact digest、subject digest、builder identity、provenance presence aloneの不十分性"
+    }
+  ],
+  "transferTask": "canary error rateだけを変え、同じartifactとprovenanceで段階配信のadvance・rollback判断を再評価する",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "green表示またはprovenance fileの存在だけで配信する",
+        "developing": "checkとdigestを確認するがbuilder trustまたはrollback outcomeがない",
+        "proficient": "CI、digest、subject、builder、canary、rollback outcomeを一貫して検証する",
+        "exemplary": "未知状態、replay、stale evidence、環境差でもfail-closed境界を維持する"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "command exit 0をsystem successとみなす",
+        "developing": "停止閾値はあるが利用者影響と復旧証拠を結ばない",
+        "proficient": "可逆性、blast radius、canary観測、rollback結果から判断する",
+        "exemplary": "配信速度とsupply-chain保証をDORA指標と利用者結果で継続改善する"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "画面上のgreenまたは実行logだけを残す",
+        "developing": "artifactとcheckはあるが同一性と来歴の結合がない",
+        "proficient": "入力、digest、provenance検証、観測、判断、結果を再実行可能に残す",
+        "exemplary": "同じevidence bundleを独立検証し、改変時にtyped diagnosticで拒否できる"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "deploy成功とだけ報告する",
+        "developing": "手順はあるが停止理由と利用者結果がない",
+        "proficient": "何を検証し、なぜadvanceまたはrollbackし、結果が何か説明する",
+        "exemplary": "開発、security、運用、productが同じ証拠から異議と停止を判断できる"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "SLSA Specification Version 1.2 (Approved)",
+      "url": "https://slsa.dev/spec/v1.2/",
+      "kind": "standard"
+    },
+    {
+      "title": "DORA's software delivery performance metrics (updated January 5, 2026)",
+      "url": "https://dora.dev/guides/dora-metrics/",
+      "kind": "primary"
+    },
+    {
+      "title": "DORA Capability: Continuous delivery (accessed 2026-07-31)",
+      "url": "https://dora.dev/capabilities/continuous-delivery/",
+      "kind": "primary"
+    },
+    {
+      "title": "NIST SP 800-218: Secure Software Development Framework Version 1.1 (February 2022)",
+      "url": "https://doi.org/10.6028/NIST.SP.800-218",
+      "kind": "standard"
+    }
+  ],
+  "review": {
+    "intervalDays": [1, 7, 30, 90],
+    "prompts": [
+      "CIのunknownをfail-closedにする理由は何か",
+      "provenance presence aloneが信頼証拠にならない理由は何か",
+      "rollback command success後にどのsystem outcomeを確認するか"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}

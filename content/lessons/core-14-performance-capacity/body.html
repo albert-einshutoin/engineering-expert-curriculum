@@ -1,0 +1,486 @@
+<section id="why">
+  <h2>なぜ重要か</h2>
+  <p>性能は「速いコード」を探す作業ではなく、利用者が送る負荷、受理できた仕事、成功した仕事、待ち行列、依存先、resource、回復を同じ時間軸で結ぶ判断である。平均latencyやCPU使用率だけでは、tailで待たされる利用者、dropされたrequest、負荷を下げても残るqueueを見落とす。</p>
+  <p>最大RPSは観測した一点であり、安全容量ではない。通常のrequest mix、成長、障害時の縮退、測定誤差を含むheadroomを置き、どの観測で再評価するかを決めて初めて運用上の容量になる。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> CPU profileで最大の関数は必ずしもsystem bottleneckではない。Littleの式は定常状態の長期平均を結ぶ関係で、過負荷への立上がりや回復中へ無条件に適用できない。simulated負荷曲線、local profile、production計測は出自の異なる証拠である。</p>
+  </aside>
+</section>
+<section id="mental-model">
+  <h2>メンタルモデル</h2>
+  <p>性能判断を、需要、受理、完了、待機、resource、依存、利用者結果のflowとして扱う。offered loadを上げた時にaccepted throughputが横ばいになり、p99、error、queueのどれが先に変わるかを観測する。負荷を戻した後の値も取り、回復hysteresisを見逃さない。</p>
+  <figure>
+    <figcaption>負荷を証拠へ変えて安全容量を更新する循環</figcaption>
+    <ol>
+      <li><strong>Fixture:</strong> request mix、payload、依存、処理上限、環境を固定する。</li>
+      <li><strong>Curve:</strong> 低負荷、限界付近、超過、回復を同じ列で記録する。</li>
+      <li><strong>Diagnose:</strong> plateau、tail、error、queue、resource、downstreamを結ぶ。</li>
+      <li><strong>Profile:</strong> 仮説に合う実processの局所証拠を別に採取する。</li>
+      <li><strong>Capacity:</strong> observed kneeからheadroomを引き、再測定条件を残す。</li>
+    </ol>
+  </figure>
+  <p>平均同時実行数L、平均到着または完了率λ、平均滞在時間Wの関係L = λWは、単位と観測窓を揃えた定常区間の整合確認に使う。式が合うことは、個別requestのtailや将来の容量を保証しない。</p>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>注文APIのsimulated load curveとactual local profileを分ける</h3>
+  <dl>
+    <dt>前提</dt>
+    <dd>production計測ではない固定simulationを使う。read比率80%とwrite比率70%の二つのrequest mixへ、低負荷、限界付近、超過、回復のload pointを与える。各点のmeanはbounded latency sampleの算術平均、active concurrencyはLittleの式から作らない独立synthetic入力とする。profileだけは、この場のCPython 3.13 processで実際に採取する。cProfile/pstatsはPython 3.13標準libraryを対象とし、version固定のないGo Diagnosticsは2026-07-31確認時点の範囲として扱う。</dd>
+    <dt>入力</dt>
+    <dd>baselineは40、100、150、50 RPS、write中心transferは40、80、120、50 RPSの順で負荷を変える。各点に7件のlatency sampleを固定し、最後の点は超過後の回復区間とする。</dd>
+    <dt>操作</dt>
+    <dd>accepted、success、sample mean、p50、p95、p99、CPU、memory、queue、downstreamを計算する。throughput plateau、tail growth、error growthが初めて同時成立する点の直前をcurve上のkneeとし、20%のheadroomを引く。定常点ではsample meanをLittleの式へ接続し、cProfileでboundedなlocal関数を測る。</dd>
+    <dt>観測</dt>
+    <dd>baseline curveは100 RPS、write中心curveは80 RPSが違反点直前のkneeとなる。負荷を戻してもqueue由来のtailが残る。両方のsafe capacityは、それぞれのcurveから導いたkneeへ同じ20% headroomを適用して80 RPSと64 RPSになる。</dd>
+    <dt>結論</dt>
+    <dd>安全容量は最大値ではなく、tailとerrorが急増する前のkneeから運用余力を引いた値である。simulationの数値は教材の因果を検査するfixtureであり、このserviceのproduction性能を表さない。</dd>
+  </dl>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+import cProfile
+import json
+import math
+import pstats
+
+HARNESS = "performance_capacity_lab_v1"
+CAPACITY_RPS = 100
+HEADROOM_FRACTION = 0.2
+KNEE_CRITERIA = [
+    "throughput-plateau",
+    "tail-growth",
+    "error-growth",
+]
+
+BASELINE_POINT_INPUTS = [
+    {
+        "stage": "low",
+        "offered_rps": 40,
+        "observed_active_concurrency": 2.0,
+        "latency_samples_ms": [30, 34, 36, 40, 45, 55, 70],
+    },
+    {
+        "stage": "near-limit",
+        "offered_rps": 100,
+        "observed_active_concurrency": 6.2,
+        "latency_samples_ms": [40, 45, 50, 55, 60, 75, 100],
+    },
+    {
+        "stage": "overload",
+        "offered_rps": 150,
+        "observed_active_concurrency": 12.4,
+        "latency_samples_ms": [80, 100, 120, 160, 220, 300, 450],
+    },
+    {
+        "stage": "recovery",
+        "offered_rps": 50,
+        "observed_active_concurrency": 4.6,
+        "latency_samples_ms": [45, 50, 60, 75, 95, 130, 180],
+    },
+]
+
+TRANSFER_POINT_INPUTS = [
+    {
+        "stage": "low",
+        "offered_rps": 40,
+        "observed_active_concurrency": 2.4,
+        "latency_samples_ms": [35, 40, 45, 50, 60, 75, 90],
+    },
+    {
+        "stage": "near-limit",
+        "offered_rps": 80,
+        "observed_active_concurrency": 7.0,
+        "latency_samples_ms": [55, 65, 75, 85, 110, 145, 190],
+    },
+    {
+        "stage": "overload",
+        "offered_rps": 120,
+        "observed_active_concurrency": 15.0,
+        "latency_samples_ms": [120, 160, 220, 300, 420, 600, 900],
+    },
+    {
+        "stage": "recovery",
+        "offered_rps": 50,
+        "observed_active_concurrency": 6.8,
+        "latency_samples_ms": [75, 90, 110, 140, 190, 260, 360],
+    },
+]
+
+
+def nearest_rank(samples, quantile):
+    ordered = sorted(samples)
+    index = math.ceil(quantile * len(ordered)) - 1
+    return ordered[max(0, min(index, len(ordered) - 1))]
+
+def simulate(
+    stage,
+    offered_rps,
+    capacity,
+    previous_queue,
+    write_fraction,
+    observed_active_concurrency,
+    latency_samples_ms,
+):
+    if offered_rps > capacity:
+        accepted_rps = capacity
+        queue_depth = previous_queue + offered_rps - capacity
+    else:
+        accepted_rps = offered_rps
+        spare = capacity - offered_rps
+        queue_depth = max(0, previous_queue - spare // 2)
+
+    rejected_rps = max(0, offered_rps - capacity)
+    error_rps = rejected_rps // 5
+    success_rps = accepted_rps - min(accepted_rps, error_rps)
+    samples = list(latency_samples_ms)
+    # Bounded samples keep this local harness deterministic and cheap. The
+    # arithmetic mean intentionally has a separate derivation from percentiles
+    # so a plausible-looking p50/p95 midpoint cannot masquerade as observation.
+    assert 5 &lt;= len(samples) &lt;= 20
+    assert all(0 &lt; sample &lt;= 10_000 for sample in samples)
+    mean_ms = sum(samples) / len(samples)
+    p50_ms = nearest_rank(samples, 0.50)
+    p95_ms = nearest_rank(samples, 0.95)
+    p99_ms = nearest_rank(samples, 0.99)
+    return {
+        "stage": stage,
+        "offered_rps": offered_rps,
+        "accepted_rps": accepted_rps,
+        "success_rps": success_rps,
+        "p50_ms": p50_ms,
+        "p95_ms": p95_ms,
+        "p99_ms": p99_ms,
+        "mean_ms": mean_ms,
+        "mean_source": "bounded-latency-samples-arithmetic-mean",
+        "latency_samples_ms": samples,
+        "observed_active_concurrency": observed_active_concurrency,
+        "cpu_percent": min(99.0, 20.0 + accepted_rps * 0.65),
+        "memory_mb": 128 + queue_depth * 2,
+        "queue_depth": queue_depth,
+        "downstream_ms": 15 + int(write_fraction * 50) + queue_depth // 2,
+    }
+
+def safe_capacity(observed_knee_rps, headroom_fraction):
+    return int(observed_knee_rps * (1 - headroom_fraction))
+
+def processing_model_for_mix(write_fraction):
+    # Request mix changes the simulated processing envelope. The reported knee
+    # is not taken from this branch: detect_knee derives it from the resulting
+    # curve so the decision remains inspectable and mutation-sensitive.
+    if write_fraction > 0.5:
+        return {"bottleneck": "storage-write", "capacity_rps": 80}
+    return {"bottleneck": "cpu-transform", "capacity_rps": CAPACITY_RPS}
+
+
+def build_load_curve(point_inputs, processing_capacity_rps, write_fraction):
+    curve = []
+    previous_queue = 0
+    for point_input in point_inputs:
+        point = simulate(
+            point_input["stage"],
+            point_input["offered_rps"],
+            processing_capacity_rps,
+            previous_queue,
+            write_fraction,
+            point_input["observed_active_concurrency"],
+            point_input["latency_samples_ms"],
+        )
+        curve.append(point)
+        previous_queue = point["queue_depth"]
+    return curve
+
+
+def detect_knee(load_curve):
+    # Capacity is the last passing offered-load point before all three failure
+    # signals first coincide, never a constant copied from the simulator input.
+    for previous, current in zip(load_curve, load_curve[1:]):
+        criteria = {
+            "throughput-plateau": (
+                current["success_rps"] &lt;= previous["success_rps"]
+            ),
+            "tail-growth": current["p99_ms"] > previous["p99_ms"],
+            "error-growth": (
+                current["success_rps"] &lt; current["accepted_rps"]
+            ),
+        }
+        if all(criteria.values()):
+            return {
+                "observed_knee_rps": previous["offered_rps"],
+                "first_violation_stage": current["stage"],
+                "criteria": criteria,
+            }
+    raise AssertionError("load-curve-causal-invariant: no measured knee")
+
+
+def profile_target(values):
+    total = 0
+    for value in values:
+        for multiplier in (1, 3, 5, 7):
+            total += (value * multiplier) % 97
+    return total
+
+
+def main():
+    baseline_write_fraction = 0.2
+    transfer_write_fraction = 0.7
+    baseline_model = processing_model_for_mix(baseline_write_fraction)
+    transfer_model = processing_model_for_mix(transfer_write_fraction)
+    curve = build_load_curve(
+        BASELINE_POINT_INPUTS,
+        baseline_model["capacity_rps"],
+        baseline_write_fraction,
+    )
+    transfer_curve = build_load_curve(
+        TRANSFER_POINT_INPUTS,
+        transfer_model["capacity_rps"],
+        transfer_write_fraction,
+    )
+
+    by_stage = {point["stage"]: point for point in curve}
+    assert by_stage["overload"]["accepted_rps"] == CAPACITY_RPS
+    assert by_stage["overload"]["queue_depth"] > 0
+    assert by_stage["recovery"]["p99_ms"] > by_stage["low"]["p99_ms"]
+
+    little_source = by_stage["near-limit"]
+    throughput_per_second = little_source["success_rps"]
+    mean_response_seconds = little_source["mean_ms"] / 1_000
+    observed_concurrency = little_source["observed_active_concurrency"]
+    calculated_concurrency = (
+        throughput_per_second * mean_response_seconds
+    )
+    relative_error = abs(
+        observed_concurrency - calculated_concurrency
+    ) / observed_concurrency
+
+    profiler = cProfile.Profile()
+    profiler.enable()
+    profile_result = profile_target(range(400))
+    profiler.disable()
+    stats = pstats.Stats(profiler)
+    assert profile_result > 0
+    measured_entries = [
+        {
+            "function": function_key[2],
+            "primitive_calls": values[0],
+            "total_calls": values[1],
+            "cumulative_seconds": values[3],
+        }
+        for function_key, values in stats.stats.items()
+    ]
+    measured_top = max(
+        measured_entries,
+        key=lambda entry: (
+            entry["cumulative_seconds"],
+            entry["total_calls"],
+            entry["function"],
+        ),
+    )
+
+    baseline_knee_evidence = detect_knee(curve)
+    transfer_knee_evidence = detect_knee(transfer_curve)
+    baseline_knee = baseline_knee_evidence["observed_knee_rps"]
+    mutated_knee = transfer_knee_evidence["observed_knee_rps"]
+    baseline_safe_capacity = safe_capacity(
+        baseline_knee,
+        HEADROOM_FRACTION,
+    )
+    mutated_safe_capacity = safe_capacity(
+        mutated_knee,
+        HEADROOM_FRACTION,
+    )
+    request_mix_mutation = {
+        "changed_assumption": "request-mix",
+        "baseline_request_mix": {
+            "read_fraction": 1 - baseline_write_fraction,
+            "write_fraction": baseline_write_fraction,
+        },
+        "mutated_request_mix": {
+            "read_fraction": 1 - transfer_write_fraction,
+            "write_fraction": transfer_write_fraction,
+        },
+        "baseline_bottleneck": baseline_model["bottleneck"],
+        "mutated_bottleneck": transfer_model["bottleneck"],
+        "baseline_observed_knee_rps": baseline_knee,
+        "mutated_observed_knee_rps": mutated_knee,
+        "baseline_safe_capacity_rps": baseline_safe_capacity,
+        "mutated_safe_capacity_rps": mutated_safe_capacity,
+        "mutated_load_curve": transfer_curve,
+        "baseline_knee_evidence": baseline_knee_evidence,
+        "mutated_knee_evidence": transfer_knee_evidence,
+        "knee_criteria": KNEE_CRITERIA,
+        "recomputed": (
+            baseline_model["bottleneck"] != transfer_model["bottleneck"]
+            and baseline_knee != mutated_knee
+            and baseline_safe_capacity != mutated_safe_capacity
+        ),
+    }
+    assert request_mix_mutation["recomputed"]
+
+    report = {
+        "harness": HARNESS,
+        "fixture": "order-api-load-v1",
+        "simulation_metadata": {
+            "kind": "simulated",
+            "provenance": "lesson-defined deterministic capacity model",
+            "purpose": "負荷変化と容量判断の因果を反証する",
+            "limitations": (
+                "production latency、hardware、network、vendor性能を表さない"
+            ),
+        },
+        "load_curve": curve,
+        "curve_analysis": {
+            "throughput_plateau": (
+                by_stage["near-limit"]["accepted_rps"]
+                == by_stage["overload"]["accepted_rps"]
+            ),
+            "tail_growth": (
+                by_stage["overload"]["p99_ms"]
+                > by_stage["near-limit"]["p99_ms"]
+            ),
+            "error_growth": (
+                by_stage["overload"]["success_rps"]
+                &lt; by_stage["overload"]["accepted_rps"]
+            ),
+            "recovery_hysteresis": (
+                by_stage["recovery"]["p99_ms"]
+                > by_stage["low"]["p99_ms"]
+            ),
+        },
+        "capacity": {
+            "observed_knee_rps": baseline_knee,
+            "safe_capacity_rps": baseline_safe_capacity,
+            "headroom_fraction": HEADROOM_FRACTION,
+            "knee_evidence": baseline_knee_evidence,
+            "decision": "80 RPSを通常運用上限として再測定する",
+        },
+        "little_law": {
+            "scope": "near-limit steady-state average only",
+            "source_stage": little_source["stage"],
+            "throughput_per_second": throughput_per_second,
+            "mean_response_seconds": mean_response_seconds,
+            "mean_response_source": little_source["mean_source"],
+            "observed_concurrency": observed_concurrency,
+            "observed_concurrency_source": (
+                "independent-simulated-fixture-input"
+            ),
+            "calculated_concurrency": calculated_concurrency,
+            "relative_error": relative_error,
+        },
+        "local_profile": {
+            "evidence_kind": "actual-local-measurement",
+            "profiler": "cProfile",
+            "declared_target": profile_target.__name__,
+            "total_calls": stats.total_calls,
+            "measured_top_function": measured_top["function"],
+            "measured_functions": sorted(
+                {entry["function"] for entry in measured_entries}
+            ),
+            "measurement_derived": True,
+            "tool_scope": {
+                "python": "3.13",
+                "profiler": "cProfile/pstats standard library",
+                "go_docs": "rolling; reviewed 2026-07-31",
+            },
+            "environment_limitations": (
+                "このCPython processのbounded fixtureだけを測り、"
+                "production bottleneckを主張しない"
+            ),
+        },
+        "request_mix_mutation": request_mix_mutation,
+        "runtime_bound": {
+            "iterations": 1656,
+            "subprocesses": 0,
+        },
+        "mastery_evidence": {
+            "lab_steps": [
+                {"step": 1, "evidence": "simulation metadataとrequest mix"},
+                {"step": 2, "evidence": "4段階load_curveの全観測列"},
+                {"step": 3, "evidence": "curve_analysisとcapacity"},
+                {"step": 4, "evidence": "Little照合とcProfile"},
+                {"step": 5, "evidence": "request_mix_mutation"},
+            ],
+            "assessments": [
+                {"assessment": 1, "evidence": "queueとdownstreamを含む診断"},
+                {"assessment": 2, "evidence": "Littleの式のscopeと誤差"},
+            ],
+            "rubric_dimensions": [
+                "technical-correctness",
+                "judgment",
+                "evidence",
+                "communication",
+            ],
+            "transfer": {
+                "task": (
+                    "参照中心から書込み中心へ変わるrequest mixで"
+                    "bottleneckと安全容量を再測定する"
+                ),
+                "changed_assumption": "request-mix",
+                "evidence": "bottleneckとsafe capacityの再計算",
+            },
+        },
+        "external_network_used": False,
+    }
+    assert all(report["curve_analysis"].values())
+    assert baseline_knee in {point["offered_rps"] for point in curve}
+    assert mutated_knee in {
+        point["offered_rps"] for point in transfer_curve
+    }
+    assert 0 &lt; report["little_law"]["relative_error"] &lt;= 0.05
+    return report
+
+print(json.dumps(main(), ensure_ascii=False, indent=2))
+PY</code></pre>
+</section>
+<section id="tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <table>
+    <caption>性能証拠と次の行動を選ぶ decision table</caption>
+    <thead>
+      <tr>
+        <th scope="col">観測</th>
+        <th scope="col">次の行動</th>
+        <th scope="col">代償</th>
+        <th scope="col">停止条件</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row">CPU上昇とthroughput plateauが同時</th>
+        <td>CPU profileと実行経路を採取する</td>
+        <td>profile overheadと環境差が入る</td>
+        <td>別resourceまたは負荷生成側が先に飽和した時</td>
+      </tr>
+      <tr>
+        <th scope="row">CPU余裕があるがqueueとdownstreamが増加</th>
+        <td>依存先、pool、lock、I/O待機を分解する</td>
+        <td>cross-systemの相関計測が増える</td>
+        <td>offeredとacceptedの差が負荷生成側で生じた時</td>
+      </tr>
+      <tr>
+        <th scope="row">超過後に負荷を戻してもtailが残る</th>
+        <td>queue drainを容量とrunbookへ含める</td>
+        <td>平常時の利用率を下げる</td>
+        <td>回復時間が利用者目標内で安定した時</td>
+      </tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><strong>誤診:</strong> CPU profileの最大関数を最適化すればsystem bottleneckは必ず消える。<strong>反証:</strong> 待機、lock、downstream、負荷生成器の限界はCPU profileだけでは見えず、変更後のend-to-end曲線が必要である。</li>
+    <li><strong>誤診:</strong> 一度達成した最大RPSがproductionの安全容量である。<strong>反証:</strong> request mix、tail、error、queue、障害時縮退、成長とheadroomを含まず、回復可能性も示していない。</li>
+    <li><strong>失敗モード:</strong> simulationをmeasured production値として共有すると、hardwareと依存先の差を隠した架空の容量計画になる。</li>
+    <li><strong>失敗モード:</strong> 平均latencyだけでは少数の遅いrequestとretry増幅を隠すため、p95とp99、goodputを併記する。</li>
+  </ul>
+</section>
+<section id="knowledge-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>offered、accepted、success throughputを分けると何を診断できるか。</li>
+    <li>Littleの式を回復区間へそのまま適用できない理由を説明せよ。</li>
+    <li>CPU使用率が低いままp99が増える時の候補と追加証拠を三つ挙げよ。</li>
+    <li>request mix変更を容量計画の再評価条件へどう組み込むか。</li>
+  </ol>
+</section>
+<section id="sources-next">
+  <h2>出典と次の学習</h2>
+  <p>profileとtraceの選択はGo Diagnostics、実行したcProfile/pstatsの意味はPython 3.13のThe Python Profilers、overload制御はGoogle SRE Chapter 21を一次資料として照合する。Goの文書はrolling URLのため2026-07-31に再確認した範囲である。平均queueの整合にはLittleの原論文、tailのsystem効果にはThe Tail at Scaleを使う。いずれも特定fixtureの最大RPSを保証する資料ではない。</p>
+  <p>次のcore-15では、容量曲線を利用者journeyのgood event、SLO、error budget、multi-window alertへ接続し、性能劣化をpageとticketへ分ける。</p>
+</section>

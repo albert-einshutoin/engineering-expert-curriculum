@@ -1,0 +1,560 @@
+<section id="why">
+  <h2>なぜ重要か</h2>
+  <p>serviceの内部metricが正常でも、利用者は購入を完了できないことがある。信頼性を運用可能にするには、利用者journeyのどのeventを分母にし、何をgoodと数え、どのwindowでどこまで許容し、超過時に誰が何をするかを一続きの契約へ変える必要がある。</p>
+  <p>observabilityはtelemetry量の最大化ではない。利用者impactから原因候補へ移れるsignalを、version、意味、correlation、privacy、cardinality、samplingの制約付きで維持する能力である。行動できないpageは、signalではなくon-call負荷になる。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> SLOは契約上のSLAや内部resource thresholdと同義ではない。100%目標は変更余地を失わせ、すべてのtelemetryを保存しても未知の質問へ答えられる保証はない。good event、分母、欠測、samplingが変われば同じ数式でも意味が変わる。</p>
+  </aside>
+</section>
+<section id="mental-model">
+  <h2>メンタルモデル</h2>
+  <p>利用者journeyをvalid eventの集合として定義し、そのうち期待した結果と時間境界を満たすものをgoodとする。SLIはgood÷valid、SLOはwindowとtarget、error budgetは許容できるbadの割合である。burn rateは観測したbad割合がbudgetを何倍の速さで消費するかを表す。</p>
+  <figure>
+    <figcaption>利用者結果からon-call actionまでを閉じるflow</figcaption>
+    <ol>
+      <li><strong>Journey:</strong> 利用者が達成したい結果とvalidな試行を定める。</li>
+      <li><strong>SLI:</strong> goodの結果とlatency境界をevent単位で計算する。</li>
+      <li><strong>SLO:</strong> window、target、error budget、例外を合意する。</li>
+      <li><strong>Alert:</strong> 短窓と長窓のburnをpageとticketへ分ける。</li>
+      <li><strong>Runbook:</strong> impact確認、mitigation、rollback、escalationを結ぶ。</li>
+      <li><strong>Telemetry:</strong> traceで原因へ相関し、意味とprivacyを検証する。</li>
+    </ol>
+  </figure>
+  <p>pageは人が直ちに取る行動があり、error budgetを急速に失う時に限定する。長いwindowの緩やかなburnや容量傾向はticketにし、参考情報はdashboardへ置く。thresholdを緩める前に、利用者impact、false positive、runbookの有効性を確認する。</p>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>購入完了journeyからmulti-window alertを計算する</h3>
+  <dl>
+    <dt>前提</dt>
+    <dd>2026-07-31T12:00:00+00:00を観測終了とするlesson-defined synthetic eventを使い、production SLOとは主張しない。購入完了と検索成功のeventは同じfixtureへtimestamp付きで保持する。</dd>
+    <dt>入力</dt>
+    <dd>statusと300 msのlatency境界からgoodを分類する。28日window、target 90%という教材fixtureで、直近5分と60分のeventをtimestampから別々に選び、bad割合とburn rateを計算する。</dd>
+    <dt>操作</dt>
+    <dd>短窓と長窓がともにpage thresholdを越えた時だけpageする。正常、短窓だけ異常、両窓異常の三fixtureでAND条件を反証する。OpenTelemetry 1.59.0とSemantic Conventions 1.43.0をversion固定し、resource属性、trace correlation、PII、cardinality、samplingを検査する。</dd>
+    <dt>観測</dt>
+    <dd>正常では両条件false、直近5分に1 failureだけ加えると短窓だけtrue、直近12分をfailureにすると両窓trueとなる。transferでは同じevent、target、window、telemetryを保ち、検索成功率から購入完了率へjourney境界だけを変える。</dd>
+    <dt>結論</dt>
+    <dd>SLOはdashboardの装飾ではなく、利用者impact、変更判断、on-call actionをつなぐ境界である。fixtureのtargetは教材用であり、実serviceでは利用者期待、事業価値、過去実績とerror budget方針から決め直す。</dd>
+  </dl>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+from datetime import datetime, timedelta, timezone
+import json
+
+HARNESS = "reliability_slo_lab_v1"
+TARGET = 0.9
+LATENCY_LIMIT_MS = 300
+SHORT_WINDOW_MINUTES = 5
+LONG_WINDOW_MINUTES = 60
+PAGE_BURN_THRESHOLD = 2.0
+OBSERVATION_END = datetime(
+    2026,
+    7,
+    31,
+    12,
+    0,
+    tzinfo=timezone.utc,
+)
+REQUIRED_RESOURCE_ATTRIBUTES = [
+    "service.name",
+    "deployment.environment.name",
+    "service.version",
+]
+DEPRECATED_RESOURCE_ATTRIBUTES = {
+    "deployment.environment",
+}
+
+def make_event(event_id, journey, minutes_ago, good):
+    return {
+        "id": event_id,
+        "journey": journey,
+        "eligible": True,
+        "timestamp": (
+            OBSERVATION_END - timedelta(minutes=minutes_ago)
+        ).isoformat(),
+        "status": "ok" if good else "failed",
+        "latency_ms": 100 if good else 500,
+    }
+
+def purchase_fixture(name, bad_offsets):
+    return [
+        make_event(
+            f"{name}-purchase-{offset:02}",
+            "purchase-completion",
+            offset,
+            offset not in bad_offsets,
+        )
+        for offset in range(LONG_WINDOW_MINUTES)
+    ]
+
+SCENARIO_EVENTS = {
+    "normal": purchase_fixture("normal", set()),
+    "short-only": purchase_fixture("short-only", {0}),
+    "both": purchase_fixture("both", set(range(12))),
+}
+SEARCH_EVENTS = [
+    make_event(
+        f"search-{offset:02}",
+        "search-success",
+        offset,
+        offset != 9,
+    )
+    for offset in range(10)
+]
+FIXTURE_EVENTS = SCENARIO_EVENTS["both"] + SEARCH_EVENTS
+REQUEST_FIXTURE = [
+    {"request_id": "request-1", "trace_id": "trace-a"},
+    {"request_id": "request-2", "trace_id": "trace-b"},
+    {"request_id": "request-3", "trace_id": "trace-c"},
+]
+TRACE_FIXTURE = [
+    {"request_id": "request-1", "trace_id": "trace-a"},
+    {"request_id": "request-2", "trace_id": "trace-b"},
+    {"request_id": "request-3", "trace_id": "trace-c"},
+]
+LOG_FIXTURE = [
+    {"request_id": "request-1", "trace_id": "trace-a"},
+    {"request_id": "request-2", "trace_id": "trace-b"},
+    {"request_id": "request-3", "trace_id": "trace-c"},
+]
+METRIC_SERIES_FIXTURE = [
+    {
+        "journey.name": "purchase-completion",
+        "result": "ok",
+        "deployment.environment.name": "lesson",
+    },
+    {
+        "journey.name": "purchase-completion",
+        "result": "failed",
+        "deployment.environment.name": "lesson",
+    },
+    {
+        "journey.name": "search-success",
+        "result": "ok",
+        "deployment.environment.name": "lesson",
+    },
+    {
+        "journey.name": "purchase-completion",
+        "result": "ok",
+        "deployment.environment.name": "lesson",
+    },
+]
+METRIC_SERIES_BOUND = 4
+
+def derive_sli(events, journey):
+    valid = []
+    classified = []
+    for event in events:
+        if event["journey"] != journey or not event["eligible"]:
+            continue
+        valid.append(event)
+        good = event["status"] == "ok" and event["latency_ms"] &lt;= 300
+        classified.append(
+            {
+                "id": event["id"],
+                "timestamp": event["timestamp"],
+                "good": good,
+            }
+        )
+    assert valid, f"journey-boundary: no valid events for {journey}"
+    good_events = sum(item["good"] for item in classified)
+    bad_events = len(valid) - good_events
+    return {
+        "journey": journey,
+        "total_events": len(events),
+        "valid_events": len(valid),
+        "good_events": good_events,
+        "bad_events": bad_events,
+        "ratio": good_events / len(valid),
+        "classified": classified,
+    }
+
+def burn_window(events, journey, window_minutes):
+    window_start = OBSERVATION_END - timedelta(minutes=window_minutes)
+    selected = [
+        event
+        for event in events
+        if (
+            window_start
+            &lt; datetime.fromisoformat(event["timestamp"])
+            &lt;= OBSERVATION_END
+        )
+    ]
+    sli = derive_sli(selected, journey)
+    observed_bad_fraction = sli["bad_events"] / sli["valid_events"]
+    return {
+        "window_minutes": window_minutes,
+        "start_timestamp": window_start.isoformat(),
+        "end_timestamp": OBSERVATION_END.isoformat(),
+        "valid_events": sli["valid_events"],
+        "good_events": sli["good_events"],
+        "bad_events": sli["bad_events"],
+        "observed_bad_fraction": observed_bad_fraction,
+        "rate": observed_bad_fraction / (1 - TARGET),
+    }
+
+def evaluate_alert(events, journey):
+    windows = {
+        "short": burn_window(
+            events,
+            journey,
+            SHORT_WINDOW_MINUTES,
+        ),
+        "long": burn_window(
+            events,
+            journey,
+            LONG_WINDOW_MINUTES,
+        ),
+    }
+    conditions = {
+        name: window["rate"] >= PAGE_BURN_THRESHOLD
+        for name, window in windows.items()
+    }
+    return windows, {
+        "multi_window": True,
+        "combination": "short-and-long",
+        "page": {
+            "conditions": conditions,
+            "threshold": PAGE_BURN_THRESHOLD,
+            "triggered": conditions["short"] and conditions["long"],
+            "actionable": True,
+            "action": "購入impactを確認しcheckoutを縮退する",
+        },
+        "ticket": {
+            "window_minutes": LONG_WINDOW_MINUTES,
+            "threshold": 1.0,
+            "triggered": windows["long"]["rate"] >= 1.0,
+            "actionable": True,
+            "action": "翌営業日までにbudget消費原因を追跡する",
+        },
+    }
+
+def validate_telemetry(resource_attributes, metric_labels):
+    errors = []
+    for attribute in REQUIRED_RESOURCE_ATTRIBUTES:
+        if not resource_attributes.get(attribute):
+            errors.append("missing-resource-attribute:" + attribute)
+    for attribute in DEPRECATED_RESOURCE_ATTRIBUTES:
+        if attribute in resource_attributes:
+            errors.append("deprecated-resource-attribute:" + attribute)
+    forbidden = {"email", "user.id", "order.id", "trace_id"}
+    if forbidden.intersection(metric_labels):
+        errors.append("pii-or-high-cardinality-label")
+    return sorted(errors)
+
+def derive_trace_correlation(requests, traces, logs):
+    # A trace ID alone is insufficient evidence: matching request and trace
+    # identities must be present in both the span and log fixtures.
+    trace_pairs = {
+        (item["request_id"], item["trace_id"])
+        for item in traces
+    }
+    log_pairs = {
+        (item["request_id"], item["trace_id"])
+        for item in logs
+    }
+    request_ids = sorted(item["request_id"] for item in requests)
+    correlated_request_ids = sorted(
+        item["request_id"]
+        for item in requests
+        if (
+            (item["request_id"], item["trace_id"]) in trace_pairs
+            and (item["request_id"], item["trace_id"]) in log_pairs
+        )
+    )
+    correlated_requests = len(correlated_request_ids)
+    total_requests = len(request_ids)
+    return {
+        "passed": correlated_requests == total_requests,
+        "correlated_requests": correlated_requests,
+        "total_requests": total_requests,
+        "correlated_request_ids": correlated_request_ids,
+        "request_ids": request_ids,
+        "fixture": {
+            "requests": requests,
+            "traces": traces,
+            "logs": logs,
+        },
+    }
+
+def derive_cardinality(metric_series, series_bound):
+    # Cardinality is counted from unique label sets so duplicate observations
+    # do not falsely consume the bounded-series budget.
+    unique_series = {
+        tuple(sorted(sample.items()))
+        for sample in metric_series
+    }
+    unique_series_count = len(unique_series)
+    return {
+        "bounded": unique_series_count &lt;= series_bound,
+        "unique_series_count": unique_series_count,
+        "series_bound": series_bound,
+        "metric_series_fixture": metric_series,
+    }
+
+def main():
+    sli = derive_sli(FIXTURE_EVENTS, "purchase-completion")
+    burn_windows, alerts = evaluate_alert(
+        SCENARIO_EVENTS["both"],
+        "purchase-completion",
+    )
+    scenario_reports = {}
+    for name, events in SCENARIO_EVENTS.items():
+        windows, scenario_alerts = evaluate_alert(
+            events,
+            "purchase-completion",
+        )
+        scenario_reports[name] = {
+            "windows": windows,
+            "conditions": scenario_alerts["page"]["conditions"],
+            "page_triggered": scenario_alerts["page"]["triggered"],
+        }
+    alerts["scenarios"] = scenario_reports
+    assert {
+        name: (
+            result["conditions"]["short"],
+            result["conditions"]["long"],
+            result["page_triggered"],
+        )
+        for name, result in scenario_reports.items()
+    } == {
+        "normal": (False, False, False),
+        "short-only": (True, False, False),
+        "both": (True, True, True),
+    }, "multi-window-causal-invariant"
+
+    resources = {
+        "service.name": "checkout",
+        "deployment.environment.name": "lesson",
+        "service.version": "1.0.0",
+    }
+    metric_labels = {
+        "journey.name",
+        "result",
+        "deployment.environment.name",
+    }
+    telemetry_errors = validate_telemetry(resources, metric_labels)
+    assert telemetry_errors == []
+    deprecated_probe_errors = validate_telemetry(
+        {
+            **resources,
+            "deployment.environment": "lesson",
+        },
+        metric_labels,
+    )
+    assert deprecated_probe_errors == [
+        "deprecated-resource-attribute:deployment.environment"
+    ]
+    trace_correlation = derive_trace_correlation(
+        REQUEST_FIXTURE,
+        TRACE_FIXTURE,
+        LOG_FIXTURE,
+    )
+    cardinality_check = derive_cardinality(
+        METRIC_SERIES_FIXTURE,
+        METRIC_SERIES_BOUND,
+    )
+    assert trace_correlation["passed"]
+    assert cardinality_check["bounded"]
+
+    baseline_sli = derive_sli(FIXTURE_EVENTS, "search-success")
+    transferred_sli = derive_sli(
+        FIXTURE_EVENTS,
+        "purchase-completion",
+    )
+    baseline_contract = {
+        "journey": "search-success",
+        "target": TARGET,
+        "window_days": 28,
+        "event_ids": [event["id"] for event in FIXTURE_EVENTS],
+        "telemetry_errors": validate_telemetry(resources, metric_labels),
+    }
+    transferred_contract = {
+        **baseline_contract,
+        "journey": "purchase-completion",
+        "event_ids": [event["id"] for event in FIXTURE_EVENTS],
+        "telemetry_errors": validate_telemetry(resources, metric_labels),
+    }
+    changed_fields = sorted(
+        field
+        for field in baseline_contract
+        if baseline_contract[field] != transferred_contract[field]
+    )
+    journey_boundary_transfer = {
+        "changed_fields": changed_fields,
+        "baseline_sli": baseline_sli,
+        "transferred_sli": transferred_sli,
+        "baseline_event_ids": baseline_contract["event_ids"],
+        "transferred_event_ids": transferred_contract["event_ids"],
+        "unchanged": {
+            "event_fixture": (
+                baseline_contract["event_ids"]
+                == transferred_contract["event_ids"]
+            ),
+            "target": (
+                baseline_contract["target"]
+                == transferred_contract["target"]
+            ),
+            "window": (
+                baseline_contract["window_days"]
+                == transferred_contract["window_days"]
+            ),
+            "telemetry_contract": (
+                baseline_contract["telemetry_errors"]
+                == transferred_contract["telemetry_errors"]
+            ),
+        },
+        "telemetry_errors_before": baseline_contract["telemetry_errors"],
+        "telemetry_errors_after": transferred_contract["telemetry_errors"],
+    }
+    assert changed_fields == ["journey"]
+    assert baseline_sli["ratio"] != transferred_sli["ratio"]
+    assert journey_boundary_transfer["baseline_event_ids"] == (
+        journey_boundary_transfer["transferred_event_ids"]
+    )
+
+    report = {
+        "harness": HARNESS,
+        "fixture": "timestamped-user-journey-events-v2",
+        "fixture_events": FIXTURE_EVENTS,
+        "fixture_metadata": {
+            "kind": "synthetic",
+            "provenance": "lesson-defined timestamped user-journey events",
+            "purpose": "SLI、window別burn、alert、journey境界の因果を反証する",
+            "limitations": "production traffic、SLA、利用者期待を表さない",
+        },
+        "sli": sli,
+        "slo": {
+            "window_days": 28,
+            "target": TARGET,
+            "error_budget_fraction": 1 - TARGET,
+            "decision_scope": "internal reliability objective, not SLA",
+        },
+        "burn_windows": burn_windows,
+        "alerts": alerts,
+        "runbook": {
+            "owner": "checkout-on-call",
+            "user_impact_check": "購入完了eventとclient errorを確認する",
+            "mitigation": "高負荷機能を止めcheckoutへ容量を戻す",
+            "rollback": "直前releaseとの相関があればrollbackする",
+            "escalation": "決済依存またはprivacy incidentを各ownerへ上げる",
+        },
+        "telemetry_contract": {
+            "otel_specification": "1.59.0",
+            "semantic_conventions": "1.43.0",
+            "required_resource_attributes": REQUIRED_RESOURCE_ATTRIBUTES,
+            "schema_validation": {
+                "deprecated_attribute_rejected": bool(
+                    deprecated_probe_errors
+                ),
+                "deprecated_probe_errors": deprecated_probe_errors,
+            },
+            "trace_correlation": trace_correlation,
+            "pii_check": {
+                "passed": not telemetry_errors,
+                "forbidden_metric_labels": ["email", "user.id", "order.id"],
+            },
+            "cardinality_check": {
+                **cardinality_check,
+                "metric_labels": sorted(metric_labels),
+                "trace_id_location": "span-log-correlation-only",
+            },
+            "sampling_limitations": (
+                "tailやrare failureの推定はsampling policyと欠測率を伴う"
+            ),
+            "stability": (
+                "stableとdevelopmentのsemantic fieldsをversionごとにreviewする"
+            ),
+        },
+        "journey_boundary_transfer": journey_boundary_transfer,
+        "mastery_evidence": {
+            "lab_steps": [
+                {"step": 1, "evidence": "timestamp付きfixtureとclassified"},
+                {"step": 2, "evidence": "SLI、SLO、window別burn rate"},
+                {"step": 3, "evidence": "normal、short-only、bothのAND判定"},
+                {"step": 4, "evidence": "owner付きrunbook"},
+                {"step": 5, "evidence": "telemetry検証とjourney境界だけのtransfer"},
+            ],
+            "assessments": [
+                {"assessment": 1, "evidence": "purchase journey境界とtrace correlation"},
+                {"assessment": 2, "evidence": "burn windowとactionability"},
+            ],
+            "rubric_dimensions": [
+                "technical-correctness",
+                "judgment",
+                "evidence",
+                "communication",
+            ],
+            "transfer": {
+                "task": (
+                    "検索成功率から購入完了までへ利用者可視の"
+                    "信頼性境界を変え、SLIとSLOを再設計する"
+                ),
+                "changed_assumption": "user-visible-reliability",
+                "evidence": (
+                    "同じevent、target、window、telemetryで"
+                    "journeyだけを変えたSLI再計算"
+                ),
+            },
+        },
+        "external_network_used": False,
+    }
+    return report
+
+print(json.dumps(main(), ensure_ascii=False, indent=2))
+PY</code></pre>
+</section>
+<section id="tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <table>
+    <caption>burnと行動を対応させる decision table</caption>
+    <thead>
+      <tr>
+        <th scope="col">利用者影響</th>
+        <th scope="col">通知</th>
+        <th scope="col">必要な行動</th>
+        <th scope="col">再評価条件</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row">短窓と長窓の両方で急速なbudget消費</th>
+        <td>page</td>
+        <td>即時impact確認とmitigation</td>
+        <td>pageされても人が取る行動がない時</td>
+      </tr>
+      <tr>
+        <th scope="row">長窓だけで緩やかなbudget消費</th>
+        <td>ticket</td>
+        <td>営業日内の原因除去と計画更新</td>
+        <td>短窓でも急増し始めた時</td>
+      </tr>
+      <tr>
+        <th scope="row">budgetへ未影響の内部resource変化</th>
+        <td>dashboard</td>
+        <td>診断contextとcapacity傾向の保持</td>
+        <td>利用者SLIとの先行相関が検証された時</td>
+      </tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><strong>誤診:</strong> SLOは顧客とのSLAと同じなので違反を避けるには100%にすべきだ。<strong>反証:</strong> SLOは内部の目標と判断境界であり、SLAの契約結果とは分ける。100%はerror budgetを失わせ、変更とriskのtrade-offを隠す。</li>
+    <li><strong>誤診:</strong> metric、log、traceを全量保存すればobservabilityは最大になる。<strong>反証:</strong> 意味の不一致、PII、高cardinality、費用、sampling、欠測を管理しなければ、量が増えても利用者impactから行動へ到達できない。</li>
+    <li><strong>失敗モード:</strong> health checkを利用者requestの分母へ混ぜると、実journeyが失敗していてもSLIを水増しできる。</li>
+    <li><strong>失敗モード:</strong> trace IDやuser IDをmetric labelへ置くとcardinalityとprivacy riskが増える。相関IDはspanとlogで扱い、集約metricのlabelをboundedにする。</li>
+  </ul>
+</section>
+<section id="knowledge-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>good eventとvalid eventを分ける理由を購入journeyで説明せよ。</li>
+    <li>burn rate 1と3はerror budgetの消費速度として何が違うか。</li>
+    <li>pageとticketをwindowとactionabilityでどう分けるか。</li>
+    <li>samplingとsemantic conventionのstabilityが既存alertへ与えるriskは何か。</li>
+  </ol>
+</section>
+<section id="sources-next">
+  <h2>出典と次の学習</h2>
+  <p>SLI、SLO、error budgetの定義はGoogle SRE Chapter 4、multi-window burnとactionable alertはSRE Workbook Chapter 5、pager負荷とrunbookはChapter 8を基準にする。telemetry contractはOpenTelemetry Specification 1.59.0とSemantic Conventions 1.43.0へversion固定して照合する。</p>
+  <p>次のhuman/product領域では、systemが記録したsuccessだけでなく、keyboard、zoom、読み上げ、usabilityを含む利用者側のjourneyへ証拠境界を広げる。</p>
+</section>

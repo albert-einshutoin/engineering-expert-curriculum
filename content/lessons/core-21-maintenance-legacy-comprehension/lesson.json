@@ -1,0 +1,171 @@
+{
+  "version": 1,
+  "id": "core-21-maintenance-legacy-comprehension",
+  "title": "未知を残したままlegacy systemを安全に変更する",
+  "summary": "小さなlegacy fixtureから実行経路、変更理由、未知領域を地図化し、振る舞いを保存するcharacterization testを変更前の証拠として構築する。",
+  "track": "sustain",
+  "stage": 4,
+  "difficulty": "advanced",
+  "estimatedMinutes": 300,
+  "prerequisiteIds": [
+    "core-08-modularity-evolutionary-architecture",
+    "core-09-test-strategy-tdd"
+  ],
+  "objectives": [
+    {
+      "id": "obj-comprehension",
+      "statement": "change requestから実際に通るexecution pathと未知領域を編集前に特定できる",
+      "evidenceIds": ["system-map", "teach-back"]
+    },
+    {
+      "id": "obj-characterization",
+      "statement": "正しさを断定せず観測済みのlegacy behaviorをcharacterization testへ固定できる",
+      "evidenceIds": ["system-map", "assessment"]
+    },
+    {
+      "id": "obj-transfer",
+      "statement": "change requestだけが変わる条件で影響経路と必要な特性テストを再構成できる",
+      "evidenceIds": ["assessment", "transfer"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "system-map",
+      "kind": "artifact",
+      "description": "実行経路、変更理由、未知領域を示すシステム地図と特性テスト"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "program comprehensionとmaintenance processを変更前の証拠へ結ぶ5分発表"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "局所的に見える変更の隠れた経路とテスト不足を診断する回答"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "税丸め変更へ要求だけを変えて地図と特性テストを再構成した記録"
+    }
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "change request、実行経路、未知領域、観測済み振る舞いを区別できる",
+      "evidenceIds": ["system-map"]
+    },
+    {
+      "level": "explain",
+      "criterion": "編集前のprogram comprehensionとcharacterization testが必要な理由を説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "小さなfixtureを追跡し実行経路と特性テストを再現可能に残せる",
+      "evidenceIds": ["system-map"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "未観測の依存、暗黙の副作用、誤った影響範囲の断定を反証できる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "未知を隠さず停止条件と追加調査のownerを含む変更計画を主導できる",
+      "evidenceIds": ["transfer"]
+    }
+  ],
+  "lab": {
+    "title": "legacy請求処理の変更前system mapを作る",
+    "artifact": "実行経路、変更理由、未知領域を示すシステム地図と特性テスト",
+    "steps": [
+      "change requestを一つ選び、小さなsynthetic legacy fixtureのentry pointから実行経路を追跡する",
+      "ownerまたは観測証拠がない領域をunknownとして残し、既存出力をcharacterization testへ固定する",
+      "change requestだけを割引率変更から税丸め変更へ変え、影響経路と必要なtestを再構成する"
+    ]
+  },
+  "teachBack": "5分で、SWEBOK Guide Version 4.0aとISO/IEC/IEEE 14764:2022が扱うmaintenanceを、program comprehension研究と手元のexecution evidenceへどう接続するか説明する。",
+  "assessment": [
+    {
+      "prompt": "一つの関数名だけを見て影響範囲を確定する提案を評価せよ。",
+      "expectedEvidence": "entry point、observed path、動的dispatch、data dependency、unknown、characterization test"
+    },
+    {
+      "prompt": "既存出力が仕様上正しいと分からない時、何をtestへ固定し何を断定しないか。",
+      "expectedEvidence": "observed behavior、fixture provenance、expectedとactual、限界、change reason、再調査条件"
+    }
+  ],
+  "transferTask": "割引率変更から税丸め変更へchange requestだけを変え、同じlegacy fixtureの影響経路、未知領域、特性テストを再構成する",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "名前検索だけで影響範囲を断定し実行証拠がない",
+        "developing": "経路はあるがchange request、unknown、testとの対応が曖昧である",
+        "proficient": "entry pointから影響経路、未知領域、characterization testを追跡できる",
+        "exemplary": "dispatchとdata dependencyが変わっても地図の不変条件を検査できる"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "理解できない領域を推測で埋める",
+        "developing": "unknownを挙げるが停止条件と追加調査を結ばない",
+        "proficient": "変更riskに応じて理解の深さ、停止条件、追加testを選ぶ",
+        "exemplary": "業務影響と可逆性から調査投資と変更範囲を調整する"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "コードを読んだという記憶だけを根拠にする",
+        "developing": "testはあるが入力、観測経路、expectedの出自がない",
+        "proficient": "固定fixture、observed path、expected、actual、限界を再実行可能に残す",
+        "exemplary": "要求変更ごとの差分と未知の解消履歴を監査可能にする"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "legacyは危険という抽象論だけを共有する",
+        "developing": "component一覧はあるがchange reasonと影響が読めない",
+        "proficient": "地図から変更理由、実行経路、unknown、testへ辿れる",
+        "exemplary": "開発、運用、業務担当が同じ証拠で変更の停止と再開を判断できる"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "Guide to the Software Engineering Body of Knowledge (SWEBOK Guide), Version 4.0a, September 2025",
+      "url": "https://ieeecs-media.computer.org/media/education/swebok/swebok-v4.pdf",
+      "kind": "standard"
+    },
+    {
+      "title": "ISO/IEC/IEEE 14764:2022 - Software engineering — Software life cycle processes — Maintenance",
+      "url": "https://www.iso.org/standard/80710.html",
+      "kind": "standard"
+    },
+    {
+      "title": "Software maintenance and evolution: a roadmap (2000)",
+      "url": "https://doi.org/10.1145/336512.336534",
+      "kind": "peer-reviewed"
+    },
+    {
+      "title": "Comprehension strategies and difficulties in maintaining object-oriented systems: An explorative study (2007)",
+      "url": "https://doi.org/10.1016/j.jss.2006.10.041",
+      "kind": "peer-reviewed"
+    }
+  ],
+  "review": {
+    "intervalDays": [1, 7, 30, 90],
+    "prompts": [
+      "change requestからexecution pathを導く最小証拠は何か",
+      "characterization testが正しい仕様の証明ではない理由は何か",
+      "unknownを残すことと調査不足をどう区別するか"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}

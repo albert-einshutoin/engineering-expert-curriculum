@@ -1,0 +1,179 @@
+{
+  "version": 1,
+  "id": "core-20-ethics-privacy-societal-impact",
+  "title": "倫理・privacy・社会的影響を設計制約へ変える",
+  "summary": "影響を受ける人とデータの生涯を可視化し、平均値に隠れる不均等な害、軽減策、残余risk、ownerを技術判断へ組み込む。",
+  "track": "human-product",
+  "stage": 3,
+  "difficulty": "advanced",
+  "estimatedMinutes": 320,
+  "prerequisiteIds": [
+    "core-10-threat-modeling-secure-design",
+    "core-16-hci-usability-accessibility",
+    "core-19-technical-communication-design-docs"
+  ],
+  "objectives": [
+    {
+      "id": "obj-impact",
+      "statement": "直接利用者以外を含むaffected peopleとuneven harmを識別し定量化できる",
+      "evidenceIds": ["impact-assessment", "assessment"]
+    },
+    {
+      "id": "obj-lifecycle",
+      "statement": "collect、use、share、retain、deleteのdata lifecycleごとにprivacy riskとcontrolを追跡できる",
+      "evidenceIds": ["impact-assessment", "teach-back"]
+    },
+    {
+      "id": "obj-residual",
+      "statement": "mitigation後のresidual risk、限界、owner、再評価条件を意思決定へ残せる",
+      "evidenceIds": ["assessment", "transfer"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "impact-assessment",
+      "kind": "artifact",
+      "description": "影響を受ける人、データライフサイクル、軽減策を含む影響評価"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "倫理、privacy、security、人権、AI riskの重なりと違いを説明する5分発表"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "平均値に隠れた害と残余riskの受容判断を再構成する回答"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "高リスク集団をaffected populationへ加えて影響評価を更新した記録"
+    }
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "法令遵守、professional ethics、privacy、security、人権への影響を区別できる",
+      "evidenceIds": ["impact-assessment"]
+    },
+    {
+      "level": "explain",
+      "criterion": "secureな処理でもprivacy侵害やuneven harmが生じうる理由を説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "affected people、data lifecycle、害、mitigation、residual riskを追跡できる",
+      "evidenceIds": ["impact-assessment"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "平均指標、proxy、同意画面、匿名化という説明に隠れた影響を反証できる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "影響を受ける人を意思決定へ参加させ、残余riskのownerと停止条件を合意できる",
+      "evidenceIds": ["transfer"]
+    }
+  ],
+  "lab": {
+    "title": "勤務割当支援機能の倫理・privacy影響評価を作る",
+    "artifact": "影響を受ける人、データライフサイクル、軽減策を含む影響評価",
+    "steps": [
+      "ACM Code of Ethics 2018とNIST Privacy Framework 1.0を使う目的と限界を明記する",
+      "直接利用者、低視力利用者、夜勤労働者をaffected peopleとして列挙する",
+      "collect、use、share、retain、deleteのdata lifecycleごとに目的、必要性、access、期限を検査する",
+      "likelihood、severity、exposureからinherent riskを計算しmitigationとresidual riskを結ぶ",
+      "平均的利用者から高リスク集団を含むaffected populationだけへ変えてuneven harmとownerを再評価する"
+    ]
+  },
+  "teachBack": "5分で、privacyとsecurityは同義ではないこと、同意と匿名化だけでは害を除けないこと、ACM Code、NIST PF、RFC 6973、RFC 9620、AI RMFをどう使い分けるか説明する。",
+  "assessment": [
+    {
+      "prompt": "平均精度は改善したが夜勤労働者の不利益が増えた。release判断をどう再構成するか。",
+      "expectedEvidence": "affected people別のseverityとexposure、uneven harm、mitigation、停止条件、residual risk owner"
+    },
+    {
+      "prompt": "データを暗号化したのでprivacy問題は解決したという主張を評価せよ。",
+      "expectedEvidence": "purpose、collection、inference、sharing、retention、deletion、access controlの区別"
+    }
+  ],
+  "transferTask": "平均的利用者から高リスク集団を含むaffected populationへ変え、残余riskを再評価する",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "security controlだけを挙げprivacyと社会的影響を完了とする",
+        "developing": "affected peopleと害はあるがdata lifecycle、算出根拠、残余riskがない",
+        "proficient": "人、lifecycle、害、inherent risk、mitigation、residual risk、ownerを一貫して追跡する",
+        "exemplary": "用途変更、proxy、再識別、集団変化でも影響評価の不変条件を維持する"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "平均利益が正なら少数集団の害を受容する",
+        "developing": "害を認識するが誰が何を基準に受容するか示さない",
+        "proficient": "uneven harm、代替案、可逆性、参加、停止条件からreleaseを判断する",
+        "exemplary": "権力差と不可逆な害を考慮し、影響を受ける人と意思決定権を再配分する"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "善意、同意取得、法令遵守だけを安全の証拠にする",
+        "developing": "risk scoreはあるが入力出自、集団差、mitigation効果を示さない",
+        "proficient": "固定simulated入力、計算式、集団別residual、限界、transferを再実行可能に残す",
+        "exemplary": "定量証拠と当事者からの定性証拠を結び、反証と更新履歴を管理する"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "抽象的なethical concernだけを書きaffected peopleとownerを示さない",
+        "developing": "riskを列挙するが意思決定、軽減、残余の関係が読めない",
+        "proficient": "誰が、どのlifecycleで、どんな害を受け、誰が残余riskを負うか説明できる",
+        "exemplary": "技術者、product、法務、運用、当事者が同じ影響証拠から異議と停止を表明できる"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "ACM Code of Ethics and Professional Conduct (2018)",
+      "url": "https://www.acm.org/code-of-ethics",
+      "kind": "standard"
+    },
+    {
+      "title": "NIST Privacy Framework: A Tool for Improving Privacy through Enterprise Risk Management, Version 1.0",
+      "url": "https://doi.org/10.6028/NIST.CSWP.01162020",
+      "kind": "standard"
+    },
+    {
+      "title": "RFC 6973: Privacy Considerations for Internet Protocols",
+      "url": "https://www.rfc-editor.org/info/rfc6973/",
+      "kind": "standard"
+    },
+    {
+      "title": "RFC 9620: Guidelines for Human Rights Protocol and Architecture Considerations",
+      "url": "https://www.rfc-editor.org/rfc/rfc9620.html",
+      "kind": "primary"
+    },
+    {
+      "title": "Artificial Intelligence Risk Management Framework (AI RMF 1.0)",
+      "url": "https://doi.org/10.6028/NIST.AI.100-1",
+      "kind": "standard"
+    }
+  ],
+  "review": {
+    "intervalDays": [1, 7, 30, 90],
+    "prompts": [
+      "privacyとsecurityが別のriskになる例を一つ説明する",
+      "uneven harmを平均値から発見するにはどの分解が必要か",
+      "mitigation後のresidual riskにownerと期限が必要な理由は何か"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}

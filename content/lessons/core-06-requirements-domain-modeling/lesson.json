@@ -1,0 +1,166 @@
+{
+  "version": 1,
+  "id": "core-06-requirements-domain-modeling",
+  "title": "要求を発見し、境界と例外をドメインモデルへ結ぶ",
+  "summary": "要求を文書の形式ではなく検証可能な合意として扱い、用語、境界、状態遷移、例外を追跡する。",
+  "track": "build",
+  "stage": 2,
+  "difficulty": "intermediate",
+  "estimatedMinutes": 300,
+  "prerequisiteIds": ["core-01-systems-tradeoffs"],
+  "objectives": [
+    {
+      "id": "obj-language",
+      "statement": "利害関係者が同じ語を異なる意味で使う箇所を発見し、例と反例を持つ用語集へ整理できる",
+      "evidenceIds": ["domain-model", "teach-back"]
+    },
+    {
+      "id": "obj-boundary",
+      "statement": "業務能力と一貫性の責任から境界を置き、コマンド、イベント、不変条件、例外を追跡できる",
+      "evidenceIds": ["domain-model", "assessment"]
+    },
+    {
+      "id": "obj-uncertainty",
+      "statement": "未宣言の業務ルールを仮説として分離し、観測と確認で解決して未知領域へ方法を移せる",
+      "evidenceIds": ["assessment", "transfer"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "domain-model",
+      "kind": "artifact",
+      "description": "用語、文脈境界、例外、要求から不変条件までの追跡を含む実行可能なドメインモデル"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "要求工学とwaterfall、境界づけられた文脈とmicroserviceを混同しない5分説明"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "曖昧な要求を例、反例、観測、確認質問で切り分ける回答"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "未知のレンタル事業で用語衝突と未宣言ルールを解決した境界モデル"
+    }
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "希望、制約、検証可能な要求、仮説を区別し、同音異義の業務用語を特定できる",
+      "evidenceIds": ["domain-model"]
+    },
+    {
+      "level": "explain",
+      "criterion": "要求工学が反復的な発見と検証を含むこと、文脈境界が配置単位ではないことを反例付きで説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "具体例からコマンド、イベント、不変条件、例外を抽出し、要求へ双方向に追跡できる",
+      "evidenceIds": ["domain-model"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "用語衝突、境界漏れ、未宣言ルールを失敗シナリオと観測で切り分けられる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "複数部門の言語差を可視化し、未確定事項の所有者と検証方法を合意できる",
+      "evidenceIds": ["transfer"]
+    }
+  ],
+  "lab": {
+    "title": "機材レンタルの用語衝突と例外をモデル化する",
+    "artifact": "用語集、境界、例外を含むドメインモデル",
+    "steps": [
+      "Catalog、Rental Operations、Billingの担当者発言からAsset、Reservation、Hold、Checkout、Returnの意味と反例を用語集へ記録する",
+      "三つの業務文脈の責任と文脈間で翻訳が必要な語を境界図へ配置する",
+      "同じAssetの貸出、競合拒否、返却、再貸出、延滞返却を一続きの状態遷移として実行し、操作ごとのactive loan数を記録する",
+      "各要求をコマンド、イベント、不変条件へ追跡し、空の追跡先がないことを検査する",
+      "state traceから最大active loan数が1であること、返却後に同じAssetが再貸出できること、延滞判定がactive loanの期限を使うことを検証する",
+      "active loanの存在検査を無効化するmutationでハーネスが失敗することを確認し、保証金承認の未宣言ルールを責任者の回答で解決する"
+    ]
+  },
+  "teachBack": "5分で、要求工学がwaterfallやテンプレート記入と同義でない理由、同じ語が文脈ごとに変わる理由、境界づけられた文脈がmicroservice数を決めない理由を説明する。",
+  "assessment": [
+    {
+      "prompt": "担当者が『予約済みなら貸出可能』と言った。検証可能な要求へ変えるために何を聞き、何を反例にするか。",
+      "expectedEvidence": "予約、取置き、在庫、本人確認、時間切れの用語定義と具体例、反例、観測可能な受入条件"
+    },
+    {
+      "prompt": "CatalogとRental Operationsを別microserviceにしたので境界は正しい、という主張を評価する。",
+      "expectedEvidence": "配置単位とモデル境界の区別、変更理由、言語、一貫性責任、翻訳、結合の観測による反証"
+    }
+  ],
+  "transferTask": "未知のレンタル事業で用語の衝突と未宣言ルールを発見し、境界と例外を再構成する",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "希望を要求として写し、用語、状態、例外の意味を定義しない",
+        "developing": "用語と通常経路は示すが、文脈差または不変条件が曖昧である",
+        "proficient": "同じAssetの用語、境界、状態遷移、不変条件、例外、追跡を一貫して説明する",
+        "exemplary": "状態履歴から並行貸出の上限を計算し、active-state検査を失わせたmutationまで検出する"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "組織図または既存service境界をそのまま業務境界とみなす",
+        "developing": "業務能力で境界を置くが、翻訳費用と変更頻度を比較しない",
+        "proficient": "言語、一貫性、変更理由、協調費用から境界と保留事項を選ぶ",
+        "exemplary": "境界を仮説として運用し、分割または統合する観測条件を定義する"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "抽象的な名詞図だけで、実例と要求への追跡がない",
+        "developing": "具体例はあるが、反例または未宣言ルールの確認結果がない",
+        "proficient": "同じAssetの通常と例外を要求、コマンド、イベント、不変条件、state traceへ追跡する",
+        "exemplary": "最大active loan数とmutation結果を残し、別担当者が同じ競合判定を再現できる"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "実装語だけで説明し、業務担当者が妥当性を確認できない",
+        "developing": "用語集はあるが、所有者、未確定事項、確認方法が分からない",
+        "proficient": "例、反例、境界、例外、未確定事項を業務と技術の双方が確認できる",
+        "exemplary": "文脈間の翻訳と判断履歴を示し、複数部門の合意形成を主導できる"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "ISO/IEC/IEEE 29148:2018 - Systems and software engineering — Life cycle processes — Requirements engineering",
+      "url": "https://www.iso.org/standard/72089.html",
+      "kind": "standard"
+    },
+    {
+      "title": "Appendix C: How to Write a Good Requirement",
+      "url": "https://www.nasa.gov/reference/appendix-c-how-to-write-a-good-requirement/",
+      "kind": "primary"
+    },
+    {
+      "title": "Domain-Driven Design Reference: Definitions and Pattern Summaries",
+      "url": "https://www.domainlanguage.com/wp-content/uploads/2016/05/DDD_Reference_2015-03.pdf",
+      "kind": "primary"
+    }
+  ],
+  "review": {
+    "intervalDays": [1, 7, 30, 90],
+    "prompts": [
+      "一つの業務用語が文脈ごとに異なる意味を持つ具体例は何か",
+      "要求から不変条件までの追跡が空なら、何を確認するか",
+      "文脈境界をmicroservice境界と同一視できない反例を示す"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}
