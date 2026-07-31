@@ -34,6 +34,241 @@ EXPECTED_VERSIONS = {
     "SFIA": "9",
 }
 FRAMEWORK_ORDER = ("CS2023", "SWEBOK", "SFIA")
+EXPECTED_SOURCES = {
+    "CS2023": {
+        "version": "Final Report",
+        "officialUrl": "https://csed.acm.org/final-report/",
+        "verifiedAt": "2026-07-31",
+    },
+    "SWEBOK": {
+        "version": "V4.0a",
+        "officialUrl": (
+            "https://www.computer.org/education/bodies-of-knowledge/"
+            "software-engineering"
+        ),
+        "verifiedAt": "2026-07-31",
+    },
+    "SFIA": {
+        "version": "9",
+        "officialUrl": (
+            "https://sfia-online.org/en/sfia-9/skills/"
+            "all-skills-a-z?set_language=en"
+        ),
+        "verifiedAt": "2026-07-31",
+    },
+}
+# This oracle is intentionally independent of curriculum_builder.competencies.
+# A typo copied into production validation and content must still fail here.
+OFFICIAL_USED_PAIRS = {
+    "CS2023": frozenset(
+        {
+            ("AL", "Algorithmic Foundations"),
+            ("AR", "Architecture and Organization"),
+            ("DM", "Data Management"),
+            ("GIT", "Graphics and Interactive Techniques"),
+            ("HCI", "Human-Computer Interaction"),
+            ("NC", "Networking and Communication"),
+            ("OS", "Operating Systems"),
+            ("PDC", "Parallel and Distributed Computing"),
+            ("SE", "Software Engineering"),
+            ("SEC", "Security"),
+            ("SEP", "Society, Ethics, and the Profession"),
+            ("SF", "Systems Fundamentals"),
+        }
+    ),
+    "SWEBOK": frozenset(
+        {
+            ("CHAPTER 01", "Software Requirements"),
+            ("CHAPTER 02", "Software Architecture"),
+            ("CHAPTER 03", "Software Design"),
+            ("CHAPTER 05", "Software Testing"),
+            ("CHAPTER 06", "Software Engineering Operations"),
+            ("CHAPTER 07", "Software Maintenance"),
+            ("CHAPTER 08", "Software Configuration Management"),
+            ("CHAPTER 09", "Software Engineering Management"),
+            ("CHAPTER 10", "Software Engineering Process"),
+            ("CHAPTER 12", "Software Quality"),
+            ("CHAPTER 13", "Software Security"),
+            ("CHAPTER 14", "Software Engineering Professional Practice"),
+            ("CHAPTER 15", "Software Engineering Economics"),
+            ("CHAPTER 16", "Computing Foundations"),
+            ("CHAPTER 17", "Mathematical Foundations"),
+            ("CHAPTER 18", "Engineering Foundations"),
+        }
+    ),
+    "SFIA": frozenset(
+        {
+            ("ACIN", "Accessibility and inclusion"),
+            ("ARCH", "Solution architecture"),
+            ("ASUP", "Application support"),
+            ("CHMG", "Change control"),
+            ("CPMG", "Capacity management"),
+            ("DBDS", "Database design"),
+            ("DESN", "Systems design"),
+            ("DTAN", "Data modelling and design"),
+            ("GOVN", "Governance"),
+            ("IFDN", "Infrastructure design"),
+            ("INCA", "Content design and authoring"),
+            ("INVA", "Investment appraisal"),
+            ("ITSP", "Strategic planning"),
+            ("NTDS", "Network design"),
+            ("OFCL", "Organisational facilitation"),
+            ("ORDI", "Organisation design and implementation"),
+            ("PEDP", "Information and data compliance"),
+            ("PROG", "Programming/software development"),
+            ("QUAS", "Quality assurance"),
+            ("RELM", "Release management"),
+            ("REQM", "Requirements definition and management"),
+            ("SCTY", "Information security"),
+            ("SLMO", "Service level management"),
+            ("SWDN", "Software design"),
+            ("TEST", "Functional testing"),
+            ("URCH", "User research"),
+            ("USUP", "Incident management"),
+            ("VISL", "Data visualisation"),
+        }
+    ),
+}
+EXPECTED_ALIGNMENTS = {
+    "core-01-systems-tradeoffs": ("direct", "direct", "direct"),
+    "core-02-algorithms-measurement": (
+        "direct",
+        "foundational",
+        "foundational",
+    ),
+    "core-03-architecture-memory-caches": (
+        "direct",
+        "foundational",
+        "foundational",
+    ),
+    "core-04-os-processes-concurrency": (
+        "direct",
+        "foundational",
+        "direct",
+    ),
+    "core-05-networks-latency-failure": (
+        "direct",
+        "foundational",
+        "direct",
+    ),
+    "core-06-requirements-domain-modeling": (
+        "partial",
+        "direct",
+        "direct",
+    ),
+    "core-07-api-contract-design": ("partial", "direct", "direct"),
+    "core-08-modularity-evolutionary-architecture": (
+        "partial",
+        "direct",
+        "direct",
+    ),
+    "core-09-test-strategy-tdd": ("partial", "direct", "direct"),
+    "core-10-threat-modeling-secure-design": (
+        "direct",
+        "direct",
+        "direct",
+    ),
+    "core-11-data-modeling-storage": (
+        "direct",
+        "foundational",
+        "direct",
+    ),
+    "core-12-transactions-isolation-consistency": (
+        "direct",
+        "foundational",
+        "direct",
+    ),
+    "core-13-distributed-coordination-failure": (
+        "direct",
+        "foundational",
+        "direct",
+    ),
+    "core-14-performance-capacity": (
+        "foundational",
+        "direct",
+        "direct",
+    ),
+    "core-15-reliability-observability-slo": (
+        "partial",
+        "direct",
+        "direct",
+    ),
+    "core-16-hci-usability-accessibility": (
+        "direct",
+        "partial",
+        "direct",
+    ),
+    "core-17-graphics-visual-information": (
+        "direct",
+        "partial",
+        "direct",
+    ),
+    "core-18-product-discovery-experiments": (
+        "partial",
+        "direct",
+        "direct",
+    ),
+    "core-19-technical-communication-design-docs": (
+        "direct",
+        "direct",
+        "direct",
+    ),
+    "core-20-ethics-privacy-societal-impact": (
+        "direct",
+        "direct",
+        "partial",
+    ),
+    "core-21-maintenance-legacy-comprehension": (
+        "partial",
+        "direct",
+        "direct",
+    ),
+    "core-22-evolution-safe-migrations": (
+        "partial",
+        "direct",
+        "direct",
+    ),
+    "core-23-incident-response-learning": (
+        "partial",
+        "direct",
+        "direct",
+    ),
+    "core-24-delivery-ci-release-safety": (
+        "partial",
+        "direct",
+        "direct",
+    ),
+    "core-25-engineering-economics-capacity": (
+        "partial",
+        "direct",
+        "direct",
+    ),
+    "core-26-code-review-collaborative-quality": (
+        "partial",
+        "direct",
+        "direct",
+    ),
+    "core-27-team-interfaces-sociotechnical-architecture": (
+        "partial",
+        "direct",
+        "direct",
+    ),
+    "core-28-oss-governance-stewardship": (
+        "direct",
+        "direct",
+        "direct",
+    ),
+    "core-29-cross-cultural-async-collaboration": (
+        "direct",
+        "direct",
+        "direct",
+    ),
+    "core-30-evidence-based-technical-leadership": (
+        "partial",
+        "direct",
+        "direct",
+    ),
+}
 
 
 def _document() -> dict[str, object]:
@@ -64,6 +299,8 @@ class _MatrixParser(HTMLParser):
         self.row_headers = 0
         self.rows = 0
         self.lesson_links: list[str] = []
+        self.nowrap_cells = 0
+        self.wrapping_cells = 0
         self.has_script = False
         self.text: list[str] = []
 
@@ -88,12 +325,110 @@ class _MatrixParser(HTMLParser):
             and (values.get("href") or "").startswith("../lessons/core-")
         ):
             self.lesson_links.append(values["href"] or "")
+        elif tag == "td":
+            classes = frozenset((values.get("class") or "").split())
+            if classes & {
+                "competency-framework",
+                "competency-version",
+                "competency-code",
+            }:
+                self.nowrap_cells += 1
+            if classes & {
+                "competency-name",
+                "competency-rationale",
+            }:
+                self.wrapping_cells += 1
 
     def handle_data(self, data: str) -> None:
         self.text.append(data)
 
 
 class CompetencyContractTests(unittest.TestCase):
+    def test_framework_sources_are_machine_readable_and_version_bound(
+        self,
+    ) -> None:
+        document = _document()
+        self.assertEqual(document["frameworkSources"], EXPECTED_SOURCES)
+
+        matrix = load_competencies(
+            COMPETENCIES,
+            expected_target_ids=LESSON_IDS,
+        )
+        self.assertEqual(
+            {
+                framework: {
+                    "version": source.version,
+                    "officialUrl": source.official_url,
+                    "verifiedAt": source.verified_at,
+                }
+                for framework, source in matrix.framework_sources.items()
+            },
+            EXPECTED_SOURCES,
+        )
+
+    def test_used_official_pairs_match_an_independent_oracle(self) -> None:
+        document = _document()
+        actual = {framework: set() for framework in FRAMEWORK_ORDER}
+        for mapping in document["mappings"]:
+            actual[mapping["framework"]].add(
+                (mapping["competencyId"], mapping["competencyName"])
+            )
+
+        self.assertEqual(
+            {
+                framework: frozenset(pairs)
+                for framework, pairs in actual.items()
+            },
+            OFFICIAL_USED_PAIRS,
+        )
+
+    def test_all_alignments_are_explicit_and_independently_anchored(
+        self,
+    ) -> None:
+        matrix = load_competencies(
+            COMPETENCIES,
+            expected_target_ids=LESSON_IDS,
+        )
+        actual = {
+            lesson_id: tuple(
+                mapping.alignment
+                for mapping in matrix.mappings
+                if mapping.target_id == lesson_id
+            )
+            for lesson_id in sorted(LESSON_IDS)
+        }
+        self.assertEqual(actual, EXPECTED_ALIGNMENTS)
+        self.assertEqual(
+            {mapping.alignment for mapping in matrix.mappings},
+            {"direct", "foundational", "partial"},
+        )
+
+        security_incident = next(
+            mapping
+            for mapping in matrix.mappings
+            if mapping.target_id == "core-23-incident-response-learning"
+            and mapping.framework == "CS2023"
+        )
+        self.assertEqual(security_incident.alignment, "partial")
+        self.assertIn("セキュリティインシデント", security_incident.rationale)
+        self.assertIn("限定", security_incident.rationale)
+
+        infrastructure = next(
+            mapping
+            for mapping in matrix.mappings
+            if mapping.target_id == "core-03-architecture-memory-caches"
+            and mapping.framework == "SFIA"
+        )
+        self.assertEqual(infrastructure.alignment, "foundational")
+
+    def test_unknown_or_mistyped_alignment_fails_closed(self) -> None:
+        for value in ("adjacent", "", True, None):
+            document = _document()
+            document["mappings"][0]["alignment"] = value
+            with self.subTest(value=value):
+                with self.assertRaises(CurriculumValidationError):
+                    _parse(document)
+
     def test_repository_matrix_is_exact_complete_and_immutable(self) -> None:
         matrix = load_competencies(
             COMPETENCIES,
@@ -482,10 +817,12 @@ class CompetencyBuildTests(unittest.TestCase):
             parser.feed(document)
             parser.close()
             self.assertEqual(parser.captions, 1)
-            self.assertEqual(parser.column_headers, 5)
+            self.assertEqual(parser.column_headers, 6)
             self.assertEqual(parser.row_headers, 90)
             self.assertEqual(parser.rows, 91)
             self.assertEqual(len(parser.lesson_links), 90)
+            self.assertEqual(parser.nowrap_cells, 270)
+            self.assertEqual(parser.wrapping_cells, 180)
             self.assertFalse(parser.has_script)
             self.assertEqual(list(output.rglob("*.js")), [])
             visible_text = " ".join(parser.text)
@@ -592,6 +929,25 @@ class CompetencyBuildTests(unittest.TestCase):
         self.assertIn(".competency-matrix", stylesheet)
         self.assertIn(".competency-frameworks", stylesheet)
         self.assertIn("@media print", stylesheet)
+        self.assertRegex(
+            stylesheet,
+            (
+                r"(?s)@media print.*"
+                r"\.competency-framework.*"
+                r"\.competency-version.*"
+                r"\.competency-code.*"
+                r"white-space:\s*nowrap"
+            ),
+        )
+        self.assertRegex(
+            stylesheet,
+            (
+                r"(?s)@media print.*"
+                r"\.competency-name.*"
+                r"\.competency-rationale.*"
+                r"overflow-wrap:\s*anywhere"
+            ),
+        )
         self.assertNotRegex(
             template + stylesheet,
             r"(?i)<script|javascript:|@keyframes|animation\s*:|transition\s*:",
