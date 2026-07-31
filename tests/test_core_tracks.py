@@ -679,6 +679,137 @@ SUSTAIN_SOURCES = {
         ),
     ),
 }
+LEAD_SOURCES = {
+    "core-26-code-review-collaborative-quality": (
+        (
+            "The Standard of Code Review",
+            "https://google.github.io/eng-practices/review/"
+            "reviewer/standard.html",
+            "primary",
+        ),
+        (
+            "How to write code review comments",
+            "https://google.github.io/eng-practices/review/"
+            "reviewer/comments.html",
+            "primary",
+        ),
+        (
+            "Guide to the Software Engineering Body of Knowledge "
+            "(SWEBOK Guide), Version 4.0a, September 2025",
+            "https://ieeecs-media.computer.org/media/education/"
+            "swebok/swebok-v4.pdf",
+            "standard",
+        ),
+        (
+            "Characteristics of Useful Code Reviews: "
+            "An Empirical Study at Microsoft",
+            "https://www.microsoft.com/en-us/research/wp-content/"
+            "uploads/2016/02/bosu2015useful.pdf",
+            "peer-reviewed",
+        ),
+    ),
+    "core-27-team-interfaces-sociotechnical-architecture": (
+        (
+            "DORA Capability: Loosely coupled teams "
+            "(accessed 2026-07-31)",
+            "https://dora.dev/capabilities/loosely-coupled-teams/",
+            "primary",
+        ),
+        (
+            "How Do Committees Invent? (1968)",
+            "https://www.melconway.com/Home/Committees_Paper.html",
+            "primary",
+        ),
+        (
+            "Team Topologies: Key concepts "
+            "(accessed 2026-07-31)",
+            "https://teamtopologies.com/key-concepts",
+            "primary",
+        ),
+        (
+            "ISO/IEC/IEEE 42010:2022 - Software, systems and "
+            "enterprise — Architecture description",
+            "https://www.iso.org/standard/74393.html",
+            "standard",
+        ),
+    ),
+    "core-28-oss-governance-stewardship": (
+        (
+            "OpenSSF Scorecard (accessed 2026-07-31)",
+            "https://www.scorecard.dev/",
+            "primary",
+        ),
+        (
+            "Contributor Covenant Code of Conduct Version 2.1",
+            "https://www.contributor-covenant.org/version/2/1/"
+            "code_of_conduct/",
+            "standard",
+        ),
+        (
+            "SLSA v1.2 Source: Requirements for producing source",
+            "https://slsa.dev/spec/v1.2/source-requirements",
+            "standard",
+        ),
+        (
+            "Setting up your project for healthy contributions",
+            "https://docs.github.com/en/communities/"
+            "setting-up-your-project-for-healthy-contributions",
+            "primary",
+        ),
+        (
+            "Best Practices for Maintainers",
+            "https://opensource.guide/best-practices/",
+            "primary",
+        ),
+    ),
+    "core-29-cross-cultural-async-collaboration": (
+        (
+            "RFC 7282: On Consensus and Humming in the IETF",
+            "https://www.rfc-editor.org/info/rfc7282/",
+            "standard",
+        ),
+        (
+            "RFC 7322: RFC Style Guide",
+            "https://www.rfc-editor.org/info/rfc7322/",
+            "standard",
+        ),
+        (
+            "W3C Process Document, 18 August 2025",
+            "https://www.w3.org/policies/process/",
+            "standard",
+        ),
+        (
+            "The Art of Consensus (W3C Guidebook, "
+            "accessed 2026-07-31)",
+            "https://www.w3.org/guide/",
+            "primary",
+        ),
+    ),
+    "core-30-evidence-based-technical-leadership": (
+        (
+            "ACM Code of Ethics and Professional Conduct (2018)",
+            "https://www.acm.org/code-of-ethics",
+            "standard",
+        ),
+        (
+            "DORA's software delivery performance metrics "
+            "(updated January 5, 2026)",
+            "https://dora.dev/guides/dora-metrics/",
+            "primary",
+        ),
+        (
+            "FinOps Framework 2026 "
+            "(accessed 2026-07-31)",
+            "https://www.finops.org/framework/",
+            "primary",
+        ),
+        (
+            "The NIST Cybersecurity Framework (CSF) 2.0",
+            "https://doi.org/10.6028/NIST.CSWP.29",
+            "standard",
+        ),
+    ),
+}
 FOUNDATIONS = {
     "core-01-systems-tradeoffs": {
         "prerequisites": (),
@@ -986,6 +1117,119 @@ DEPRECATED_SUSTAIN_IDS = (
     "core-24-delivery-ci-supply-chain",
     "core-25-engineering-economics",
 )
+LEAD = {
+    "core-26-code-review-collaborative-quality": {
+        "prerequisites": (
+            "core-09-test-strategy-tdd",
+            "core-19-technical-communication-design-docs",
+        ),
+        "artifact": (
+            "優先度、根拠、修正可能性を備えたレビューと改善後の再評価"
+        ),
+        "transfer": (
+            "correctness変更からauthorization境界変更へrisk kindだけを"
+            "変え、同じsample changeをレビュー、修正、独立再評価する"
+        ),
+    },
+    "core-27-team-interfaces-sociotechnical-architecture": {
+        "prerequisites": (
+            "core-08-modularity-evolutionary-architecture",
+            "core-19-technical-communication-design-docs",
+            "core-26-code-review-collaborative-quality",
+        ),
+        "artifact": (
+            "所有権、依存、認知負荷、SLOを含むチームインターフェース"
+        ),
+        "transfer": (
+            "依存サービスのlatencyだけを変え、同じteam ownershipと"
+            "cognitive load境界でSLOとenablement判断を再評価する"
+        ),
+    },
+    "core-28-oss-governance-stewardship": {
+        "prerequisites": (
+            "core-10-threat-modeling-secure-design",
+            "core-19-technical-communication-design-docs",
+            "core-26-code-review-collaborative-quality",
+        ),
+        "artifact": (
+            "第三者が貢献からリリースまで完遂できるOSSリポジトリ"
+        ),
+        "transfer": (
+            "documentationからrelease-workflowへcontribution kindだけを"
+            "変え、同じrepository snapshotのreview、release gate、"
+            "maintainer境界を再評価する"
+        ),
+    },
+    "core-29-cross-cultural-async-collaboration": {
+        "prerequisites": (
+            "core-19-technical-communication-design-docs",
+            "core-27-team-interfaces-sociotechnical-architecture",
+        ),
+        "artifact": (
+            "時差、言語、文脈差を越える非同期RFCと決定ログ"
+        ),
+        "transfer": (
+            "timezone overlapだけを4時間から0時間へ変え、同じproposalを"
+            "meetingなしでレビューできるRFCと決定ログへ再構成する"
+        ),
+    },
+    "core-30-evidence-based-technical-leadership": {
+        "prerequisites": (
+            "core-20-ethics-privacy-societal-impact",
+            "core-25-engineering-economics-capacity",
+            "core-27-team-interfaces-sociotechnical-architecture",
+            "core-28-oss-governance-stewardship",
+            "core-29-cross-cultural-async-collaboration",
+        ),
+        "artifact": (
+            "戦略、指標、リスク、投資順、撤退条件を含む技術方針"
+        ),
+        "transfer": (
+            "risk toleranceだけを変え、同じstrategy optionsの指標、倫理、"
+            "cost、投資順、可逆な第一歩とwithdrawal条件を再評価する"
+        ),
+    },
+}
+LEAD_ASSUMPTIONS = {
+    "core-26-code-review-collaborative-quality": "risk-kind",
+    "core-27-team-interfaces-sociotechnical-architecture": (
+        "dependency-latency"
+    ),
+    "core-28-oss-governance-stewardship": "contribution-kind",
+    "core-29-cross-cultural-async-collaboration": "timezone-overlap",
+    "core-30-evidence-based-technical-leadership": "risk-tolerance",
+}
+LEAD_HARNESSES = {
+    "core-26-code-review-collaborative-quality": (
+        "collaborative_code_review_lab_v1",
+        "synthetic",
+    ),
+    "core-27-team-interfaces-sociotechnical-architecture": (
+        "team_interface_lab_v1",
+        "simulated",
+    ),
+    "core-28-oss-governance-stewardship": (
+        "oss_stewardship_lab_v1",
+        "observed-snapshot",
+    ),
+    "core-29-cross-cultural-async-collaboration": (
+        "async_rfc_decision_lab_v1",
+        "simulated",
+    ),
+    "core-30-evidence-based-technical-leadership": (
+        "technical_strategy_lab_v1",
+        "synthetic",
+    ),
+}
+LEAD_DIAGNOSTICS = {
+    "core-26-code-review-collaborative-quality": "review-",
+    "core-27-team-interfaces-sociotechnical-architecture": (
+        "team-interface-"
+    ),
+    "core-28-oss-governance-stewardship": "oss-",
+    "core-29-cross-cultural-async-collaboration": "async-",
+    "core-30-evidence-based-technical-leadership": "leadership-",
+}
 
 
 class _BodyContractParser(HTMLParser):
@@ -1480,6 +1724,8 @@ class CoreTrackTests(unittest.TestCase):
         self.assertTrue(metadata["provenance"])
         self.assertTrue(metadata["limitations"])
         self.assertTrue(metadata["synthetic_or_observed_explicit"])
+        self.assertTrue(metadata["hidden_assumption"])
+        self.assertTrue(report["input_derived_evidence"])
 
         runtime_bound = report["runtime_bound"]
         self.assertGreater(runtime_bound["records"], 0)
@@ -1496,6 +1742,152 @@ class CoreTrackTests(unittest.TestCase):
         )
         self.assertTrue(distinction["outcome_evidence"])
         self.assert_sustain_mastery_evidence(report, lesson_id)
+
+    def assert_lead_mastery_evidence(
+        self,
+        report: dict[str, object],
+        lesson_id: str,
+    ) -> None:
+        metadata_path = self.body_path(lesson_id).with_name("lesson.json")
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        mastery = report["mastery_evidence"]
+
+        self.assertEqual(
+            [item["step"] for item in mastery["lab_steps"]],
+            list(range(1, len(metadata["lab"]["steps"]) + 1)),
+        )
+        self.assertTrue(
+            all(item["evidence"] for item in mastery["lab_steps"]),
+        )
+        self.assertEqual(
+            [item["assessment"] for item in mastery["assessments"]],
+            list(range(1, len(metadata["assessment"]) + 1)),
+        )
+        self.assertTrue(
+            all(item["evidence"] for item in mastery["assessments"]),
+        )
+        self.assertEqual(
+            set(mastery["rubric_dimensions"]),
+            {item["dimension"] for item in metadata["rubric"]},
+        )
+        transfer = mastery["transfer"]
+        self.assertEqual(transfer["task"], metadata["transferTask"])
+        self.assertEqual(
+            transfer["changed_assumption"],
+            LEAD_ASSUMPTIONS[lesson_id],
+        )
+        self.assertTrue(transfer["evidence"])
+        enablement = mastery["contributor_enablement"]
+        self.assertTrue(enablement["other_contributor"])
+        self.assertTrue(enablement["review_evidence"])
+
+    def assert_lead_harness_contract(
+        self,
+        report: dict[str, object],
+        lesson_id: str,
+        expected_kind: str,
+    ) -> None:
+        self.assertEqual(report["harness"], LEAD_HARNESSES[lesson_id][0])
+        metadata = report["fixture_metadata"]
+        self.assertEqual(metadata["kind"], expected_kind)
+        self.assertTrue(metadata["provenance"])
+        self.assertTrue(metadata["limitations"])
+        self.assertTrue(metadata["synthetic_or_observed_explicit"])
+
+        runtime_bound = report["runtime_bound"]
+        self.assertGreater(runtime_bound["records"], 0)
+        self.assertLessEqual(runtime_bound["records"], 1_000)
+        self.assertEqual(runtime_bound["subprocesses"], 0)
+        self.assertLessEqual(runtime_bound["maximum_iterations"], 1_000)
+        self.assertFalse(report["external_network_used"])
+
+        distinction = report["command_success_distinction"]
+        self.assertTrue(distinction["command_completed"])
+        self.assertTrue(distinction["system_outcome_checked"])
+        self.assertFalse(
+            distinction["command_success_equals_system_outcome"],
+        )
+        self.assertTrue(distinction["outcome_evidence"])
+        self.assert_lead_mastery_evidence(report, lesson_id)
+
+    def assert_lead_harness_source_is_safe(
+        self,
+        lesson_id: str,
+        marker: str,
+    ) -> None:
+        self.assert_sustain_harness_source_is_safe(lesson_id, marker)
+        source = self.python_harness_source(lesson_id, marker)
+        tree = ast.parse(source)
+
+        main_functions = [
+            node
+            for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "main"
+        ]
+        self.assertEqual(len(main_functions), 1)
+        main = main_functions[0]
+        self.assertTrue(main.body)
+        first = main.body[0]
+        self.assertIsInstance(first, ast.Expr)
+        assert isinstance(first, ast.Expr)
+        self.assertIsInstance(first.value, ast.Call)
+        assert isinstance(first.value, ast.Call)
+        self.assertIsInstance(first.value.func, ast.Name)
+        assert isinstance(first.value.func, ast.Name)
+        self.assertEqual(first.value.func.id, "validate_all_inputs")
+
+        allowed_top_level = (
+            ast.Import,
+            ast.ImportFrom,
+            ast.Assign,
+            ast.AnnAssign,
+            ast.FunctionDef,
+            ast.If,
+        )
+        for node in tree.body:
+            self.assertIsInstance(
+                node,
+                allowed_top_level,
+                f"{lesson_id}: module-level raw derivation",
+            )
+            if isinstance(node, ast.Assign):
+                self.assertTrue(
+                    self._is_literal_expression(node.value),
+                    f"{lesson_id}: module assignment must be raw literal",
+                )
+            elif isinstance(node, ast.AnnAssign):
+                self.assertIsNotNone(node.value)
+                assert node.value is not None
+                self.assertTrue(
+                    self._is_literal_expression(node.value),
+                    f"{lesson_id}: annotated module assignment",
+                )
+
+        self.assertIn("except AssertionError as error:", source)
+        self.assertIn(
+            "raise SystemExit(str(error)) from None",
+            source,
+        )
+        self.assertIn(LEAD_DIAGNOSTICS[lesson_id], source)
+
+    def _is_literal_expression(self, node: ast.AST) -> bool:
+        if isinstance(node, ast.Constant):
+            return True
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+            return all(self._is_literal_expression(item) for item in node.elts)
+        if isinstance(node, ast.Dict):
+            return all(
+                key is not None
+                and self._is_literal_expression(key)
+                and self._is_literal_expression(value)
+                for key, value in zip(node.keys, node.values, strict=True)
+            )
+        if (
+            isinstance(node, ast.UnaryOp)
+            and isinstance(node.op, (ast.UAdd, ast.USub))
+        ):
+            return self._is_literal_expression(node.operand)
+        return False
 
     def assert_sustain_harness_source_is_safe(
         self,
@@ -1577,6 +1969,11 @@ class CoreTrackTests(unittest.TestCase):
             "core-23-incident-response-learning",
             "core-24-delivery-ci-release-safety",
             "core-25-engineering-economics-capacity",
+            "core-26-code-review-collaborative-quality",
+            "core-27-team-interfaces-sociotechnical-architecture",
+            "core-28-oss-governance-stewardship",
+            "core-29-cross-cultural-async-collaboration",
+            "core-30-evidence-based-technical-leadership",
         }:
             self.assertEqual(result.returncode, 1)
             self.assertEqual(result.stdout, "")
@@ -1745,6 +2142,13 @@ class CoreTrackTests(unittest.TestCase):
             SUSTAIN,
             expected_track="sustain",
             source_contract=SUSTAIN_SOURCES,
+        )
+
+    def test_lead(self) -> None:
+        self.assert_track(
+            LEAD,
+            expected_track="lead",
+            source_contract=LEAD_SOURCES,
         )
 
     def test_sustain_uses_only_canonical_lesson_ids(self) -> None:
@@ -6062,3 +6466,751 @@ class CoreTrackTests(unittest.TestCase):
                 self.assertTrue(separator)
                 for expression in forbidden:
                     self.assertNotIn(expression, before_main)
+
+    def test_lead_bodies_follow_semantic_contract(self) -> None:
+        for lesson_id in LEAD:
+            with self.subTest(lesson_id=lesson_id):
+                body = self.body_path(lesson_id).read_text(encoding="utf-8")
+                self.assert_body_contract(body, lesson_id)
+
+    def test_lead_bodies_scope_current_standards_and_enablement(
+        self,
+    ) -> None:
+        required_markers = {
+            "core-26-code-review-collaborative-quality": (
+                "The Standard of Code Review",
+                "SWEBOK Guide Version 4.0a",
+                "priority",
+                "evidence",
+                "actionable",
+                "author fix",
+                "independent re-evaluation",
+                "enable another contributor",
+            ),
+            "core-27-team-interfaces-sociotechnical-architecture": (
+                "DORA",
+                "loosely coupled",
+                "Conway",
+                "ownership",
+                "dependency",
+                "cognitive load",
+                "SLO",
+                "team interface",
+            ),
+            "core-28-oss-governance-stewardship": (
+                "OpenSSF Scorecard",
+                "Contributor Covenant 2.1",
+                "SLSA v1.2 Source",
+                "LICENSE",
+                "CONTRIBUTING",
+                "CODE_OF_CONDUCT",
+                "SECURITY",
+                "provenance",
+                "maintainer boundary",
+                "not ready",
+            ),
+            "core-29-cross-cultural-async-collaboration": (
+                "RFC 7282",
+                "RFC 7322",
+                "18 August 2025 Process",
+                "Call for Consensus",
+                "timezone",
+                "language",
+                "context",
+                "dissent",
+                "meeting unnecessary",
+            ),
+            "core-30-evidence-based-technical-leadership": (
+                "ACM Code of Ethics",
+                "DORA",
+                "five metrics",
+                "FinOps Framework 2026",
+                "NIST CSF 2.0",
+                "strategy",
+                "uncertainty",
+                "dissent",
+                "withdrawal conditions",
+                "reversible first step",
+            ),
+        }
+        for lesson_id, markers in required_markers.items():
+            with self.subTest(lesson_id=lesson_id):
+                body = self.body_path(lesson_id).read_text(encoding="utf-8")
+                for marker in markers:
+                    self.assertIn(marker, body, f"{lesson_id}: {marker}")
+                self.assertIn("command success", body)
+                self.assertIn("system outcome", body)
+
+    def test_lead_bodies_are_static_and_harnesses_are_safe(self) -> None:
+        for lesson_id, (marker, _) in LEAD_HARNESSES.items():
+            with self.subTest(lesson_id=lesson_id):
+                body = self.body_path(lesson_id).read_text(encoding="utf-8")
+                self.assertNotIn("http://", body)
+                self.assertNotIn("https://", body)
+                self.assertNotRegex(body, r"(?i)<\s*(?:script|style)\b")
+                self.assertNotRegex(body, r"(?i)\sstyle\s*=")
+                self.assertNotRegex(
+                    body,
+                    r"(?i)(?:javascript|data)\s*:",
+                )
+                self.assert_lead_harness_source_is_safe(lesson_id, marker)
+
+    def test_lead_body_ids_do_not_collide_with_lesson_template(
+        self,
+    ) -> None:
+        template = (
+            REPOSITORY_ROOT / "templates" / "lesson.html"
+        ).read_text(encoding="utf-8")
+        template_ids = set(re.findall(r'\bid="([^"]+)"', template))
+        self.assertTrue(template_ids)
+
+        for lesson_id in LEAD:
+            with self.subTest(lesson_id=lesson_id):
+                body = self.body_path(lesson_id).read_text(encoding="utf-8")
+                ids = re.findall(r'\bid="([^"]+)"', body)
+                self.assertTrue(ids)
+                self.assertEqual(len(ids), len(set(ids)))
+                self.assertTrue(set(ids).isdisjoint(template_ids))
+
+    def test_lead_harnesses_are_bounded_offline_and_auditable(
+        self,
+    ) -> None:
+        for lesson_id, (marker, expected_kind) in LEAD_HARNESSES.items():
+            with self.subTest(lesson_id=lesson_id):
+                report = self.run_python_harness(lesson_id, marker)
+                self.assert_lead_harness_contract(
+                    report,
+                    lesson_id,
+                    expected_kind,
+                )
+
+    def test_lead_harnesses_emit_clean_json_and_preserve_unexpected(
+        self,
+    ) -> None:
+        for lesson_id, (marker, _) in LEAD_HARNESSES.items():
+            with self.subTest(lesson_id=lesson_id):
+                source = self.python_harness_source(lesson_id, marker)
+                normal = self.execute_python_harness_source(source)
+                self.assertEqual(normal.returncode, 0, normal.stderr)
+                self.assertEqual(normal.stderr, "")
+                self.assertTrue(normal.stdout.endswith("\n"))
+                self.assertEqual(len(normal.stdout.splitlines()), 1)
+                self.assertIs(type(json.loads(normal.stdout)), dict)
+
+                self.assertIn("    validate_all_inputs()", source)
+                unexpected_source = source.replace(
+                    "    validate_all_inputs()",
+                    '    raise ValueError("unexpected-lead-test")',
+                    1,
+                )
+                unexpected = self.execute_python_harness_source(
+                    unexpected_source
+                )
+                self.assertNotEqual(unexpected.returncode, 0)
+                self.assertEqual(unexpected.stdout, "")
+                self.assertIn("Traceback", unexpected.stderr)
+                self.assertIn("ValueError: unexpected-lead-test", unexpected.stderr)
+
+    def test_review_harness_enables_author_fix_and_independent_review(
+        self,
+    ) -> None:
+        report = self.run_python_harness(
+            "core-26-code-review-collaborative-quality",
+            "collaborative_code_review_lab_v1",
+        )
+        cycle = report["review_cycle"]
+        findings = cycle["initial_review"]
+        self.assertGreaterEqual(len(findings), 2)
+        self.assertEqual(
+            [item["priority_rank"] for item in findings],
+            sorted(item["priority_rank"] for item in findings),
+        )
+        self.assertEqual(
+            len({item["finding_id"] for item in findings}),
+            len(findings),
+        )
+        for finding in findings:
+            self.assertIn(
+                finding["priority"],
+                {"critical", "important", "minor"},
+            )
+            self.assertTrue(finding["evidence"])
+            self.assertTrue(finding["actionable_fix"])
+        self.assertTrue(cycle["author_fix"]["applied"])
+        re_evaluation = cycle["independent_re_evaluation"]
+        self.assertNotEqual(
+            re_evaluation["reviewer"],
+            cycle["initial_reviewer"],
+        )
+        self.assertEqual(
+            set(re_evaluation["resolved_findings"]),
+            {item["finding_id"] for item in findings},
+        )
+        self.assertTrue(re_evaluation["system_outcome_verified"])
+        transfer = report["risk_kind_transfer"]
+        self.assertEqual(transfer["changed_fields"], ["risk_kind"])
+        self.assertTrue(transfer["same_sample_change"])
+        self.assertNotEqual(
+            transfer["baseline_highest_priority"],
+            transfer["transferred_highest_priority"],
+        )
+
+    def test_team_interface_harness_connects_ownership_load_and_slo(
+        self,
+    ) -> None:
+        report = self.run_python_harness(
+            "core-27-team-interfaces-sociotechnical-architecture",
+            "team_interface_lab_v1",
+        )
+        interface = report["team_interface"]
+        self.assertTrue(interface["owner"])
+        self.assertTrue(interface["owned_capability"])
+        self.assertTrue(interface["dependencies"])
+        self.assertLessEqual(
+            interface["cognitive_load"]["assigned"],
+            interface["cognitive_load"]["capacity"],
+        )
+        self.assertTrue(interface["slo"]["target"])
+        self.assertTrue(interface["slo"]["observed"])
+        self.assertTrue(interface["slo"]["status"])
+        enablement = report["contributor_enablement"]
+        self.assertTrue(enablement["receiving_team"])
+        self.assertTrue(enablement["action"])
+        self.assertTrue(enablement["review_evidence"])
+        transfer = report["dependency_latency_transfer"]
+        self.assertEqual(
+            transfer["changed_fields"],
+            ["dependency_latency_ms"],
+        )
+        self.assertTrue(transfer["same_team_snapshot"])
+        self.assertNotEqual(
+            transfer["baseline_slo_status"],
+            transfer["transferred_slo_status"],
+        )
+
+    def test_oss_harness_reports_real_readiness_gaps_and_boundary(
+        self,
+    ) -> None:
+        report = self.run_python_harness(
+            "core-28-oss-governance-stewardship",
+            "oss_stewardship_lab_v1",
+        )
+        readiness = report["repository_readiness"]
+        self.assertFalse(readiness["ready"])
+        self.assertEqual(
+            set(readiness["gaps"]),
+            {
+                "LICENSE",
+                "CONTRIBUTING",
+                "CODE_OF_CONDUCT",
+                "SECURITY",
+                "CI",
+                "provenance",
+                "governance",
+                "maintainer-boundary",
+            },
+        )
+        journey = report["contribution_journey"]
+        self.assertEqual(
+            [item["phase"] for item in journey],
+            [
+                "discover",
+                "prepare",
+                "submit",
+                "review",
+                "maintainer-merge",
+                "release-evidence",
+            ],
+        )
+        boundary = report["release_boundary"]
+        self.assertFalse(boundary["third_party_can_release"])
+        self.assertTrue(boundary["maintainer_approval_required"])
+        self.assertFalse(boundary["release_allowed"])
+        self.assertTrue(boundary["blocked_by_readiness_gaps"])
+        transfer = report["contribution_kind_transfer"]
+        self.assertEqual(
+            transfer["changed_fields"],
+            ["contribution_kind"],
+        )
+        self.assertTrue(transfer["same_repository_snapshot"])
+        self.assertNotEqual(
+            transfer["baseline_required_evidence"],
+            transfer["transferred_required_evidence"],
+        )
+
+    def test_async_harness_is_context_complete_without_a_meeting(
+        self,
+    ) -> None:
+        report = self.run_python_harness(
+            "core-29-cross-cultural-async-collaboration",
+            "async_rfc_decision_lab_v1",
+        )
+        rfc = report["async_rfc"]
+        self.assertTrue(rfc["context_complete"])
+        self.assertFalse(rfc["meeting_required"])
+        self.assertEqual(
+            list(rfc["sections"]),
+            [
+                "problem",
+                "decision",
+                "alternatives",
+                "evidence",
+                "risks",
+                "dissent",
+                "response-window",
+            ],
+        )
+        self.assertTrue(rfc["timezone_context"])
+        self.assertTrue(rfc["language_context"])
+        self.assertTrue(rfc["response_deadline"])
+        decision = report["decision_log"]
+        self.assertTrue(decision["dissent_recorded"])
+        self.assertTrue(decision["dissent_addressed"])
+        self.assertTrue(decision["reasoned_resolution"])
+        self.assertTrue(decision["reviewable_without_meeting"])
+        transfer = report["timezone_overlap_transfer"]
+        self.assertEqual(
+            transfer["changed_fields"],
+            ["timezone_overlap_hours"],
+        )
+        self.assertTrue(transfer["same_proposal_evidence"])
+        self.assertTrue(transfer["zero_overlap_review_completed"])
+
+    def test_leadership_harness_orders_evidence_and_reversible_action(
+        self,
+    ) -> None:
+        report = self.run_python_harness(
+            "core-30-evidence-based-technical-leadership",
+            "technical_strategy_lab_v1",
+        )
+        strategy = report["technical_strategy"]
+        self.assertGreaterEqual(len(strategy["metrics"]), 2)
+        self.assertTrue(strategy["risks"])
+        self.assertTrue(strategy["ethics"])
+        self.assertTrue(strategy["costs"])
+        self.assertTrue(strategy["uncertainties"])
+        self.assertTrue(strategy["dissent"])
+        self.assertTrue(strategy["withdrawal_conditions"])
+        self.assertTrue(strategy["reversible_first_step"])
+        self.assertTrue(strategy["selected_option"])
+        self.assertEqual(
+            strategy["investment_order"],
+            sorted(
+                strategy["investment_order"],
+                key=lambda item: item["rank"],
+            ),
+        )
+        enablement = report["contributor_enablement"]
+        self.assertTrue(enablement["other_contributor"])
+        self.assertTrue(enablement["decision_rights"])
+        self.assertTrue(enablement["review_evidence"])
+        transfer = report["risk_tolerance_transfer"]
+        self.assertEqual(transfer["changed_fields"], ["risk_tolerance"])
+        self.assertTrue(transfer["same_strategy_options"])
+        self.assertNotEqual(
+            transfer["baseline_selected_option"],
+            transfer["transferred_selected_option"],
+        )
+
+    def test_lead_harnesses_reject_malformed_transfer_schema(
+        self,
+    ) -> None:
+        cases = (
+            (
+                "core-26-code-review-collaborative-quality",
+                "collaborative_code_review_lab_v1",
+                (
+                    'PRIORITY_ORDER = ("critical", "important", "minor")'
+                ),
+                (
+                    'PRIORITY_ORDER = ("minor", "important", "critical")'
+                ),
+                "review-priority-invariant",
+            ),
+            (
+                "core-26-code-review-collaborative-quality",
+                "collaborative_code_review_lab_v1",
+                '"risk_kind": "authorization",',
+                '"risk_kind": True,',
+                "review-transfer-invariant",
+            ),
+            (
+                "core-26-code-review-collaborative-quality",
+                "collaborative_code_review_lab_v1",
+                '"risk_kind": "authorization",',
+                (
+                    '"risk_kind": "authorization",\n'
+                    '    "unreviewed_deadline": 1,'
+                ),
+                "review-transfer-invariant",
+            ),
+            (
+                "core-26-code-review-collaborative-quality",
+                "collaborative_code_review_lab_v1",
+                '"review_budget_minutes": 30,',
+                '"review_budget_minutes": 60,',
+                "review-transfer-invariant",
+            ),
+            (
+                "core-27-team-interfaces-sociotechnical-architecture",
+                "team_interface_lab_v1",
+                '"dependency_latency_ms": 450,',
+                '"dependency_latency_ms": True,',
+                "team-interface-transfer-invariant",
+            ),
+            (
+                "core-27-team-interfaces-sociotechnical-architecture",
+                "team_interface_lab_v1",
+                '"dependency_latency_ms": 450,',
+                (
+                    '"dependency_latency_ms": 450,\n'
+                    '    "unreviewed_dependency": "search",'
+                ),
+                "team-interface-transfer-invariant",
+            ),
+            (
+                "core-27-team-interfaces-sociotechnical-architecture",
+                "team_interface_lab_v1",
+                '"slo_target_ms": 300,',
+                '"slo_target_ms": 600,',
+                "team-interface-transfer-invariant",
+            ),
+            (
+                "core-28-oss-governance-stewardship",
+                "oss_stewardship_lab_v1",
+                '"contribution_kind": "release-workflow",',
+                '"contribution_kind": True,',
+                "oss-transfer-invariant",
+            ),
+            (
+                "core-28-oss-governance-stewardship",
+                "oss_stewardship_lab_v1",
+                '"contribution_kind": "release-workflow",',
+                (
+                    '"contribution_kind": "release-workflow",\n'
+                    '    "unreviewed_permission": "write",'
+                ),
+                "oss-transfer-invariant",
+            ),
+            (
+                "core-28-oss-governance-stewardship",
+                "oss_stewardship_lab_v1",
+                '"requested_permission": "read-only",',
+                '"requested_permission": "maintain",',
+                "oss-transfer-invariant",
+            ),
+            (
+                "core-29-cross-cultural-async-collaboration",
+                "async_rfc_decision_lab_v1",
+                '"timezone_overlap_hours": 0,',
+                '"timezone_overlap_hours": True,',
+                "async-transfer-invariant",
+            ),
+            (
+                "core-29-cross-cultural-async-collaboration",
+                "async_rfc_decision_lab_v1",
+                '"timezone_overlap_hours": 0,',
+                (
+                    '"timezone_overlap_hours": 0,\n'
+                    '    "unreviewed_meeting": True,'
+                ),
+                "async-transfer-invariant",
+            ),
+            (
+                "core-29-cross-cultural-async-collaboration",
+                "async_rfc_decision_lab_v1",
+                '"working_language": "plain-English",',
+                '"working_language": "meeting-only",',
+                "async-transfer-invariant",
+            ),
+            (
+                "core-30-evidence-based-technical-leadership",
+                "technical_strategy_lab_v1",
+                '"risk_tolerance": 1,',
+                '"risk_tolerance": True,',
+                "leadership-transfer-invariant",
+            ),
+            (
+                "core-30-evidence-based-technical-leadership",
+                "technical_strategy_lab_v1",
+                '"risk_tolerance": 1,',
+                (
+                    '"risk_tolerance": 1,\n'
+                    '    "unreviewed_budget": 100,'
+                ),
+                "leadership-transfer-invariant",
+            ),
+            (
+                "core-30-evidence-based-technical-leadership",
+                "technical_strategy_lab_v1",
+                '"budget_cap": 50000,',
+                '"budget_cap": 100000,',
+                "leadership-transfer-invariant",
+            ),
+        )
+        for lesson_id, marker, original, replacement, diagnostic in cases:
+            with self.subTest(lesson_id=lesson_id, replacement=replacement):
+                self.assert_causal_harness_source_mutation_fails(
+                    lesson_id,
+                    marker,
+                    original,
+                    replacement,
+                    diagnostic,
+                )
+
+    def test_lead_harnesses_reject_missing_transfer_field(self) -> None:
+        cases = (
+            (
+                "core-26-code-review-collaborative-quality",
+                "collaborative_code_review_lab_v1",
+                (
+                    "TRANSFER_REVIEW_CONTEXT = {\n"
+                    '    "risk_kind": "authorization",\n'
+                    '    "review_budget_minutes": 30,\n'
+                    "}"
+                ),
+                "TRANSFER_REVIEW_CONTEXT = {}",
+                "review-transfer-invariant",
+            ),
+            (
+                "core-27-team-interfaces-sociotechnical-architecture",
+                "team_interface_lab_v1",
+                (
+                    "TRANSFER_TEAM_CONTEXT = {\n"
+                    '    "dependency_latency_ms": 450,\n'
+                    '    "slo_target_ms": 300,\n'
+                    "}"
+                ),
+                "TRANSFER_TEAM_CONTEXT = {}",
+                "team-interface-transfer-invariant",
+            ),
+            (
+                "core-28-oss-governance-stewardship",
+                "oss_stewardship_lab_v1",
+                (
+                    "TRANSFER_CONTRIBUTION = {\n"
+                    '    "contribution_kind": "release-workflow",\n'
+                    '    "requested_permission": "read-only",\n'
+                    "}"
+                ),
+                "TRANSFER_CONTRIBUTION = {}",
+                "oss-transfer-invariant",
+            ),
+            (
+                "core-29-cross-cultural-async-collaboration",
+                "async_rfc_decision_lab_v1",
+                (
+                    "TRANSFER_ASYNC_CONTEXT = {\n"
+                    '    "timezone_overlap_hours": 0,\n'
+                    '    "working_language": "plain-English",\n'
+                    "}"
+                ),
+                "TRANSFER_ASYNC_CONTEXT = {}",
+                "async-transfer-invariant",
+            ),
+            (
+                "core-30-evidence-based-technical-leadership",
+                "technical_strategy_lab_v1",
+                (
+                    "TRANSFER_STRATEGY_CONTEXT = {\n"
+                    '    "risk_tolerance": 1,\n'
+                    '    "budget_cap": 50000,\n'
+                    "}"
+                ),
+                "TRANSFER_STRATEGY_CONTEXT = {}",
+                "leadership-transfer-invariant",
+            ),
+        )
+        for lesson_id, marker, original, replacement, diagnostic in cases:
+            with self.subTest(lesson_id=lesson_id):
+                self.assert_causal_harness_source_mutation_fails(
+                    lesson_id,
+                    marker,
+                    original,
+                    replacement,
+                    diagnostic,
+                )
+
+    def test_lead_harnesses_reject_nested_unknowns_and_duplicates(
+        self,
+    ) -> None:
+        cases = (
+            (
+                "core-26-code-review-collaborative-quality",
+                "collaborative_code_review_lab_v1",
+                '        "change_id": "change-authorization",',
+                (
+                    '        "change_id": "change-authorization",\n'
+                    '        "unreviewed_scope": "all-users",'
+                ),
+                "review-input-invariant",
+            ),
+            (
+                "core-27-team-interfaces-sociotechnical-architecture",
+                "team_interface_lab_v1",
+                '        "team_id": "platform",',
+                '        "team_id": "checkout",',
+                "team-interface-input-invariant",
+            ),
+            (
+                "core-28-oss-governance-stewardship",
+                "oss_stewardship_lab_v1",
+                '    "maintainer-boundary": False,',
+                (
+                    '    "maintainer-boundary": False,\n'
+                    '    "unreviewed-admin-token": False,'
+                ),
+                "oss-input-invariant",
+            ),
+            (
+                "core-29-cross-cultural-async-collaboration",
+                "async_rfc_decision_lab_v1",
+                '        "participant_id": "reviewer-bravo",',
+                '        "participant_id": "reviewer-alpha",',
+                "async-input-invariant",
+            ),
+            (
+                "core-30-evidence-based-technical-leadership",
+                "technical_strategy_lab_v1",
+                '        "option_id": "replatform",',
+                '        "option_id": "stabilize",',
+                "leadership-input-invariant",
+            ),
+        )
+        for lesson_id, marker, original, replacement, diagnostic in cases:
+            with self.subTest(lesson_id=lesson_id):
+                self.assert_causal_harness_source_mutation_fails(
+                    lesson_id,
+                    marker,
+                    original,
+                    replacement,
+                    diagnostic,
+                )
+
+    def test_lead_harnesses_reject_order_and_causal_bypasses(
+        self,
+    ) -> None:
+        cases = (
+            (
+                "core-26-code-review-collaborative-quality",
+                "collaborative_code_review_lab_v1",
+                "priority = classify_priority(finding, context)",
+                'priority = "minor"',
+                "review-priority-invariant",
+            ),
+            (
+                "core-26-code-review-collaborative-quality",
+                "collaborative_code_review_lab_v1",
+                "system_outcome_verified = all(",
+                "system_outcome_verified = bool(",
+                "review-reevaluation-invariant",
+            ),
+            (
+                "core-27-team-interfaces-sociotechnical-architecture",
+                "team_interface_lab_v1",
+                'TEAM_ORDER = ("checkout", "platform")',
+                'TEAM_ORDER = ("platform", "checkout")',
+                "team-interface-input-invariant",
+            ),
+            (
+                "core-27-team-interfaces-sociotechnical-architecture",
+                "team_interface_lab_v1",
+                (
+                    "slo_status = evaluate_slo("
+                    "dependency_latency_ms, slo_target_ms)"
+                ),
+                'slo_status = "healthy"',
+                "team-interface-slo-invariant",
+            ),
+            (
+                "core-28-oss-governance-stewardship",
+                "oss_stewardship_lab_v1",
+                (
+                    '    "discover",\n'
+                    '    "prepare",\n'
+                    '    "submit",'
+                ),
+                (
+                    '    "prepare",\n'
+                    '    "discover",\n'
+                    '    "submit",'
+                ),
+                "oss-journey-invariant",
+            ),
+            (
+                "core-28-oss-governance-stewardship",
+                "oss_stewardship_lab_v1",
+                "repository_ready = not readiness_gaps",
+                "repository_ready = True",
+                "oss-readiness-invariant",
+            ),
+            (
+                "core-28-oss-governance-stewardship",
+                "oss_stewardship_lab_v1",
+                "third_party_can_release = False",
+                "third_party_can_release = True",
+                "oss-maintainer-boundary-invariant",
+            ),
+            (
+                "core-29-cross-cultural-async-collaboration",
+                "async_rfc_decision_lab_v1",
+                (
+                    '    "problem",\n'
+                    '    "decision",\n'
+                    '    "alternatives",'
+                ),
+                (
+                    '    "decision",\n'
+                    '    "problem",\n'
+                    '    "alternatives",'
+                ),
+                "async-order-invariant",
+            ),
+            (
+                "core-29-cross-cultural-async-collaboration",
+                "async_rfc_decision_lab_v1",
+                "context_complete = evaluate_context_completeness(",
+                "context_complete = bool(",
+                "async-context-invariant",
+            ),
+            (
+                "core-29-cross-cultural-async-collaboration",
+                "async_rfc_decision_lab_v1",
+                "dissent_addressed = evaluate_dissent(",
+                "dissent_addressed = bool(",
+                "async-dissent-invariant",
+            ),
+            (
+                "core-30-evidence-based-technical-leadership",
+                "technical_strategy_lab_v1",
+                'INVESTMENT_ORDER = ("stabilize", "replatform")',
+                'INVESTMENT_ORDER = ("replatform", "stabilize")',
+                "leadership-order-invariant",
+            ),
+            (
+                "core-30-evidence-based-technical-leadership",
+                "technical_strategy_lab_v1",
+                "selected = select_strategy(options, context)",
+                "selected = options[0]",
+                "leadership-decision-invariant",
+            ),
+            (
+                "core-30-evidence-based-technical-leadership",
+                "technical_strategy_lab_v1",
+                (
+                    "withdrawal_ready = "
+                    "evaluate_withdrawal_conditions(selected)"
+                ),
+                "withdrawal_ready = True",
+                "leadership-withdrawal-invariant",
+            ),
+        )
+        for lesson_id, marker, original, replacement, diagnostic in cases:
+            with self.subTest(lesson_id=lesson_id, diagnostic=diagnostic):
+                self.assert_causal_harness_source_mutation_fails(
+                    lesson_id,
+                    marker,
+                    original,
+                    replacement,
+                    diagnostic,
+                )
