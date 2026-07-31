@@ -432,13 +432,18 @@ def parse_capstone_documents(
         raise _validation("expected lesson ids must be an exact frozenset")
     if frozenset(expected_lesson_ids) != frozenset(_PRIMARY_OWNER):
         raise _validation("expected lesson ids must be the complete core")
+    if any(
+        type(name) is not str or type(raw) is not bytes
+        for name, raw in documents.items()
+    ):
+        raise _validation(
+            "capstone document names and snapshots have invalid types"
+        )
     if tuple(sorted(documents)) != _CAPSTONE_FILES:
         raise _validation(
             "capstone files must be exactly "
             + ", ".join(_CAPSTONE_FILES)
         )
-    if any(type(name) is not str or type(raw) is not bytes for name, raw in documents.items()):
-        raise _validation("capstone document names and snapshots have invalid types")
     total = sum(len(value) for value in documents.values())
     if total > MAX_CAPSTONE_COLLECTION_BYTES:
         raise _validation("capstone collection exceeds maximum byte count")
