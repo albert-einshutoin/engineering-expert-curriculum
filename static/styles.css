@@ -972,6 +972,21 @@ footer p {
     grid-template-columns: 1fr;
   }
 
+  /*
+   * Chromium may fragment grid items even when break-inside is declared.
+   * A print-only block flow keeps every lesson heading, explanation, and
+   * enclosing border together while preserving the responsive screen grid.
+   */
+  .capstone-lessons {
+    display: block;
+  }
+
+  .capstone-lessons > li {
+    break-inside: avoid-page;
+    page-break-inside: avoid;
+    margin-block-end: var(--space-3);
+  }
+
   .catalog-card,
   .learning-stage,
   .mastery-gate,
@@ -1134,6 +1149,10 @@ footer p {
 
   body:has(.competency-matrix-page) > .site-header,
   body:has(.competency-matrix-page) > footer {
+    display: none;
+  }
+
+  body:has(.capstone-page) > footer {
     display: none;
   }
 
