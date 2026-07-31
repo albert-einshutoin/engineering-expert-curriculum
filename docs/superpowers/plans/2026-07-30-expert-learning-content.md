@@ -722,19 +722,13 @@ git commit -m "content: connect software design to trustworthy evidence"
 - GREEN content commits: `1fd1778`, `7fd6d57`, `e2c2d2e`, `393386c`,
   `1cd0e86`, `d8d02e5`. `1cd0e86` aligns every directory, lesson ID,
   prerequisite, source oracle, and harness oracle with the canonical contract.
-- The seven Build metadata, semantic-body, and executable-harness gates pass.
-  The requested lesson-quality/build/rendering gate passes 68 tests, and the
-  complete suite passes 352 tests.
 - The growing repository inventory exposed a stale fixed-five acceptance
   oracle. `afe5411` keeps it independent from the production loader while
   comparing against raw lesson-directory enumeration, rejecting a forged
   loader-only lesson, and retaining the `core-01` source-count sentinel.
-- Two independent builds contain 15 files, 14 HTML files, zero JavaScript
-  files, and 438,708 bytes. Both produce tree SHA-256
-  `b2a5f175dad0ab1ff10e9518f1d663bd8f8502cf842992a853107edc4afae58b`.
-- Security scans report zero unsafe HTML patterns, secret patterns, dangerous
-  execution patterns, or external URLs in lesson bodies. The catalog remains
-  exactly 1,140 items.
+- The review-corrected test counts, security evidence, and sole valid
+  deterministic build hash are recorded below. Earlier non-canonical
+  file-digest aggregation is not accepted as Task 4 evidence.
 
 **Task 4 review correction evidence (2026-07-31):**
 
