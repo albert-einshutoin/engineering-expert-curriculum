@@ -154,10 +154,9 @@ BUILD_SOURCES = {
             "standard",
         ),
         (
-            "NASA Systems Engineering Handbook: Appendix C — "
-            "How to Write a Good Requirement",
+            "Appendix C: How to Write a Good Requirement",
             "https://www.nasa.gov/reference/"
-            "system-engineering-handbook-appendix/",
+            "appendix-c-how-to-write-a-good-requirement/",
             "primary",
         ),
         (
@@ -628,6 +627,43 @@ class CoreTrackTests(unittest.TestCase):
         parser.feed(body)
         parser.close()
         return parser.blocks
+
+    def python_harness_source(
+        self,
+        lesson_id: str,
+        marker: str,
+    ) -> str:
+        matching = [
+            block
+            for block in self.pre_code_blocks(lesson_id)
+            if marker in block
+        ]
+        self.assertEqual(len(matching), 1, f"{lesson_id}: {marker}")
+        command, separator, remainder = matching[0].partition("\n")
+        self.assertTrue(separator, f"{lesson_id}: harness command")
+        self.assertTrue(
+            command.startswith("python3.13 - "),
+            f"{lesson_id}: Python 3.13 harness",
+        )
+        payload, terminator, _ = remainder.partition("\nPY")
+        self.assertTrue(terminator, f"{lesson_id}: heredoc terminator")
+        return payload
+
+    def execute_python_harness_source(
+        self,
+        payload: str,
+    ) -> subprocess.CompletedProcess[str]:
+        with TemporaryDirectory() as directory:
+            script = Path(directory) / "harness.py"
+            script.write_text(payload, encoding="utf-8")
+            return subprocess.run(
+                [sys.executable, script],
+                cwd=directory,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
 
     def assert_body_contract(self, body: str, lesson_id: str) -> None:
         parser = _BodyContractParser()
@@ -1300,9 +1336,39 @@ class CoreTrackTests(unittest.TestCase):
             {context["name"] for context in report["bounded_contexts"]},
             {"Catalog", "Rental Operations", "Billing"},
         )
-        self.assertGreaterEqual(len(report["example_scenarios"]), 3)
-        self.assertGreaterEqual(len(report["exceptions"]), 2)
+        scenarios = {
+            scenario["id"]: scenario
+            for scenario in report["example_scenarios"]
+        }
+        self.assertGreaterEqual(len(scenarios), 5)
+        overdue = scenarios["overdue-return"]
+        self.assertEqual(overdue["command"], "ReturnAsset")
+        self.assertEqual(overdue["event"], "LoanReturned")
+        self.assertEqual(overdue["observed"], "accepted-overdue")
+        self.assertGreater(overdue["returned_at"], overdue["due_at"])
+        self.assertEqual(
+            overdue["policy_event"],
+            "OverdueChargeAssessmentRequested",
+        )
+        exceptions = {
+            exception["code"]: exception
+            for exception in report["exceptions"]
+        }
+        self.assertGreaterEqual(len(exceptions), 3)
+        self.assertEqual(
+            exceptions["overdue-return"]["event"],
+            "LoanReturned",
+        )
+        self.assertTrue(exceptions["overdue-return"]["policy_event"])
         self.assertTrue(all(item["passed"] for item in report["invariants"]))
+        invariant_names = {
+            item["name"] for item in report["invariants"]
+        }
+        self.assertIn("return-restores-availability", invariant_names)
+        self.assertIn(
+            "overdue-return-emits-policy-event",
+            invariant_names,
+        )
         self.assertTrue(
             all(
                 item["commands"]
@@ -1311,11 +1377,41 @@ class CoreTrackTests(unittest.TestCase):
                 for item in report["traceability"]
             )
         )
+        return_trace = [
+            item
+            for item in report["traceability"]
+            if "ReturnAsset" in item["commands"]
+        ]
+        self.assertEqual(len(return_trace), 1)
+        self.assertIn("LoanReturned", return_trace[0]["events"])
+        self.assertIn(
+            "overdue-return-emits-policy-event",
+            return_trace[0]["invariants"],
+        )
         self.assertEqual(
             {item["status"] for item in report["ambiguities"]},
             {"detected", "resolved"},
         )
         self.assertFalse(report["external_network_used"])
+
+    def test_domain_model_rejects_overdue_return_trace_mutation(
+        self,
+    ) -> None:
+        source = self.python_harness_source(
+            "core-06-requirements-domain-modeling",
+            "domain_model_lab_v1",
+        )
+        marker = '"id": "overdue-return",'
+        self.assertIn(marker, source)
+        mutated = source.replace(
+            marker,
+            '"id": "overdue-return-removed",',
+            1,
+        )
+
+        result = self.execute_python_harness_source(mutated)
+
+        self.assertNotEqual(result.returncode, 0)
 
     def test_api_contract_harness_models_replay_and_evolution(self) -> None:
         report = self.run_python_harness(
@@ -1328,25 +1424,126 @@ class CoreTrackTests(unittest.TestCase):
         evidence = report["idempotency_evidence"]
         self.assertEqual(evidence["initial"]["effect_count"], 1)
         self.assertEqual(evidence["replay"]["effect_count"], 1)
-        self.assertTrue(evidence["same_effect"])
-        self.assertFalse(evidence["same_response"])
-        self.assertFalse(evidence["exactly_once_claimed"])
         self.assertEqual(
-            report["compatibility_cases"],
+            evidence["initial"]["scope"],
             {
-                "add_optional_field": "compatible",
-                "remove_required_field": "breaking",
-                "expand_enum": "semantic-risk",
+                "tenant": "tenant-a",
+                "principal": "field-7",
+                "route": "POST /work-items/{id}:complete",
+                "idempotency_key": "key-42",
             },
         )
         self.assertEqual(
-            set(report["problem_details"]),
+            evidence["initial"]["scope"],
+            evidence["replay"]["scope"],
+        )
+        self.assertEqual(
+            evidence["initial"]["request_fingerprint"],
+            evidence["replay"]["request_fingerprint"],
+        )
+        self.assertRegex(
+            evidence["initial"]["request_fingerprint"],
+            r"\A[0-9a-f]{64}\Z",
+        )
+        self.assertRegex(
+            evidence["initial"]["response_generated_at"],
+            r"\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\Z",
+        )
+        self.assertNotEqual(
+            evidence["initial"]["response_generated_at"],
+            evidence["replay"]["response_generated_at"],
+        )
+        self.assertTrue(evidence["same_effect"])
+        self.assertFalse(evidence["same_response"])
+        self.assertFalse(evidence["exactly_once_claimed"])
+        conflict = evidence["payload_conflict"]
+        self.assertEqual(conflict["status"], 409)
+        self.assertFalse(conflict["effect_applied"])
+        self.assertEqual(conflict["effect_count"], 1)
+        self.assertNotEqual(
+            conflict["request_fingerprint"],
+            evidence["initial"]["request_fingerprint"],
+        )
+        other_tenant = evidence["other_tenant"]
+        self.assertEqual(other_tenant["scope"]["tenant"], "tenant-b")
+        self.assertEqual(
+            other_tenant["scope"]["idempotency_key"],
+            "key-42",
+        )
+        self.assertNotEqual(
+            other_tenant["effect"]["operation_id"],
+            evidence["initial"]["effect"]["operation_id"],
+        )
+        self.assertEqual(other_tenant["effect_count"], 2)
+        compatibility = report["compatibility_cases"]
+        self.assertEqual(
+            set(compatibility),
+            {
+                "add_optional_field",
+                "remove_required_field",
+                "expand_enum",
+            },
+        )
+        trace_ids = {
+            trace["id"] for trace in report["offline_client_trace"]
+        }
+        for change in compatibility.values():
+            self.assertEqual(
+                set(change),
+                {"source", "wire", "semantic", "trace_id"},
+            )
+            self.assertIn(change["trace_id"], trace_ids)
+            for axis in ("source", "wire", "semantic"):
+                self.assertIs(type(change[axis]["compatible"]), bool)
+                self.assertTrue(change[axis]["evidence"])
+        self.assertEqual(
+            set(report["problem_contract"]["rfc_standard_members"]),
             {"type", "title", "status", "detail", "instance"},
+        )
+        self.assertEqual(
+            set(report["problem_contract"]["required_by_this_api"]),
+            {"type", "title", "status"},
+        )
+        self.assertEqual(
+            set(report["problem_contract"]["optional_by_this_api"]),
+            {"detail", "instance"},
+        )
+        self.assertEqual(
+            set(conflict["problem_details"]),
+            {"type", "title", "status"},
         )
         self.assertTrue(report["authorization_boundary"]["schema_valid"])
         self.assertFalse(report["authorization_boundary"]["authorized"])
         self.assertGreaterEqual(len(report["state_transitions"]), 3)
         self.assertFalse(report["external_network_used"])
+
+    def test_api_contract_rejects_fingerprint_check_mutation(
+        self,
+    ) -> None:
+        source = self.python_harness_source(
+            "core-07-api-contract-design",
+            "api_contract_lab_v1",
+        )
+        marker = 'if stored["request_fingerprint"] != fingerprint:'
+        self.assertIn(marker, source)
+        mutated = source.replace(marker, "if False:", 1)
+
+        result = self.execute_python_harness_source(mutated)
+
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_api_contract_rejects_tenant_scope_mutation(self) -> None:
+        source = self.python_harness_source(
+            "core-07-api-contract-design",
+            "api_contract_lab_v1",
+        )
+        marker = 'principal["tenant"],'
+        self.assertIn(marker, source)
+        mutated = source.replace(marker, '"shared-tenant",', 1)
+
+        result = self.execute_python_harness_source(mutated)
+
+        self.assertNotEqual(result.returncode, 0)
 
     def test_architecture_harness_exposes_dependencies_and_decision(
         self,
