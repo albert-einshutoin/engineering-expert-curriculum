@@ -106,12 +106,20 @@ PARTICIPANTS = [
         "timezone": "UTC+09:00",
         "working_language": "plain-English",
         "acknowledged": True,
+        "availability": {
+            "baseline_local_hours": [9, 13],
+            "transferred_local_hours": [9, 13],
+        },
     },
     {
         "participant_id": "reviewer-bravo",
         "timezone": "UTC-07:00",
         "working_language": "plain-English",
         "acknowledged": True,
+        "availability": {
+            "baseline_local_hours": [17, 21],
+            "transferred_local_hours": [9, 13],
+        },
     },
 ]
 RFC_SECTION_ORDER = (
@@ -148,6 +156,11 @@ PARTICIPANT_FIELDS = {
     "timezone",
     "working_language",
     "acknowledged",
+    "availability",
+}
+AVAILABILITY_FIELDS = {
+    "baseline_local_hours",
+    "transferred_local_hours",
 }
 
 def is_number(value):
@@ -229,6 +242,16 @@ def validate_participants(participants):
                 }
             )
             and type(participant["acknowledged"]) is bool
+            and type(participant["availability"]) is dict
+            and set(participant["availability"])
+            == AVAILABILITY_FIELDS
+            and all(
+                type(window) is list
+                and len(window) == 2
+                and all(type(hour) is int for hour in window)
+                and 0 &lt;= window[0] &lt; window[1] &lt;= 24
+                for window in participant["availability"].values()
+            )
             for participant in participants
         )
         and len(
@@ -239,6 +262,47 @@ def validate_participants(participants):
         raise AssertionError(
             "async-input-invariant: invalid participant schema"
         )
+
+def timezone_offset_hours(timezone):
+    valid = (
+        type(timezone) is str
+        and len(timezone) == 9
+        and timezone.startswith("UTC")
+        and timezone[3] in {"+", "-"}
+        and timezone[6] == ":"
+        and timezone[4:6].isdigit()
+        and timezone[7:9] == "00"
+    )
+    if not valid:
+        raise AssertionError(
+            "async-timezone-invariant: invalid timezone"
+        )
+    magnitude = int(timezone[4:6])
+    if magnitude &gt; 14:
+        raise AssertionError(
+            "async-timezone-invariant: timezone out of range"
+        )
+    return magnitude if timezone[3] == "+" else -magnitude
+
+def derive_overlap_hours(participants, window_field):
+    utc_windows = []
+    for participant in participants:
+        offset = timezone_offset_hours(participant["timezone"])
+        local_window = participant["availability"][window_field]
+        utc_start = (local_window[0] - offset) % 24
+        utc_end = utc_start + (local_window[1] - local_window[0])
+        if not (0 &lt;= utc_start &lt; utc_end &lt;= 24):
+            raise AssertionError(
+                "async-timezone-invariant: window crosses UTC day"
+            )
+        utc_windows.append([utc_start, utc_end])
+    overlap = min(window[1] for window in utc_windows) - max(
+        window[0] for window in utc_windows
+    )
+    return max(0, overlap)
+
+def response_window_hours(overlap_hours):
+    return 24 if overlap_hours == 0 else 8
 
 def validate_section_order():
     expected = (
@@ -261,6 +325,23 @@ def validate_all_inputs():
     validate_proposal(PROPOSAL)
     validate_participants(PARTICIPANTS)
     validate_section_order()
+    baseline_overlap = derive_overlap_hours(
+        PARTICIPANTS,
+        "baseline_local_hours",
+    )
+    transferred_overlap = derive_overlap_hours(
+        PARTICIPANTS,
+        "transferred_local_hours",
+    )
+    if (
+        baseline_overlap
+        != BASELINE_ASYNC_CONTEXT["timezone_overlap_hours"]
+        or transferred_overlap
+        != TRANSFER_ASYNC_CONTEXT["timezone_overlap_hours"]
+    ):
+        raise AssertionError(
+            "async-timezone-invariant: overlap not availability-derived"
+        )
 
 def evaluate_context_completeness(review_input):
     proposal = review_input["proposal"]
@@ -293,7 +374,21 @@ def evaluate_dissent(review_input):
     )
     return "addressed" if addressed else "unaddressed"
 
-def evaluate_review(proposal, participants, context):
+def evaluate_meeting_need(context_complete):
+    meeting_required = not context_complete
+    if meeting_required is not (not context_complete):
+        raise AssertionError(
+            "async-context-invariant: meeting derivation bypassed"
+        )
+    return meeting_required
+
+def evaluate_review(
+    proposal,
+    participants,
+    context,
+    derived_overlap,
+    derived_response_window,
+):
     review_input = {
         "proposal": proposal,
         "participants": participants,
@@ -306,6 +401,7 @@ def evaluate_review(proposal, participants, context):
         raise AssertionError(
             "async-context-invariant: context derivation bypassed"
         )
+    context_complete = context_complete == "complete"
     dissent_addressed = evaluate_dissent(
         review_input
     )
@@ -313,10 +409,22 @@ def evaluate_review(proposal, participants, context):
         raise AssertionError(
             "async-dissent-invariant: dissent derivation bypassed"
         )
+    meeting_required = evaluate_meeting_need(context_complete)
+    if (
+        derived_overlap != context["timezone_overlap_hours"]
+        or derived_response_window
+        != response_window_hours(derived_overlap)
+        or evaluate_meeting_need(False) is not True
+    ):
+        raise AssertionError(
+            "async-timezone-invariant: async window derivation bypassed"
+        )
     return {
-        "context_complete": context_complete == "complete",
+        "context_complete": context_complete,
         "dissent_addressed": dissent_addressed == "addressed",
-        "meeting_required": False,
+        "meeting_required": meeting_required,
+        "derived_overlap_hours": derived_overlap,
+        "response_window_hours": derived_response_window,
     }
 
 def main():
@@ -347,15 +455,33 @@ def main():
     validate_proposal(transferred_proposal)
     validate_participants(participants)
     validate_participants(transferred_participants)
+    baseline_overlap = derive_overlap_hours(
+        participants,
+        "baseline_local_hours",
+    )
+    transferred_overlap = derive_overlap_hours(
+        transferred_participants,
+        "transferred_local_hours",
+    )
+    baseline_response_window = response_window_hours(
+        baseline_overlap
+    )
+    transferred_response_window = response_window_hours(
+        transferred_overlap
+    )
     baseline_review = evaluate_review(
         proposal,
         participants,
         baseline_context,
+        baseline_overlap,
+        baseline_response_window,
     )
     transferred_review = evaluate_review(
         transferred_proposal,
         transferred_participants,
         transferred_context,
+        transferred_overlap,
+        transferred_response_window,
     )
     same_proposal_evidence = (
         proposal == transferred_proposal
@@ -381,6 +507,12 @@ def main():
         "async_rfc": {
             "context_complete": baseline_review["context_complete"],
             "meeting_required": baseline_review["meeting_required"],
+            "meeting_need_derived_from_context": (
+                baseline_review["meeting_required"]
+                == (not baseline_review["context_complete"])
+            ),
+            "derived_timezone_overlap_hours": baseline_overlap,
+            "response_window_hours": baseline_response_window,
             "sections": list(RFC_SECTION_ORDER),
             "timezone_context": baseline_context,
             "language_context": baseline_context["working_language"],
@@ -401,6 +533,14 @@ def main():
             "changed_fields": changed,
             "same_proposal_evidence": same_proposal_evidence,
             "zero_overlap_review_completed": zero_overlap_review_completed,
+            "derived_baseline_overlap_hours": baseline_overlap,
+            "derived_transferred_overlap_hours": transferred_overlap,
+            "baseline_response_window_hours": (
+                baseline_response_window
+            ),
+            "transferred_response_window_hours": (
+                transferred_response_window
+            ),
             "baseline_context": baseline_context,
             "transferred_context": transferred_context,
         },
