@@ -290,6 +290,132 @@ BUILD_SOURCES = {
         ),
     ),
 }
+DATA_SCALE_SOURCES = {
+    "core-11-data-modeling-storage": (
+        (
+            "A Relational Model of Data for Large Shared Data Banks",
+            "https://doi.org/10.1145/362384.362685",
+            "peer-reviewed",
+        ),
+        (
+            "Chapter 5. Data Definition",
+            "https://www.postgresql.org/docs/18/ddl.html",
+            "primary",
+        ),
+        (
+            "Data Modeling in MongoDB",
+            "https://www.mongodb.com/docs/v8.0/data-modeling/",
+            "primary",
+        ),
+        (
+            "Dynamo: Amazon’s Highly Available Key-value Store",
+            "https://doi.org/10.1145/1294261.1294281",
+            "peer-reviewed",
+        ),
+    ),
+    "core-12-transactions-isolation-consistency": (
+        (
+            "Principles of Transaction-Oriented Database Recovery",
+            "https://doi.org/10.1145/289.291",
+            "peer-reviewed",
+        ),
+        (
+            "A Critique of ANSI SQL Isolation Levels",
+            "https://sigmodrecord.org/1995/06/06/"
+            "a-critique-of-ansi-sql-isolation-levels/",
+            "peer-reviewed",
+        ),
+        (
+            "PostgreSQL 18 Documentation: 13.2. Transaction Isolation",
+            "https://www.postgresql.org/docs/18/transaction-iso.html",
+            "primary",
+        ),
+        (
+            "Serializable Snapshot Isolation in PostgreSQL",
+            "https://doi.org/10.14778/2367502.2367523",
+            "peer-reviewed",
+        ),
+    ),
+    "core-13-distributed-coordination-failure": (
+        (
+            "Impossibility of Distributed Consensus with One Faulty "
+            "Process",
+            "https://doi.org/10.1145/3149.214121",
+            "peer-reviewed",
+        ),
+        (
+            "In Search of an Understandable Consensus Algorithm",
+            "https://raft.github.io/raft.pdf",
+            "primary",
+        ),
+        (
+            "RFC 9110: HTTP Semantics",
+            "https://www.rfc-editor.org/rfc/rfc9110.html",
+            "standard",
+        ),
+        (
+            "FoundationDB: A Distributed Unbundled Transactional Key "
+            "Value Store",
+            "https://doi.org/10.1145/3448016.3457559",
+            "peer-reviewed",
+        ),
+    ),
+    "core-14-performance-capacity": (
+        (
+            "Diagnostics",
+            "https://go.dev/doc/diagnostics",
+            "primary",
+        ),
+        (
+            "Improving your app’s performance",
+            "https://developer.apple.com/documentation/xcode/"
+            "improving-your-app-s-performance/",
+            "primary",
+        ),
+        (
+            "Handling Overload",
+            "https://sre.google/sre-book/handling-overload/",
+            "primary",
+        ),
+        (
+            "A Proof for the Queuing Formula: L = λW",
+            "https://doi.org/10.1287/opre.9.3.383",
+            "peer-reviewed",
+        ),
+        (
+            "The Tail at Scale",
+            "https://doi.org/10.1145/2408776.2408794",
+            "peer-reviewed",
+        ),
+    ),
+    "core-15-reliability-observability-slo": (
+        (
+            "Service Level Objectives",
+            "https://sre.google/sre-book/service-level-objectives/",
+            "primary",
+        ),
+        (
+            "Alerting on SLOs",
+            "https://sre.google/workbook/alerting-on-slos/",
+            "primary",
+        ),
+        (
+            "On-Call",
+            "https://sre.google/workbook/on-call/",
+            "primary",
+        ),
+        (
+            "OpenTelemetry Specification 1.59.0",
+            "https://opentelemetry.io/docs/specs/otel/",
+            "standard",
+        ),
+        (
+            "OpenTelemetry semantic conventions 1.43.0",
+            "https://opentelemetry.io/docs/specs/semconv/",
+            "standard",
+        ),
+    ),
+}
 FOUNDATIONS = {
     "core-01-systems-tradeoffs": {
         "prerequisites": (),
@@ -370,6 +496,66 @@ BUILD = {
             "内部者脅威へモデルを移す"
         ),
     },
+}
+DATA_SCALE = {
+    "core-11-data-modeling-storage": {
+        "prerequisites": ("core-06-requirements-domain-modeling",),
+        "artifact": "アクセスパターン、整合性、成長予測を含むストレージADR",
+        "transfer": (
+            "注文検索が顧客中心から商品・期間中心へ変わるアクセスパターン"
+            "変更でストレージADRを再評価する"
+        ),
+    },
+    "core-12-transactions-isolation-consistency": {
+        "prerequisites": ("core-11-data-modeling-storage",),
+        "artifact": "二つの分離異常を再現するトランザクション実験",
+        "transfer": (
+            "同時購入者数が増える在庫引当の並行性変更で分離レベルと"
+            "retry境界を再評価する"
+        ),
+    },
+    "core-13-distributed-coordination-failure": {
+        "prerequisites": (
+            "core-05-networks-latency-failure",
+            "core-12-transactions-isolation-consistency",
+        ),
+        "artifact": "重複、順序、部分障害を再現する決定的シミュレーション",
+        "transfer": (
+            "拠点間ネットワーク分断が長期化する条件へ変え、重複排除と"
+            "復旧結果を再評価する"
+        ),
+    },
+    "core-14-performance-capacity": {
+        "prerequisites": (
+            "core-02-algorithms-measurement",
+            "core-03-architecture-memory-caches",
+            "core-11-data-modeling-storage",
+        ),
+        "artifact": "ボトルネック証拠、負荷曲線、容量限界を含む性能報告",
+        "transfer": (
+            "参照中心から書込み中心へ変わるrequest mixでbottleneckと"
+            "安全容量を再測定する"
+        ),
+    },
+    "core-15-reliability-observability-slo": {
+        "prerequisites": (
+            "core-05-networks-latency-failure",
+            "core-13-distributed-coordination-failure",
+            "core-14-performance-capacity",
+        ),
+        "artifact": "利用者ジャーニーから導いたSLI、SLO、アラート、ランブック",
+        "transfer": (
+            "検索成功率から購入完了までへ利用者可視の信頼性境界を変え、"
+            "SLIとSLOを再設計する"
+        ),
+    },
+}
+DATA_SCALE_ASSUMPTIONS = {
+    "core-11-data-modeling-storage": "access-pattern",
+    "core-12-transactions-isolation-consistency": "concurrency",
+    "core-13-distributed-coordination-failure": "network-partition",
+    "core-14-performance-capacity": "request-mix",
+    "core-15-reliability-observability-slo": "user-visible-reliability",
 }
 
 
@@ -666,6 +852,60 @@ class CoreTrackTests(unittest.TestCase):
                 timeout=30,
             )
 
+    def assert_data_scale_mastery_evidence(
+        self,
+        report: dict[str, object],
+        lesson_id: str,
+    ) -> None:
+        metadata_path = self.body_path(lesson_id).with_name("lesson.json")
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        mastery = report["mastery_evidence"]
+
+        lab_steps = mastery["lab_steps"]
+        self.assertEqual(
+            [item["step"] for item in lab_steps],
+            list(range(1, len(metadata["lab"]["steps"]) + 1)),
+        )
+        self.assertTrue(all(item["evidence"] for item in lab_steps))
+
+        assessments = mastery["assessments"]
+        self.assertEqual(
+            [item["assessment"] for item in assessments],
+            list(range(1, len(metadata["assessment"]) + 1)),
+        )
+        self.assertTrue(all(item["evidence"] for item in assessments))
+
+        self.assertEqual(
+            set(mastery["rubric_dimensions"]),
+            {
+                item["dimension"]
+                for item in metadata["rubric"]
+            },
+        )
+        transfer = mastery["transfer"]
+        self.assertEqual(transfer["task"], metadata["transferTask"])
+        self.assertEqual(
+            transfer["changed_assumption"],
+            DATA_SCALE_ASSUMPTIONS[lesson_id],
+        )
+        self.assertTrue(transfer["evidence"])
+
+    def assert_harness_source_mutation_fails(
+        self,
+        lesson_id: str,
+        marker: str,
+        original: str,
+        replacement: str,
+    ) -> None:
+        source = self.python_harness_source(lesson_id, marker)
+        self.assertIn(original, source)
+        mutated = source.replace(original, replacement, 1)
+        self.assertNotEqual(mutated, source)
+
+        result = self.execute_python_harness_source(mutated)
+
+        self.assertNotEqual(result.returncode, 0)
+
     def assert_body_contract(self, body: str, lesson_id: str) -> None:
         parser = _BodyContractParser()
         parser.feed(body)
@@ -807,6 +1047,13 @@ class CoreTrackTests(unittest.TestCase):
             source_contract=BUILD_SOURCES,
         )
 
+    def test_data_scale(self) -> None:
+        self.assert_track(
+            DATA_SCALE,
+            expected_track="data-scale",
+            source_contract=DATA_SCALE_SOURCES,
+        )
+
     def test_foundation_bodies_follow_semantic_contract(self) -> None:
         for lesson_id in FOUNDATIONS:
             with self.subTest(lesson_id=lesson_id):
@@ -815,6 +1062,12 @@ class CoreTrackTests(unittest.TestCase):
 
     def test_build_bodies_follow_semantic_contract(self) -> None:
         for lesson_id in BUILD:
+            with self.subTest(lesson_id=lesson_id):
+                body = self.body_path(lesson_id).read_text(encoding="utf-8")
+                self.assert_body_contract(body, lesson_id)
+
+    def test_data_scale_bodies_follow_semantic_contract(self) -> None:
+        for lesson_id in DATA_SCALE:
             with self.subTest(lesson_id=lesson_id):
                 body = self.body_path(lesson_id).read_text(encoding="utf-8")
                 self.assert_body_contract(body, lesson_id)
@@ -2133,3 +2386,442 @@ class CoreTrackTests(unittest.TestCase):
         result = self.execute_python_harness_source(mutated)
 
         self.assertNotEqual(result.returncode, 0)
+
+    def test_storage_harness_compares_models_and_recomputes_adr(
+        self,
+    ) -> None:
+        lesson_id = "core-11-data-modeling-storage"
+        report = self.run_python_harness(
+            lesson_id,
+            "storage_decision_lab_v1",
+        )
+
+        self.assertEqual(report["fixture"], "order-history-workload-v1")
+        self.assertEqual(
+            report["fixture_metadata"]["kind"],
+            "synthetic",
+        )
+        self.assertTrue(report["fixture_metadata"]["limitations"])
+        query_shapes = report["workload"]["query_shapes"]
+        self.assertGreaterEqual(len(query_shapes), 4)
+        self.assertEqual(
+            len({query["id"] for query in query_shapes}),
+            len(query_shapes),
+        )
+        self.assertTrue(
+            all(
+                query["frequency_per_hour"] > 0
+                and query["accessed_together"]
+                for query in query_shapes
+            )
+        )
+        self.assertTrue(report["workload"]["invariants"])
+        self.assertTrue(report["workload"]["update_conflicts"])
+        forecast = report["growth_forecast"]
+        self.assertEqual(
+            forecast["projected_records"],
+            forecast["current_records"]
+            + forecast["monthly_growth"] * forecast["months"],
+        )
+        self.assertEqual(forecast["evidence_kind"], "synthetic-projection")
+
+        criteria = report["criteria"]
+        self.assertEqual(
+            set(criteria),
+            {
+                "access_fit",
+                "constraint_coverage",
+                "capacity",
+                "operations",
+                "recovery",
+            },
+        )
+        self.assertAlmostEqual(
+            sum(criterion["weight"] for criterion in criteria.values()),
+            1.0,
+        )
+        options = {
+            option["id"]: option
+            for option in report["baseline"]["options"]
+        }
+        self.assertEqual(set(options), {"relational", "document", "key-value"})
+        for option in options.values():
+            self.assertEqual(set(option["ratings"]), set(criteria))
+            expected_score = sum(
+                rating * criteria[criterion_id]["weight"]
+                for criterion_id, rating in option["ratings"].items()
+            )
+            self.assertAlmostEqual(option["score"], expected_score)
+            self.assertTrue(option["constraint_evidence"])
+            self.assertTrue(option["operations_evidence"])
+            self.assertTrue(option["recovery_evidence"])
+        baseline_winner = max(
+            options.values(),
+            key=lambda option: option["score"],
+        )
+        self.assertEqual(
+            report["baseline"]["selected_option"],
+            baseline_winner["id"],
+        )
+        self.assertEqual(
+            report["adr"]["decision"],
+            report["baseline"]["selected_option"],
+        )
+        self.assertTrue(report["adr"]["negative_consequences"])
+        self.assertTrue(report["adr"]["confirmation"])
+
+        mutation = report["access_pattern_mutation"]
+        mutated_options = {
+            option["id"]: option
+            for option in mutation["options"]
+        }
+        mutated_winner = max(
+            mutated_options.values(),
+            key=lambda option: option["score"],
+        )
+        self.assertEqual(mutation["selected_option"], mutated_winner["id"])
+        self.assertNotEqual(
+            mutation["selected_option"],
+            report["baseline"]["selected_option"],
+        )
+        self.assertTrue(mutation["decision_recomputed"])
+        self.assertEqual(
+            report["vendor_scope"],
+            {
+                "PostgreSQL": "18",
+                "MongoDB": "8.0",
+                "Dynamo": "2007-paper-model",
+            },
+        )
+        self.assert_data_scale_mastery_evidence(report, lesson_id)
+        self.assertFalse(report["external_network_used"])
+
+    def test_storage_harness_rejects_access_pattern_mutation(
+        self,
+    ) -> None:
+        self.assert_harness_source_mutation_fails(
+            "core-11-data-modeling-storage",
+            "storage_decision_lab_v1",
+            '"list_product_window": 48,',
+            '"list_product_window": 4,',
+        )
+
+    def test_transaction_harness_reproduces_anomalies_and_retry(
+        self,
+    ) -> None:
+        lesson_id = "core-12-transactions-isolation-consistency"
+        report = self.run_python_harness(
+            lesson_id,
+            "transaction_scheduler_lab_v1",
+        )
+
+        self.assertEqual(
+            report["simulator"],
+            "pedagogical-deterministic-scheduler",
+        )
+        self.assertEqual(
+            report["fixture_metadata"]["kind"],
+            "simulated",
+        )
+        self.assertFalse(report["fixture_metadata"]["real_database"])
+        scope = report["isolation_scope"]
+        self.assertEqual(scope["vendor"], "PostgreSQL")
+        self.assertEqual(scope["version"], "18")
+        self.assertTrue(scope["vendor_differences"])
+        scenarios = {
+            scenario["id"]: scenario
+            for scenario in report["scenarios"]
+        }
+        self.assertEqual(
+            set(scenarios),
+            {
+                "read-committed-non-repeatable-read",
+                "snapshot-write-skew",
+                "serializable-retry",
+            },
+        )
+        read_committed = scenarios[
+            "read-committed-non-repeatable-read"
+        ]
+        self.assertEqual(read_committed["isolation"], "Read Committed")
+        self.assertNotEqual(
+            read_committed["first_read"],
+            read_committed["second_read"],
+        )
+        self.assertEqual(
+            read_committed["anomaly"],
+            "non-repeatable-read",
+        )
+        self.assertGreaterEqual(len(read_committed["event_trace"]), 4)
+
+        snapshot = scenarios["snapshot-write-skew"]
+        self.assertIn(
+            snapshot["isolation"],
+            {"Snapshot Isolation", "PostgreSQL Repeatable Read"},
+        )
+        self.assertEqual(snapshot["committed_transactions"], 2)
+        self.assertFalse(snapshot["invariant_after"])
+        self.assertEqual(snapshot["anomaly"], "write-skew")
+
+        serializable = scenarios["serializable-retry"]
+        self.assertEqual(serializable["isolation"], "Serializable")
+        self.assertEqual(serializable["aborted_transactions"], 1)
+        self.assertEqual(serializable["retry_scope"], "whole-transaction")
+        self.assertTrue(serializable["invariant_after_retry"])
+        self.assertGreaterEqual(len(serializable["attempts"]), 3)
+        self.assertTrue(report["schedule_mutation"]["detected"])
+        self.assertNotEqual(
+            report["schedule_mutation"]["baseline_outcome"],
+            report["schedule_mutation"]["mutated_outcome"],
+        )
+        self.assertEqual(
+            report["consistency_scope"],
+            "business-invariant-is-explicit-not-inferred-by-ACID",
+        )
+        self.assert_data_scale_mastery_evidence(report, lesson_id)
+        self.assertFalse(report["external_network_used"])
+
+    def test_transaction_harness_rejects_serializable_check_mutation(
+        self,
+    ) -> None:
+        self.assert_harness_source_mutation_fails(
+            "core-12-transactions-isolation-consistency",
+            "transaction_scheduler_lab_v1",
+            'if isolation == "serializable" and active_conflict:',
+            "if False:",
+        )
+
+    def test_coordination_harness_replays_partial_failure(
+        self,
+    ) -> None:
+        lesson_id = "core-13-distributed-coordination-failure"
+        report = self.run_python_harness(
+            lesson_id,
+            "coordination_simulator_lab_v1",
+        )
+
+        self.assertEqual(report["seed"], 20260731)
+        self.assertEqual(
+            report["fixture_metadata"]["kind"],
+            "simulated",
+        )
+        self.assertTrue(report["replay"]["identical"])
+        self.assertEqual(
+            report["replay"]["first_trace"],
+            report["replay"]["second_trace"],
+        )
+        event_kinds = {
+            event["kind"]
+            for event in report["replay"]["first_trace"]
+        }
+        self.assertTrue(
+            {"deliver", "duplicate", "partition_start", "partition_end"}
+            <= event_kinds
+        )
+        self.assertTrue(report["reorder_observed"])
+        dedupe = report["persistent_dedupe"]
+        self.assertTrue(dedupe["key"])
+        self.assertEqual(dedupe["applied_state_transitions"], 1)
+        self.assertGreaterEqual(dedupe["result_reuse_count"], 1)
+        self.assertEqual(
+            dedupe["first_result"],
+            dedupe["reused_result"],
+        )
+        self.assertTrue(report["idempotent_state_transition"])
+        partition_mutation = report["partition_mutation"]
+        self.assertTrue(partition_mutation["detected"])
+        self.assertNotEqual(
+            partition_mutation["baseline_outcome"],
+            partition_mutation["mutated_outcome"],
+        )
+        self.assertTrue(report["model_assumptions"])
+        scope = report["scope"]
+        self.assertTrue(scope["flp_is_asynchronous_consensus_scope"])
+        self.assertFalse(scope["flp_means_practical_consensus_impossible"])
+        self.assertFalse(scope["simulation_is_formal_proof"])
+        self.assertEqual(
+            scope["retry_semantics"],
+            "at-least-once-with-idempotent-result-reuse",
+        )
+        self.assert_data_scale_mastery_evidence(report, lesson_id)
+        self.assertFalse(report["external_network_used"])
+
+    def test_coordination_harness_rejects_partition_mutation(
+        self,
+    ) -> None:
+        self.assert_harness_source_mutation_fails(
+            "core-13-distributed-coordination-failure",
+            "coordination_simulator_lab_v1",
+            'if event["kind"] == "partition_start":',
+            "if False:",
+        )
+
+    def test_performance_harness_separates_simulation_and_measurement(
+        self,
+    ) -> None:
+        lesson_id = "core-14-performance-capacity"
+        report = self.run_python_harness(
+            lesson_id,
+            "performance_capacity_lab_v1",
+        )
+
+        self.assertEqual(
+            report["simulation_metadata"]["kind"],
+            "simulated",
+        )
+        curve = report["load_curve"]
+        self.assertEqual(
+            [point["stage"] for point in curve],
+            ["low", "near-limit", "overload", "recovery"],
+        )
+        for point in curve:
+            self.assertGreater(point["offered_rps"], 0)
+            self.assertLessEqual(
+                point["accepted_rps"],
+                point["offered_rps"],
+            )
+            self.assertLessEqual(
+                point["success_rps"],
+                point["accepted_rps"],
+            )
+            self.assertLessEqual(point["p50_ms"], point["p95_ms"])
+            self.assertLessEqual(point["p95_ms"], point["p99_ms"])
+            self.assertGreaterEqual(point["cpu_percent"], 0)
+            self.assertGreaterEqual(point["memory_mb"], 0)
+            self.assertGreaterEqual(point["queue_depth"], 0)
+            self.assertGreaterEqual(point["downstream_ms"], 0)
+        analysis = report["curve_analysis"]
+        self.assertTrue(analysis["throughput_plateau"])
+        self.assertTrue(analysis["tail_growth"])
+        self.assertTrue(analysis["error_growth"])
+        self.assertTrue(analysis["recovery_hysteresis"])
+        capacity = report["capacity"]
+        self.assertLess(
+            capacity["safe_capacity_rps"],
+            capacity["observed_knee_rps"],
+        )
+        self.assertGreater(capacity["headroom_fraction"], 0)
+        little = report["little_law"]
+        self.assertAlmostEqual(
+            little["observed_concurrency"],
+            little["throughput_per_second"]
+            * little["mean_response_seconds"],
+            delta=0.01,
+        )
+        self.assertLessEqual(little["relative_error"], 0.01)
+
+        profile = report["local_profile"]
+        self.assertEqual(
+            profile["evidence_kind"],
+            "actual-local-measurement",
+        )
+        self.assertEqual(profile["profiler"], "cProfile")
+        self.assertGreater(profile["total_calls"], 0)
+        self.assertTrue(profile["top_function"])
+        self.assertTrue(profile["environment_limitations"])
+        mutation = report["request_mix_mutation"]
+        self.assertTrue(mutation["recomputed"])
+        self.assertNotEqual(
+            mutation["baseline_bottleneck"],
+            mutation["mutated_bottleneck"],
+        )
+        self.assertNotEqual(
+            mutation["baseline_safe_capacity_rps"],
+            mutation["mutated_safe_capacity_rps"],
+        )
+        self.assertLessEqual(report["runtime_bound"]["iterations"], 50_000)
+        self.assert_data_scale_mastery_evidence(report, lesson_id)
+        self.assertFalse(report["external_network_used"])
+
+    def test_performance_harness_rejects_capacity_mutation(
+        self,
+    ) -> None:
+        self.assert_harness_source_mutation_fails(
+            "core-14-performance-capacity",
+            "performance_capacity_lab_v1",
+            "if offered_rps > capacity:",
+            "if False:",
+        )
+
+    def test_reliability_harness_derives_slo_alerts_and_runbook(
+        self,
+    ) -> None:
+        lesson_id = "core-15-reliability-observability-slo"
+        report = self.run_python_harness(
+            lesson_id,
+            "reliability_slo_lab_v1",
+        )
+
+        self.assertEqual(
+            report["fixture_metadata"]["kind"],
+            "synthetic",
+        )
+        sli = report["sli"]
+        self.assertEqual(sli["good_events"] + sli["bad_events"], sli["valid_events"])
+        self.assertLessEqual(sli["valid_events"], sli["total_events"])
+        self.assertAlmostEqual(
+            sli["ratio"],
+            sli["good_events"] / sli["valid_events"],
+        )
+        self.assertEqual(sli["journey"], "purchase-completion")
+        slo = report["slo"]
+        self.assertGreater(slo["window_days"], 0)
+        self.assertGreater(slo["target"], 0)
+        self.assertLess(slo["target"], 1)
+        self.assertAlmostEqual(
+            slo["error_budget_fraction"],
+            1 - slo["target"],
+        )
+        self.assertAlmostEqual(
+            report["burn_rate"]["observed_bad_fraction"]
+            / slo["error_budget_fraction"],
+            report["burn_rate"]["rate"],
+        )
+        alerts = report["alerts"]
+        self.assertTrue(alerts["multi_window"])
+        self.assertTrue(alerts["page"]["actionable"])
+        self.assertTrue(alerts["ticket"]["actionable"])
+        self.assertNotEqual(
+            alerts["page"]["window_minutes"],
+            alerts["ticket"]["window_minutes"],
+        )
+        runbook = report["runbook"]
+        self.assertTrue(runbook["owner"])
+        self.assertTrue(runbook["user_impact_check"])
+        self.assertTrue(runbook["mitigation"])
+        self.assertTrue(runbook["rollback"])
+        self.assertTrue(runbook["escalation"])
+
+        telemetry = report["telemetry_contract"]
+        self.assertEqual(telemetry["otel_specification"], "1.59.0")
+        self.assertEqual(telemetry["semantic_conventions"], "1.43.0")
+        self.assertEqual(
+            set(telemetry["required_resource_attributes"]),
+            {"service.name", "deployment.environment", "service.version"},
+        )
+        self.assertTrue(telemetry["trace_correlation"])
+        self.assertTrue(telemetry["pii_check"]["passed"])
+        self.assertTrue(telemetry["cardinality_check"]["bounded"])
+        self.assertTrue(telemetry["sampling_limitations"])
+        self.assertTrue(telemetry["stability"])
+        mutation = report["event_telemetry_mutation"]
+        self.assertTrue(mutation["detected"])
+        self.assertTrue(
+            mutation["alert_changed"]
+            or mutation["validation_changed"]
+        )
+        self.assert_data_scale_mastery_evidence(report, lesson_id)
+        self.assertFalse(report["external_network_used"])
+
+    def test_reliability_harness_rejects_good_event_mutation(
+        self,
+    ) -> None:
+        self.assert_harness_source_mutation_fails(
+            "core-15-reliability-observability-slo",
+            "reliability_slo_lab_v1",
+            (
+                'good = event["status"] == "ok" '
+                'and event["latency_ms"] <= 300'
+            ),
+            "good = True",
+        )
