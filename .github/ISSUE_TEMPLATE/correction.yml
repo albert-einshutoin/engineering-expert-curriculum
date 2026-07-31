@@ -1,0 +1,77 @@
+name: "教材の訂正"
+description: "誤りや誤解を招く記述を、Errataへ追跡可能な修正として報告します。"
+title: "[Correction] "
+labels: ["correction"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        安全に公開できる教材訂正だけを記載してください。悪用経路や未修正の脆弱性を含む場合は公開Issueを作らず、SECURITY.mdの非公開経路を使ってください。
+  - type: input
+    id: affected_content
+    attributes:
+      label: "訂正対象"
+      description: "lesson ID、ページ、見出し、該当するreleaseまたはcommitを、第三者が同じ箇所へ到達できる形で記載してください。"
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: "重大度"
+      description: "ERRATA.mdの基準に従い、学習者の判断や成果物への影響で分類してください。"
+      options:
+        - "Critical — 危険または重大な誤判断につながる"
+        - "Substantive — 学習成果や技術理解を変える"
+        - "Editorial — 意味を変えない表記・リンク修正"
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: "なぜ必要か"
+      description: "現行記述の何が不正確または不明瞭で、誰がどのように誤解し、放置すると何が起きるかを説明してください。"
+    validations:
+      required: true
+  - type: textarea
+    id: sources
+    attributes:
+      label: "訂正を裏づける出典"
+      description: "一次資料を優先し、URL、版、該当箇所、現行記述との不一致を記載してください。経験的な主張は再現条件も示してください。"
+    validations:
+      required: true
+  - type: textarea
+    id: implementation
+    attributes:
+      label: "実装・執筆方法"
+      description: "変更前の記述、変更後の記述、訂正理由、影響するlesson・assessment・mapping・生成ページ、ERRATA.mdへの記録方法を示してください。"
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: "注意点・リスク"
+      description: "訂正による意味の変化、後方互換性、関連教材との不整合、過剰な断定、出典の版、公開前に保護すべき情報と軽減策を記載してください。"
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: "GOAL"
+      description: "正しい状態を具体的に定義し、学習者の理解・判断・成果物が訂正後にどう変わるかを示してください。"
+    validations:
+      required: true
+  - type: textarea
+    id: quality
+    attributes:
+      label: "守る品質"
+      description: "技術的正確性、学習設計・証拠、アクセシビリティ、編集・出典、公開訂正履歴のうち守る基準と確認担当を明記してください。"
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: "受け入れ条件・検証証拠"
+      description: "訂正前に失敗する再現、訂正後のテスト・build、リンクと表示の確認、関連教材への回帰確認、review結果を列挙してください。"
+    validations:
+      required: true

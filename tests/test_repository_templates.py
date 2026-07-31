@@ -48,7 +48,7 @@ def form_fields(text: str) -> list[tuple[str, str]]:
     fields: list[tuple[str, str]] = []
     blocks = re.split(r"(?=^  - type: (?:input|dropdown|textarea)$)", text, flags=re.MULTILINE)
     for block in blocks:
-        type_match = re.match(r"^  - type: (input|dropdown|textarea)$", block)
+        type_match = re.match(r"^  - type: (input|dropdown|textarea)\n", block)
         if type_match is None:
             continue
         id_match = re.search(r"^    id: ([a-z][a-z0-9_-]*)$", block, re.MULTILINE)
