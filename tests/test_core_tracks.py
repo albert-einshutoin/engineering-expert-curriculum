@@ -1855,6 +1855,28 @@ class CoreTrackTests(unittest.TestCase):
                     marker,
                 )
 
+    def test_sustain_body_ids_do_not_collide_with_lesson_template(
+        self,
+    ) -> None:
+        template = (
+            REPOSITORY_ROOT / "templates" / "lesson.html"
+        ).read_text(encoding="utf-8")
+        template_ids = set(re.findall(r'\bid="([^"]+)"', template))
+        self.assertTrue(template_ids)
+
+        for lesson_id in SUSTAIN:
+            with self.subTest(lesson_id=lesson_id):
+                body = self.body_path(lesson_id).read_text(encoding="utf-8")
+                body_ids = set(re.findall(r'\bid="([^"]+)"', body))
+                self.assertTrue(body_ids)
+                self.assertTrue(
+                    body_ids.isdisjoint(template_ids),
+                    (
+                        f"{lesson_id}: body/template duplicate ids "
+                        f"{sorted(body_ids & template_ids)}"
+                    ),
+                )
+
     def test_human_product_bodies_scope_standards_and_practice(
         self,
     ) -> None:
