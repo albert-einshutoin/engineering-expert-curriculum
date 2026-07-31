@@ -882,6 +882,19 @@ class LessonQualityTests(unittest.TestCase):
         raw["rubric"][0]["levels"]["proficient"] = ""
         self.assert_invalid(raw, r"rubric.*proficient|proficient.*non-empty")
 
+    def test_rubric_level_descriptions_are_distinct_after_normalization(
+        self,
+    ) -> None:
+        raw = self.complete_document()
+        levels = raw["rubric"][0]["levels"]
+        levels["incomplete"] = "ＡＰＩ   Contract"
+        levels["developing"] = "api contract"
+
+        self.assert_invalid(
+            raw,
+            r"rubric.*descriptions.*distinct|rubric.*levels.*distinct",
+        )
+
     def test_sources_are_distinct_authoritative_https_urls(self) -> None:
         mutations = (
             (
