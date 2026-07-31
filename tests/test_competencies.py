@@ -1119,7 +1119,7 @@ class CompetencyBuildTests(unittest.TestCase):
             (
                 r"(?s)@media print.*"
                 r"\.competency-matrix th:nth-child\(5\).*"
-                r"inline-size:\s*20%"
+                r"inline-size:\s*22%"
             ),
         )
         self.assertRegex(
