@@ -5058,6 +5058,10 @@ class CoreTrackTests(unittest.TestCase):
         self.assertEqual(transfer["changed_assumption"], "change-request")
         self.assertEqual(transfer["changed_fields"], ["change_request"])
         self.assertTrue(transfer["same_legacy_fixture"])
+        self.assertEqual(
+            transfer["baseline_fixture_snapshot"],
+            transfer["transferred_fixture_snapshot"],
+        )
         self.assertNotEqual(
             transfer["baseline_affected_path"],
             transfer["transferred_affected_path"],
@@ -5073,6 +5077,20 @@ class CoreTrackTests(unittest.TestCase):
             "legacy_comprehension_lab_v1",
             "affected_path = trace_execution(fixture, change_request)",
             "affected_path = []",
+            "maintenance-comprehension-invariant",
+        )
+
+    def test_legacy_harness_rejects_transfer_fixture_drift(
+        self,
+    ) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-21-maintenance-legacy-comprehension",
+            "legacy_comprehension_lab_v1",
+            "transferred_fixture = fixed_legacy_fixture()",
+            (
+                "transferred_fixture = fixed_legacy_fixture()\n"
+                '    transferred_fixture["entry_point"] = "drifted-entry"'
+            ),
             "maintenance-comprehension-invariant",
         )
 
@@ -5305,6 +5323,20 @@ class CoreTrackTests(unittest.TestCase):
             "incident-decision-evidence-invariant",
         )
 
+    def test_incident_harness_rejects_unknown_transfer_assumption(
+        self,
+    ) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-23-incident-response-learning",
+            "incident_learning_review_lab_v1",
+            '"detection_minute": 18,',
+            (
+                '"detection_minute": 18,\n'
+                '    "unreviewed_signal_delay": 2,'
+            ),
+            "incident-transfer-invariant",
+        )
+
     def test_delivery_harness_fails_closed_and_verifies_provenance(
         self,
     ) -> None:
@@ -5383,6 +5415,20 @@ class CoreTrackTests(unittest.TestCase):
             (
                 "transferred_delivery_inputs = {\n"
                 '        "artifact_bytes": ARTIFACT_BYTES + "-drift",'
+            ),
+            "delivery-transfer-invariant",
+        )
+
+    def test_delivery_harness_rejects_unknown_canary_transfer_field(
+        self,
+    ) -> None:
+        self.assert_causal_harness_source_mutation_fails(
+            "core-24-delivery-ci-release-safety",
+            "delivery_safety_lab_v1",
+            '"canary_error_rate": 0.05,',
+            (
+                '"canary_error_rate": 0.05,\n'
+                '    "unreviewed_latency_seconds": 3,'
             ),
             "delivery-transfer-invariant",
         )
