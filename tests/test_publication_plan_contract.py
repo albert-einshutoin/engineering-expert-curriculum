@@ -55,6 +55,18 @@ _EMAIL = re.compile(
 PRIVATE_VOLUME_NAME = "/" + "Volumes" + "/Satechi"
 _BASH_BLOCK = re.compile(r"```bash\n(?P<body>.*?)\n```", re.DOTALL)
 _GH_INVOCATION = re.compile(r"(?<![A-Za-z0-9_-])gh\s+(?P<group>[A-Za-z][A-Za-z0-9-]*)\b")
+_PRIVATE_REPORTING_ENDPOINT = (
+    'repos/$PUBLIC_REPOSITORY_SLUG/private-vulnerability-reporting'
+)
+_PRIVATE_REPORTING_PUT = (
+    'PRIVATE_REPORTING_PUT_RESPONSE="$(gh api --include --method PUT '
+    f'"{_PRIVATE_REPORTING_ENDPOINT}")"'
+)
+_PRIVATE_REPORTING_GET = (
+    'PRIVATE_REPORTING_ENABLED="$(gh api '
+    f'"{_PRIVATE_REPORTING_ENDPOINT}" --jq \'.enabled\')"'
+)
+_PRIVATE_REPORTING_ASSERTION = 'test "$PRIVATE_REPORTING_ENABLED" = "true"'
 _EVIDENCE_VALIDATOR = re.compile(
     r"# BEGIN PUBLIC HTTPS EVIDENCE VALIDATOR\n"
     r"(?P<body>.*?)\n"
@@ -177,6 +189,61 @@ def assert_gh_invocations_are_scoped(test: unittest.TestCase, markdown: str) -> 
     test.assertGreater(seen, 0)
 
 
+def assert_private_reporting_contract(
+    test: unittest.TestCase,
+    markdown: str,
+) -> None:
+    """Bind each PVR response shape and the second GET to the first-push gate."""
+    bash_lines = [re.sub(r"\s+", " ", line) for line in _bash_lines(markdown)]
+    invocations = [
+        (index, line)
+        for index, line in enumerate(bash_lines)
+        if _PRIVATE_REPORTING_ENDPOINT in line
+    ]
+    test.assertEqual(
+        [line for _, line in invocations],
+        [
+            _PRIVATE_REPORTING_PUT,
+            _PRIVATE_REPORTING_GET,
+            _PRIVATE_REPORTING_GET,
+            _PRIVATE_REPORTING_GET,
+        ],
+    )
+    put_index = invocations[0][0]
+    test.assertEqual(
+        bash_lines[put_index + 1],
+        'printf \'%s\\n\' "$PRIVATE_REPORTING_PUT_RESPONSE" | grep -Eq '
+        "'^HTTP/[0-9.]+ 204 No Content$'",
+    )
+    for get_index, _ in invocations[1:]:
+        test.assertEqual(
+            bash_lines[get_index + 1],
+            _PRIVATE_REPORTING_ASSERTION,
+        )
+
+    normalized = re.sub(r"\s+", " ", markdown.replace("\\\n", " "))
+    first_push = normalized.index(
+        'git -C "$PUBLICATION_CLONE" push --set-upstream public'
+    )
+    before_first_push = normalized[:first_push]
+    test.assertEqual(before_first_push.count(_PRIVATE_REPORTING_ENDPOINT), 3)
+    test.assertEqual(before_first_push.count(_PRIVATE_REPORTING_PUT), 1)
+    test.assertEqual(before_first_push.count(_PRIVATE_REPORTING_GET), 2)
+    test.assertEqual(before_first_push.count(_PRIVATE_REPORTING_ASSERTION), 2)
+
+    prepush = normalized.split(
+        "**Step 5: Push exactly the reviewed public refs**",
+        maxsplit=1,
+    )[1].split(
+        'git -C "$PUBLICATION_CLONE" push --set-upstream public',
+        maxsplit=1,
+    )[0]
+    test.assertEqual(prepush.count(_PRIVATE_REPORTING_GET), 1)
+    test.assertEqual(prepush.count(_PRIVATE_REPORTING_ASSERTION), 1)
+    test.assertNotIn(_PRIVATE_REPORTING_PUT, prepush)
+    test.assertNotIn("PRIVATE_REPORTING_STATUS", normalized)
+
+
 class PublicationPlanContractTests(unittest.TestCase):
     def test_public_plans_do_not_disclose_private_paths_or_personal_email(self) -> None:
         for path in PUBLIC_PLAN_DOCUMENTS:
@@ -292,25 +359,12 @@ gh pr view "$PUBLIC_PR_URL" --repo "wrong/project" # --repo "$PUBLIC_REPOSITORY_
             assert_gh_invocations_are_scoped(self, wrong_repo)
 
     def test_private_reporting_and_labels_are_verified_before_first_push(self) -> None:
-        publication = re.sub(r"\s+", " ", _read(PUBLICATION_PLAN).replace("\\\n", " "))
-        put_assignment = (
-            'PRIVATE_REPORTING_PUT_RESPONSE="$(gh api --include --method PUT '
-            '"repos/$PUBLIC_REPOSITORY_SLUG/private-vulnerability-reporting")"'
-        )
-        get_assignment = (
-            'PRIVATE_REPORTING_ENABLED="$(gh api '
-            '"repos/$PUBLIC_REPOSITORY_SLUG/private-vulnerability-reporting" '
-            "--jq '.enabled')\""
-        )
-        get_assertion = 'test "$PRIVATE_REPORTING_ENABLED" = "true"'
+        publication = _read(PUBLICATION_PLAN)
+        assert_private_reporting_contract(self, publication)
         push = publication.index(
             'git -C "$PUBLICATION_CLONE" push --set-upstream public'
         )
         for phrase in (
-            put_assignment,
-            get_assignment,
-            get_assertion,
-            "204 No Content",
             'gh label create code --repo "$PUBLIC_REPOSITORY_SLUG"',
             'gh label create content --repo "$PUBLIC_REPOSITORY_SLUG"',
             'gh label create correction --repo "$PUBLIC_REPOSITORY_SLUG"',
@@ -320,14 +374,44 @@ gh pr view "$PUBLIC_PR_URL" --repo "wrong/project" # --repo "$PUBLIC_REPOSITORY_
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, publication)
                 self.assertLess(publication.index(phrase), push)
-        self.assertEqual(publication.count(put_assignment), 1)
-        self.assertEqual(publication.count(get_assignment), 3)
-        self.assertEqual(publication.count(get_assertion), 3)
-        put_block = publication[
-            publication.index(put_assignment):publication.index(get_assignment)
-        ]
-        self.assertEqual(put_block.count("204 No Content"), 1)
-        self.assertNotIn("PRIVATE_REPORTING_STATUS", publication)
+
+    def test_private_reporting_contract_rejects_moved_or_legacy_get(self) -> None:
+        publication = _read(PUBLICATION_PLAN)
+        prepush_heading = publication.index(
+            "**Step 5: Push exactly the reviewed public refs**"
+        )
+        prepush_get = publication.index(
+            "PRIVATE_REPORTING_ENABLED",
+            prepush_heading,
+        )
+        premature_push = (
+            'git -C "$PUBLICATION_CLONE" push --set-upstream public '
+            "refs/heads/main:refs/heads/main\n"
+        )
+        moved_after_push = (
+            publication[:prepush_get]
+            + premature_push
+            + publication[prepush_get:]
+        )
+        with self.assertRaises(AssertionError):
+            assert_private_reporting_contract(self, moved_after_push)
+
+        legacy_get = (
+            'LEGACY_PRIVATE_REPORTING_STATUS="$(gh api --include '
+            f'"{_PRIVATE_REPORTING_ENDPOINT}")"\n'
+            'printf \'%s\\n\' "$LEGACY_PRIVATE_REPORTING_STATUS" | '
+            "grep -Eq '^HTTP/[0-9.]+ 204 No Content$'\n"
+        )
+        first_push = publication.index(
+            'git -C "$PUBLICATION_CLONE" push --set-upstream public'
+        )
+        with_legacy_get = (
+            publication[:first_push]
+            + legacy_get
+            + publication[first_push:]
+        )
+        with self.assertRaises(AssertionError):
+            assert_private_reporting_contract(self, with_legacy_get)
 
     def test_review_evidence_uses_the_actual_implementation_date(self) -> None:
         publication = _read(PUBLICATION_PLAN)
