@@ -168,9 +168,14 @@ def main():
         changed_fields.append("provenance")
     changed_fields.extend(
         field
-        for field in sorted(BASELINE_CANARY)
+        for field in sorted(
+            set(baseline_delivery_inputs["canary"])
+            | set(transferred_delivery_inputs["canary"])
+        )
         if (
-            baseline_delivery_inputs["canary"][field]
+            field not in baseline_delivery_inputs["canary"]
+            or field not in transferred_delivery_inputs["canary"]
+            or baseline_delivery_inputs["canary"][field]
             != transferred_delivery_inputs["canary"][field]
         )
     )
