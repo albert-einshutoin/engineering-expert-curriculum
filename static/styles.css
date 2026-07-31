@@ -588,7 +588,7 @@ mark {
   box-shadow: var(--shadow-card);
 }
 
-.mastery-gate h2 {
+.mastery-gate h3 {
   margin-block-start: 0;
 }
 

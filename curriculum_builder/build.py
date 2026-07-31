@@ -59,6 +59,10 @@ _ROADMAP_LESSON_ID = re.compile(
     r"core-(0[1-9]|[12][0-9]|30)-[a-z0-9]+(?:-[a-z0-9]+)*\Z",
     re.ASCII,
 )
+_MASTERY_GATE_ID = re.compile(
+    r"[A-Za-z][A-Za-z0-9_-]{0,63}\Z",
+    re.ASCII,
+)
 _SAFE_ARTIFACT_PART = re.compile(
     r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\Z",
     re.ASCII,
@@ -619,6 +623,15 @@ def _roadmap_text(value: object, label: str) -> str:
     return value
 
 
+def _roadmap_identifier(value: object, label: str) -> str:
+    if (
+        type(value) is not str
+        or _MASTERY_GATE_ID.fullmatch(value) is None
+    ):
+        raise _validation(f"{label} is invalid")
+    return value
+
+
 def parse_roadmap_bytes(
     raw: bytes,
     source_name: str,
@@ -791,7 +804,7 @@ def parse_roadmap_bytes(
             _MASTERY_GATE_FIELDS,
             f"mastery gate {index}",
         )
-        gate_id = _roadmap_text(
+        gate_id = _roadmap_identifier(
             value["id"],
             f"mastery gate {index} id",
         )
@@ -925,6 +938,10 @@ def validate_release_curriculum(
         if match is None:
             raise _validation("release roadmap node ID is not canonical")
         ordinal = int(match.group(1))
+        if type(node.ordinal) is not int:
+            raise _validation(
+                "release roadmap node ordinal must be an integer"
+            )
         if node.ordinal != ordinal:
             raise _validation(
                 "release roadmap node ordinal does not match its ID"
@@ -976,7 +993,7 @@ def _load_roadmap(
     )
     return parse_roadmap_bytes(
         raw,
-        str(content.path / "roadmap.json"),
+        "roadmap.json",
         require_complete=require_complete,
     )
 

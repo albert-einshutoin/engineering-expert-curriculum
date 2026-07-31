@@ -4,8 +4,19 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Iterable, Mapping
+import re
 
 from .errors import CurriculumValidationError
+
+
+_SAFE_IDENTIFIER = re.compile(
+    r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}\Z",
+    re.ASCII,
+)
+
+
+def _identifier_is_safe(value: str) -> bool:
+    return _SAFE_IDENTIFIER.fullmatch(value) is not None
 
 
 def _render_sorted(values: Iterable[object]) -> str:
@@ -32,9 +43,20 @@ def _validate_node_ids(values: tuple[object, ...]) -> tuple[str, ...]:
 
     padded = tuple(node_id for node_id in node_ids if node_id != node_id.strip())
     if padded:
+        if any(
+            not _identifier_is_safe(node_id.strip())
+            for node_id in padded
+        ):
+            raise CurriculumValidationError(
+                "node IDs contain an unsafe identifier"
+            )
         raise CurriculumValidationError(
             "node IDs must not have leading or trailing whitespace: "
             f"{_render_sorted(padded)}"
+        )
+    if any(not _identifier_is_safe(node_id) for node_id in node_ids):
+        raise CurriculumValidationError(
+            "node IDs contain an unsafe identifier"
         )
 
     duplicates = sorted(
@@ -79,9 +101,23 @@ def _validate_dependencies(node_id: str, raw: object) -> tuple[str, ...]:
         if dependency != dependency.strip()
     )
     if padded:
+        if any(
+            not _identifier_is_safe(dependency.strip())
+            for dependency in padded
+        ):
+            raise CurriculumValidationError(
+                f"prerequisites for {node_id} contain an unsafe identifier"
+            )
         raise CurriculumValidationError(
             f"prerequisites for {node_id} must not have leading or trailing "
             f"whitespace: {_render_sorted(padded)}"
+        )
+    if any(
+        not _identifier_is_safe(dependency)
+        for dependency in dependencies
+    ):
+        raise CurriculumValidationError(
+            f"prerequisites for {node_id} contain an unsafe identifier"
         )
 
     duplicates = sorted(
@@ -123,6 +159,10 @@ def _snapshot_prerequisites(
         )
 
     keys = tuple(key for key, _ in entries if type(key) is str)
+    if any(not _identifier_is_safe(key) for key in keys):
+        raise CurriculumValidationError(
+            "prerequisite keys contain an unsafe identifier"
+        )
     duplicates = sorted(
         key for key, count in Counter(keys).items() if count > 1
     )
