@@ -12,8 +12,18 @@ import re
 import stat
 import sys
 from typing import Final, Iterable
-import unicodedata
 from urllib.parse import unquote_to_bytes, urlsplit
+
+
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPOSITORY_ROOT) not in sys.path:
+    # The checker is both imported by tests and executed as ``python tools/...``.
+    # Normalize the import root so both entry paths share the production CSS
+    # validator instead of maintaining a security-sensitive duplicate.
+    sys.path.insert(0, str(_REPOSITORY_ROOT))
+
+from curriculum_builder.css_safety import validate_stylesheet_bytes  # noqa: E402
+from curriculum_builder.errors import CurriculumValidationError  # noqa: E402
 
 
 MAX_ISSUES: Final = 64
@@ -120,17 +130,6 @@ _END_TAG = re.compile(
 )
 _DOCTYPE = re.compile(r"<!doctype\s+html\s*>\Z", re.ASCII | re.IGNORECASE)
 _PERCENT_ESCAPE = re.compile(r"%(?:[0-9A-Fa-f]{2})")
-_CSS_RESOURCE_PATTERNS: Final = (
-    re.compile(r"(?i)@import(?:[^a-z0-9_-]|\Z)", re.ASCII),
-    re.compile(r"(?i)(?<![a-z0-9_-])url\s*\(", re.ASCII),
-    re.compile(r"(?i)@font-face(?:[^a-z0-9_-]|\Z)", re.ASCII),
-    re.compile(r"(?i)javascript\s*:", re.ASCII),
-    re.compile(
-        r"(?i)(?<![a-z0-9_-])"
-        r"(?:(?:-webkit-)?image(?:-set)?|src)\s*\(",
-        re.ASCII,
-    ),
-)
 
 
 class SiteValidationError(ValueError):
@@ -184,6 +183,12 @@ class _Tree:
     files: dict[PurePosixPath, bytes]
     directories: set[PurePosixPath]
     discovered: set[PurePosixPath]
+
+
+@dataclass(frozen=True, slots=True)
+class _FileRead:
+    source: bytes | None
+    close_failed: bool
 
 
 def _scan_markup_syntax(document: str) -> None:
@@ -240,8 +245,12 @@ class _PageParser(HTMLParser):
         self.title_parts: list[str] = []
         self.title_depth = 0
         self.main_count = 0
-        self.h1_count = 0
-        self.skip_count = 0
+        self.main_ids: list[str | None] = []
+        self.heading_levels: list[int] = []
+        self.heading_parts: list[list[str]] = []
+        self.open_heading: int | None = None
+        self.skip_targets: list[str | None] = []
+        self.charset_values: list[str] = []
         self.csp_values: list[str] = []
         self.stylesheet_count = 0
         self.doctype_count = 0
@@ -280,6 +289,11 @@ class _PageParser(HTMLParser):
             values.setdefault(name.casefold(), value)
         if tag in _FORBIDDEN_ELEMENTS:
             self.issues.add(self.relative, f"{tag} is forbidden")
+        if tag == "template" or "hidden" in values or "inert" in values:
+            # The release contract must describe the rendered accessibility
+            # tree. Counting required landmarks inside inert DOM would turn a
+            # visually empty document into a false success.
+            self.issues.add(self.relative, "inert content is forbidden")
         for name in names:
             if name == "style" or name.startswith("on"):
                 self.issues.add(
@@ -317,9 +331,18 @@ class _PageParser(HTMLParser):
             self.title_depth += 1
         elif tag == "main":
             self.main_count += 1
-        elif tag == "h1":
-            self.h1_count += 1
+            self.main_ids.append(identifier)
+        elif len(tag) == 2 and tag[0] == "h" and tag[1] in "123456":
+            if self.open_heading is not None:
+                self._malformed()
+            self.heading_levels.append(int(tag[1]))
+            self.heading_parts.append([])
+            self.open_heading = len(self.heading_parts) - 1
         elif tag == "meta":
+            if "charset" in values:
+                self.charset_values.append(
+                    (values.get("charset") or "").casefold()
+                )
             http_equiv = (values.get("http-equiv") or "").strip().casefold()
             if http_equiv == "refresh":
                 self.issues.add(self.relative, "meta refresh is forbidden")
@@ -338,8 +361,8 @@ class _PageParser(HTMLParser):
         elif tag == "a":
             href = values.get("href")
             classes = set((values.get("class") or "").split())
-            if href == "#main" and "skip-link" in classes:
-                self.skip_count += 1
+            if "skip-link" in classes:
+                self.skip_targets.append(href)
             self._record_url(href, "anchor", _rel_tokens(values.get("rel")))
         elif tag in _RESOURCE_ELEMENTS:
             self._record_url(values.get("src"), "resource", set())
@@ -422,10 +445,14 @@ class _PageParser(HTMLParser):
         self.stack.pop()
         if tag == "title":
             self.title_depth -= 1
+        elif len(tag) == 2 and tag[0] == "h" and tag[1] in "123456":
+            self.open_heading = None
 
     def handle_data(self, data: str) -> None:
         if self.title_depth:
             self.title_parts.append(data)
+        if self.open_heading is not None:
+            self.heading_parts[self.open_heading].append(data)
 
     def finish(self) -> _Page:
         if self.stack or self.doctype_count != 1:
@@ -436,10 +463,35 @@ class _PageParser(HTMLParser):
             self.issues.add(self.relative, "title must be present exactly once")
         if self.main_count != 1:
             self.issues.add(self.relative, "page must contain exactly one main")
-        if self.h1_count != 1:
+        if self.heading_levels.count(1) != 1:
             self.issues.add(self.relative, "page must contain exactly one h1")
-        if self.skip_count != 1:
+        if any(not "".join(parts).strip() for parts in self.heading_parts):
+            self.issues.add(self.relative, "heading text must not be empty")
+        if self.heading_levels and self.heading_levels[0] != 1:
+            self.issues.add(self.relative, "heading hierarchy must begin with h1")
+        if any(
+            current > previous + 1
+            for previous, current in zip(
+                self.heading_levels,
+                self.heading_levels[1:],
+            )
+        ):
+            self.issues.add(self.relative, "heading hierarchy must not skip levels")
+        if len(self.skip_targets) != 1:
             self.issues.add(self.relative, "page must contain exactly one skip link")
+        elif self.main_count == 1:
+            main_id = self.main_ids[0]
+            expected_target = f"#{main_id}" if main_id else None
+            if self.skip_targets[0] != expected_target:
+                self.issues.add(
+                    self.relative,
+                    "skip link target must be the main element id",
+                )
+        if self.charset_values != ["utf-8"]:
+            self.issues.add(
+                self.relative,
+                "charset must be declared exactly once as utf-8",
+            )
         if self.csp_values != [REQUIRED_CSP]:
             self.issues.add(self.relative, "CSP must match the exact safe contract")
         if self.stylesheet_count != 1:
@@ -466,12 +518,14 @@ def _read_regular_file(
     name: str,
     expected: os.stat_result,
     maximum: int,
-) -> bytes | None:
+) -> _FileRead:
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
         descriptor = os.open(name, flags, dir_fd=directory_fd)
     except OSError:
-        return None
+        return _FileRead(source=None, close_failed=False)
+
+    source: bytes | None = None
     try:
         before = os.fstat(descriptor)
         if (
@@ -480,40 +534,48 @@ def _read_regular_file(
             or before.st_ino != expected.st_ino
             or before.st_nlink != 1
         ):
-            return None
-        chunks: list[bytes] = []
-        consumed = 0
-        while True:
-            chunk = os.read(descriptor, min(64 * 1024, maximum + 1 - consumed))
-            if not chunk:
-                break
-            chunks.append(chunk)
-            consumed += len(chunk)
-            if consumed > maximum:
-                return None
-        after = os.fstat(descriptor)
-        if (
-            before.st_dev,
-            before.st_ino,
-            before.st_size,
-            before.st_mtime_ns,
-            before.st_ctime_ns,
-        ) != (
-            after.st_dev,
-            after.st_ino,
-            after.st_size,
-            after.st_mtime_ns,
-            after.st_ctime_ns,
-        ):
-            return None
-        return b"".join(chunks)
+            source = None
+        else:
+            chunks: list[bytes] = []
+            consumed = 0
+            while True:
+                chunk = os.read(
+                    descriptor,
+                    min(64 * 1024, maximum + 1 - consumed),
+                )
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                consumed += len(chunk)
+                if consumed > maximum:
+                    break
+            after = os.fstat(descriptor)
+            if consumed <= maximum and (
+                before.st_dev,
+                before.st_ino,
+                before.st_size,
+                before.st_mtime_ns,
+                before.st_ctime_ns,
+            ) == (
+                after.st_dev,
+                after.st_ino,
+                after.st_size,
+                after.st_mtime_ns,
+                after.st_ctime_ns,
+            ):
+                source = b"".join(chunks)
     except OSError:
-        return None
-    finally:
-        try:
-            os.close(descriptor)
-        except OSError:
-            pass
+        source = None
+
+    close_failed = False
+    try:
+        # close(2) has an ambiguous error contract, so never retry it. The
+        # separate flag lets the caller report teardown failure without hiding
+        # an earlier read or identity failure.
+        os.close(descriptor)
+    except OSError:
+        close_failed = True
+    return _FileRead(source=source, close_failed=close_failed)
 
 
 def _scan_tree(root: Path, issues: _Issues) -> _Tree | None:
@@ -628,11 +690,14 @@ def _scan_tree(root: Path, issues: _Issues) -> _Tree | None:
                 issues.add(child, "disallowed static file type")
                 continue
             maximum = MAX_HTML_BYTES if suffix == ".html" else MAX_CSS_BYTES
-            source = _read_regular_file(directory_fd, entry.name, status, maximum)
-            if source is None:
+            result = _read_regular_file(directory_fd, entry.name, status, maximum)
+            if result.source is None:
                 issues.add(child, "file is too large, unstable, or unreadable")
+            if result.close_failed:
+                issues.add(child, "file could not be closed safely")
+            if result.source is None or result.close_failed:
                 continue
-            tree.files[child] = source
+            tree.files[child] = result.source
 
     try:
         visit(root_fd, PurePosixPath(), 0)
@@ -647,27 +712,13 @@ def _scan_tree(root: Path, issues: _Issues) -> _Tree | None:
 
 
 def _validate_css(relative: PurePosixPath, source: bytes, issues: _Issues) -> None:
-    if not source:
-        issues.add(relative, "CSS must not be empty")
-        return
+    # The generated artifact and its source stylesheet need one byte-level
+    # policy. Sharing the validator prevents comment-obfuscation rules from
+    # drifting between build time and publication time.
     try:
-        stylesheet = source.decode("utf-8")
-    except UnicodeDecodeError:
-        issues.add(relative, "CSS must be valid UTF-8")
-        return
-    if any(
-        character not in "\t\n\r"
-        and unicodedata.category(character) in {"Cc", "Cf"}
-        for character in stylesheet
-    ):
-        issues.add(relative, "CSS contains a forbidden control character")
-    if "\\" in stylesheet:
-        issues.add(relative, "CSS contains an unsafe escape")
-    if any(
-        pattern.search(stylesheet) is not None
-        for pattern in _CSS_RESOURCE_PATTERNS
-    ):
-        issues.add(relative, "CSS contains forbidden remote resource syntax")
+        validate_stylesheet_bytes(source)
+    except CurriculumValidationError:
+        issues.add(relative, "CSS violates the local-only stylesheet contract")
 
 
 def _validate_html(
