@@ -5071,7 +5071,7 @@ class CoreTrackTests(unittest.TestCase):
         self.assert_causal_harness_source_mutation_fails(
             "core-21-maintenance-legacy-comprehension",
             "legacy_comprehension_lab_v1",
-            "affected_path = trace_execution(FIXTURE, change_request)",
+            "affected_path = trace_execution(fixture, change_request)",
             "affected_path = []",
             "maintenance-comprehension-invariant",
         )
