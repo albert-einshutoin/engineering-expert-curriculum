@@ -1631,6 +1631,30 @@ class CoreTrackTests(unittest.TestCase):
             "core-08-modularity-evolutionary-architecture"
         ).read_text(encoding="utf-8")
         self.assertIn("lesson-defined synthetic scenario", architecture_body)
+        architecture_metadata = json.loads(
+            self.body_path(
+                "core-08-modularity-evolutionary-architecture"
+            ).with_name("lesson.json").read_text(encoding="utf-8")
+        )
+        metadata_text = json.dumps(
+            architecture_metadata,
+            ensure_ascii=False,
+        )
+        self.assertNotIn("1・3・5", metadata_text)
+        self.assertIn(
+            "1〜5の全anchor",
+            next(
+                objective["statement"]
+                for objective in architecture_metadata["objectives"]
+                if objective["id"] == "obj-decision"
+            ),
+        )
+        self.assertTrue(
+            any(
+                "1〜5の全anchor" in step
+                for step in architecture_metadata["lab"]["steps"]
+            )
+        )
         self.assertEqual(
             set(report["after"]["modules"]),
             {
