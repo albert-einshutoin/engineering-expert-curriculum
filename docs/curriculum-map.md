@@ -22,7 +22,7 @@ rationaleと制限は公開コンピテンシー表で確認する。
 |---|---|
 | 保存カタログ | 1,140 items |
 | カタログ SHA-256 | `4f38b5f63931a7f06e13f90f5d9ef90a0a435f30dae5d4fe70720d730a057473` |
-| コアレッスン | 30 complete lessons |
+| コアレッスン | 30 structurally complete lessons |
 | コンピテンシー対応 | 90 mappings |
 | 統合 Capstone | 3 projects |
 | Primary exercise coverage | 30/30 |

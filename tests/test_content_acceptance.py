@@ -1250,7 +1250,10 @@ class ContentAcceptanceTests(unittest.TestCase):
             self.assertIn(stage, standard)
         for role in REVIEW_ROLES:
             self.assertIn(role, standard)
-        self.assertIn("4 役すべて", standard)
+        self.assertIn("4 review dimensions", standard)
+        for reviewer_kind in ("human", "ai-assisted", "automated"):
+            self.assertIn(f"`{reviewer_kind}`", standard)
+        self.assertIn("正直に開示", standard)
 
     def test_curriculum_map_generated_block_matches_expected_bytes(self) -> None:
         from curriculum_builder.curriculum_map import (

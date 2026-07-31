@@ -186,7 +186,7 @@ def render_generated_curriculum_map(repository_root: Path) -> str:
         "|---|---|",
         f"| 保存カタログ | {len(catalog):,} items |",
         f"| カタログ SHA-256 | `{catalog_sha256}` |",
-        f"| コアレッスン | {len(lessons)} complete lessons |",
+        f"| コアレッスン | {len(lessons)} structurally complete lessons |",
         f"| コンピテンシー対応 | {len(matrix.mappings)} mappings |",
         f"| 統合 Capstone | {len(capstones)} projects |",
         f"| Primary exercise coverage | {len(primary_owner)}/{len(lessons)} |",

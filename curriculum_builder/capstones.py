@@ -1,4 +1,4 @@
-"""Strict, immutable capstone briefs bound to the complete lesson release."""
+"""Strict capstone briefs bound to a structurally complete lesson release."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from typing import Final
 import unicodedata
 
 from .catalog import strict_json_loads
-from .errors import CurriculumValidationError
+from .errors import CurriculumValidationError, IncompleteLessonReleaseError
 
 
 MAX_CAPSTONE_BYTES: Final = 256 * 1024
@@ -741,7 +741,7 @@ def _validate_lexical_path(path: Path) -> Path:
 
 
 def load_capstones(path: Path) -> tuple[Capstone, ...]:
-    """Load repository capstones and bind references to complete lessons."""
+    """Load capstones and bind references to structurally complete lessons."""
     _require_descriptor_support()
     absolute = _validate_lexical_path(path)
     if absolute.name != "capstones":
@@ -782,17 +782,18 @@ def load_capstones(path: Path) -> tuple[Capstone, ...]:
 
         try:
             lesson_snapshot = load_lessons_from_root(parent_fd)
-        except CurriculumValidationError as error:
-            if "draft lessons cannot be published" in str(error):
-                raise _validation(
-                    "draft lessons cannot be referenced by capstones"
-                ) from None
-            raise
+        except IncompleteLessonReleaseError:
+            raise _validation(
+                "capstones require a structurally complete lesson release; "
+                "draft lessons cannot be referenced"
+            ) from None
         expected = frozenset(
             item.lesson.id for item in lesson_snapshot.lessons
         )
         if expected != frozenset(_PRIMARY_OWNER):
-            raise _validation("capstones require the complete lesson release")
+            raise _validation(
+                "capstones require the structurally complete lesson release"
+            )
         current_leaf = os.stat(
             "capstones",
             dir_fd=parent_fd,

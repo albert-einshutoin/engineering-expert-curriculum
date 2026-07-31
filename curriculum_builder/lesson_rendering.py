@@ -13,7 +13,7 @@ import sys
 from typing import Final
 from urllib.parse import urlsplit
 
-from .errors import CurriculumValidationError
+from .errors import CurriculumValidationError, IncompleteLessonReleaseError
 from .graph import topological_stages
 from .html_safety import MAX_FRAGMENT_BYTES, SafeHtml, validate_fragment
 from .lessons import Lesson, MAX_LESSON_BYTES, load_lesson_bytes
@@ -155,8 +155,9 @@ def load_lessons_from_root(content_descriptor: int) -> LessonCollection:
                 "lesson directory name must equal lesson id"
             )
         if item.lesson.status != "complete":
-            raise CurriculumValidationError(
-                "draft lessons cannot be published"
+            raise IncompleteLessonReleaseError(
+                "draft lessons cannot form a structurally complete "
+                "curriculum release"
             )
 
     prerequisites = {

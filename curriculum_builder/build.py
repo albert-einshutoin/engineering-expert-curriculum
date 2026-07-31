@@ -917,7 +917,7 @@ def validate_release_curriculum(
     roadmap: Roadmap,
     lessons: Sequence[Lesson],
 ) -> None:
-    """Bind the release roadmap to the exact immutable lesson snapshot."""
+    """Bind the structurally complete release to one lesson snapshot."""
     if not isinstance(roadmap, Roadmap):
         raise _validation("release roadmap must be a Roadmap")
     if type(roadmap.version) is not int or roadmap.version != 1:
@@ -948,7 +948,10 @@ def validate_release_curriculum(
     ):
         raise _validation("release lessons must be a sequence")
     if len(lessons) != 30:
-        raise _validation("release curriculum must contain exactly 30 lessons")
+        raise _validation(
+            "structurally complete release curriculum must contain exactly "
+            "30 lessons"
+        )
     if any(not isinstance(lesson, Lesson) for lesson in lessons):
         raise _validation("release lessons must be Lesson values")
 
@@ -966,7 +969,10 @@ def validate_release_curriculum(
             "release lesson ordinals must be exactly 1 through 30"
         )
     if any(lesson.status != "complete" for lesson in lessons):
-        raise _validation("release curriculum cannot contain draft lessons")
+        raise _validation(
+            "structurally complete release curriculum cannot contain "
+            "draft lessons"
+        )
     if type(roadmap.nodes) is not tuple or len(roadmap.nodes) != 30:
         raise _validation("release roadmap must contain exactly 30 nodes")
     if any(type(node) is not RoadmapNode for node in roadmap.nodes):
