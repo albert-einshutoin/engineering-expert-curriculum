@@ -1091,6 +1091,7 @@ regex:/(?:Volumes)/[^/]+/Developer/engineering-expert-curriculum==>$REPO_ROOT
 regex:/(?:Volumes)/[^/]+/==>$VOLUME_ROOT/
 regex:/(?:Users)/[^/]+/\.pyenv/versions/[0-9.]+/bin/python3\.13==>python3.13
 regex:/(?:Users)/[^/]+/==>$USER_HOME/
+regex:\b[A-Za-z0-9._%+-]+@(?!example\.(?:com|invalid)\b)[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b==>$PRIVATE_EMAIL
 ```
 
 Set `REPLACEMENTS_FILE` to that mode-`0600` file. Obtain the verified public
@@ -1141,11 +1142,11 @@ git -C "$PUBLICATION_CLONE" log \
 test "$(git -C "$PUBLICATION_CLONE" log \
   refs/heads/main refs/heads/feat/static-oss-curriculum \
   --format='%ae%n%ce' | LC_ALL=C sort -u)" = "$PUBLIC_NOREPLY_EMAIL"
-PRIVATE_TEXT_PATTERN='/(Users)/|/(Volumes)/|[[:alnum:]._%+-]+@[[:alnum:].-]+\.[[:alpha:]]{2,}'
+PRIVATE_PATH_PATTERN='/(Users)/|/(Volumes)/'
 if git -C "$PUBLICATION_CLONE" log \
   refs/heads/main refs/heads/feat/static-oss-curriculum --format='%B' | \
-  grep -Eq "$PRIVATE_TEXT_PATTERN"; then
-  echo "private text found in rewritten commit messages" >&2
+  grep -Eq "$PRIVATE_PATH_PATTERN"; then
+  echo "private path found in rewritten commit messages" >&2
   exit 1
 else
   grep_status=$?
@@ -1153,8 +1154,8 @@ else
 fi
 while IFS= read -r commit_sha; do
   if (cd "$PUBLICATION_CLONE" && git grep --quiet -I -E \
-    "$PRIVATE_TEXT_PATTERN" "$commit_sha" --); then
-    echo "private text found in rewritten history" >&2
+    "$PRIVATE_PATH_PATTERN" "$commit_sha" --); then
+    echo "private path found in rewritten history" >&2
     exit 1
   else
     git_grep_status=$?
@@ -1162,6 +1163,72 @@ while IFS= read -r commit_sha; do
   fi
 done < <(git -C "$PUBLICATION_CLONE" rev-list \
   refs/heads/main refs/heads/feat/static-oss-curriculum)
+
+PUBLICATION_CLONE="$PUBLICATION_CLONE" python3.13 - <<'PY'
+from __future__ import annotations
+
+import os
+from pathlib import Path
+import re
+import subprocess
+
+
+repository = Path(os.environ["PUBLICATION_CLONE"])
+public_refs = (
+    "refs/heads/main",
+    "refs/heads/feat/static-oss-curriculum",
+)
+email_pattern = re.compile(
+    r"[A-Za-z0-9._%+-]+@(?P<domain>[A-Za-z0-9.-]+\.[A-Za-z]{2,})"
+)
+# These IANA-reserved domains are deliberate adversarial test fixtures. They
+# cannot route mail; every other email-like value must have been rewritten.
+SAFE_FIXTURE_EMAIL_DOMAINS = {"example.com", "example.invalid"}
+
+
+def reject_unexpected_email(text: str, location: str) -> None:
+    for match in email_pattern.finditer(text):
+        if match.group("domain").lower() not in SAFE_FIXTURE_EMAIL_DOMAINS:
+            raise SystemExit(
+                f"unexpected email-like text found in rewritten history: {location}"
+            )
+
+
+messages = subprocess.run(
+    ["git", "-C", str(repository), "log", *public_refs, "--format=%B"],
+    check=True,
+    capture_output=True,
+    text=True,
+)
+reject_unexpected_email(messages.stdout, "commit messages")
+
+commits = subprocess.run(
+    ["git", "-C", str(repository), "rev-list", *public_refs],
+    check=True,
+    capture_output=True,
+    text=True,
+).stdout.splitlines()
+for commit_sha in commits:
+    matches = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repository),
+            "grep",
+            "-n",
+            "-I",
+            "-E",
+            r"[[:alnum:]._%+-]+@[[:alnum:].-]+\.[[:alpha:]]{2,}",
+            commit_sha,
+            "--",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if matches.returncode not in (0, 1):
+        raise SystemExit(f"git grep failed for rewritten commit {commit_sha}")
+    reject_unexpected_email(matches.stdout, commit_sha)
+PY
 
 GITLEAKS_DIR="$(mktemp -d /tmp/gitleaks-publication.XXXXXX)"
 GITLEAKS_ARCHIVE="$GITLEAKS_DIR/gitleaks_8.30.1_darwin_arm64.tar.gz"
@@ -1193,7 +1260,8 @@ printf '%s' "$PREFLIGHT_PAYLOAD" > "$PUBLICATION_PREFLIGHT_TOKEN"
 
 Expected: local heads are exactly `main` and `feat/static-oss-curriculum`, with
 no tags; every author and committer uses the one verified noreply identity;
-private paths and other email addresses are absent from every reachable blob;
+private paths and routable email-like text are absent from every reachable
+blob, while only the two reserved `example` fixture domains remain;
 the official Gitleaks CLI and all tests/build checks pass. If any gate fails,
 discard only the publication clone, correct the source feature through TDD,
 and restart from a fresh sibling clone.
