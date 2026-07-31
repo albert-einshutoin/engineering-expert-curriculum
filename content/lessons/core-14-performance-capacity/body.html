@@ -26,7 +26,7 @@
   <h3>注文APIのsimulated load curveとactual local profileを分ける</h3>
   <dl>
     <dt>前提</dt>
-    <dd>production計測ではない固定simulationを使う。read比率80%、処理上限100 RPS、4段階のoffered loadを与える。profileだけは、この場のCPython 3.13 processで実際に採取する。cProfile/pstatsはPython 3.13標準libraryを対象とし、version固定のないGo DiagnosticsとApple文書は2026-07-31確認時点の範囲として扱う。</dd>
+    <dd>production計測ではない固定simulationを使う。read比率80%、処理上限100 RPS、4段階のoffered loadを与える。各段階のactive concurrencyはLittleの式から作らず、独立したsynthetic観測入力として与える。profileだけは、この場のCPython 3.13 processで実際に採取する。cProfile/pstatsはPython 3.13標準libraryを対象とし、version固定のないGo Diagnosticsは2026-07-31確認時点の範囲として扱う。</dd>
     <dt>入力</dt>
     <dd>40、100、150、50 RPSの順で負荷を変え、最後の50 RPSは超過後の回復区間とする。request mix mutationではwrite比率を20%から70%へ変える。</dd>
     <dt>操作</dt>
@@ -45,7 +45,14 @@ HARNESS = "performance_capacity_lab_v1"
 CAPACITY_RPS = 100
 HEADROOM_FRACTION = 0.2
 
-def simulate(stage, offered_rps, capacity, previous_queue, write_fraction):
+def simulate(
+    stage,
+    offered_rps,
+    capacity,
+    previous_queue,
+    write_fraction,
+    observed_active_concurrency,
+):
     if offered_rps > capacity:
         accepted_rps = capacity
         queue_depth = previous_queue + offered_rps - capacity
@@ -62,7 +69,6 @@ def simulate(stage, offered_rps, capacity, previous_queue, write_fraction):
     p95_ms = p50_ms + 20 + queue_depth
     p99_ms = p95_ms + 30 + queue_depth
     mean_ms = (p50_ms + p95_ms) // 2
-    observed_concurrency = round(success_rps * mean_ms / 1_000, 6)
     return {
         "stage": stage,
         "offered_rps": offered_rps,
@@ -72,7 +78,7 @@ def simulate(stage, offered_rps, capacity, previous_queue, write_fraction):
         "p95_ms": p95_ms,
         "p99_ms": p99_ms,
         "mean_ms": mean_ms,
-        "observed_concurrency": observed_concurrency,
+        "observed_active_concurrency": observed_active_concurrency,
         "cpu_percent": min(99.0, 20.0 + accepted_rps * 0.65),
         "memory_mb": 128 + queue_depth * 2,
         "queue_depth": queue_depth,
@@ -105,20 +111,21 @@ def profile_target(values):
 
 def main():
     stages = [
-        ("low", 40),
-        ("near-limit", 100),
-        ("overload", 150),
-        ("recovery", 50),
+        ("low", 40, 2.0),
+        ("near-limit", 100, 6.2),
+        ("overload", 150, 12.4),
+        ("recovery", 50, 4.6),
     ]
     curve = []
     previous_queue = 0
-    for stage, offered_rps in stages:
+    for stage, offered_rps, observed_active_concurrency in stages:
         point = simulate(
             stage,
             offered_rps,
             CAPACITY_RPS,
             previous_queue,
             write_fraction=0.2,
+            observed_active_concurrency=observed_active_concurrency,
         )
         curve.append(point)
         previous_queue = point["queue_depth"]
@@ -131,7 +138,7 @@ def main():
     little_source = by_stage["near-limit"]
     throughput_per_second = little_source["success_rps"]
     mean_response_seconds = little_source["mean_ms"] / 1_000
-    observed_concurrency = little_source["observed_concurrency"]
+    observed_concurrency = little_source["observed_active_concurrency"]
     calculated_concurrency = (
         throughput_per_second * mean_response_seconds
     )
@@ -230,6 +237,9 @@ def main():
             "throughput_per_second": throughput_per_second,
             "mean_response_seconds": mean_response_seconds,
             "observed_concurrency": observed_concurrency,
+            "observed_concurrency_source": (
+                "independent-simulated-fixture-input"
+            ),
             "calculated_concurrency": calculated_concurrency,
             "relative_error": relative_error,
         },
@@ -247,7 +257,6 @@ def main():
                 "python": "3.13",
                 "profiler": "cProfile/pstats standard library",
                 "go_docs": "rolling; reviewed 2026-07-31",
-                "apple_docs": "rolling; reviewed 2026-07-31",
             },
             "environment_limitations": (
                 "このCPython processのbounded fixtureだけを測り、"
@@ -289,7 +298,7 @@ def main():
         "external_network_used": False,
     }
     assert all(report["curve_analysis"].values())
-    assert report["little_law"]["relative_error"] == 0
+    assert 0 &lt; report["little_law"]["relative_error"] &lt;= 0.05
     return report
 
 print(json.dumps(main(), ensure_ascii=False, indent=2))
@@ -346,6 +355,6 @@ PY</code></pre>
 </section>
 <section id="sources-next">
   <h2>出典と次の学習</h2>
-  <p>profileとtraceの選択はGo DiagnosticsとAppleの性能改善cycle、実行したcProfile/pstatsの意味はPython 3.13のThe Python Profilers、overload制御はGoogle SRE Chapter 21を一次資料として照合する。GoとAppleの文書はrolling URLのため2026-07-31に再確認した範囲である。平均queueの整合にはLittleの原論文、tailのsystem効果にはThe Tail at Scaleを使う。いずれも特定fixtureの最大RPSを保証する資料ではない。</p>
+  <p>profileとtraceの選択はGo Diagnostics、実行したcProfile/pstatsの意味はPython 3.13のThe Python Profilers、overload制御はGoogle SRE Chapter 21を一次資料として照合する。Goの文書はrolling URLのため2026-07-31に再確認した範囲である。平均queueの整合にはLittleの原論文、tailのsystem効果にはThe Tail at Scaleを使う。いずれも特定fixtureの最大RPSを保証する資料ではない。</p>
   <p>次のcore-15では、容量曲線を利用者journeyのgood event、SLO、error budget、multi-window alertへ接続し、性能劣化をpageとticketへ分ける。</p>
 </section>

@@ -146,11 +146,6 @@
       "kind": "primary"
     },
     {
-      "title": "Improving your app’s performance",
-      "url": "https://developer.apple.com/documentation/xcode/improving-your-app-s-performance/",
-      "kind": "primary"
-    },
-    {
       "title": "Handling Overload",
       "url": "https://sre.google/sre-book/handling-overload/",
       "kind": "primary"
