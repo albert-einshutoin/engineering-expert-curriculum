@@ -62,27 +62,82 @@ BASELINE_CANARY = {
     "maximum_error_rate": 0.02,
 }
 TRANSFER_CANARY = {
-    **BASELINE_CANARY,
     "canary_error_rate": 0.05,
+    "maximum_error_rate": 0.02,
 }
-ROLLBACK_DRILL = {
+ROLLBACK_COMMAND_INPUT = {
     "command_exit_code": 0,
-    "before_error_rate": TRANSFER_CANARY["canary_error_rate"],
-    "after_error_rate": BASELINE_CANARY["canary_error_rate"],
-    "target_error_rate": BASELINE_CANARY["maximum_error_rate"],
 }
 
-artifact_digest = hashlib.sha256(
-    ARTIFACT_BYTES.encode("utf-8")
-).hexdigest()
-PROVENANCE = {
-    "subject_digest": artifact_digest,
-    "builder_id": TRUSTED_BUILDERS[0],
-}
 verification_trace = []
 
 def is_number(value):
     return type(value) in {int, float} and type(value) is not bool
+
+def validate_raw_delivery_inputs():
+    if (
+        type(REQUIRED_CHECKS) is not list
+        or not REQUIRED_CHECKS
+        or not all(
+            type(name) is str and name
+            for name in REQUIRED_CHECKS
+        )
+        or len(REQUIRED_CHECKS) != len(set(REQUIRED_CHECKS))
+        or type(CI_CHECKS) is not list
+        or not CI_CHECKS
+        or type(ARTIFACT_BYTES) is not str
+        or not ARTIFACT_BYTES
+        or type(TRUSTED_BUILDERS) is not list
+        or not TRUSTED_BUILDERS
+        or not all(
+            type(builder) is str and builder
+            for builder in TRUSTED_BUILDERS
+        )
+        or len(TRUSTED_BUILDERS) != len(set(TRUSTED_BUILDERS))
+        or type(DORA_METRICS) is not list
+        or not DORA_METRICS
+        or not all(
+            type(metric) is str and metric
+            for metric in DORA_METRICS
+        )
+        or len(DORA_METRICS) != len(set(DORA_METRICS))
+        or type(BASELINE_CANARY) is not dict
+        or type(TRANSFER_CANARY) is not dict
+        or type(ROLLBACK_COMMAND_INPUT) is not dict
+    ):
+        raise AssertionError(
+            "delivery-input-invariant: invalid raw input collection"
+        )
+    if (
+        any(
+            type(check) is not dict
+            or set(check) != {"name", "state"}
+            or type(check["name"]) is not str
+            or not check["name"]
+            or type(check["state"]) is not str
+            or not check["state"]
+            for check in CI_CHECKS
+        )
+        or len(CI_CHECKS)
+        != len({check["name"] for check in CI_CHECKS})
+        or set(ROLLBACK_COMMAND_INPUT) != {"command_exit_code"}
+        or type(ROLLBACK_COMMAND_INPUT["command_exit_code"]) is not int
+    ):
+        raise AssertionError(
+            "delivery-input-invariant: invalid raw input schema"
+        )
+    for canary in (BASELINE_CANARY, TRANSFER_CANARY):
+        if (
+            set(canary)
+            != {"canary_error_rate", "maximum_error_rate"}
+            or not all(
+                is_number(value) and value &gt;= 0
+                for value in canary.values()
+            )
+        ):
+            raise AssertionError(
+                "delivery-transfer-invariant: invalid canary schema"
+            )
 
 def validate_delivery_input_schema(delivery_input):
     valid = (
@@ -250,6 +305,14 @@ def observe_rollback(fixture):
     }
 
 def main():
+    validate_raw_delivery_inputs()
+    artifact_digest = hashlib.sha256(
+        ARTIFACT_BYTES.encode("utf-8")
+    ).hexdigest()
+    PROVENANCE = {
+        "subject_digest": artifact_digest,
+        "builder_id": TRUSTED_BUILDERS[0],
+    }
     baseline_delivery_inputs = {
         "artifact_bytes": ARTIFACT_BYTES,
         "provenance": dict(PROVENANCE),
@@ -270,6 +333,22 @@ def main():
     transferred_artifact_digest = hashlib.sha256(
         transferred_delivery_inputs["artifact_bytes"].encode("utf-8")
     ).hexdigest()
+    ROLLBACK_DRILL = {
+        "command_exit_code": (
+            ROLLBACK_COMMAND_INPUT["command_exit_code"]
+        ),
+        "before_error_rate": (
+            transferred_delivery_inputs["canary"][
+                "canary_error_rate"
+            ]
+        ),
+        "after_error_rate": (
+            baseline_delivery_inputs["canary"]["canary_error_rate"]
+        ),
+        "target_error_rate": (
+            baseline_delivery_inputs["canary"]["maximum_error_rate"]
+        ),
+    }
     changed_fields = [
         path.removeprefix("canary.")
         for path in delivery_changed_paths

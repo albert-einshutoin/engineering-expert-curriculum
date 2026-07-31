@@ -5738,13 +5738,12 @@ class CoreTrackTests(unittest.TestCase):
             (
                 (
                     "TRANSFER_CANARY = {\n"
-                    "    **BASELINE_CANARY,\n"
                     '    "canary_error_rate": 0.05,\n'
+                    '    "maximum_error_rate": 0.02,\n'
                     "}"
                 ),
                 (
                     "TRANSFER_CANARY = {\n"
-                    "    **BASELINE_CANARY,\n"
                     '    "canary_error_rate": 0.05,\n'
                     '    "maximum_error_rate": 0.10,\n'
                     "}"
