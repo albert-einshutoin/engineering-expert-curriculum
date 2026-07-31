@@ -1925,7 +1925,7 @@ git commit -m "feat: map core mastery to global competency frameworks"
 - Create: `tests/test_capstones.py`
 - Modify: `curriculum_builder/build.py`
 
-- [ ] **Step 1: Write capstone coverage tests**
+- [x] **Step 1: Write capstone coverage tests**
 
 ```python
 # tests/test_capstones.py
@@ -1959,17 +1959,17 @@ class CapstoneTests(unittest.TestCase):
             )
 ```
 
-- [ ] **Step 2: Run capstone tests and verify RED**
+- [x] **Step 2: Run capstone tests and verify RED**
 
 Run:
 
 ```bash
-python3 -m unittest tests.test_capstones -v
+python3.13 -m unittest tests.test_capstones -v
 ```
 
 Expected: import failure because `curriculum_builder.capstones` does not exist.
 
-- [ ] **Step 3: Implement capstone parsing and exact briefs**
+- [x] **Step 3: Implement capstone parsing and exact briefs**
 
 Each JSON document contains `id`, `title`, `scenario`, `constraints`,
 `lessonIds`, four evidence records, milestones, review questions, and the same
@@ -2010,24 +2010,62 @@ four rubric levels as lessons.
 Implement `load_capstones()` as sorted immutable parsing with unique-ID,
 lesson-reference, evidence-kind, and rubric validation.
 
-- [ ] **Step 4: Render and run capstone acceptance**
+- [x] **Step 4: Render and run capstone acceptance**
 
 Run:
 
 ```bash
-python3 -m unittest tests.test_capstones -v
-python3 tools/build.py
+python3.13 -m unittest tests.test_capstones -v
+python3.13 tools/build.py
 ```
 
 Expected: two tests pass; three capstone pages and an index are generated.
 
-- [ ] **Step 5: Commit the integrated proof of expertise**
+- [x] **Step 5: Commit the integrated proof of expertise**
 
 ```bash
 git add curriculum_builder/capstones.py content/capstones templates/capstone.html \
   tests/test_capstones.py curriculum_builder/build.py
 git commit -m "content: prove expertise through integrated capstones"
 ```
+
+#### Task 11 verification evidence
+
+- Tests-only commits `2743622` and `9455f26` fixed the loader/content and
+  static-publication contracts before implementation. The first focused RED
+  failed with the expected `ModuleNotFoundError`; the second proved that the
+  existing builder neither generated capstone pages nor rejected a malformed
+  capstone before publication.
+- Commits `ba19788` and `38c18b0` implement three exact immutable briefs,
+  descriptor-pinned bounded loading, complete lesson-reference validation,
+  semantic primary exercises, four evidence kinds, four rubric levels, static
+  index/detail rendering, global navigation, print treatment, and atomic
+  publication. Commit `57b8537` updates the independent artifact inventory.
+- The three briefs cover the exact 30-lesson release. Every lesson has one
+  accountable primary exercise with an observable action, while additional
+  references are explicitly reinforcement. Every review requires a third-party
+  finding, author fix, independent re-evaluation, and one-constraint transfer;
+  the rendered brief states that it is an assignment rather than a completion
+  or mastery record.
+- Root and nested unknown or missing fields, duplicate JSON keys, wrong native
+  types, unsafe or oversized text, invalid UTF-8, symbolic links, pathname
+  changes, wrong file/id binding, noncanonical order, unknown/draft/duplicate
+  lessons, incomplete union coverage, ID-only primary exercises, wrong primary
+  ownership, incomplete evidence/rubric sets, and incomplete review cycles fail
+  closed. A malformed release input leaves the previously published site byte
+  unchanged.
+- All 12 focused capstone tests and the complete 521-test repository suite pass
+  with CPython 3.13. Two repository-external builds each contain 40 artifacts,
+  39 HTML files, four capstone pages, and zero JavaScript files; both have the
+  canonical aggregate SHA-256
+  `e3ca8043be67eb9e763b10409298081d327bbe27bd6bbdb17b3d678e660c8c97`.
+- Chromium generated tagged PDFs for all briefs: global service 7 pages,
+  legacy evolution 7 pages, and OSS launch 6 pages. The canonical catalog
+  remains at SHA-256
+  `4f38b5f63931a7f06e13f90f5d9ef90a0a435f30dae5d4fe70720d730a057473`.
+  The private prototype payload remains 1,194 files and 16,805,630 bytes; its
+  separate 157,542-byte manifest makes the observed archive total 1,195 files.
+  Gitleaks scanned all five Task 11 commits and reported no leaks.
 
 ### Task 12: Run the complete learning-quality gate
 
