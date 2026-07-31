@@ -1,0 +1,302 @@
+<section id="why">
+  <h2>なぜ重要か</h2>
+  <p>serviceの内部metricが正常でも、利用者は購入を完了できないことがある。信頼性を運用可能にするには、利用者journeyのどのeventを分母にし、何をgoodと数え、どのwindowでどこまで許容し、超過時に誰が何をするかを一続きの契約へ変える必要がある。</p>
+  <p>observabilityはtelemetry量の最大化ではない。利用者impactから原因候補へ移れるsignalを、version、意味、correlation、privacy、cardinality、samplingの制約付きで維持する能力である。行動できないpageは、signalではなくon-call負荷になる。</p>
+  <aside>
+    <p><strong>断定への注意:</strong> SLOは契約上のSLAや内部resource thresholdと同義ではない。100%目標は変更余地を失わせ、すべてのtelemetryを保存しても未知の質問へ答えられる保証はない。good event、分母、欠測、samplingが変われば同じ数式でも意味が変わる。</p>
+  </aside>
+</section>
+<section id="mental-model">
+  <h2>メンタルモデル</h2>
+  <p>利用者journeyをvalid eventの集合として定義し、そのうち期待した結果と時間境界を満たすものをgoodとする。SLIはgood÷valid、SLOはwindowとtarget、error budgetは許容できるbadの割合である。burn rateは観測したbad割合がbudgetを何倍の速さで消費するかを表す。</p>
+  <figure>
+    <figcaption>利用者結果からon-call actionまでを閉じるflow</figcaption>
+    <ol>
+      <li><strong>Journey:</strong> 利用者が達成したい結果とvalidな試行を定める。</li>
+      <li><strong>SLI:</strong> goodの結果とlatency境界をevent単位で計算する。</li>
+      <li><strong>SLO:</strong> window、target、error budget、例外を合意する。</li>
+      <li><strong>Alert:</strong> 短窓と長窓のburnをpageとticketへ分ける。</li>
+      <li><strong>Runbook:</strong> impact確認、mitigation、rollback、escalationを結ぶ。</li>
+      <li><strong>Telemetry:</strong> traceで原因へ相関し、意味とprivacyを検証する。</li>
+    </ol>
+  </figure>
+  <p>pageは人が直ちに取る行動があり、error budgetを急速に失う時に限定する。長いwindowの緩やかなburnや容量傾向はticketにし、参考情報はdashboardへ置く。thresholdを緩める前に、利用者impact、false positive、runbookの有効性を確認する。</p>
+</section>
+<section id="worked-example">
+  <h2>動く例で考える</h2>
+  <h3>購入完了journeyからmulti-window alertを計算する</h3>
+  <dl>
+    <dt>前提</dt>
+    <dd>lesson-defined synthetic eventを使い、production SLOとは主張しない。購入完了10件をvalidとし、検索とhealth checkの2件は分母から除外する。</dd>
+    <dt>入力</dt>
+    <dd>statusと300 msのlatency境界からgoodを分類する。28日window、target 90%という教材fixtureでerror budgetとburn rateを計算する。</dd>
+    <dt>操作</dt>
+    <dd>短窓pageと長窓ticketを別thresholdへ結び、runbookへownerと行動を置く。OpenTelemetry 1.59.0とSemantic Conventions 1.43.0をversion固定し、resource属性、trace correlation、PII、cardinality、samplingを検査する。</dd>
+    <dt>観測</dt>
+    <dd>10 valid中7 good、3 badなのでSLIは0.7、許容bad割合0.1に対するburn rateは3となる。eventをgoodへ変え、必須resource属性を欠落させるmutationではalertとvalidationがともに変わる。</dd>
+    <dt>結論</dt>
+    <dd>SLOはdashboardの装飾ではなく、利用者impact、変更判断、on-call actionをつなぐ境界である。fixtureのtargetは教材用であり、実serviceでは利用者期待、事業価値、過去実績とerror budget方針から決め直す。</dd>
+  </dl>
+  <pre><code>python3.13 - &lt;&lt;'PY'
+import copy
+import json
+
+HARNESS = "reliability_slo_lab_v1"
+TARGET = 0.9
+LATENCY_LIMIT_MS = 300
+REQUIRED_RESOURCE_ATTRIBUTES = [
+    "service.name",
+    "deployment.environment",
+    "service.version",
+]
+
+EVENTS = [
+    {"id": "p1", "journey": "purchase-completion", "eligible": True, "status": "ok", "latency_ms": 100},
+    {"id": "p2", "journey": "purchase-completion", "eligible": True, "status": "ok", "latency_ms": 220},
+    {"id": "p3", "journey": "purchase-completion", "eligible": True, "status": "timeout", "latency_ms": 500},
+    {"id": "p4", "journey": "purchase-completion", "eligible": True, "status": "ok", "latency_ms": 310},
+    {"id": "p5", "journey": "purchase-completion", "eligible": True, "status": "ok", "latency_ms": 180},
+    {"id": "p6", "journey": "purchase-completion", "eligible": True, "status": "ok", "latency_ms": 250},
+    {"id": "p7", "journey": "purchase-completion", "eligible": True, "status": "ok", "latency_ms": 90},
+    {"id": "p8", "journey": "purchase-completion", "eligible": True, "status": "failed", "latency_ms": 150},
+    {"id": "p9", "journey": "purchase-completion", "eligible": True, "status": "ok", "latency_ms": 290},
+    {"id": "p10", "journey": "purchase-completion", "eligible": True, "status": "ok", "latency_ms": 200},
+    {"id": "s1", "journey": "search", "eligible": True, "status": "ok", "latency_ms": 80},
+    {"id": "h1", "journey": "health-check", "eligible": False, "status": "ok", "latency_ms": 5},
+]
+
+def derive_sli(events):
+    valid = []
+    classified = []
+    for event in events:
+        if event["journey"] != "purchase-completion" or not event["eligible"]:
+            continue
+        valid.append(event)
+        good = event["status"] == "ok" and event["latency_ms"] &lt;= 300
+        classified.append({"id": event["id"], "good": good})
+    good_events = sum(item["good"] for item in classified)
+    bad_events = len(valid) - good_events
+    return {
+        "journey": "purchase-completion",
+        "total_events": len(events),
+        "valid_events": len(valid),
+        "good_events": good_events,
+        "bad_events": bad_events,
+        "ratio": good_events / len(valid),
+        "classified": classified,
+    }
+
+def alert_for(sli):
+    error_budget_fraction = 1 - TARGET
+    observed_bad_fraction = sli["bad_events"] / sli["valid_events"]
+    rate = observed_bad_fraction / error_budget_fraction
+    return {
+        "multi_window": True,
+        "page": {
+            "window_minutes": 5,
+            "threshold": 2.0,
+            "triggered": rate >= 2.0,
+            "actionable": True,
+            "action": "購入impactを確認しcheckoutを縮退する",
+        },
+        "ticket": {
+            "window_minutes": 60,
+            "threshold": 1.0,
+            "triggered": rate >= 1.0,
+            "actionable": True,
+            "action": "翌営業日までにbudget消費原因を追跡する",
+        },
+    }, {
+        "observed_bad_fraction": observed_bad_fraction,
+        "rate": rate,
+    }
+
+def validate_telemetry(resource_attributes, metric_labels):
+    errors = []
+    for attribute in REQUIRED_RESOURCE_ATTRIBUTES:
+        if not resource_attributes.get(attribute):
+            errors.append("missing-resource-attribute:" + attribute)
+    forbidden = {"email", "user.id", "order.id", "trace_id"}
+    if forbidden.intersection(metric_labels):
+        errors.append("pii-or-high-cardinality-label")
+    return sorted(errors)
+
+def main():
+    sli = derive_sli(EVENTS)
+    alerts, burn_rate = alert_for(sli)
+    assert sli["valid_events"] == 10
+    assert sli["good_events"] == 7
+    assert alerts["page"]["triggered"]
+
+    resources = {
+        "service.name": "checkout",
+        "deployment.environment": "lesson",
+        "service.version": "1.0.0",
+    }
+    metric_labels = {"journey.name", "result", "deployment.environment"}
+    telemetry_errors = validate_telemetry(resources, metric_labels)
+    assert telemetry_errors == []
+
+    mutated_events = copy.deepcopy(EVENTS)
+    for event in mutated_events:
+        if event["journey"] == "purchase-completion":
+            event["status"] = "ok"
+            event["latency_ms"] = 100
+    mutated_sli = derive_sli(mutated_events)
+    mutated_alerts, _ = alert_for(mutated_sli)
+    mutated_resources = dict(resources)
+    del mutated_resources["service.version"]
+    mutated_errors = validate_telemetry(
+        mutated_resources,
+        metric_labels | {"user.id"},
+    )
+    mutation = {
+        "detected": (
+            alerts["page"]["triggered"]
+            != mutated_alerts["page"]["triggered"]
+            and bool(mutated_errors)
+        ),
+        "alert_changed": (
+            alerts["page"]["triggered"]
+            != mutated_alerts["page"]["triggered"]
+        ),
+        "validation_changed": telemetry_errors != mutated_errors,
+        "errors": mutated_errors,
+    }
+    assert mutation["detected"]
+
+    report = {
+        "harness": HARNESS,
+        "fixture": "purchase-journey-events-v1",
+        "fixture_metadata": {
+            "kind": "synthetic",
+            "provenance": "lesson-defined fixed user-journey events",
+            "purpose": "SLI、budget、alert、telemetry契約の因果を反証する",
+            "limitations": "production traffic、SLA、利用者期待を表さない",
+        },
+        "sli": sli,
+        "slo": {
+            "window_days": 28,
+            "target": TARGET,
+            "error_budget_fraction": 1 - TARGET,
+            "decision_scope": "internal reliability objective, not SLA",
+        },
+        "burn_rate": burn_rate,
+        "alerts": alerts,
+        "runbook": {
+            "owner": "checkout-on-call",
+            "user_impact_check": "購入完了eventとclient errorを確認する",
+            "mitigation": "高負荷機能を止めcheckoutへ容量を戻す",
+            "rollback": "直前releaseとの相関があればrollbackする",
+            "escalation": "決済依存またはprivacy incidentを各ownerへ上げる",
+        },
+        "telemetry_contract": {
+            "otel_specification": "1.59.0",
+            "semantic_conventions": "1.43.0",
+            "required_resource_attributes": REQUIRED_RESOURCE_ATTRIBUTES,
+            "trace_correlation": True,
+            "pii_check": {
+                "passed": not telemetry_errors,
+                "forbidden_metric_labels": ["email", "user.id", "order.id"],
+            },
+            "cardinality_check": {
+                "bounded": True,
+                "metric_labels": sorted(metric_labels),
+                "trace_id_location": "span-log-correlation-only",
+            },
+            "sampling_limitations": (
+                "tailやrare failureの推定はsampling policyと欠測率を伴う"
+            ),
+            "stability": (
+                "stableとdevelopmentのsemantic fieldsをversionごとにreviewする"
+            ),
+        },
+        "event_telemetry_mutation": mutation,
+        "mastery_evidence": {
+            "lab_steps": [
+                {"step": 1, "evidence": "fixed EVENTSとclassified"},
+                {"step": 2, "evidence": "SLI、SLO、burn_rate"},
+                {"step": 3, "evidence": "pageとticketのmulti-window"},
+                {"step": 4, "evidence": "owner付きrunbook"},
+                {"step": 5, "evidence": "telemetry contractとmutation"},
+            ],
+            "assessments": [
+                {"assessment": 1, "evidence": "purchase journey境界とtrace correlation"},
+                {"assessment": 2, "evidence": "burn windowとactionability"},
+            ],
+            "rubric_dimensions": [
+                "technical-correctness",
+                "judgment",
+                "evidence",
+                "communication",
+            ],
+            "transfer": {
+                "task": (
+                    "検索成功率から購入完了までへ利用者可視の"
+                    "信頼性境界を変え、SLIとSLOを再設計する"
+                ),
+                "changed_assumption": "user-visible-reliability",
+                "evidence": "journey境界変更後のSLIとalert再計算",
+            },
+        },
+        "external_network_used": False,
+    }
+    return report
+
+print(json.dumps(main(), ensure_ascii=False, indent=2))
+PY</code></pre>
+</section>
+<section id="tradeoffs">
+  <h2>トレードオフと失敗モード</h2>
+  <table>
+    <caption>burnと行動を対応させる decision table</caption>
+    <thead>
+      <tr>
+        <th scope="col">利用者影響</th>
+        <th scope="col">通知</th>
+        <th scope="col">必要な行動</th>
+        <th scope="col">再評価条件</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row">短窓と長窓の両方で急速なbudget消費</th>
+        <td>page</td>
+        <td>即時impact確認とmitigation</td>
+        <td>pageされても人が取る行動がない時</td>
+      </tr>
+      <tr>
+        <th scope="row">長窓だけで緩やかなbudget消費</th>
+        <td>ticket</td>
+        <td>営業日内の原因除去と計画更新</td>
+        <td>短窓でも急増し始めた時</td>
+      </tr>
+      <tr>
+        <th scope="row">budgetへ未影響の内部resource変化</th>
+        <td>dashboard</td>
+        <td>診断contextとcapacity傾向の保持</td>
+        <td>利用者SLIとの先行相関が検証された時</td>
+      </tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><strong>誤診:</strong> SLOは顧客とのSLAと同じなので違反を避けるには100%にすべきだ。<strong>反証:</strong> SLOは内部の目標と判断境界であり、SLAの契約結果とは分ける。100%はerror budgetを失わせ、変更とriskのtrade-offを隠す。</li>
+    <li><strong>誤診:</strong> metric、log、traceを全量保存すればobservabilityは最大になる。<strong>反証:</strong> 意味の不一致、PII、高cardinality、費用、sampling、欠測を管理しなければ、量が増えても利用者impactから行動へ到達できない。</li>
+    <li><strong>失敗モード:</strong> health checkを利用者requestの分母へ混ぜると、実journeyが失敗していてもSLIを水増しできる。</li>
+    <li><strong>失敗モード:</strong> trace IDやuser IDをmetric labelへ置くとcardinalityとprivacy riskが増える。相関IDはspanとlogで扱い、集約metricのlabelをboundedにする。</li>
+  </ul>
+</section>
+<section id="knowledge-check">
+  <h2>知識チェック</h2>
+  <ol>
+    <li>good eventとvalid eventを分ける理由を購入journeyで説明せよ。</li>
+    <li>burn rate 1と3はerror budgetの消費速度として何が違うか。</li>
+    <li>pageとticketをwindowとactionabilityでどう分けるか。</li>
+    <li>samplingとsemantic conventionのstabilityが既存alertへ与えるriskは何か。</li>
+  </ol>
+</section>
+<section id="sources-next">
+  <h2>出典と次の学習</h2>
+  <p>SLI、SLO、error budgetの定義はGoogle SRE Chapter 4、multi-window burnとactionable alertはSRE Workbook Chapter 5、pager負荷とrunbookはChapter 8を基準にする。telemetry contractはOpenTelemetry Specification 1.59.0とSemantic Conventions 1.43.0へversion固定して照合する。</p>
+  <p>次のhuman/product領域では、systemが記録したsuccessだけでなく、keyboard、zoom、読み上げ、usabilityを含む利用者側のjourneyへ証拠境界を広げる。</p>
+</section>

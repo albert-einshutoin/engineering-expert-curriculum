@@ -1,0 +1,179 @@
+{
+  "version": 1,
+  "id": "core-15-reliability-observability-slo",
+  "title": "利用者journeyからSLI、SLO、alert、runbookを導く",
+  "summary": "内部resourceではなく利用者に見える結果をgood eventへ変換し、error budgetとburn rateから行動可能な運用契約を作る。",
+  "track": "data-scale",
+  "stage": 3,
+  "difficulty": "advanced",
+  "estimatedMinutes": 320,
+  "prerequisiteIds": [
+    "core-05-networks-latency-failure",
+    "core-13-distributed-coordination-failure",
+    "core-14-performance-capacity"
+  ],
+  "objectives": [
+    {
+      "id": "obj-sli-slo",
+      "statement": "利用者journeyのvalid eventとgood eventを定義し、window、target、error budgetを計算できる",
+      "evidenceIds": ["slo-runbook", "assessment"]
+    },
+    {
+      "id": "obj-alert",
+      "statement": "error budget burnをmulti-windowで評価し、pageとticketを行動可能性で分けられる",
+      "evidenceIds": ["slo-runbook", "teach-back"]
+    },
+    {
+      "id": "obj-telemetry",
+      "statement": "telemetryのversion、stability、correlation、PII、cardinality、samplingを運用契約として管理できる",
+      "evidenceIds": ["assessment", "transfer"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "slo-runbook",
+      "kind": "artifact",
+      "description": "利用者ジャーニーから導いたSLI、SLO、アラート、ランブック"
+    },
+    {
+      "id": "teach-back",
+      "kind": "explanation",
+      "description": "SLOとSLA、SLIと内部resource metric、pageとticketを区別する5分説明"
+    },
+    {
+      "id": "assessment",
+      "kind": "reasoning",
+      "description": "good event、burn window、telemetry品質、on-call行動を再設計する回答"
+    },
+    {
+      "id": "transfer",
+      "kind": "transfer",
+      "description": "利用者可視の信頼性境界を変えてSLIとSLOを再計算した記録"
+    }
+  ],
+  "capabilityProgression": [
+    {
+      "level": "recognize",
+      "criterion": "SLI、SLO、SLA、error budget、burn rate、page、ticketを区別できる",
+      "evidenceIds": ["slo-runbook"]
+    },
+    {
+      "level": "explain",
+      "criterion": "100%目標とtelemetry量の最大化が信頼性を保証しない理由を説明できる",
+      "evidenceIds": ["teach-back"]
+    },
+    {
+      "level": "apply",
+      "criterion": "固定eventからgoodとvalidを分類し、window targetとmulti-window alertを計算できる",
+      "evidenceIds": ["slo-runbook"]
+    },
+    {
+      "level": "diagnose",
+      "criterion": "利用者impactからtrace、metric、logへ相関し、samplingと欠測の限界を示せる",
+      "evidenceIds": ["assessment"]
+    },
+    {
+      "level": "lead",
+      "criterion": "error budget方針、on-call action、PIIとcardinalityの境界を関係者と更新できる",
+      "evidenceIds": ["transfer"]
+    }
+  ],
+  "lab": {
+    "title": "購入完了journeyのSLOとmulti-window alertを作る",
+    "artifact": "利用者ジャーニーから導いたSLI、SLO、アラート、ランブック",
+    "steps": [
+      "購入完了journeyの固定synthetic eventをvalid、good、badへ分類する",
+      "good÷validのSLI、28日window、target、error budget、burn rateを計算する",
+      "短窓のpageと長窓のticketを別thresholdとactionで定義する",
+      "runbookへuser impact確認、mitigation、rollback、escalation、ownerを結ぶ",
+      "OpenTelemetryとsemantic conventionsのversion、resource属性、trace correlation、PII、cardinality、sampling、stabilityを検査しmutationでalertまたはvalidationの変化を確認する"
+    ]
+  },
+  "teachBack": "5分で、SLOとSLAが同義でない理由、CPU metricを利用者SLIにできない場合、100%目標とtelemetry全量保存の代償を説明する。",
+  "assessment": [
+    {
+      "prompt": "API可用性は高いが購入完了率が低下した。SLI境界と診断telemetryをどう変えるか。",
+      "expectedEvidence": "journeyのvalidとgood、client側結果、依存先、trace correlation、欠測、二重計上を含む再設計"
+    },
+    {
+      "prompt": "短時間のburnで毎回pageし、on-callが行動できない。何をpage、ticket、dashboardへ分けるか。",
+      "expectedEvidence": "error budget影響、multi-window、actionability、false positive、runbook、pager負荷の比較"
+    }
+  ],
+  "transferTask": "検索成功率から購入完了までへ利用者可視の信頼性境界を変え、SLIとSLOを再設計する",
+  "rubric": [
+    {
+      "dimension": "technical-correctness",
+      "levels": {
+        "incomplete": "分母とgood eventを定義せず内部metricをSLOと呼ぶ",
+        "developing": "SLIとtargetはあるがwindow、error budget、欠測を扱わない",
+        "proficient": "valid、good、window、target、budget、burn、alertを一貫して計算する",
+        "exemplary": "重複、欠測、sampling、telemetry version変更でも計算契約を維持する"
+      }
+    },
+    {
+      "dimension": "judgment",
+      "levels": {
+        "incomplete": "すべてを100%目標と即時pageにする",
+        "developing": "thresholdを置くが利用者impactと行動を説明しない",
+        "proficient": "error budget、短窓と長窓、on-call actionからpageとticketを選ぶ",
+        "exemplary": "事業価値、変更速度、pager負荷をerror budget方針へ反映する"
+      }
+    },
+    {
+      "dimension": "evidence",
+      "levels": {
+        "incomplete": "dashboardの印象だけでSLO達成を主張する",
+        "developing": "event計算はあるがfixture出自またはtelemetry欠測を示さない",
+        "proficient": "固定event、計算式、alert、runbook、mutationを再実行可能に残す",
+        "exemplary": "clientとserverの異種signalを相関しsamplingによる不確実性を定量化する"
+      }
+    },
+    {
+      "dimension": "communication",
+      "levels": {
+        "incomplete": "metric名だけを共有し利用者journeyとownerが不明である",
+        "developing": "SLO文書はあるがalert時の行動とescalationがない",
+        "proficient": "利用者impact、計算、threshold、owner、runbookを一つの契約で追える",
+        "exemplary": "開発、運用、productが信頼性境界と変更判断を共同更新できる"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "title": "Service Level Objectives",
+      "url": "https://sre.google/sre-book/service-level-objectives/",
+      "kind": "primary"
+    },
+    {
+      "title": "Alerting on SLOs",
+      "url": "https://sre.google/workbook/alerting-on-slos/",
+      "kind": "primary"
+    },
+    {
+      "title": "On-Call",
+      "url": "https://sre.google/workbook/on-call/",
+      "kind": "primary"
+    },
+    {
+      "title": "OpenTelemetry Specification 1.59.0",
+      "url": "https://opentelemetry.io/docs/specs/otel/",
+      "kind": "standard"
+    },
+    {
+      "title": "OpenTelemetry semantic conventions 1.43.0",
+      "url": "https://opentelemetry.io/docs/specs/semconv/",
+      "kind": "standard"
+    }
+  ],
+  "review": {
+    "intervalDays": [1, 7, 30, 90],
+    "prompts": [
+      "利用者journeyのvalid eventから除外する条件を一つ説明する",
+      "短窓pageと長窓ticketを分ける理由は何か",
+      "high-cardinalityとPIIをtelemetry契約でどう防ぐか"
+    ]
+  },
+  "updatedAt": "2026-07-30",
+  "status": "complete"
+}
