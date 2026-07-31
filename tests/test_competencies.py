@@ -296,6 +296,8 @@ class _MatrixParser(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.captions = 0
         self.column_headers = 0
+        self.column_header_labels: list[str] = []
+        self.in_column_header = False
         self.row_headers = 0
         self.rows = 0
         self.lesson_links: list[str] = []
@@ -316,6 +318,7 @@ class _MatrixParser(HTMLParser):
             self.captions += 1
         elif tag == "th" and values.get("scope") == "col":
             self.column_headers += 1
+            self.in_column_header = True
         elif tag == "th" and values.get("scope") == "row":
             self.row_headers += 1
         elif tag == "tr":
@@ -341,6 +344,12 @@ class _MatrixParser(HTMLParser):
 
     def handle_data(self, data: str) -> None:
         self.text.append(data)
+        if self.in_column_header:
+            self.column_header_labels.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "th":
+            self.in_column_header = False
 
 
 class CompetencyContractTests(unittest.TestCase):
@@ -889,6 +898,17 @@ class CompetencyBuildTests(unittest.TestCase):
             parser.close()
             self.assertEqual(parser.captions, 1)
             self.assertEqual(parser.column_headers, 6)
+            self.assertEqual(
+                parser.column_header_labels,
+                [
+                    "レッスン",
+                    "フレームワーク",
+                    "版",
+                    "対応強度",
+                    "公式識別子・名称",
+                    "対応根拠",
+                ],
+            )
             self.assertEqual(parser.row_headers, 90)
             self.assertEqual(parser.rows, 91)
             self.assertEqual(len(parser.lesson_links), 90)
@@ -1000,6 +1020,32 @@ class CompetencyBuildTests(unittest.TestCase):
         self.assertIn(".competency-matrix", stylesheet)
         self.assertIn(".competency-frameworks", stylesheet)
         self.assertIn("@media print", stylesheet)
+        self.assertRegex(
+            stylesheet,
+            (
+                r"(?s)@page competency-matrix\s*\{.*"
+                r"size:\s*Letter landscape"
+            ),
+        )
+        self.assertRegex(
+            stylesheet,
+            (
+                r"(?s)@media print.*"
+                r"\.competency-matrix-page\s*\{.*"
+                r"page:\s*competency-matrix"
+            ),
+        )
+        self.assertRegex(
+            stylesheet,
+            (
+                r"(?s)@media print.*"
+                r"\.competency-matrix thead.*"
+                r"\.competency-matrix thead tr.*"
+                r"\.competency-matrix thead th.*"
+                r"break-inside:\s*avoid.*"
+                r"white-space:\s*nowrap"
+            ),
+        )
         self.assertRegex(
             stylesheet,
             (
