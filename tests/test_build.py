@@ -220,7 +220,11 @@ def _fixture(
     roadmap: object | None = None,
 ):
     with TemporaryDirectory() as directory:
-        root = Path(directory).resolve(strict=True)
+        temporary_root = Path(directory).resolve(strict=True)
+        # build_site validates the output parent before checking source overlap.
+        # Nesting keeps that parent runner-owned even when /tmp is root-owned.
+        root = temporary_root / "workspace"
+        root.mkdir()
         content = root / "content"
         templates = root / "templates"
         static_root = root / "static"
