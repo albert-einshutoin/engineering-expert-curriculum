@@ -869,6 +869,16 @@ def validate_release_curriculum(
     if type(roadmap.version) is not int or roadmap.version != 1:
         raise _validation("release roadmap version must be 1")
     if (
+        type(roadmap.mastery_gates) is not tuple
+        or any(
+            type(gate) is not MasteryGate
+            for gate in roadmap.mastery_gates
+        )
+    ):
+        raise _validation(
+            "release roadmap must contain the exact canonical mastery gates"
+        )
+    if (
         tuple(
             (gate.id, gate.after, gate.artifact, gate.review)
             for gate in roadmap.mastery_gates
@@ -903,9 +913,9 @@ def validate_release_curriculum(
         )
     if any(lesson.status != "complete" for lesson in lessons):
         raise _validation("release curriculum cannot contain draft lessons")
-    if len(roadmap.nodes) != 30:
+    if type(roadmap.nodes) is not tuple or len(roadmap.nodes) != 30:
         raise _validation("release roadmap must contain exactly 30 nodes")
-    if any(not isinstance(node, RoadmapNode) for node in roadmap.nodes):
+    if any(type(node) is not RoadmapNode for node in roadmap.nodes):
         raise _validation("release roadmap nodes must be RoadmapNode values")
 
     roadmap_ids = tuple(node.id for node in roadmap.nodes)
@@ -1095,7 +1105,8 @@ def _roadmap_content(
         gates_markup = (
             '<section class="mastery-gates">'
             "<h2>習熟ゲート</h2>"
-            "<p>5レッスンごとに、成果物とレビューで理解を確認します。</p>"
+            "<p>5レッスンごとに、成果物とレビューで"
+            "理解を確認します。</p>"
             '<ol class="mastery-gate-list">'
             f"{rendered_gates}</ol></section>"
         )
