@@ -31,7 +31,8 @@
       <tr><th scope="row">service分離</th><td>4: process境界へ隔離</td><td>1: data移行を伴う</td><td>2.4</td><td>network・運用・data整合性</td></tr>
     </tbody>
   </table>
-  <p>各criteriaは1・3・5のanchorとweightを先に固定する。optionごとのratingには観測可能なevidenceを添え、加重平均をcodeで再計算するため、好みをscoreへ偽装しにくい。</p>
+  <p>各criteriaは1〜5すべてのanchorとweightを先に固定する。optionごとのratingには観測可能なevidenceを添え、加重平均をcodeで再計算するため、好みをscoreへ偽装しにくい。</p>
+  <p><strong>fixtureの由来:</strong> この例は <code>lesson-defined synthetic scenario</code> であり、学習用に固定したmoduleとedgeからなる。実repositoryの依存解析、変更履歴、運用計測ではないため、scoreやimpactを現実のarchitecture判断へそのまま転用できない。</p>
 </section>
 <section id="worked-example">
   <h2>動く例で考える</h2>
@@ -135,14 +136,17 @@ def reverse_transitive_impact(edges, target):
     return sorted(impacted)
 
 def impact_snapshot(edges, target):
-    impacted = reverse_transitive_impact(edges, target)
-    # Symmetric difference detects both unrelated additions and expected
-    # dependents lost through a broken graph edge.
-    deviation = set(impacted) ^ EXPECTED_IMPACT
+    actual = set(reverse_transitive_impact(edges, target))
+    unexpected = actual - EXPECTED_IMPACT
+    missing = EXPECTED_IMPACT - actual
     return {
         "target": target,
-        "impacted_modules": impacted,
-        "unrelated_modules_changed": len(deviation),
+        "actual_impacted_modules": sorted(actual),
+        "expected_impacted_modules": sorted(EXPECTED_IMPACT),
+        "unexpected_impacted_modules": sorted(unexpected),
+        "missing_expected_modules": sorted(missing),
+        "unexpected_count": len(unexpected),
+        "missing_count": len(missing),
     }
 
 criteria = {
@@ -150,7 +154,9 @@ criteria = {
         "weight": 0.4,
         "scale": {
             "1": "weekly pricing changes reach every module",
+            "2": "pricing changes still reach most adapters",
             "3": "most pricing changes stay behind one interface",
+            "4": "pricing changes stay local with one known exception",
             "5": "pricing changes stay inside the domain boundary",
         },
     },
@@ -158,7 +164,9 @@ criteria = {
         "weight": 0.2,
         "scale": {
             "1": "requires a coordinated data and consumer migration",
+            "2": "requires multiple coordinated migration windows",
             "3": "requires a bounded dual-path transition",
+            "4": "requires one reversible compatibility step",
             "5": "preserves consumers during an incremental migration",
         },
     },
@@ -166,7 +174,9 @@ criteria = {
         "weight": 0.2,
         "scale": {
             "1": "adds unowned runtime failure modes",
+            "2": "adds owned failure modes without automated recovery",
             "3": "adds monitored failure modes with manual recovery",
+            "4": "uses owned alerts with rehearsed manual recovery",
             "5": "uses existing ownership and automated recovery",
         },
     },
@@ -174,7 +184,9 @@ criteria = {
         "weight": 0.2,
         "scale": {
             "1": "rollback requires data reconstruction",
+            "2": "rollback requires dual writes and reconciliation",
             "3": "rollback needs a planned compatibility window",
+            "4": "rollback is isolated but not yet rehearsed",
             "5": "rollback is isolated and rehearsed",
         },
     },
@@ -185,18 +197,22 @@ option_inputs = [
         "ratings": {
             "change_locality": {
                 "rating": 5,
+                "evidence_kind": "synthetic-fixture-observation",
                 "evidence": "six recent pricing changes touched only domain tests",
             },
             "migration_cost": {
                 "rating": 3,
+                "evidence_kind": "synthetic-fixture-observation",
                 "evidence": "two adapters require a thirty-day dual path",
             },
             "operability": {
                 "rating": 4,
+                "evidence_kind": "synthetic-fixture-observation",
                 "evidence": "existing service ownership and alerts remain valid",
             },
             "reversibility": {
                 "rating": 4,
+                "evidence_kind": "synthetic-fixture-observation",
                 "evidence": "the old adapter stays readable during migration",
             },
         },
@@ -207,18 +223,22 @@ option_inputs = [
         "ratings": {
             "change_locality": {
                 "rating": 3,
+                "evidence_kind": "synthetic-fixture-observation",
                 "evidence": "facade localizes calls but duplicates two rules",
             },
             "migration_cost": {
                 "rating": 5,
+                "evidence_kind": "synthetic-fixture-observation",
                 "evidence": "all current consumers keep their contract",
             },
             "operability": {
                 "rating": 4,
+                "evidence_kind": "synthetic-fixture-observation",
                 "evidence": "facade uses existing dashboards and ownership",
             },
             "reversibility": {
                 "rating": 3,
+                "evidence_kind": "synthetic-fixture-observation",
                 "evidence": "rollback is possible while both routes remain",
             },
         },
@@ -229,18 +249,22 @@ option_inputs = [
         "ratings": {
             "change_locality": {
                 "rating": 4,
+                "evidence_kind": "synthetic-fixture-observation",
                 "evidence": "process boundary isolates code but not shared data",
             },
             "migration_cost": {
                 "rating": 1,
+                "evidence_kind": "synthetic-fixture-observation",
                 "evidence": "requires data ownership and consumer migration",
             },
             "operability": {
                 "rating": 1,
+                "evidence_kind": "synthetic-fixture-observation",
                 "evidence": "introduces an unowned network dependency",
             },
             "reversibility": {
                 "rating": 2,
+                "evidence_kind": "synthetic-fixture-observation",
                 "evidence": "rollback needs dual writes and data reconciliation",
             },
         },
@@ -278,16 +302,33 @@ impact_mutations = {
 }
 
 assert abs(sum(item["weight"] for item in criteria.values()) - 1.0) &lt; 1e-9
-assert set(change_impact["impacted_modules"]) == EXPECTED_IMPACT
-assert change_impact["unrelated_modules_changed"] == 0
-assert all(
-    mutation["impacted_modules"] != change_impact["impacted_modules"]
-    and mutation["unrelated_modules_changed"] &gt; 0
-    for mutation in impact_mutations.values()
-)
+assert set(change_impact["actual_impacted_modules"]) == EXPECTED_IMPACT
+assert change_impact["unexpected_impacted_modules"] == []
+assert change_impact["missing_expected_modules"] == []
+assert impact_mutations["edge_removed"]["unexpected_impacted_modules"] == []
+assert set(impact_mutations["edge_removed"]["missing_expected_modules"]) == {
+    "pricing-application",
+    "pricing-adapters",
+}
+assert impact_mutations["target_changed"]["unexpected_impacted_modules"] == [
+    "reporting"
+]
+assert set(
+    impact_mutations["target_changed"]["missing_expected_modules"]
+) == EXPECTED_IMPACT
 report = {
     "harness": HARNESS,
     "fixture": "pricing-change-hotspot-v1",
+    "fixture_metadata": {
+        "kind": "synthetic",
+        "purpose": "teach deterministic dependency and decision analysis",
+        "provenance": "lesson-defined synthetic scenario",
+        "limitations": [
+            "not extracted from a repository",
+            "not supported by production change-history measurements",
+            "scores are teaching inputs rather than organizational evidence",
+        ],
+    },
     "before": snapshot(BEFORE_EDGES),
     "after": snapshot(AFTER_EDGES),
     "criteria": criteria,
