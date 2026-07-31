@@ -237,7 +237,7 @@ def simulate(seed, partition_end_delay=0):
                     "logical_sequence": event["logical_sequence"],
                 }
             )
-        else:
+        elif event["kind"] in {"deliver", "duplicate"}:
             trace.append(
                 {
                     "tick": event["tick"],
@@ -250,6 +250,14 @@ def simulate(seed, partition_end_delay=0):
             process_message(
                 event,
                 {"tick": event["tick"], "mode": "immediate"},
+            )
+        else:
+            # A control event reaching the message path means partition
+            # handling was disabled. Diagnose that causal contract explicitly
+            # instead of failing later on message-only fields by accident.
+            raise AssertionError(
+                "partition-causal-invariant: "
+                f"unhandled control event {event['kind']}"
             )
 
     reorder_observed = any(
@@ -299,7 +307,9 @@ long_partition = simulate(SEED, partition_end_delay=5)
 # These invariants make partition handling part of the executable contract,
 # instead of trusting a trace label that could survive disabled behavior.
 assert first == second
-assert first["partition_started"]
+assert first["partition_started"], (
+    "partition-causal-invariant: partition start must activate buffering"
+)
 assert first["buffered_message_count"] == 3
 assert first["reorder_observed"]
 assert first["persistent_dedupe"]["applied_state_transitions"] == 1
