@@ -22,6 +22,7 @@ MAX_SOURCE_NAME_CHARS: Final = 255
 _MAX_TEXT_CHARS: Final = 256
 _EXPECTED_MAPPING_COUNT: Final = 90
 _FRAMEWORK_ORDER: Final = ("CS2023", "SWEBOK", "SFIA")
+_ALIGNMENTS: Final = frozenset({"direct", "foundational", "partial"})
 _FRAMEWORK_VERSIONS: Final = MappingProxyType(
     {
         "CS2023": "Final Report",
@@ -29,8 +30,37 @@ _FRAMEWORK_VERSIONS: Final = MappingProxyType(
         "SFIA": "9",
     }
 )
+_FRAMEWORK_SOURCES: Final = MappingProxyType(
+    {
+        "CS2023": (
+            "Final Report",
+            "https://csed.acm.org/final-report/",
+            "2026-07-31",
+        ),
+        "SWEBOK": (
+            "V4.0a",
+            "https://www.computer.org/education/bodies-of-knowledge/"
+            "software-engineering",
+            "2026-07-31",
+        ),
+        "SFIA": (
+            "9",
+            "https://sfia-online.org/en/sfia-9/skills/"
+            "all-skills-a-z?set_language=en",
+            "2026-07-31",
+        ),
+    }
+)
 _ROOT_FIELDS: Final = frozenset(
-    {"version", "frameworkVersions", "mappings"}
+    {
+        "version",
+        "frameworkVersions",
+        "frameworkSources",
+        "mappings",
+    }
+)
+_SOURCE_FIELDS: Final = frozenset(
+    {"version", "officialUrl", "verifiedAt"}
 )
 _MAPPING_FIELDS: Final = frozenset(
     {
@@ -39,6 +69,7 @@ _MAPPING_FIELDS: Final = frozenset(
         "competencyId",
         "competencyName",
         "rationale",
+        "alignment",
     }
 )
 _CORE_LESSON_ID: Final = re.compile(
@@ -177,11 +208,20 @@ class CompetencyMapping:
     competency_id: str
     competency_name: str
     rationale: str
+    alignment: str
+
+
+@dataclass(frozen=True, slots=True)
+class FrameworkSource:
+    version: str
+    official_url: str
+    verified_at: str
 
 
 @dataclass(frozen=True, slots=True)
 class CompetencyMatrix:
     framework_versions: Mapping[str, str]
+    framework_sources: Mapping[str, FrameworkSource]
     mappings: tuple[CompetencyMapping, ...]
 
 
@@ -286,6 +326,57 @@ def parse_competencies_bytes(
             "SWEBOK V4.0a, and SFIA 9"
         )
 
+    raw_sources = document["frameworkSources"]
+    if not isinstance(raw_sources, Mapping):
+        raise _validation("frameworkSources must be an object")
+    _exact_fields(
+        raw_sources,
+        frozenset(_FRAMEWORK_SOURCES),
+        "frameworkSources",
+    )
+    sources: dict[str, FrameworkSource] = {}
+    for framework in _FRAMEWORK_ORDER:
+        raw_source = raw_sources[framework]
+        if not isinstance(raw_source, Mapping):
+            raise _validation(
+                f"frameworkSources {framework} must be an object"
+            )
+        _exact_fields(
+            raw_source,
+            _SOURCE_FIELDS,
+            f"frameworkSources {framework}",
+        )
+        version = _text(
+            raw_source["version"],
+            f"frameworkSources {framework} version",
+        )
+        official_url = _text(
+            raw_source["officialUrl"],
+            f"frameworkSources {framework} officialUrl",
+        )
+        verified_at = _text(
+            raw_source["verifiedAt"],
+            f"frameworkSources {framework} verifiedAt",
+        )
+        if (
+            version,
+            official_url,
+            verified_at,
+        ) != _FRAMEWORK_SOURCES[framework]:
+            raise _validation(
+                f"frameworkSources {framework} must match the verified source"
+            )
+        if version != raw_versions[framework]:
+            raise _validation(
+                f"frameworkSources {framework} version must match "
+                "frameworkVersions"
+            )
+        sources[framework] = FrameworkSource(
+            version=version,
+            official_url=official_url,
+            verified_at=verified_at,
+        )
+
     raw_mappings = document["mappings"]
     if type(raw_mappings) is not list:
         raise _validation("competency mappings must be a list")
@@ -322,6 +413,15 @@ def parse_competencies_bytes(
             f"competency mapping {index} rationale",
             maximum_chars=MAX_RATIONALE_CHARS,
         )
+        alignment = _text(
+            value["alignment"],
+            f"competency mapping {index} alignment",
+        )
+        if alignment not in _ALIGNMENTS:
+            raise _validation(
+                f"competency mapping {index} alignment must be direct, "
+                "foundational, or partial"
+            )
         if target_id not in expected_targets:
             raise _validation(
                 f"competency mapping {index} targetId is not a loaded lesson"
@@ -341,6 +441,7 @@ def parse_competencies_bytes(
                 competency_id=competency_id,
                 competency_name=competency_name,
                 rationale=rationale,
+                alignment=alignment,
             )
         )
 
@@ -378,6 +479,7 @@ def parse_competencies_bytes(
     )
     return CompetencyMatrix(
         framework_versions=MappingProxyType(dict(_FRAMEWORK_VERSIONS)),
+        framework_sources=MappingProxyType(sources),
         mappings=ordered,
     )
 

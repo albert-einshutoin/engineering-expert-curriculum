@@ -325,19 +325,18 @@ class _MatrixParser(HTMLParser):
             and (values.get("href") or "").startswith("../lessons/core-")
         ):
             self.lesson_links.append(values["href"] or "")
-        elif tag == "td":
-            classes = frozenset((values.get("class") or "").split())
-            if classes & {
-                "competency-framework",
-                "competency-version",
-                "competency-code",
-            }:
-                self.nowrap_cells += 1
-            if classes & {
-                "competency-name",
-                "competency-rationale",
-            }:
-                self.wrapping_cells += 1
+        classes = frozenset((values.get("class") or "").split())
+        if classes & {
+            "competency-framework",
+            "competency-version",
+            "competency-code",
+        }:
+            self.nowrap_cells += 1
+        if classes & {
+            "competency-name",
+            "competency-rationale",
+        }:
+            self.wrapping_cells += 1
 
     def handle_data(self, data: str) -> None:
         self.text.append(data)
@@ -518,6 +517,74 @@ class CompetencyContractTests(unittest.TestCase):
             (
                 "versions wrong type",
                 {**document, "frameworkVersions": []},
+            ),
+            (
+                "sources missing",
+                {
+                    **document,
+                    "frameworkSources": {
+                        framework: source
+                        for framework, source in document[
+                            "frameworkSources"
+                        ].items()
+                        if framework != "SFIA"
+                    },
+                },
+            ),
+            (
+                "sources unknown",
+                {
+                    **document,
+                    "frameworkSources": {
+                        **document["frameworkSources"],
+                        "UNKNOWN": EXPECTED_SOURCES["SFIA"],
+                    },
+                },
+            ),
+            (
+                "sources wrong type",
+                {**document, "frameworkSources": []},
+            ),
+            (
+                "source field missing",
+                {
+                    **document,
+                    "frameworkSources": {
+                        **document["frameworkSources"],
+                        "CS2023": {
+                            "version": "Final Report",
+                            "officialUrl": (
+                                "https://csed.acm.org/final-report/"
+                            ),
+                        },
+                    },
+                },
+            ),
+            (
+                "source URL changed",
+                {
+                    **document,
+                    "frameworkSources": {
+                        **document["frameworkSources"],
+                        "CS2023": {
+                            **document["frameworkSources"]["CS2023"],
+                            "officialUrl": "https://example.invalid/",
+                        },
+                    },
+                },
+            ),
+            (
+                "source date changed",
+                {
+                    **document,
+                    "frameworkSources": {
+                        **document["frameworkSources"],
+                        "CS2023": {
+                            **document["frameworkSources"]["CS2023"],
+                            "verifiedAt": "2026-07-30",
+                        },
+                    },
+                },
             ),
             (
                 "mappings wrong type",

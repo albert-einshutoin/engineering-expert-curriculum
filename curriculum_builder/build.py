@@ -1193,6 +1193,11 @@ def _competency_content(
                 "<li><strong>"
                 f"{escape(framework, quote=False)}</strong>: "
                 f"{escape(matrix.framework_versions[framework], quote=False)}"
+                " <small>確認日: "
+                f"{escape(matrix.framework_sources[framework].verified_at, quote=False)}"
+                " · <a rel=\"noreferrer\" href=\""
+                f"{escape(matrix.framework_sources[framework].official_url, quote=True)}"
+                '">公式参照</a></small>'
                 "</li>"
                 for framework in framework_order
             )
@@ -1214,14 +1219,18 @@ def _competency_content(
                 '<th scope="row"><a href="../lessons/'
                 f"{escape(mapping.target_id, quote=True)}/index.html\">"
                 f"{escape(title, quote=False)}</a></th>"
-                f"<td>{escape(mapping.framework, quote=False)}</td>"
-                "<td>"
+                '<td class="competency-framework">'
+                f"{escape(mapping.framework, quote=False)}</td>"
+                '<td class="competency-version">'
                 f"{escape(matrix.framework_versions[mapping.framework], quote=False)}"
                 "</td>"
-                "<td><strong>"
+                '<td class="competency-strength">'
+                f"{escape(mapping.alignment, quote=False)}</td>"
+                '<td class="competency-name"><strong class="competency-code">'
                 f"{escape(mapping.competency_id, quote=False)}</strong> — "
                 f"{escape(mapping.competency_name, quote=False)}</td>"
-                f"<td>{escape(mapping.rationale, quote=False)}</td>"
+                '<td class="competency-rationale">'
+                f"{escape(mapping.rationale, quote=False)}</td>"
                 "</tr>"
             )
         rendered_rows = "".join(rendered_rows)
@@ -1232,6 +1241,7 @@ def _competency_content(
         '<th scope="col">レッスン</th>'
         '<th scope="col">フレームワーク</th>'
         '<th scope="col">版</th>'
+        '<th scope="col">対応強度</th>'
         '<th scope="col">公式識別子・名称</th>'
         '<th scope="col">対応根拠</th>'
         "</tr></thead><tbody>"
@@ -1370,13 +1380,20 @@ def _expected_artifacts(
 
 def _expected_external_links(
     lessons: tuple[LoadedLesson, ...],
+    competencies: CompetencyMatrix | None,
 ) -> dict[PurePosixPath, tuple[str, ...]]:
-    return {
+    expected = {
         PurePosixPath("lessons") / item.lesson.id / "index.html": tuple(
             source.url for source in item.lesson.sources
         )
         for item in lessons
     }
+    if competencies is not None:
+        expected[PurePosixPath("competencies/index.html")] = tuple(
+            competencies.framework_sources[framework].official_url
+            for framework in ("CS2023", "SWEBOK", "SFIA")
+        )
+    return expected
 
 
 def _validate_site_artifacts(
@@ -1516,7 +1533,7 @@ def _render_artifacts(
     _validate_site_artifacts(
         artifacts,
         _expected_artifacts(lessons),
-        _expected_external_links(lessons),
+        _expected_external_links(lessons, competencies),
     )
     return artifacts
 

@@ -952,6 +952,33 @@ footer p {
     overflow: visible;
   }
 
+  .competency-matrix {
+    min-inline-size: 0;
+    table-layout: auto;
+  }
+
+  .competency-matrix th,
+  .competency-matrix td {
+    inline-size: auto;
+    min-inline-size: 0;
+    max-inline-size: none;
+  }
+
+  .competency-framework,
+  .competency-version,
+  .competency-code {
+    overflow-wrap: normal;
+    white-space: nowrap;
+    word-break: keep-all;
+  }
+
+  .competency-name,
+  .competency-rationale {
+    overflow-wrap: anywhere;
+    white-space: normal;
+    word-break: normal;
+  }
+
   thead {
     display: table-header-group;
   }
