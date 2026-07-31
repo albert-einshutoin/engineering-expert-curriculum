@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import re
+import subprocess
+import sys
+import tempfile
 import unittest
 
 
@@ -51,12 +55,63 @@ _EMAIL = re.compile(
 PRIVATE_VOLUME_NAME = "/" + "Volumes" + "/Satechi"
 _BASH_BLOCK = re.compile(r"```bash\n(?P<body>.*?)\n```", re.DOTALL)
 _GH_INVOCATION = re.compile(r"(?<![A-Za-z0-9_-])gh\s+(?P<group>[A-Za-z][A-Za-z0-9-]*)\b")
+_EVIDENCE_VALIDATOR = re.compile(
+    r"# BEGIN PUBLIC HTTPS EVIDENCE VALIDATOR\n"
+    r"(?P<body>.*?)\n"
+    r"# END PUBLIC HTTPS EVIDENCE VALIDATOR",
+    re.DOTALL,
+)
+
+_VALID_EVIDENCE_LINES = (
+    "tested commit: 0123456789abcdef0123456789abcdef01234567",
+    "public URL: https://example.github.io/engineering-expert-curriculum/",
+    "checked at UTC: 2026-07-31T12:34:56Z",
+    "reviewerKind: ai-assisted",
+    "public HTTPS smoke: PASS",
+    "navigation: PASS",
+    "viewport-320: PASS",
+    "viewport-1280: PASS",
+    "zoom-200-percent: PASS",
+    "keyboard-focus: PASS",
+    "voiceover-headings: PASS",
+    "voiceover-landmarks: PASS",
+    "voiceover-links: PASS",
+    "high-contrast: PASS",
+    "forced-colors: PASS",
+    "print: PASS",
+)
 
 
 def _read(path: Path) -> str:
     if not path.is_file():
         raise AssertionError(f"missing {path.relative_to(REPOSITORY_ROOT)}")
     return path.read_text(encoding="utf-8")
+
+
+def _run_evidence_validator(path: Path) -> subprocess.CompletedProcess[str]:
+    publication = _read(PUBLICATION_PLAN)
+    match = _EVIDENCE_VALIDATOR.search(publication)
+    if match is None:
+        raise AssertionError("publication plan is missing the evidence validator")
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "EVIDENCE_PATH": str(path),
+            "EXPECTED_PUBLIC_MERGE_SHA": _VALID_EVIDENCE_LINES[0].removeprefix(
+                "tested commit: "
+            ),
+            "EXPECTED_PUBLIC_SITE_URL": _VALID_EVIDENCE_LINES[1].removeprefix(
+                "public URL: "
+            ),
+            "EXPECTED_REVIEWER_KIND": "ai-assisted",
+        }
+    )
+    return subprocess.run(
+        [sys.executable, "-c", match.group("body")],
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
 
 
 def _bash_lines(markdown: str) -> list[str]:
@@ -449,6 +504,109 @@ gh pr view "$PUBLIC_PR_URL" --repo "wrong/project" # --repo "$PUBLIC_REPOSITORY_
         tag = publication.index("tag -a v0.1.0")
         self.assertLess(evidence, metadata_branch)
         self.assertLess(metadata_branch, tag)
+
+    def test_public_https_evidence_schema_is_exact_and_single_valued(self) -> None:
+        valid = ("\n".join(_VALID_EVIDENCE_LINES) + "\n").encode("utf-8")
+        mutations = {
+            "pass-and-fail-duplicate": valid
+            + b"navigation: FAIL\n",
+            "duplicate-pass": valid
+            + b"navigation: PASS\n",
+            "unknown-extra-line": valid
+            + b"notes: looked good\n",
+            "missing-line": (
+                "\n".join(
+                    line
+                    for line in _VALID_EVIDENCE_LINES
+                    if line != "print: PASS"
+                )
+                + "\n"
+            ).encode("utf-8"),
+            "failed-check": valid.replace(
+                b"keyboard-focus: PASS", b"keyboard-focus: FAIL"
+            ),
+            "unsupported-reviewer": valid.replace(
+                b"reviewerKind: ai-assisted", b"reviewerKind: automated"
+            ),
+            "wrong-commit": valid.replace(
+                b"0123456789abcdef0123456789abcdef01234567",
+                b"1123456789abcdef0123456789abcdef01234567",
+            ),
+            "wrong-url": valid.replace(
+                b"https://example.github.io/engineering-expert-curriculum/",
+                b"https://attacker.invalid/",
+            ),
+            "invalid-time": valid.replace(
+                b"2026-07-31T12:34:56Z", b"2026-02-31T12:34:56Z"
+            ),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = Path(directory) / "evidence.md"
+            evidence.write_bytes(valid)
+            accepted = _run_evidence_validator(evidence)
+            self.assertEqual(accepted.returncode, 0, accepted.stderr)
+
+            for name, content in mutations.items():
+                with self.subTest(name=name):
+                    evidence.write_bytes(content)
+                    rejected = _run_evidence_validator(evidence)
+                    self.assertNotEqual(rejected.returncode, 0)
+
+    def test_public_https_evidence_rejects_unsafe_files_and_sensitive_fixture(self) -> None:
+        valid = ("\n".join(_VALID_EVIDENCE_LINES) + "\n").encode("utf-8")
+        sensitive_fixture = (
+            valid
+            + b"notes: $USER_HOME/.ssh/id_ed25519 "
+            + b"SENSITIVE-DIAGNOSTIC-MARKER:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        )
+        unsafe_contents = {
+            "private-path-and-secret": sensitive_fixture,
+            "invalid-utf8": valid + b"\xff",
+            "control-character": valid.replace(
+                b"navigation: PASS", b"navigation:\x00 PASS"
+            ),
+            "oversize": valid + (b"x" * 4096),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            evidence = root / "evidence.md"
+            for name, content in unsafe_contents.items():
+                with self.subTest(name=name):
+                    evidence.write_bytes(content)
+                    rejected = _run_evidence_validator(evidence)
+                    self.assertNotEqual(rejected.returncode, 0)
+                    self.assertNotIn(
+                        "SENSITIVE-DIAGNOSTIC-MARKER:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                        rejected.stdout + rejected.stderr,
+                    )
+
+            evidence.write_bytes(valid)
+            symlink = root / "evidence-link.md"
+            symlink.symlink_to(evidence)
+            rejected_symlink = _run_evidence_validator(symlink)
+            self.assertNotEqual(rejected_symlink.returncode, 0)
+            rejected_directory = _run_evidence_validator(root)
+            self.assertNotEqual(rejected_directory.returncode, 0)
+
+    def test_installed_release_evidence_is_rescanned_before_git_add(self) -> None:
+        publication = _read(PUBLICATION_PLAN)
+        release = publication.split(
+            "**Step 5: Materialize release metadata through a PR, then publish**",
+            maxsplit=1,
+        )[1].split("**Step 6: Clean only the merged public feature branch**", maxsplit=1)[0]
+        install = release.index('install -m 0644 "$PUBLIC_HTTPS_EVIDENCE_SOURCE"')
+        git_add = release.index('git -C "$PUBLICATION_CLONE" add CITATION.cff')
+        pre_add = release[install:git_add]
+        for phrase in (
+            'validate_public_https_evidence "$PUBLICATION_CLONE/$RELEASE_READINESS_PATH"',
+            "PRIVATE_PATH_PATTERN",
+            "SAFE_FIXTURE_EMAIL_DOMAINS",
+            'shasum -a 256 -c -',
+            '"$GITLEAKS_DIR/gitleaks" dir',
+            '"$PUBLICATION_CLONE/$RELEASE_READINESS_PATH"',
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, pre_add)
 
     def test_release_commit_and_annotated_tag_use_verified_public_identity(self) -> None:
         publication = _read(PUBLICATION_PLAN).replace("\\\n", " ")
