@@ -975,7 +975,7 @@ footer p {
     break-inside: avoid;
     font-size: 7pt;
     line-height: 1.2;
-    table-layout: auto;
+    table-layout: fixed;
   }
 
   .competency-matrix th,
@@ -992,6 +992,30 @@ footer p {
     inline-size: auto;
     min-inline-size: 0;
     max-inline-size: none;
+  }
+
+  .competency-matrix th:nth-child(1) {
+    inline-size: 18%;
+  }
+
+  .competency-matrix th:nth-child(2) {
+    inline-size: 7%;
+  }
+
+  .competency-matrix th:nth-child(3) {
+    inline-size: 8%;
+  }
+
+  .competency-matrix th:nth-child(4) {
+    inline-size: 7%;
+  }
+
+  .competency-matrix th:nth-child(5) {
+    inline-size: 20%;
+  }
+
+  .competency-matrix th:nth-child(6) {
+    inline-size: 40%;
   }
 
   .competency-framework,
