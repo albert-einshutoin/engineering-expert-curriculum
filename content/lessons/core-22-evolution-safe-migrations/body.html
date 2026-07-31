@@ -111,6 +111,72 @@ ROLLBACK_OBSERVATION = {
     "expected_state": "backfill-paused-at-checkpoint",
     "actual_state": "backfill-paused-at-checkpoint",
 }
+OBSERVATION_FIELDS = {
+    "old_reader_successes",
+    "old_reader_attempts",
+    "new_reader_successes",
+    "new_reader_attempts",
+    "dual_write_matches",
+    "dual_write_attempts",
+    "backfill_rows",
+    "backfill_errors",
+}
+PHASE_FIELDS = {
+    "name",
+    "compatibility",
+    "observation",
+    "stop_condition",
+    "rollback",
+}
+ROLLBACK_FIELDS = {
+    "executed",
+    "observed",
+    "expected_state",
+    "actual_state",
+}
+
+def validate_migration_inputs(baseline, transferred, thresholds):
+    for observation in (baseline, transferred):
+        if (
+            type(observation) is not dict
+            or set(observation) != OBSERVATION_FIELDS
+            or not all(
+                type(value) is int and value &gt;= 0
+                for value in observation.values()
+            )
+            or observation["old_reader_attempts"] &lt;= 0
+            or observation["new_reader_attempts"] &lt;= 0
+            or observation["dual_write_attempts"] &lt;= 0
+            or observation["backfill_rows"] &lt;= 0
+        ):
+            raise AssertionError(
+                "migration-transfer-invariant: invalid observation schema"
+            )
+    if (
+        type(thresholds) is not dict
+        or set(thresholds) != {"max_backfill_error_rate"}
+        or type(thresholds["max_backfill_error_rate"])
+        not in {int, float}
+        or type(thresholds["max_backfill_error_rate"]) is bool
+        or thresholds["max_backfill_error_rate"] &lt; 0
+    ):
+        raise AssertionError(
+            "migration-transfer-invariant: invalid threshold schema"
+        )
+    changed = [
+        field
+        for field in sorted(set(baseline) | set(transferred))
+        if (
+            field not in baseline
+            or field not in transferred
+            or baseline[field] != transferred[field]
+        )
+    ]
+    if changed != ["backfill_errors"]:
+        raise AssertionError(
+            "migration-transfer-invariant: transfer changed wrong fields"
+        )
+    return changed
 
 def ratio(numerator, denominator):
     if denominator &lt;= 0:
@@ -175,6 +241,22 @@ def evaluate(source, thresholds):
 def build_phases(phase_inputs):
     # phaseごとの停止と回復を同じ構造へ必須化し、happy pathだけの
     # 手順がcontractまで流れることを防ぐ。
+    if (
+        type(phase_inputs) is not list
+        or not phase_inputs
+        or any(
+            type(phase) is not dict
+            or set(phase) != PHASE_FIELDS
+            or not all(
+                type(value) is str and value
+                for value in phase.values()
+            )
+            for phase in phase_inputs
+        )
+    ):
+        raise AssertionError(
+            "migration-plan-invariant: invalid phase schema"
+        )
     phases = [
         {
             "name": phase["name"],
@@ -198,6 +280,19 @@ def build_phases(phase_inputs):
     return phases
 
 def verify_rollback(decision, observation):
+    if (
+        type(observation) is not dict
+        or set(observation) != ROLLBACK_FIELDS
+        or type(observation["executed"]) is not bool
+        or type(observation["observed"]) is not bool
+        or type(observation["expected_state"]) is not str
+        or not observation["expected_state"]
+        or type(observation["actual_state"]) is not str
+        or not observation["actual_state"]
+    ):
+        raise AssertionError(
+            "migration-rollback-outcome-invariant: invalid schema"
+        )
     system_outcome = (
         decision == "rollback"
         and observation["executed"]
@@ -225,25 +320,13 @@ def main():
         raise AssertionError(
             "migration-plan-invariant: plan snapshots drifted"
         )
+    changed_input_fields = validate_migration_inputs(
+        BASELINE_OBSERVATION,
+        TRANSFER_OBSERVATION,
+        THRESHOLDS,
+    )
     baseline = evaluate(BASELINE_OBSERVATION, THRESHOLDS)
     transferred = evaluate(TRANSFER_OBSERVATION, THRESHOLDS)
-    source_fields = sorted(
-        set(BASELINE_OBSERVATION) | set(TRANSFER_OBSERVATION)
-    )
-    changed_input_fields = [
-        field
-        for field in source_fields
-        if (
-            field not in BASELINE_OBSERVATION
-            or field not in TRANSFER_OBSERVATION
-            or BASELINE_OBSERVATION[field]
-            != TRANSFER_OBSERVATION[field]
-        )
-    ]
-    if changed_input_fields != ["backfill_errors"]:
-        raise AssertionError(
-            "migration-transfer-invariant: transfer changed unknown fields"
-        )
     if (
         baseline["decision"] != "continue"
         or transferred["decision"] != "rollback"
