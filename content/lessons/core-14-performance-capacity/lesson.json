@@ -164,6 +164,11 @@
       "title": "The Tail at Scale",
       "url": "https://doi.org/10.1145/2408776.2408794",
       "kind": "peer-reviewed"
+    },
+    {
+      "title": "The Python Profilers",
+      "url": "https://docs.python.org/3.13/library/profile.html",
+      "kind": "primary"
     }
   ],
   "review": {

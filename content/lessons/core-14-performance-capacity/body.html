@@ -26,7 +26,7 @@
   <h3>注文APIのsimulated load curveとactual local profileを分ける</h3>
   <dl>
     <dt>前提</dt>
-    <dd>production計測ではない固定simulationを使う。read比率80%、処理上限100 RPS、4段階のoffered loadを与える。profileだけは、この場のCPython 3.13 processで実際に採取する。</dd>
+    <dd>production計測ではない固定simulationを使う。read比率80%、処理上限100 RPS、4段階のoffered loadを与える。profileだけは、この場のCPython 3.13 processで実際に採取する。cProfile/pstatsはPython 3.13標準libraryを対象とし、version固定のないGo DiagnosticsとApple文書は2026-07-31確認時点の範囲として扱う。</dd>
     <dt>入力</dt>
     <dd>40、100、150、50 RPSの順で負荷を変え、最後の50 RPSは超過後の回復区間とする。request mix mutationではwrite比率を20%から70%へ変える。</dd>
     <dt>操作</dt>
@@ -43,6 +43,7 @@ import pstats
 
 HARNESS = "performance_capacity_lab_v1"
 CAPACITY_RPS = 100
+HEADROOM_FRACTION = 0.2
 
 def simulate(stage, offered_rps, capacity, previous_queue, write_fraction):
     if offered_rps > capacity:
@@ -60,6 +61,8 @@ def simulate(stage, offered_rps, capacity, previous_queue, write_fraction):
     p50_ms = 30 + int(utilization * 20) + queue_depth
     p95_ms = p50_ms + 20 + queue_depth
     p99_ms = p95_ms + 30 + queue_depth
+    mean_ms = (p50_ms + p95_ms) // 2
+    observed_concurrency = round(success_rps * mean_ms / 1_000, 6)
     return {
         "stage": stage,
         "offered_rps": offered_rps,
@@ -68,19 +71,30 @@ def simulate(stage, offered_rps, capacity, previous_queue, write_fraction):
         "p50_ms": p50_ms,
         "p95_ms": p95_ms,
         "p99_ms": p99_ms,
+        "mean_ms": mean_ms,
+        "observed_concurrency": observed_concurrency,
         "cpu_percent": min(99.0, 20.0 + accepted_rps * 0.65),
         "memory_mb": 128 + queue_depth * 2,
         "queue_depth": queue_depth,
         "downstream_ms": 15 + int(write_fraction * 50) + queue_depth // 2,
     }
 
+def safe_capacity(observed_knee_rps, headroom_fraction):
+    return int(observed_knee_rps * (1 - headroom_fraction))
+
 def capacity_for_mix(write_fraction):
     # write比率が上がると、このfixtureではstorage更新費用が支配的になる。
-    safe_capacity = int((140 - write_fraction * 80) * 0.8)
-    bottleneck = (
-        "storage-write" if write_fraction > 0.5 else "cpu-transform"
+    if write_fraction > 0.5:
+        bottleneck = "storage-write"
+        observed_knee_rps = 80
+    else:
+        bottleneck = "cpu-transform"
+        observed_knee_rps = CAPACITY_RPS
+    return (
+        bottleneck,
+        observed_knee_rps,
+        safe_capacity(observed_knee_rps, HEADROOM_FRACTION),
     )
-    return bottleneck, safe_capacity
 
 def profile_target(values):
     total = 0
@@ -114,9 +128,10 @@ def main():
     assert by_stage["overload"]["queue_depth"] > 0
     assert by_stage["recovery"]["p99_ms"] > by_stage["low"]["p99_ms"]
 
-    throughput_per_second = 80
-    mean_response_seconds = 0.125
-    observed_concurrency = 10.0
+    little_source = by_stage["near-limit"]
+    throughput_per_second = little_source["success_rps"]
+    mean_response_seconds = little_source["mean_ms"] / 1_000
+    observed_concurrency = little_source["observed_concurrency"]
     calculated_concurrency = (
         throughput_per_second * mean_response_seconds
     )
@@ -130,13 +145,40 @@ def main():
     profiler.disable()
     stats = pstats.Stats(profiler)
     assert profile_result > 0
+    measured_entries = [
+        {
+            "function": function_key[2],
+            "primitive_calls": values[0],
+            "total_calls": values[1],
+            "cumulative_seconds": values[3],
+        }
+        for function_key, values in stats.stats.items()
+    ]
+    measured_top = max(
+        measured_entries,
+        key=lambda entry: (
+            entry["cumulative_seconds"],
+            entry["total_calls"],
+            entry["function"],
+        ),
+    )
 
-    baseline_bottleneck, baseline_safe_capacity = capacity_for_mix(0.2)
-    mutated_bottleneck, mutated_safe_capacity = capacity_for_mix(0.7)
+    (
+        baseline_bottleneck,
+        baseline_knee,
+        baseline_safe_capacity,
+    ) = capacity_for_mix(0.2)
+    (
+        mutated_bottleneck,
+        mutated_knee,
+        mutated_safe_capacity,
+    ) = capacity_for_mix(0.7)
     request_mix_mutation = {
         "changed_assumption": "request-mix",
         "baseline_bottleneck": baseline_bottleneck,
         "mutated_bottleneck": mutated_bottleneck,
+        "baseline_observed_knee_rps": baseline_knee,
+        "mutated_observed_knee_rps": mutated_knee,
         "baseline_safe_capacity_rps": baseline_safe_capacity,
         "mutated_safe_capacity_rps": mutated_safe_capacity,
         "recomputed": (
@@ -177,13 +219,14 @@ def main():
             ),
         },
         "capacity": {
-            "observed_knee_rps": CAPACITY_RPS,
-            "safe_capacity_rps": 80,
-            "headroom_fraction": 0.2,
+            "observed_knee_rps": baseline_knee,
+            "safe_capacity_rps": baseline_safe_capacity,
+            "headroom_fraction": HEADROOM_FRACTION,
             "decision": "80 RPSを通常運用上限として再測定する",
         },
         "little_law": {
             "scope": "near-limit steady-state average only",
+            "source_stage": little_source["stage"],
             "throughput_per_second": throughput_per_second,
             "mean_response_seconds": mean_response_seconds,
             "observed_concurrency": observed_concurrency,
@@ -193,8 +236,19 @@ def main():
         "local_profile": {
             "evidence_kind": "actual-local-measurement",
             "profiler": "cProfile",
+            "declared_target": profile_target.__name__,
             "total_calls": stats.total_calls,
-            "top_function": "profile_target",
+            "measured_top_function": measured_top["function"],
+            "measured_functions": sorted(
+                {entry["function"] for entry in measured_entries}
+            ),
+            "measurement_derived": True,
+            "tool_scope": {
+                "python": "3.13",
+                "profiler": "cProfile/pstats standard library",
+                "go_docs": "rolling; reviewed 2026-07-31",
+                "apple_docs": "rolling; reviewed 2026-07-31",
+            },
             "environment_limitations": (
                 "このCPython processのbounded fixtureだけを測り、"
                 "production bottleneckを主張しない"
@@ -292,6 +346,6 @@ PY</code></pre>
 </section>
 <section id="sources-next">
   <h2>出典と次の学習</h2>
-  <p>profileとtraceの選択はGo DiagnosticsとAppleの性能改善cycle、overload制御はGoogle SRE Chapter 21を一次資料として照合する。平均queueの整合にはLittleの原論文、tailのsystem効果にはThe Tail at Scaleを使う。いずれも特定fixtureの最大RPSを保証する資料ではない。</p>
+  <p>profileとtraceの選択はGo DiagnosticsとAppleの性能改善cycle、実行したcProfile/pstatsの意味はPython 3.13のThe Python Profilers、overload制御はGoogle SRE Chapter 21を一次資料として照合する。GoとAppleの文書はrolling URLのため2026-07-31に再確認した範囲である。平均queueの整合にはLittleの原論文、tailのsystem効果にはThe Tail at Scaleを使う。いずれも特定fixtureの最大RPSを保証する資料ではない。</p>
   <p>次のcore-15では、容量曲線を利用者journeyのgood event、SLO、error budget、multi-window alertへ接続し、性能劣化をpageとticketへ分ける。</p>
 </section>
