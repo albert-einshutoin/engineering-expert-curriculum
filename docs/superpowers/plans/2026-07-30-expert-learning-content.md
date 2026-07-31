@@ -1874,6 +1874,46 @@ git commit -m "feat: map core mastery to global competency frameworks"
   Gitleaks reports no leaks, `git diff --check` is clean, and catalog/archive
   preservation evidence remains unchanged.
 
+#### Task 10 renderer-safe print-card remediation
+
+- Chrome 150 exposed a final cross-renderer defect that DOM and text extraction
+  alone could not prove away: a fragmented semantic table could retain text
+  while Poppler or PDFKit omitted header or cell paint runs. Tests-only commits
+  `85c3d2f`, `1e7bc0f`, `55c99f2`, `e36cc3b`, `f44ba7d`, and `87d4390`
+  reproduce the successive named-page, six-table, stable-column, and
+  renderer-independent print-card requirements. The fixed-column experiment
+  improved text ordering but did not eliminate renderer-specific paint loss,
+  so it was superseded rather than treated as release evidence.
+- Commit `879ad5b` keeps the screen document as six semantic, track-scoped
+  tables, each with a unique caption, six real column headers, five lessons,
+  and 15 mappings. Commits `50993ac` and `22b168c` remove table-layout-engine
+  dependence only inside `@media print`: every one of the 90 mappings becomes
+  a labelled, non-splitting block card, the original table header is hidden,
+  and horizontal track captions remain visible. The resulting static HTML
+  still contains all 90 links and mappings and requires no JavaScript.
+- Two fresh Chrome PDFs each contain 18 tagged, JavaScript-free, landscape
+  Letter pages at 792 by 612 points. PDFKit extraction finds all six print
+  labels exactly 90 times after whitespace normalization. Sixty-five distinct
+  framework, version, alignment, and official-ID signatures match their
+  source-derived multiplicities with zero mismatch in both PDFs. Poppler and
+  PDFKit rasterization of both runs produces identical per-page hashes within
+  each renderer. Full 18-page contact-sheet review in both renderers, plus
+  original-resolution review of renderer-sensitive page 10, finds zero missing
+  content, clipped labels, split cards, or unexpected blank pages. The PDF byte
+  hashes differ, while all 18 rendered pages remain deterministic.
+- The focused competency/style gate passes all 37 tests and the complete suite
+  passes all 509 tests. Two final repository-external builds each contain 36
+  artifacts, 35 HTML files, one CSS file, and zero JavaScript files. Each
+  contains 1,220,599 bytes and produces canonical aggregate SHA-256
+  `4afb01c4fea41a69a5b7d5e4ddcc76cd443efd3ddd92cb37eea9e1a80f488dd1`.
+  Gitleaks 8.30.1 reports no leaks across all 11 remediation commits and
+  `git diff --check` is clean.
+- The catalog remains exactly 1,140 unique items with SHA-256
+  `4f38b5f63931a7f06e13f90f5d9ef90a0a435f30dae5d4fe70720d730a057473`.
+  The private archive remains independently unchanged: 1,194 files,
+  16,805,630 bytes, with zero missing, extra, hash-mismatched, symbolic-link,
+  special-node, or unsafe-path entries.
+
 ### Task 11: Add three integrated capstones
 
 **Files:**
