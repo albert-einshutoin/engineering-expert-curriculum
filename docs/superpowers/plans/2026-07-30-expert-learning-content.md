@@ -1853,6 +1853,27 @@ git commit -m "feat: map core mastery to global competency frameworks"
   16,805,630 bytes, with zero missing, extra, hash-mismatched, symbolic-link,
   special-node, or unsafe-path entries.
 
+#### Task 10 final print-token remediation
+
+- The final specification review found one remaining Minor issue: all 90
+  alignment values could still split in Chrome print output. Tests-only commit
+  `4390442` expands the static HTML/CSS contract from 270 to 360 protected
+  framework, version, code, and alignment tokens and reproduces the missing
+  `.competency-strength` selector. Commit `18de89f` adds that selector to the
+  existing no-wrap monospace print rule.
+- Chrome 150 continues to generate a six-page, tagged, JavaScript-free Letter
+  PDF at 612 by 792 points. PDFKit now extracts `direct`, `foundational`, and
+  `partial` continuously, finds none of the reviewed split forms, and retains
+  continuous extraction for all previously checked framework, version, and
+  code tokens.
+- All 18 focused competency tests and the complete 509-test suite pass. Two
+  external builds each contain 36 regular artifacts, 35 HTML files, one CSS
+  file, zero JavaScript files, zero symbolic links, and zero special nodes.
+  Each contains 1,216,163 bytes and produces canonical aggregate SHA-256
+  `6e37c8a9f3ed6ab7c97f8d03c6edf6599f1fa06dabfb223fc3a60f8120671627`.
+  Gitleaks reports no leaks, `git diff --check` is clean, and catalog/archive
+  preservation evidence remains unchanged.
+
 ### Task 11: Add three integrated capstones
 
 **Files:**
