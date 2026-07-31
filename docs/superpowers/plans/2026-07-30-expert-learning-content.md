@@ -1109,6 +1109,21 @@ git commit -m "content: integrate human product and ethical judgment"
   bounded retention, delete SLA, and enabled deletion before preserving the
   complete phase-to-harm/control/residual-risk trace. Unsafe policy inputs fail
   with `ethics-lifecycle-policy-invariant`.
+- The isolated security re-review of `914fa31` confirmed those two fixes, then
+  found one additional Important HTML-validation gap: trusted display mode and
+  CSS could still wrap a roadmap containing a `javascript:` or `data:` link
+  because the parser checked neither an exact tag nor attribute allowlist.
+  Tests-only RED commit `55c7d28` proves both active URL payloads were accepted
+  as `valid=True`. GREEN commit `4d59238` restricts artifacts to the exact
+  section/figure/list/table/meter tags and per-tag attributes needed by the
+  renderer, rejects duplicate attributes, and makes both payloads fail with
+  `graphics-artifact-invariant`.
+- The final security re-review isolated fixed commit `4d59238` with
+  `git archive` and reports zero Critical, Important, or Minor findings.
+  Unknown tags, unknown attributes, case-varied duplicate attributes, both
+  active URL schemes, all three display-mode payloads, and all lifecycle
+  policy violations fail closed while normal color and monochrome artifacts
+  remain valid.
 - The HCI audit derives keyboard, 200% zoom, reading-order, and usability
   results for the generated static curriculum while distinguishing WCAG 2.2
   Level AA and ISO 9241-210:2019 from the non-standard APCA practice and the
@@ -1119,7 +1134,7 @@ git commit -m "content: integrate human product and ethical judgment"
   a one-page summary, technical appendix, and validated ADR. The impact
   assessment calculates affected-group inherent and residual risk and exposes
   uneven harm when a high-risk population is added.
-- All 30 Human and Product methods now pass, including seventeen
+- All 32 Human and Product methods now pass, including nineteen
   review-regression
   methods whose bypass mutations fail with
   `hci-input-mode-invariant`, `graphics-artifact-invariant`,
@@ -1127,17 +1142,17 @@ git commit -m "content: integrate human product and ethical judgment"
   `communication-audience-invariant`, `ethics-lifecycle-invariant`, or
   `ethics-lifecycle-policy-invariant`.
   The separate lesson quality/rendering gate passes 67 tests, the CSS gate
-  passes 19 tests, and the complete repository suite passes all 402 tests.
+  passes 19 tests, and the complete repository suite passes all 404 tests.
   Scoped scans report zero authored-body unsafe-HTML, body external-URL,
   secret, and dangerous-execution matches.
 - Two consecutive clean builds each contain 25 regular artifacts, 24 HTML
-  files, zero JavaScript files, zero symbolic links, and 802,968 bytes. The
+  files, zero JavaScript files, zero symbolic links, and 803,947 bytes. The
   canonical aggregate
   algorithm encodes each sorted relative POSIX path, byte length, and file
   payload into one SHA-256 state; both builds produce
-  `60104581be18faa2990da0f6dca56a88e53cf3360ab11f6b57fda4dd94f8ced4`.
+  `fd60c0e046ea685b32ad753d838caf25a782fbb66ecb9e9c80d4ced0fd78baf4`.
 - Chrome 150 Letter-PDF evidence covers the two longest final changed bodies:
-  core-17 renders as 24 pages and core-20 as 21 pages, both at 612 by 792
+  core-17 renders as 25 pages and core-20 as 21 pages, both at 612 by 792
   points, tagged and without PDF JavaScript. PDFKit text extraction, with
   printed line-break hyphenation normalized, retains
   `graphics-display-mode-invariant`, `graphics-scale-invariant`,
