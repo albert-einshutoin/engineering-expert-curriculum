@@ -98,7 +98,7 @@ TASK6_VISUAL_CONTRACT_SHA256 = {
     "core-15-reliability-observability-slo": "1963def9e97269e1ee86a6637b9311c13e9f442e4865800c90135b3716266e22",
     "core-22-evolution-safe-migrations": "aa04630c0005fb992238aca964bd09d0f95a11b8bacdaffeb79e13e2af868057",
     "core-23-incident-response-learning": "a8cf68469ee3358c5f6977e3cb58fd9d4648c0c2cf8194adb9c2022547368977",
-    "core-24-delivery-ci-release-safety": "7c795b798c67feffa4660510a12a117d8d3a1da03859d574b12881e9e2c34b4b",
+    "core-24-delivery-ci-release-safety": "2b5a8fb1e03e670f6a41ddc665fc47d40e75ad5c1d9af2bf1729fad80ee767df",
     "core-26-code-review-collaborative-quality": "5176963308b25a0c2be21e963d43c96274e2e5bfbaf12376dfefde7a5b39ae45",
     "core-29-cross-cultural-async-collaboration": "ad600a1d0755e79b755c6c0a6c08185cbf8ba349e415345a472d94b15519332e",
 }
@@ -140,8 +140,8 @@ TASK6_LESSON_JUDGMENT_TEXT = {
         "clockを揃えたtimeline、影響計算、当時の判断、system factor、検証可能なactionを追跡できる。",
     ),
     "core-24-delivery-ci-release-safety": (
-        "canary evidenceからpromote、stop、rollbackのどれを選び、rollback後のservice restorationをどう確認するか。",
-        "CI、digest、provenance、canaryから三つのdecision branchを選び、rollback後の再観測をsafe outcomeへ結べる。",
+        "required check不足でstopし、canary thresholdからpromoteとrollbackのどちらを選び、復旧をどう確認するか。",
+        "CIのknown/passとmissing/unknownを分け、canaryからpromoteまたはrollbackを選び、復旧再観測へ結べる。",
     ),
     "core-26-code-review-collaborative-quality": (
         "author fix後に別reviewerがどのprobeを再実行し、blocking findingの解消を判断するか。",
@@ -2159,28 +2159,50 @@ class ContentAcceptanceTests(unittest.TestCase):
             ),
         )
         release_edges = tuple(
-            (edge["from"], edge["to"], edge["event"], edge["status"])
+            (
+                edge["id"], edge["from"], edge["to"],
+                edge["event"], edge["status"], edge.get("reason"),
+            )
             for edge in release["transitions"]
         )
         self.assertEqual(
             release_edges,
             (
-                ("ci", "artifact", "next", "allowed"),
-                ("artifact", "provenance", "next", "allowed"),
-                ("provenance", "canary", "next", "allowed"),
-                ("canary", "decision", "next", "allowed"),
-                ("decision", "promoted", "next", "allowed"),
-                ("decision", "stopped", "reset", "allowed"),
-                ("decision", "rolling-back", "previous", "allowed"),
-                ("promoted", "outcome", "next", "allowed"),
-                ("stopped", "outcome", "next", "allowed"),
-                ("rolling-back", "restoration-verified", "next", "allowed"),
-                ("restoration-verified", "outcome", "next", "allowed"),
-                ("ci", "artifact", "timer", "rejected"),
-                ("artifact", "provenance", "timer", "rejected"),
-                ("canary", "outcome", "next", "rejected"),
+                ("checks-known-pass", "ci", "artifact", "next", "allowed", None),
+                ("checks-missing-unknown-stop", "ci", "stopped", "reset", "allowed", None),
+                ("artifact-to-provenance", "artifact", "provenance", "next", "allowed", None),
+                ("provenance-to-canary", "provenance", "canary", "next", "allowed", None),
+                ("canary-to-decision", "canary", "decision", "next", "allowed", None),
+                ("threshold-within-promote", "decision", "promoted", "next", "allowed", None),
+                ("threshold-exceeded-rollback", "decision", "rolling-back", "previous", "allowed", None),
+                ("promote-outcome", "promoted", "outcome", "next", "allowed", None),
+                ("stop-outcome", "stopped", "outcome", "next", "allowed", None),
+                ("rollback-restoration", "rolling-back", "restoration-verified", "next", "allowed", None),
+                ("restoration-outcome", "restoration-verified", "outcome", "next", "allowed", None),
+                ("checks-not-passed", "ci", "artifact", "timer", "rejected", "required checkがmissing、unknown、failedの時はartifact確定へ進まずstopする。"),
+                ("digest-mismatch", "artifact", "provenance", "timer", "rejected", "subject digestが配信対象bytesと一致しない時はprovenanceを受理しない。"),
+                ("builder-mismatch", "provenance", "canary", "timer", "rejected", "trusted builderと一致しないprovenanceではcanaryへ進まない。"),
+                ("skip-decision", "canary", "outcome", "next", "rejected", "canary thresholdからpromoteまたはrollbackを決める前にoutcomeへ進まない。"),
             ),
         )
+        self.assertFalse(
+            any(
+                edge["from"] == "decision" and edge["to"] == "stopped"
+                for edge in release["transitions"]
+            )
+        )
+        stopped = next(state for state in release["states"] if state["id"] == "stopped")
+        self.assertIn("required check", stopped["label"])
+        self.assertIn("missing、unknown", stopped["detail"])
+        current_model_text = json.dumps(
+            {
+                "states": release["states"],
+                "transitions": release["transitions"],
+            },
+            ensure_ascii=False,
+        )
+        self.assertNotIn("advance", current_model_text)
+        self.assertIn("promote", current_model_text)
 
         migration = payload("core-22-evolution-safe-migrations")
         self.assertEqual(

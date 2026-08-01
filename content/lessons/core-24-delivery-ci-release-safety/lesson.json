@@ -188,7 +188,7 @@
       "id": "release-evidence-state-machine",
       "type": "state-machine",
       "caption": "source変更からrollback outcomeまでを結ぶdelivery evidence chain",
-      "question": "canary evidenceからpromote、stop、rollbackのどれを選び、rollback後のservice restorationをどう確認するか。",
+      "question": "required check不足でstopし、canary thresholdからpromoteとrollbackのどちらを選び、復旧をどう確認するか。",
       "afterSection": "mentalModel",
       "objectiveIds": [
         "obj-ci",
@@ -203,8 +203,16 @@
         "src-03",
         "src-04"
       ],
-      "expectedObservation": "CI、digest、provenance、canaryから三つのdecision branchを選び、rollback後の再観測をsafe outcomeへ結べる。",
-      "notes": [],
+      "expectedObservation": "CIのknown/passとmissing/unknownを分け、canaryからpromoteまたはrollbackを選び、復旧再観測へ結べる。",
+      "notes": [
+        "この注記は旧図の読み順を保持する補助です。",
+        "CI: required check集合がすべて観測され成功したか検査する。",
+        "Artifact: 配信対象bytesからdigestを計算して固定する。",
+        "Provenance: subject digestとtrusted builderを独立に検証する。",
+        "Canary: 利用者可視のerror rateを閾値と比較する。",
+        "Decision: advance、stop、rollbackを入力から導く。",
+        "Outcome: command完了後にservice restorationを再観測する。"
+      ],
       "payload": {
         "states": [
           {
@@ -227,20 +235,20 @@
             "label": "Canary",
             "detail": "利用者可視のerror rateを閾値と比較する。"
           },
-          {
-            "id": "decision",
-            "label": "Decision",
-            "detail": "advance、stop、rollbackを入力から導く。"
+        {
+          "id": "decision",
+          "label": "Decision",
+          "detail": "canary thresholdからpromoteまたはrollbackを導く。"
           },
           {
             "id": "promoted",
             "label": "promote実行",
             "detail": "canaryが閾値内なら同一digestのartifactを次の配信段階へ進める。"
           },
-          {
-            "id": "stopped",
-            "label": "stop実行",
-            "detail": "証拠が不足または閾値外なら追加配信を停止し、現行serviceを維持する。"
+        {
+          "id": "stopped",
+          "label": "required check不足でstop",
+          "detail": "required checkがmissing、unknown、failedなら配信を開始せず、現行serviceを維持する。"
           },
           {
             "id": "rolling-back",
@@ -261,12 +269,19 @@
         "initialStateId": "ci",
         "transitions": [
           {
-            "id": "ci-to-artifact",
-            "from": "ci",
-            "to": "artifact",
-            "event": "next",
-            "status": "allowed"
-          },
+          "id": "checks-known-pass",
+          "from": "ci",
+          "to": "artifact",
+          "event": "next",
+          "status": "allowed"
+        },
+        {
+          "id": "checks-missing-unknown-stop",
+          "from": "ci",
+          "to": "stopped",
+          "event": "reset",
+          "status": "allowed"
+        },
           {
             "id": "artifact-to-provenance",
             "from": "artifact",
@@ -289,21 +304,14 @@
             "status": "allowed"
           },
           {
-            "id": "decision-promote",
+          "id": "threshold-within-promote",
             "from": "decision",
             "to": "promoted",
             "event": "next",
             "status": "allowed"
           },
-          {
-            "id": "decision-stop",
-            "from": "decision",
-            "to": "stopped",
-            "event": "reset",
-            "status": "allowed"
-          },
-          {
-            "id": "decision-rollback",
+        {
+          "id": "threshold-exceeded-rollback",
             "from": "decision",
             "to": "rolling-back",
             "event": "previous",
@@ -338,12 +346,12 @@
             "status": "allowed"
           },
           {
-            "id": "ci-unknown",
+          "id": "checks-not-passed",
             "from": "ci",
             "to": "artifact",
             "event": "timer",
             "status": "rejected",
-            "reason": "required checkが欠落、失敗、未知の時はartifact確定へ進まない。"
+          "reason": "required checkがmissing、unknown、failedの時はartifact確定へ進まずstopする。"
           },
           {
             "id": "digest-mismatch",
@@ -353,13 +361,21 @@
             "status": "rejected",
             "reason": "subject digestが配信対象bytesと一致しない時はprovenanceを受理しない。"
           },
-          {
-            "id": "skip-decision",
+        {
+          "id": "builder-mismatch",
+          "from": "provenance",
+          "to": "canary",
+          "event": "timer",
+          "status": "rejected",
+          "reason": "trusted builderと一致しないprovenanceではcanaryへ進まない。"
+        },
+        {
+          "id": "skip-decision",
             "from": "canary",
             "to": "outcome",
             "event": "next",
             "status": "rejected",
-            "reason": "canary観測からpromote、stop、rollbackのdecisionを導く前にoutcomeへ進まない。"
+          "reason": "canary thresholdからpromoteまたはrollbackを決める前にoutcomeへ進まない。"
           }
         ]
       }
