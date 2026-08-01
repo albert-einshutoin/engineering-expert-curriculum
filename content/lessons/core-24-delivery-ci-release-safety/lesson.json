@@ -140,21 +140,25 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "SLSA Specification Version 1.2 (Approved)",
       "url": "https://slsa.dev/spec/v1.2/",
       "kind": "standard"
     },
     {
+      "id": "src-02",
       "title": "DORA's software delivery performance metrics (updated January 5, 2026)",
       "url": "https://dora.dev/guides/dora-metrics/",
       "kind": "primary"
     },
     {
+      "id": "src-03",
       "title": "DORA Capability: Continuous delivery (accessed 2026-07-31)",
       "url": "https://dora.dev/capabilities/continuous-delivery/",
       "kind": "primary"
     },
     {
+      "id": "src-04",
       "title": "NIST SP 800-218: Secure Software Development Framework Version 1.1 (February 2022)",
       "url": "https://doi.org/10.6028/NIST.SP.800-218",
       "kind": "standard"

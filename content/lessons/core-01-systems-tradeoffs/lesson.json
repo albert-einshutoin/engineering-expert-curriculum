@@ -137,16 +137,19 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "NASA Systems Engineering Handbook",
       "url": "https://www.nasa.gov/reference/systems-engineering-handbook/",
       "kind": "primary"
     },
     {
+      "id": "src-02",
       "title": "NIST SP 800-160 Vol. 1 Rev. 1: Engineering Trustworthy Secure Systems",
       "url": "https://doi.org/10.6028/NIST.SP.800-160v1r1",
       "kind": "standard"
     },
     {
+      "id": "src-03",
       "title": "The Architecture Tradeoff Analysis Method",
       "url": "https://www.sei.cmu.edu/library/the-architecture-tradeoff-analysis-method/",
       "kind": "primary"

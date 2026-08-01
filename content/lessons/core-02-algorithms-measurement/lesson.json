@@ -137,21 +137,25 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "big-O notation",
       "url": "https://www.nist.gov/dads/HTML/bigOnotation.html",
       "kind": "primary"
     },
     {
+      "id": "src-02",
       "title": "SPEC CPU®2017 Run and Reporting Rules",
       "url": "https://www.spec.org/cpu2017/Docs/runrules.html",
       "kind": "standard"
     },
     {
+      "id": "src-03",
       "title": "timeit — Measure execution time of small code snippets",
       "url": "https://docs.python.org/3/library/timeit.html",
       "kind": "primary"
     },
     {
+      "id": "src-04",
       "title": "Quicksort",
       "url": "https://www.cs.princeton.edu/courses/archive/spr18/cos226/lectures/23Quicksort.pdf",
       "kind": "primary"

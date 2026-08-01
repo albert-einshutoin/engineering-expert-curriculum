@@ -21,6 +21,9 @@ from curriculum_builder.errors import CurriculumValidationError
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CONTENT_STANDARD = REPOSITORY_ROOT / "docs/content-standard.md"
 CURRICULUM_MAP = REPOSITORY_ROOT / "docs/curriculum-map.md"
+MIGRATION_ORACLE = (
+    REPOSITORY_ROOT / "tests/fixtures/visualization-migration-v1.json"
+)
 BEGIN_GENERATED_MAP = "<!-- BEGIN GENERATED CURRICULUM MAP -->"
 END_GENERATED_MAP = "<!-- END GENERATED CURRICULUM MAP -->"
 LESSON_IDS = (
@@ -408,6 +411,120 @@ class _AuthoredBodyParser(HTMLParser):
         if self._section_depth or self._heading_depth:
             raise AssertionError("authored section markup is incomplete")
         return tuple(self.sections), _normalize_visible_text(self.visible_parts)
+
+
+class _FigureOracleParser(HTMLParser):
+    """Project authored figure facts without importing production parsing."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.caption_depth = 0
+        self.cell_depth = 0
+        self.caption: list[str] = []
+        self.visible_atoms: list[str] = []
+        self.table_cells: list[str] = []
+
+    def handle_starttag(
+        self, tag: str, attrs: list[tuple[str, str | None]]
+    ) -> None:
+        del attrs
+        if tag == "figcaption":
+            self.caption_depth += 1
+        elif tag in {"th", "td"}:
+            self.cell_depth += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "figcaption":
+            self.caption_depth -= 1
+        elif tag in {"th", "td"}:
+            self.cell_depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        atom = " ".join(data.split())
+        if not atom:
+            return
+        if self.caption_depth:
+            self.caption.append(atom)
+        elif self.cell_depth:
+            self.table_cells.append(atom)
+        else:
+            self.visible_atoms.append(atom)
+
+
+def _section_role(section_id: str) -> str:
+    roles = (
+        ("mental-model", "mentalModel"),
+        ("worked-example", "workedExample"),
+        ("knowledge-check", "knowledgeCheck"),
+        ("tradeoffs", "tradeoffs"),
+        ("sources-next", "sourcesNext"),
+        ("why", "why"),
+    )
+    for suffix, role in roles:
+        if section_id == suffix or section_id.endswith(f"-{suffix}"):
+            return role
+    raise AssertionError(f"unknown authored section role: {section_id}")
+
+
+def _legacy_figure_projection(
+    lesson_id: str,
+    body: str,
+) -> tuple[list[dict[str, object]], str]:
+    section_tokens = tuple(
+        re.finditer(r'<section id="([^"]+)">|</section>', body)
+    )
+    figure_matches = tuple(
+        re.finditer(
+            r"^[ \t]*<figure(?: [^>]*)?>.*?^[ \t]*</figure>\n?",
+            body,
+            re.DOTALL | re.MULTILINE,
+        )
+    )
+    occurrences: dict[str, int] = {}
+    projection: list[dict[str, object]] = []
+    primary_span: tuple[int, int] | None = None
+    for figure_index, match in enumerate(figure_matches):
+        stack: list[str] = []
+        for token in section_tokens:
+            if token.start() >= match.start():
+                break
+            section_id = token.group(1)
+            if section_id is not None:
+                stack.append(section_id)
+            elif stack:
+                stack.pop()
+        if not stack:
+            raise AssertionError(f"{lesson_id}: figure is outside a section")
+        role = _section_role(stack[-1])
+        occurrences[role] = occurrences.get(role, 0) + 1
+        parser = _FigureOracleParser()
+        parser.feed(match.group(0))
+        parser.close()
+        disposition = (
+            "retain"
+            if lesson_id == "core-17-graphics-visual-information"
+            and figure_index == 1
+            else "migrate"
+        )
+        projection.append(
+            {
+                "lessonId": lesson_id,
+                "sectionRole": role,
+                "occurrence": occurrences[role],
+                "caption": " ".join(parser.caption),
+                "visibleAtoms": parser.visible_atoms,
+                "tableCells": parser.table_cells,
+                "disposition": disposition,
+            }
+        )
+        if disposition == "migrate":
+            if primary_span is not None:
+                raise AssertionError(f"{lesson_id}: multiple primary figures")
+            primary_span = match.span()
+    if primary_span is None:
+        raise AssertionError(f"{lesson_id}: missing primary figure")
+    residual = body[: primary_span[0]] + body[primary_span[1] :]
+    return projection, hashlib.sha256(residual.encode("utf-8")).hexdigest()
 
 
 def _normalize_visible_text(parts: list[str] | tuple[str, ...]) -> str:
@@ -1264,6 +1381,88 @@ class ContentAcceptanceTests(unittest.TestCase):
                 )
                 self.assertEqual(document["id"], lesson_id)
                 self.assertEqual(document["status"], "complete")
+
+    def test_v01_migration_oracle_freezes_figures_residuals_and_sources(self) -> None:
+        oracle = json.loads(MIGRATION_ORACLE.read_bytes())
+        self.assertEqual(
+            set(oracle),
+            {
+                "version",
+                "baselineCommit",
+                "figures",
+                "residualBodies",
+                "sourceProjections",
+            },
+        )
+        self.assertEqual(oracle["version"], 1)
+        self.assertEqual(
+            oracle["baselineCommit"],
+            "267c3233a70b5f6541db175c2295c44df6f39ca9",
+        )
+
+        actual_figures: list[dict[str, object]] = []
+        actual_residuals: list[dict[str, str]] = []
+        actual_sources: list[dict[str, object]] = []
+        for lesson_id in LESSON_IDS:
+            lesson_root = REPOSITORY_ROOT / "content/lessons" / lesson_id
+            body = (lesson_root / "body.html").read_text(encoding="utf-8")
+            figures, residual_sha256 = _legacy_figure_projection(
+                lesson_id, body
+            )
+            actual_figures.extend(figures)
+            actual_residuals.append(
+                {"lessonId": lesson_id, "sha256": residual_sha256}
+            )
+            sources = json.loads(
+                (lesson_root / "lesson.json").read_bytes()
+            )["sources"]
+            self.assertEqual(
+                tuple(source["id"] for source in sources),
+                tuple(f"src-{index:02d}" for index in range(1, len(sources) + 1)),
+            )
+            self.assertTrue(
+                all(set(source) == {"id", "title", "url", "kind"} for source in sources)
+            )
+            actual_sources.append(
+                {
+                    "lessonId": lesson_id,
+                    "sources": [
+                        {
+                            "title": source["title"],
+                            "url": source["url"],
+                            "kind": source["kind"],
+                        }
+                        for source in sources
+                    ],
+                }
+            )
+
+        self.assertEqual(len(actual_figures), 31)
+        self.assertEqual(
+            sum(item["disposition"] == "migrate" for item in actual_figures),
+            30,
+        )
+        self.assertEqual(
+            [
+                (item["lessonId"], item["sectionRole"], item["caption"])
+                for item in actual_figures
+                if item["disposition"] == "retain"
+            ],
+            [
+                (
+                    "core-17-graphics-visual-information",
+                    "workedExample",
+                    "同じ0–100%尺度で比較する学習活動の時間",
+                )
+            ],
+        )
+        self.assertEqual(actual_figures, oracle["figures"])
+        self.assertEqual(actual_residuals, oracle["residualBodies"])
+        self.assertEqual(actual_sources, oracle["sourceProjections"])
+        self.assertEqual(
+            sum(len(item["sources"]) for item in actual_sources),
+            126,
+        )
 
     def test_authored_bodies_have_six_sections_and_unique_visible_text(self) -> None:
         visible_bodies: dict[str, str] = {}

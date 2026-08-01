@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
 from copy import deepcopy
+import json
+from pathlib import Path
 from types import MappingProxyType
 import unittest
 
@@ -11,7 +13,43 @@ from curriculum_builder.visualizations import (
     SimulationState,
     SimulationTransition,
     VisualizationType,
+    parse_visualization_catalog_bytes,
     parse_visualizations,
+)
+
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+EXPECTED_ASSIGNMENTS = (
+    ("core-01-systems-tradeoffs", "causal", "matrix", False, None),
+    ("core-02-algorithms-measurement", "comparison", "flow", True, ("complexity-growth", "scenario", "complexity-growth-static", ("small-input", "crossover", "large-input"))),
+    ("core-03-architecture-memory-caches", "memory", "matrix", True, ("memory-access", "hybrid", "memory-access-static", ("tlb-lookup", "l1-hit", "memory-return"))),
+    ("core-04-os-processes-concurrency", "timeline", "state-machine", True, ("scheduler-interleaving", "playback", "scheduler-interleaving-static", ("read-old-value", "lost-update", "locked-complete"))),
+    ("core-05-networks-latency-failure", "timeline", "comparison", True, ("request-path", "hybrid", "request-path-static", ("dns-lookup", "tls-ready", "deadline-exceeded"))),
+    ("core-06-requirements-domain-modeling", "network", "state-machine", False, None),
+    ("core-07-api-contract-design", "state-machine", "timeline", True, ("retry-contract", "playback", "retry-contract-static", ("request-accepted", "response-lost", "retry-replayed"))),
+    ("core-08-modularity-evolutionary-architecture", "network", "matrix", False, None),
+    ("core-09-test-strategy-tdd", "state-loop", "matrix", False, None),
+    ("core-10-threat-modeling-secure-design", "network", "matrix", False, None),
+    ("core-11-data-modeling-storage", "matrix", "flow", False, None),
+    ("core-12-transactions-isolation-consistency", "timeline", "network", True, ("isolation-schedule", "hybrid", "isolation-schedule-static", ("concurrent-read", "write-skew", "transaction-retried"))),
+    ("core-13-distributed-coordination-failure", "timeline", "state-machine", True, ("distributed-failure", "hybrid", "distributed-failure-static", ("duplicate-received", "partition-detected", "recovery-converged"))),
+    ("core-14-performance-capacity", "causal", "comparison", True, ("queue-capacity", "scenario", "queue-capacity-static", ("stable-load", "saturation", "capacity-recovered"))),
+    ("core-15-reliability-observability-slo", "state-loop", "timeline", True, ("slo-burn", "scenario", "slo-burn-static", ("budget-healthy", "fast-burn", "page-triggered"))),
+    ("core-16-hci-usability-accessibility", "flow", "matrix", True, ("accessible-ui-state", "explorer", "accessible-ui-state-static", ("narrow-viewport", "keyboard-focus", "reduced-motion"))),
+    ("core-17-graphics-visual-information", "flow", "comparison", False, None),
+    ("core-18-product-discovery-experiments", "causal", "matrix", False, None),
+    ("core-19-technical-communication-design-docs", "hierarchy", "comparison", False, None),
+    ("core-20-ethics-privacy-societal-impact", "causal", "matrix", False, None),
+    ("core-21-maintenance-legacy-comprehension", "network", "state-loop", False, None),
+    ("core-22-evolution-safe-migrations", "state-machine", "timeline", True, ("migration-phase", "playback", "migration-phase-static", ("expand-ready", "backfill-paused", "contract-complete"))),
+    ("core-23-incident-response-learning", "timeline", "causal", False, None),
+    ("core-24-delivery-ci-release-safety", "state-machine", "network", True, ("release-safety", "playback", "release-safety-static", ("artifact-verified", "canary-rejected", "rollback-complete"))),
+    ("core-25-engineering-economics-capacity", "matrix", "comparison", False, None),
+    ("core-26-code-review-collaborative-quality", "state-loop", "matrix", False, None),
+    ("core-27-team-interfaces-sociotechnical-architecture", "network", "matrix", False, None),
+    ("core-28-oss-governance-stewardship", "flow", "hierarchy", False, None),
+    ("core-29-cross-cultural-async-collaboration", "timeline", "matrix", False, None),
+    ("core-30-evidence-based-technical-leadership", "causal", "matrix", False, None),
 )
 
 
@@ -152,6 +190,87 @@ def _scenario_simulation() -> dict[str, object]:
             {"id": "large-result", "stateId": "large-state", "label": "大きい入力"},
         ],
     }
+
+
+class VisualizationCatalogTests(unittest.TestCase):
+    def _catalog_bytes(self) -> bytes:
+        return (REPOSITORY_ROOT / "content/visualization-catalog.json").read_bytes()
+
+    def _projection(self, catalog) -> tuple[tuple[object, ...], ...]:
+        return tuple(
+            (
+                assignment.lesson_id,
+                assignment.primary_type.value,
+                assignment.optional_secondary_type.value,
+                assignment.dynamic,
+                None
+                if assignment.simulation is None
+                else (
+                    assignment.simulation.kind.value,
+                    assignment.simulation.interaction_mode.value,
+                    assignment.simulation.static_equivalent_id,
+                    assignment.simulation.visual_regression_state_ids,
+                ),
+            )
+            for assignment in catalog.lessons
+        )
+
+    def test_repository_catalog_matches_the_independent_exact_inventory(self) -> None:
+        catalog = parse_visualization_catalog_bytes(
+            self._catalog_bytes(),
+            "visualization-catalog.json",
+        )
+
+        self.assertEqual(catalog.version, 1)
+        self.assertEqual(self._projection(catalog), EXPECTED_ASSIGNMENTS)
+
+    def test_catalog_parser_rejects_shape_sort_duplicate_and_enum_mutations(self) -> None:
+        baseline = json.loads(self._catalog_bytes())
+        mutations = []
+        unknown_root = deepcopy(baseline)
+        unknown_root["defaultPrimaryType"] = "flow"
+        mutations.append(("root shape", unknown_root))
+        row_level = deepcopy(baseline)
+        row_level["lessons"][1]["interactionMode"] = "scenario"
+        mutations.append(("row-level simulation", row_level))
+        static_simulation = deepcopy(baseline)
+        static_simulation["lessons"][0]["simulation"] = deepcopy(
+            static_simulation["lessons"][1]["simulation"]
+        )
+        mutations.append(("static simulation", static_simulation))
+        unsorted = deepcopy(baseline)
+        unsorted["lessons"][0], unsorted["lessons"][1] = (
+            unsorted["lessons"][1], unsorted["lessons"][0]
+        )
+        mutations.append(("sort", unsorted))
+        duplicate = deepcopy(baseline)
+        duplicate["lessons"][1]["lessonId"] = duplicate["lessons"][0]["lessonId"]
+        mutations.append(("duplicate", duplicate))
+        invalid_enum = deepcopy(baseline)
+        invalid_enum["lessons"][0]["primaryType"] = "graph"
+        mutations.append(("enum", invalid_enum))
+
+        for name, document in mutations:
+            with self.subTest(name=name):
+                with self.assertRaises(CurriculumValidationError):
+                    parse_visualization_catalog_bytes(
+                        json.dumps(document).encode(),
+                        "mutated.json",
+                    )
+
+    def test_independent_inventory_rejects_assignment_swaps(self) -> None:
+        document = json.loads(self._catalog_bytes())
+        document["lessons"][0]["primaryType"], document["lessons"][1]["primaryType"] = (
+            document["lessons"][1]["primaryType"],
+            document["lessons"][0]["primaryType"],
+        )
+        catalog = parse_visualization_catalog_bytes(
+            json.dumps(document).encode(),
+            "swapped.json",
+        )
+
+        with self.assertRaises(AssertionError):
+            self.assertEqual(self._projection(catalog), EXPECTED_ASSIGNMENTS)
 
 
 class VisualizationModelTests(unittest.TestCase):

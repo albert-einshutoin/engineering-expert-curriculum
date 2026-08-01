@@ -140,21 +140,25 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "On the Criteria To Be Used in Decomposing Systems into Modules",
       "url": "https://doi.org/10.1145/361598.361623",
       "kind": "primary"
     },
     {
+      "id": "src-02",
       "title": "ISO/IEC/IEEE 42010:2022 - Software, systems and enterprise — Architecture description",
       "url": "https://www.iso.org/standard/74393.html",
       "kind": "standard"
     },
     {
+      "id": "src-03",
       "title": "Documenting Software Architectures: Views and Beyond, Second Edition",
       "url": "https://www.sei.cmu.edu/library/documenting-software-architectures-views-and-beyond-second-edition/",
       "kind": "primary"
     },
     {
+      "id": "src-04",
       "title": "MADR 4.0.0 — The Markdown Architectural Decision Records",
       "url": "https://adr.github.io/madr/",
       "kind": "primary"

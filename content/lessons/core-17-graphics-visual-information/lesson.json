@@ -140,26 +140,31 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "The OpenGL Graphics System: A Specification, Version 4.6 (Core Profile), May 5, 2022",
       "url": "https://registry.khronos.org/OpenGL/specs/gl/glspec46.core.pdf",
       "kind": "standard"
     },
     {
+      "id": "src-02",
       "title": "Scalable Vector Graphics (SVG) 2",
       "url": "https://www.w3.org/TR/SVG2/",
       "kind": "standard"
     },
     {
+      "id": "src-03",
       "title": "Graphical Perception: Theory, Experimentation, and Application to the Development of Graphical Methods",
       "url": "https://doi.org/10.1080/01621459.1984.10478080",
       "kind": "peer-reviewed"
     },
     {
+      "id": "src-04",
       "title": "Visualization Analysis and Design",
       "url": "https://www.routledge.com/Visualization-Analysis-and-Design/Munzner/p/book/9781466508910",
       "kind": "primary"
     },
     {
+      "id": "src-05",
       "title": "Complex Images",
       "url": "https://www.w3.org/WAI/tutorials/images/complex/",
       "kind": "primary"

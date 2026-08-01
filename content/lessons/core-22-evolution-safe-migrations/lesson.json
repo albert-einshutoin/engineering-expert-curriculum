@@ -139,16 +139,19 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "DORA Capability: Database change management (accessed 2026-07-31)",
       "url": "https://dora.dev/capabilities/database-change-management/",
       "kind": "primary"
     },
     {
+      "id": "src-02",
       "title": "PostgreSQL 18 Documentation: ALTER TABLE",
       "url": "https://www.postgresql.org/docs/18/sql-altertable.html",
       "kind": "primary"
     },
     {
+      "id": "src-03",
       "title": "PostgreSQL 18 Documentation: Restrictions",
       "url": "https://www.postgresql.org/docs/18/logical-replication-restrictions.html",
       "kind": "primary"

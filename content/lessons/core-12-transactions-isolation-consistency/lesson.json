@@ -139,21 +139,25 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "Principles of Transaction-Oriented Database Recovery",
       "url": "https://doi.org/10.1145/289.291",
       "kind": "peer-reviewed"
     },
     {
+      "id": "src-02",
       "title": "A Critique of ANSI SQL Isolation Levels",
       "url": "https://sigmodrecord.org/1995/06/06/a-critique-of-ansi-sql-isolation-levels/",
       "kind": "peer-reviewed"
     },
     {
+      "id": "src-03",
       "title": "13.2. Transaction Isolation",
       "url": "https://www.postgresql.org/docs/18/transaction-iso.html",
       "kind": "primary"
     },
     {
+      "id": "src-04",
       "title": "Serializable Snapshot Isolation in PostgreSQL",
       "url": "https://doi.org/10.14778/2367502.2367523",
       "kind": "peer-reviewed"

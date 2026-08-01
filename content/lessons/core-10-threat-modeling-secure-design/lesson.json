@@ -140,26 +140,31 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "Secure Software Development Framework (SSDF) Version 1.1: Recommendations for Mitigating the Risk of Software Vulnerabilities",
       "url": "https://csrc.nist.gov/pubs/sp/800/218/final",
       "kind": "standard"
     },
     {
+      "id": "src-02",
       "title": "Shifting the Balance of Cybersecurity Risk: Principles and Approaches for Secure by Design Software",
       "url": "https://www.cisa.gov/sites/default/files/2023-10/Shifting-the-Balance-of-Cybersecurity-Risk-Principles-and-Approaches-for-Secure-by-Design-Software.pdf",
       "kind": "primary"
     },
     {
+      "id": "src-03",
       "title": "Threat Modeling Cheat Sheet",
       "url": "https://cheatsheetseries.owasp.org/cheatsheets/Threat_Modeling_Cheat_Sheet.html",
       "kind": "primary"
     },
     {
+      "id": "src-04",
       "title": "OWASP Application Security Verification Standard 5.0.0",
       "url": "https://github.com/OWASP/ASVS/releases/tag/v5.0.0_release",
       "kind": "standard"
     },
     {
+      "id": "src-05",
       "title": "Insider Threat Mitigation Guide",
       "url": "https://www.cisa.gov/sites/default/files/2022-11/Insider%20Threat%20Mitigation%20Guide_Final_508.pdf",
       "kind": "primary"

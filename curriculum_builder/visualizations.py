@@ -11,8 +11,10 @@ import hashlib
 from itertools import product
 import re
 from types import MappingProxyType
+from typing import TypeVar
 import unicodedata
 
+from .catalog import strict_json_loads
 from .errors import CurriculumValidationError
 from .html_safety import (
     SafeHtml,
@@ -22,9 +24,15 @@ from .html_safety import (
 
 
 _ID = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
+_CORE_LESSON_ID = re.compile(
+    r"core-(0[1-9]|[12][0-9]|30)-[a-z0-9]+(?:-[a-z0-9]+)*\Z",
+    re.ASCII,
+)
 _SIMULATION_EVENTS = frozenset({"next", "previous", "timer", "parameter-change", "reset"})
 _DOM_NAMESPACE_PREFIX = b"visualization-dom-v1\0"
 _DOM_NAMESPACE_DIGEST_HEX_CHARS = 20
+MAX_VISUALIZATION_CATALOG_BYTES = 64 * 1024
+_CatalogEnum = TypeVar("_CatalogEnum", bound=StrEnum)
 
 
 class VisualizationType(StrEnum):
@@ -297,6 +305,29 @@ class Visualization:
     payload: VisualizationPayload
     notes: tuple[str, ...]
     simulation: Simulation | None
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogSimulation:
+    kind: SimulationKind
+    interaction_mode: InteractionMode
+    static_equivalent_id: str
+    visual_regression_state_ids: tuple[str, str, str]
+
+
+@dataclass(frozen=True, slots=True)
+class VisualizationAssignment:
+    lesson_id: str
+    primary_type: VisualizationType
+    optional_secondary_type: VisualizationType
+    dynamic: bool
+    simulation: CatalogSimulation | None
+
+
+@dataclass(frozen=True, slots=True)
+class VisualizationCatalog:
+    version: int
+    lessons: tuple[VisualizationAssignment, ...]
 
 
 def _fail(path: str, reason: str) -> None:
@@ -1356,6 +1387,127 @@ def _payload_ids(payload: VisualizationPayload) -> tuple[set[str], set[str]]:
             {cell.id for cell in payload.cells},
         )
     return {item.id for item in payload.states}, {edge.id for edge in payload.transitions}
+
+
+def _catalog_enum(
+    enum_type: type[_CatalogEnum],
+    value: object,
+    path: str,
+) -> _CatalogEnum:
+    if type(value) is not str:
+        _fail(path, "must be a string enum")
+    try:
+        return enum_type(value)
+    except ValueError:
+        _fail(path, "must use a supported enum value")
+
+
+def parse_visualization_catalog_bytes(
+    raw: bytes,
+    source_name: str,
+) -> VisualizationCatalog:
+    """Parse one descriptor-pinned exact assignment catalog snapshot."""
+    if type(raw) is not bytes:
+        _fail("visualization catalog", "snapshot must be exact bytes")
+    if len(raw) > MAX_VISUALIZATION_CATALOG_BYTES:
+        _fail("visualization catalog", "exceeds maximum byte count")
+    source = _text(source_name, "visualization catalog source name", 255)
+    document = _mapping(strict_json_loads(raw, source), "catalog")
+    _fields(
+        document,
+        required={"version", "lessons"},
+        optional=set(),
+        path="catalog",
+    )
+    if type(document["version"]) is not int or document["version"] != 1:
+        _fail("catalog.version", "must be integer 1")
+    rows = _sequence(document["lessons"], "catalog.lessons", 30, 30)
+    assignments: list[VisualizationAssignment] = []
+    for index, item in enumerate(rows):
+        path = f"catalog.lessons[{index}]"
+        row = _mapping(item, path)
+        dynamic = row.get("dynamic")
+        if type(dynamic) is not bool:
+            _fail(f"{path}.dynamic", "must be a boolean")
+        required = {
+            "lessonId",
+            "primaryType",
+            "optionalSecondaryType",
+            "dynamic",
+        }
+        if dynamic:
+            required.add("simulation")
+        _fields(row, required=required, optional=set(), path=path)
+        lesson_id = _text(row["lessonId"], f"{path}.lessonId", 128)
+        if _CORE_LESSON_ID.fullmatch(lesson_id) is None:
+            _fail(f"{path}.lessonId", "must be a full canonical lesson ID")
+        primary_type = _catalog_enum(
+            VisualizationType,
+            row["primaryType"],
+            f"{path}.primaryType",
+        )
+        secondary_type = _catalog_enum(
+            VisualizationType,
+            row["optionalSecondaryType"],
+            f"{path}.optionalSecondaryType",
+        )
+        simulation: CatalogSimulation | None = None
+        if dynamic:
+            simulation_path = f"{path}.simulation"
+            raw_simulation = _mapping(row["simulation"], simulation_path)
+            _fields(
+                raw_simulation,
+                required={
+                    "kind",
+                    "interactionMode",
+                    "staticEquivalentId",
+                    "visualRegressionStateIds",
+                },
+                optional=set(),
+                path=simulation_path,
+            )
+            state_ids = _ids(
+                raw_simulation["visualRegressionStateIds"],
+                f"{simulation_path}.visualRegressionStateIds",
+                3,
+                3,
+            )
+            simulation = CatalogSimulation(
+                kind=_catalog_enum(
+                    SimulationKind,
+                    raw_simulation["kind"],
+                    f"{simulation_path}.kind",
+                ),
+                interaction_mode=_catalog_enum(
+                    InteractionMode,
+                    raw_simulation["interactionMode"],
+                    f"{simulation_path}.interactionMode",
+                ),
+                static_equivalent_id=_id(
+                    raw_simulation["staticEquivalentId"],
+                    f"{simulation_path}.staticEquivalentId",
+                ),
+                visual_regression_state_ids=(
+                    state_ids[0],
+                    state_ids[1],
+                    state_ids[2],
+                ),
+            )
+        assignments.append(
+            VisualizationAssignment(
+                lesson_id=lesson_id,
+                primary_type=primary_type,
+                optional_secondary_type=secondary_type,
+                dynamic=dynamic,
+                simulation=simulation,
+            )
+        )
+    lesson_ids = tuple(item.lesson_id for item in assignments)
+    if len(set(lesson_ids)) != len(lesson_ids):
+        _fail("catalog.lessons", "must not contain duplicate lesson IDs")
+    if lesson_ids != tuple(sorted(lesson_ids)):
+        _fail("catalog.lessons", "must be sorted by full lesson ID")
+    return VisualizationCatalog(version=1, lessons=tuple(assignments))
 
 
 def parse_visualizations(

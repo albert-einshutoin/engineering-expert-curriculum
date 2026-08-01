@@ -139,21 +139,25 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "A Relational Model of Data for Large Shared Data Banks",
       "url": "https://doi.org/10.1145/362384.362685",
       "kind": "peer-reviewed"
     },
     {
+      "id": "src-02",
       "title": "Chapter 5. Data Definition",
       "url": "https://www.postgresql.org/docs/18/ddl.html",
       "kind": "primary"
     },
     {
+      "id": "src-03",
       "title": "Data Modeling in MongoDB",
       "url": "https://www.mongodb.com/docs/v8.0/data-modeling/",
       "kind": "primary"
     },
     {
+      "id": "src-04",
       "title": "Dynamo: Amazon’s Highly Available Key-value Store",
       "url": "https://doi.org/10.1145/1294261.1294281",
       "kind": "peer-reviewed"

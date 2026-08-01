@@ -140,21 +140,25 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "How the discovery phase works",
       "url": "https://www.gov.uk/service-manual/agile-delivery/how-the-discovery-phase-works",
       "kind": "primary"
     },
     {
+      "id": "src-02",
       "title": "Trustworthy Online Controlled Experiments: A Practical Guide to A/B Testing",
       "url": "https://doi.org/10.1017/9781108653985",
       "kind": "primary"
     },
     {
+      "id": "src-03",
       "title": "Online Experimentation at Microsoft",
       "url": "https://www.microsoft.com/en-us/research/publication/online-experimentation-at-microsoft/",
       "kind": "primary"
     },
     {
+      "id": "src-04",
       "title": "Always Valid Inference: Continuous Monitoring of A/B Tests",
       "url": "https://doi.org/10.1287/opre.2021.2135",
       "kind": "peer-reviewed"

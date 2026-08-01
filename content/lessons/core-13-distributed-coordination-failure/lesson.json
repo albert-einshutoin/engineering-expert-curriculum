@@ -140,21 +140,25 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "Impossibility of Distributed Consensus with One Faulty Process",
       "url": "https://doi.org/10.1145/3149.214121",
       "kind": "peer-reviewed"
     },
     {
+      "id": "src-02",
       "title": "In Search of an Understandable Consensus Algorithm",
       "url": "https://raft.github.io/raft.pdf",
       "kind": "primary"
     },
     {
+      "id": "src-03",
       "title": "RFC 9110: HTTP Semantics",
       "url": "https://www.rfc-editor.org/rfc/rfc9110.html",
       "kind": "standard"
     },
     {
+      "id": "src-04",
       "title": "FoundationDB: A Distributed Unbundled Transactional Key Value Store",
       "url": "https://doi.org/10.1145/3448016.3457559",
       "kind": "peer-reviewed"

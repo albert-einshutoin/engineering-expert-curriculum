@@ -138,21 +138,25 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "Guide to the Software Engineering Body of Knowledge (SWEBOK Guide), Version 4.0a, September 2025",
       "url": "https://ieeecs-media.computer.org/media/education/swebok/swebok-v4.pdf",
       "kind": "standard"
     },
     {
+      "id": "src-02",
       "title": "ISO/IEC/IEEE 14764:2022 - Software engineering — Software life cycle processes — Maintenance",
       "url": "https://www.iso.org/standard/80710.html",
       "kind": "standard"
     },
     {
+      "id": "src-03",
       "title": "Software maintenance and evolution: a roadmap (2000)",
       "url": "https://doi.org/10.1145/336512.336534",
       "kind": "peer-reviewed"
     },
     {
+      "id": "src-04",
       "title": "Comprehension strategies and difficulties in maintaining object-oriented systems: An explorative study (2007)",
       "url": "https://doi.org/10.1016/j.jss.2006.10.041",
       "kind": "peer-reviewed"

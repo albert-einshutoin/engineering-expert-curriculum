@@ -141,21 +141,25 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "DORA Capability: Loosely coupled teams (accessed 2026-07-31)",
       "url": "https://dora.dev/capabilities/loosely-coupled-teams/",
       "kind": "primary"
     },
     {
+      "id": "src-02",
       "title": "How Do Committees Invent? (1968)",
       "url": "https://www.melconway.com/Home/Committees_Paper.html",
       "kind": "primary"
     },
     {
+      "id": "src-03",
       "title": "Team Topologies: Key concepts (accessed 2026-07-31)",
       "url": "https://teamtopologies.com/key-concepts",
       "kind": "primary"
     },
     {
+      "id": "src-04",
       "title": "ISO/IEC/IEEE 42010:2022 - Software, systems and enterprise — Architecture description",
       "url": "https://www.iso.org/standard/74393.html",
       "kind": "standard"

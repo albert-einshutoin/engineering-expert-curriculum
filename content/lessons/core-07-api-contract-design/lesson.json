@@ -138,26 +138,31 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "RFC 9110: HTTP Semantics",
       "url": "https://www.rfc-editor.org/rfc/rfc9110.html",
       "kind": "standard"
     },
     {
+      "id": "src-02",
       "title": "OpenAPI Specification v3.2.0",
       "url": "https://spec.openapis.org/oas/v3.2.0.html",
       "kind": "standard"
     },
     {
+      "id": "src-03",
       "title": "JSON Schema Validation: A Vocabulary for Structural Validation of JSON",
       "url": "https://json-schema.org/draft/2020-12/json-schema-validation",
       "kind": "standard"
     },
     {
+      "id": "src-04",
       "title": "AIP-180: Backwards compatibility",
       "url": "https://google.aip.dev/180",
       "kind": "primary"
     },
     {
+      "id": "src-05",
       "title": "RFC 9457: Problem Details for HTTP APIs",
       "url": "https://www.rfc-editor.org/rfc/rfc9457.html",
       "kind": "standard"

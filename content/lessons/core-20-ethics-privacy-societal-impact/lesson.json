@@ -141,26 +141,31 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "ACM Code of Ethics and Professional Conduct (2018)",
       "url": "https://www.acm.org/code-of-ethics",
       "kind": "standard"
     },
     {
+      "id": "src-02",
       "title": "NIST Privacy Framework: A Tool for Improving Privacy through Enterprise Risk Management, Version 1.0",
       "url": "https://doi.org/10.6028/NIST.CSWP.01162020",
       "kind": "standard"
     },
     {
+      "id": "src-03",
       "title": "RFC 6973: Privacy Considerations for Internet Protocols",
       "url": "https://www.rfc-editor.org/info/rfc6973/",
       "kind": "standard"
     },
     {
+      "id": "src-04",
       "title": "RFC 9620: Guidelines for Human Rights Protocol and Architecture Considerations",
       "url": "https://www.rfc-editor.org/rfc/rfc9620.html",
       "kind": "primary"
     },
     {
+      "id": "src-05",
       "title": "Artificial Intelligence Risk Management Framework (AI RMF 1.0)",
       "url": "https://doi.org/10.6028/NIST.AI.100-1",
       "kind": "standard"

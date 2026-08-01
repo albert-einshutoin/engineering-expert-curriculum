@@ -143,21 +143,25 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "ACM Code of Ethics and Professional Conduct (2018)",
       "url": "https://www.acm.org/code-of-ethics",
       "kind": "standard"
     },
     {
+      "id": "src-02",
       "title": "DORA's software delivery performance metrics (updated January 5, 2026)",
       "url": "https://dora.dev/guides/dora-metrics/",
       "kind": "primary"
     },
     {
+      "id": "src-03",
       "title": "FinOps Framework 2026 (accessed 2026-07-31)",
       "url": "https://www.finops.org/framework/",
       "kind": "primary"
     },
     {
+      "id": "src-04",
       "title": "The NIST Cybersecurity Framework (CSF) 2.0",
       "url": "https://doi.org/10.6028/NIST.CSWP.29",
       "kind": "standard"

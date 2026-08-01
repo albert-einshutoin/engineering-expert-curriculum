@@ -145,21 +145,25 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "RFC 7282: On Consensus and Humming in the IETF",
       "url": "https://www.rfc-editor.org/info/rfc7282/",
       "kind": "standard"
     },
     {
+      "id": "src-02",
       "title": "RFC 7322: RFC Style Guide",
       "url": "https://www.rfc-editor.org/info/rfc7322/",
       "kind": "standard"
     },
     {
+      "id": "src-03",
       "title": "W3C Process Document, 18 August 2025",
       "url": "https://www.w3.org/policies/process/",
       "kind": "standard"
     },
     {
+      "id": "src-04",
       "title": "The Art of Consensus (W3C Guidebook, accessed 2026-07-31)",
       "url": "https://www.w3.org/guide/",
       "kind": "primary"

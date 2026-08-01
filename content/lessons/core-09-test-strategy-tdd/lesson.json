@@ -140,26 +140,31 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "ISTQB Certified Tester Foundation Level Syllabus v4.0.1",
       "url": "https://istqb.org/wp-content/uploads/2024/11/ISTQB_CTFL_Syllabus_v4.0.1.pdf",
       "kind": "standard"
     },
     {
+      "id": "src-02",
       "title": "Test Driven Development: By Example",
       "url": "https://www.informit.com/store/test-driven-development-by-example-9780321146533",
       "kind": "primary"
     },
     {
+      "id": "src-03",
       "title": "An Empirical Analysis of Flaky Tests",
       "url": "https://doi.org/10.1145/2635868.2635920",
       "kind": "peer-reviewed"
     },
     {
+      "id": "src-04",
       "title": "Metamorphic Testing: A New Approach for Generating Next Test Cases",
       "url": "https://www.cse.ust.hk/~scc/publ/CS98-01-metamorphictesting.pdf",
       "kind": "primary"
     },
     {
+      "id": "src-05",
       "title": "Pact Specification",
       "url": "https://docs.pact.io/getting_started/specification",
       "kind": "primary"

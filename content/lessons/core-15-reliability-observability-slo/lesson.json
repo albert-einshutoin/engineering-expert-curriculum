@@ -141,26 +141,31 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "Service Level Objectives",
       "url": "https://sre.google/sre-book/service-level-objectives/",
       "kind": "primary"
     },
     {
+      "id": "src-02",
       "title": "Alerting on SLOs",
       "url": "https://sre.google/workbook/alerting-on-slos/",
       "kind": "primary"
     },
     {
+      "id": "src-03",
       "title": "On-Call",
       "url": "https://sre.google/workbook/on-call/",
       "kind": "primary"
     },
     {
+      "id": "src-04",
       "title": "OpenTelemetry Specification 1.59.0",
       "url": "https://opentelemetry.io/docs/specs/otel/",
       "kind": "standard"
     },
     {
+      "id": "src-05",
       "title": "OpenTelemetry semantic conventions 1.43.0",
       "url": "https://opentelemetry.io/docs/specs/semconv/",
       "kind": "standard"

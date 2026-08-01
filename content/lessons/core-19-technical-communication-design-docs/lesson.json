@@ -140,26 +140,31 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "ISO/IEC/IEEE 42010:2022 - Software, systems and enterprise — Architecture description",
       "url": "https://www.iso.org/standard/74393.html",
       "kind": "standard"
     },
     {
+      "id": "src-02",
       "title": "NASA Systems Engineering Handbook, NASA/SP-2016-6105 Rev2",
       "url": "https://www.nasa.gov/reference/systems-engineering-handbook/",
       "kind": "primary"
     },
     {
+      "id": "src-03",
       "title": "RFC 7322: RFC Style Guide",
       "url": "https://www.rfc-editor.org/info/rfc7322/",
       "kind": "standard"
     },
     {
+      "id": "src-04",
       "title": "Markdown Architectural Decision Records 4.0.0",
       "url": "https://adr.github.io/madr/",
       "kind": "primary"
     },
     {
+      "id": "src-05",
       "title": "Plain language guide series",
       "url": "https://digital.gov/guides/plain-language",
       "kind": "primary"

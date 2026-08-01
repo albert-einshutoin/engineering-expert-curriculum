@@ -53,6 +53,11 @@ from .lesson_rendering import (
 from .lessons import LESSON_TRACKS, Lesson
 from .models import CatalogItem
 from .render import MAX_TEMPLATE_BYTES, Renderer
+from .visualizations import (
+    MAX_VISUALIZATION_CATALOG_BYTES,
+    VisualizationCatalog,
+    parse_visualization_catalog_bytes,
+)
 
 
 MAX_CATALOG_BYTES: Final = 8 * 1024 * 1024
@@ -640,6 +645,31 @@ def _load_catalog_from_root(
     if before != after:
         raise _validation("catalog.json changed during build")
     return items
+
+
+def _load_visualization_catalog_from_root(
+    content: _DirectoryHandle,
+) -> tuple[VisualizationCatalog, bytes]:
+    """Bind visual assignments to one descriptor-pinned build snapshot."""
+    before = _read_stable_regular_file(
+        content,
+        "visualization-catalog.json",
+        MAX_VISUALIZATION_CATALOG_BYTES,
+    )
+    catalog = parse_visualization_catalog_bytes(
+        before,
+        "visualization-catalog.json",
+    )
+    after = _read_stable_regular_file(
+        content,
+        "visualization-catalog.json",
+        MAX_VISUALIZATION_CATALOG_BYTES,
+    )
+    if before != after:
+        raise _validation(
+            "visualization-catalog.json changed during build"
+        )
+    return catalog, before
 
 
 def _load_competencies_from_root(
@@ -2888,6 +2918,12 @@ def build_site(
             (content.path, templates.path, static_files.path),
         )
         items = _load_catalog_from_root(content)
+        visualization_catalog, visualization_catalog_snapshot = (
+            _load_visualization_catalog_from_root(content)
+        )
+        # Task 7 binds lesson-authored visuals to these assignments. Reading it
+        # now still closes publication over the reviewed catalog bytes.
+        del visualization_catalog
         roadmap = _load_roadmap(
             content,
             require_complete=require_complete_curriculum,
@@ -2965,6 +3001,19 @@ def build_site(
                 raise _validation(f"{asset.source_name} changed during build")
         if lesson_snapshot != load_lessons_from_root(content.descriptor):
             raise _validation("lessons changed during build")
+        final_visualization_catalog = _read_stable_regular_file(
+            content,
+            "visualization-catalog.json",
+            MAX_VISUALIZATION_CATALOG_BYTES,
+        )
+        if final_visualization_catalog != visualization_catalog_snapshot:
+            raise _validation(
+                "visualization-catalog.json changed during build"
+            )
+        parse_visualization_catalog_bytes(
+            final_visualization_catalog,
+            "visualization-catalog.json",
+        )
         if (
             competency_snapshot is not None
             and competency_snapshot

@@ -141,26 +141,31 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "Diagnostics",
       "url": "https://go.dev/doc/diagnostics",
       "kind": "primary"
     },
     {
+      "id": "src-02",
       "title": "Handling Overload",
       "url": "https://sre.google/sre-book/handling-overload/",
       "kind": "primary"
     },
     {
+      "id": "src-03",
       "title": "A Proof for the Queuing Formula: L = λW",
       "url": "https://doi.org/10.1287/opre.9.3.383",
       "kind": "peer-reviewed"
     },
     {
+      "id": "src-04",
       "title": "The Tail at Scale",
       "url": "https://doi.org/10.1145/2408776.2408794",
       "kind": "peer-reviewed"
     },
     {
+      "id": "src-05",
       "title": "The Python Profilers",
       "url": "https://docs.python.org/3.13/library/profile.html",
       "kind": "primary"

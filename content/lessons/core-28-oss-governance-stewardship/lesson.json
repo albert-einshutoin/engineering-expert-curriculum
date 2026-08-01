@@ -147,26 +147,31 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "OpenSSF Scorecard (accessed 2026-07-31)",
       "url": "https://www.scorecard.dev/",
       "kind": "primary"
     },
     {
+      "id": "src-02",
       "title": "Contributor Covenant Code of Conduct Version 2.1",
       "url": "https://www.contributor-covenant.org/version/2/1/code_of_conduct/",
       "kind": "standard"
     },
     {
+      "id": "src-03",
       "title": "SLSA v1.2 Source: Requirements for producing source",
       "url": "https://slsa.dev/spec/v1.2/source-requirements",
       "kind": "standard"
     },
     {
+      "id": "src-04",
       "title": "Setting up your project for healthy contributions",
       "url": "https://docs.github.com/en/communities/setting-up-your-project-for-healthy-contributions",
       "kind": "primary"
     },
     {
+      "id": "src-05",
       "title": "Best Practices for Maintainers",
       "url": "https://opensource.guide/best-practices/",
       "kind": "primary"

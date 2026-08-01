@@ -106,7 +106,7 @@ def _repository_lesson_source_counts(
         for source in sources:
             if (
                 type(source) is not dict
-                or set(source) != {"title", "url", "kind"}
+                or set(source) != {"id", "title", "url", "kind"}
                 or any(
                     type(value) is not str or not value
                     for value in source.values()
@@ -244,6 +244,9 @@ def _fixture(
                 "test fixture",
                 source_sha256="0" * 64,
             )
+        )
+        (content / "visualization-catalog.json").write_bytes(
+            (REPOSITORY_ROOT / "content/visualization-catalog.json").read_bytes()
         )
         if roadmap is None:
             roadmap = _roadmap()
@@ -738,6 +741,38 @@ class BuildInputValidationTests(unittest.TestCase):
             self.assertEqual(catalog_reads, 2)
             self.assertIn("Pinned title", catalog)
             self.assertNotIn("Raced title", catalog)
+
+    def test_visualization_catalog_is_revalidated_before_atomic_publication(
+        self,
+    ) -> None:
+        with _fixture() as (root, content, templates, static_root):
+            output = root / "site"
+            output.mkdir()
+            (output / "sentinel.txt").write_text("previous", encoding="utf-8")
+            catalog_path = content / "visualization-catalog.json"
+            original_render = build_module._render_artifacts
+
+            def racing_render(*args: object, **kwargs: object) -> object:
+                result = original_render(*args, **kwargs)  # type: ignore[arg-type]
+                document = json.loads(catalog_path.read_bytes())
+                document["lessons"][0]["primaryType"] = "flow"
+                _write_json(catalog_path, document)
+                return result
+
+            with patch(
+                "curriculum_builder.build._render_artifacts",
+                side_effect=racing_render,
+            ), self.assertRaisesRegex(
+                CurriculumValidationError,
+                "visualization-catalog.json changed during build",
+            ):
+                build_site(content, templates, static_root, output)
+
+            self.assertEqual(
+                (output / "sentinel.txt").read_text(encoding="utf-8"),
+                "previous",
+            )
+            self.assertEqual(list(root.glob(".site.staging-*")), [])
 
     def test_template_rendering_uses_pinned_bytes_during_root_swap(
         self,

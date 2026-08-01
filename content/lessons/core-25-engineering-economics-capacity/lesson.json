@@ -141,21 +141,25 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "FinOps Framework Capability: Unit Economics (accessed 2026-07-31)",
       "url": "https://www.finops.org/framework/capabilities/unit-economics/",
       "kind": "primary"
     },
     {
+      "id": "src-02",
       "title": "FinOps Framework Capability: Architecting & Workload Placement (accessed 2026-07-31)",
       "url": "https://www.finops.org/framework/capabilities/architecting-workload-placement/",
       "kind": "primary"
     },
     {
+      "id": "src-03",
       "title": "AWS Well-Architected Framework: Cost Optimization Pillar (June 27, 2024)",
       "url": "https://docs.aws.amazon.com/wellarchitected/latest/cost-optimization-pillar/welcome.html",
       "kind": "primary"
     },
     {
+      "id": "src-04",
       "title": "Google Cloud Well-Architected Framework: Cost optimization pillar (accessed 2026-07-31)",
       "url": "https://docs.cloud.google.com/architecture/framework/cost-optimization",
       "kind": "primary"

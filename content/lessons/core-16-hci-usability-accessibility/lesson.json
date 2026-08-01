@@ -139,21 +139,25 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "Web Content Accessibility Guidelines (WCAG) 2.2",
       "url": "https://www.w3.org/TR/WCAG22/",
       "kind": "standard"
     },
     {
+      "id": "src-02",
       "title": "Website Accessibility Conformance Evaluation Methodology (WCAG-EM) 1.0",
       "url": "https://www.w3.org/TR/WCAG-EM/",
       "kind": "standard"
     },
     {
+      "id": "src-03",
       "title": "ISO 9241-210:2019 - Ergonomics of human-system interaction — Part 210: Human-centred design for interactive systems",
       "url": "https://www.iso.org/standard/77520.html",
       "kind": "standard"
     },
     {
+      "id": "src-04",
       "title": "W3C Accessibility Guidelines (WCAG) 3.0 Working Draft 03 March 2026",
       "url": "https://www.w3.org/TR/wcag-3.0/",
       "kind": "primary"

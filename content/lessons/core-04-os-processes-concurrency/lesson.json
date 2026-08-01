@@ -140,26 +140,31 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "Chapter 17. Threads and Locks",
       "url": "https://docs.oracle.com/javase/specs/jls/se21/html/jls-17.html",
       "kind": "standard"
     },
     {
+      "id": "src-02",
       "title": "pthread_create — thread creation",
       "url": "https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/functions/pthread_create.html",
       "kind": "standard"
     },
     {
+      "id": "src-03",
       "title": "fork — create a new process",
       "url": "https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/functions/fork.html",
       "kind": "standard"
     },
     {
+      "id": "src-04",
       "title": "Linux kernel memory barriers",
       "url": "https://docs.kernel.org/core-api/wrappers/memory-barriers.html",
       "kind": "primary"
     },
     {
+      "id": "src-05",
       "title": "About Processes and Threads",
       "url": "https://learn.microsoft.com/en-us/windows/win32/procthread/about-processes-and-threads",
       "kind": "primary"
