@@ -393,6 +393,15 @@ function runModes() {
   click(hybrid, 'apply');
   click(hybrid, 'next');
   assert(activeState(hybrid) === 'state-b-done', 'hybrid did not select path');
+  setParameter(hybrid, 'a');
+  click(hybrid, 'apply');
+  assert(activeState(hybrid) === 'state-a', 'hybrid terminal reselection did not restart transactionally');
+  click(hybrid, 'next');
+  assert(activeState(hybrid) === 'state-a-done', 'hybrid reselection next used stale branch');
+  setParameter(hybrid, 'b');
+  click(hybrid, 'reset');
+  assert(activeState(hybrid) === 'state-0', 'hybrid reset did not recover initial state after an unapplied edit');
+  assert(hybrid.controls.querySelector('[data-parameter-id]').value === 'a', 'hybrid reset did not restore authored default');
   setParameter(explorer, 'b');
   click(explorer, 'apply');
   assert(activeState(explorer) === 'state-b', 'explorer did not highlight selection');
@@ -693,5 +702,6 @@ process.stdout.write(JSON.stringify({
   listenerLeaks: 0,
   timerLeaks: 0,
   resetCycles: 100,
+  hybridReselection: true,
   loadAbsence: true,
 }));

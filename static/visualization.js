@@ -260,6 +260,7 @@
       if (defaultStates.length !== 1 || defaultStates[0] !== this.initialId) { throw new Error('scenario defaults do not select initial state'); }
     }
     this.currentId = this.initialId;
+    this.appliedSelection = this.selection();
   };
   ControllerMethods.selection = function () {
     var result = new Map();
@@ -303,6 +304,10 @@
       active.forEach(function (transition) {
         if (!applicable.has(transition.from) || !applicable.has(transition.to)) { throw new Error('transition endpoint condition mismatch'); }
       });
+      if ((this.mode === 'hybrid' || this.mode === 'explorer') && this.transitions.some(function (transition) { return transition.eventName === 'parameter-change'; })) {
+        var parameterChanges = active.filter(function (transition) { return transition.from === this.initialId && transition.eventName === 'parameter-change'; }, this);
+        if (parameterChanges.length !== 1) { throw new Error('invalid parameter-change partition'); }
+      }
       this.stateById.forEach(function (state, stateId) {
         EVENTS.forEach(function (eventName) {
           var matchesForEvent = active.filter(function (transition) {
@@ -333,10 +338,10 @@
       }, this);
     }, this);
   };
-  ControllerMethods.transition = function (eventName, announce) {
+  ControllerMethods.transition = function (eventName, announce, selectedParameters) {
     // Authored event identity is part of the edge key; ordinal state position
     // is deliberately absent so a missing edge cannot become an implicit move.
-    var selection = this.selection();
+    var selection = selectedParameters || this.selection();
     var candidates = this.transitions.filter(function (transition) {
       return transition.from === this.currentId && transition.eventName === eventName && matches(transition.conditions, selection);
     }, this);
@@ -452,17 +457,33 @@
       this.transition('previous', true);
     } else if (name === 'apply') {
       this.stop();
+      var selected = this.selection();
       if (this.mode === 'scenario') {
         this.currentId = this.scenarioState();
         this.applyState(this.currentId, true);
-      } else { this.transition('parameter-change', true); }
+      } else if (this.transitions.some(function (transition) { return transition.eventName === 'parameter-change'; })) {
+        // Parameter changes are a new authored transaction. Resolve the edge
+        // from the canonical initial state in memory, then paint only its
+        // target so the old branch and new selection are never shown together.
+        this.currentId = this.initialId;
+        if (!this.transition('parameter-change', true, selected)) { throw new Error('missing parameter-change transition'); }
+      }
+      this.appliedSelection = new Map(selected);
     } else if (name === 'reset') {
       this.stop();
       if (this.mode === 'scenario') {
         this.restoreParameters();
         this.currentId = this.initialId;
         this.applyState(this.currentId, true);
-      } else { this.transition('reset', true); }
+      } else {
+        // An edited control is not an applied branch. Validate recovery using
+        // the last applied selection before restoring authored defaults.
+        if (this.currentId !== this.initialId && !this.transition('reset', false, this.appliedSelection)) { throw new Error('missing reset transition'); }
+        this.restoreParameters();
+        this.currentId = this.initialId;
+        this.appliedSelection = this.selection();
+        this.applyState(this.currentId, true);
+      }
     } else if (name === 'pause') {
       this.stop();
     } else if (name === 'play' && !this.reduced && this.hasTransition('timer')) {

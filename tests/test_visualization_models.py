@@ -690,6 +690,24 @@ class VisualizationModelTests(unittest.TestCase):
                             )
                         ])
 
+    def test_authored_parameter_changes_partition_every_selection_from_initial(self) -> None:
+        for mode in ("hybrid", "explorer"):
+            simulation = _resettable_simulation(mode)
+            simulation["transitions"] = [
+                transition
+                for transition in simulation["transitions"]  # type: ignore[union-attr]
+                if transition["id"] != "advance-b"
+            ]
+            with self.subTest(mode=mode), self.assertRaisesRegex(
+                CurriculumValidationError, "parameter-change"
+            ):
+                _parse([
+                    _visual(
+                        "flow", deepcopy(_payloads()["flow"]),
+                        simulation=simulation,
+                    )
+                ])
+
     def test_maximum_parameter_domain_is_validated_through_the_public_api(self) -> None:
         parameters = [
             {

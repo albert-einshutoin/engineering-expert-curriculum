@@ -649,6 +649,11 @@ git commit -m "content: complete semantic diagrams for all lessons"
 - Modify: `tests/test_content_acceptance.py`
 - Modify: `tests/test_lesson_rendering.py`
 - Modify: `tests/test_roadmap_acceptance.py`
+- Modify: `curriculum_builder/visualizations.py`
+- Modify: `static/visualization.js`
+- Modify: `curriculum_builder/javascript_safety.py`
+- Modify: `tests/fixtures/visualization-runtime-dom-harness.js`
+- Modify: runtime/model/render/security tests and checked-in runtime digests
 
 - [ ] **Step 1: Write RED JS source-safety tests**
 
@@ -798,6 +803,14 @@ build inventories must advance to the exact core-02/03/04/05/07 set; otherwise
 the full-suite gate continues to assert the superseded Task 8 boundary. The
 updated tests retain exact set equality and do not weaken active-content,
 event-handler, remote-resource, catalog, or artifact checks.
+
+Review amendment: independent Task 9 review found that changing a hybrid
+selection after reaching a branch terminal could leave Apply and Reset bound to
+the old branch. The runtime, model, generated-DOM oracle, safety digest, and
+real-lesson sequence tests therefore join this task. The same review requires
+the authored static equivalents to carry the exact value/trace/phase evidence
+promised by the inventory, so core-02/03/04/05 content contracts are tightened
+without changing the catalog or the exact five scripted lessons.
 
 - [ ] **Step 1: Add RED exact-state tests**
 

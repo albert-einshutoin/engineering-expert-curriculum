@@ -413,6 +413,13 @@ class VisualizationRenderingTests(unittest.TestCase):
             simulation["states"][0]["when"] = {}  # type: ignore[index]
             simulation["transitions"] = [
                 {
+                    "id": "keep-initial",
+                    "from": "first-state",
+                    "to": "first-state",
+                    "event": "parameter-change",
+                    "when": {parameter_id: "a" * 64},
+                },
+                {
                     "id": "advance-state",
                     "from": "first-state",
                     "to": "second-state",
@@ -545,6 +552,9 @@ class VisualizationRenderingTests(unittest.TestCase):
                 ),
             ),
             (
+                SimulationTransition(
+                    "keep-ready", "ready", "ready", "parameter-change", {"fault": "none"}
+                ),
                 SimulationTransition(
                     "retry", "ready", "dropped", "parameter-change", {"fault": "drop"}
                 ),

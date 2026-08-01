@@ -1071,6 +1071,19 @@ def _validate_simulation_domain(
             for edge in active_transitions
         ):
             _fail(path, "transition conditions do not imply endpoint conditions")
+        if conditional_path_mode and any(
+            edge.event == "parameter-change" for edge in transitions
+        ):
+            parameter_changes = [
+                edge for edge in active_transitions
+                if edge.from_id == initial_state_id
+                and edge.event == "parameter-change"
+            ]
+            if len(parameter_changes) != 1:
+                _fail(
+                    path,
+                    "authored parameter-change edges must partition selections from initial",
+                )
 
         adjacency = {state_id: [] for state_id in applicable_state_ids}
         for edge in active_transitions:
