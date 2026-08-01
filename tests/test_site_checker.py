@@ -419,11 +419,17 @@ class SiteCheckerHtmlTests(unittest.TestCase):
                 )
 
     def test_rejects_elements_outside_the_generated_document_grammar(self) -> None:
+        image_before_csp = _page().replace(
+            '<meta charset="utf-8">',
+            '<img src="pixel.png"><meta charset="utf-8">',
+        )
+        image_issues = self._issues_for(image_before_csp)
+        self.assertTrue(any(
+            "CSP must precede resource-bearing elements" in issue
+            for issue in image_issues
+        ))
         mutations = (
-            _page().replace(
-                '<meta charset="utf-8">',
-                '<img src="pixel.png"><meta charset="utf-8">',
-            ),
+            image_before_csp,
             _page(body='<svg><title>forged</title></svg>'),
             _page(body='<video src="forged.mp4"></video>'),
         )

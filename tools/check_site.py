@@ -354,6 +354,15 @@ class _PageParser(HTMLParser):
                 )
         if "ping" in values:
             self.issues.add(self.relative, "ping contains an unsafe URL")
+        resource_attributes = {
+            "action", "background", "formaction", "manifest", "poster", "src",
+            "srcset", "xlink:href",
+        }
+        if (
+            tag in _RESOURCE_ELEMENTS | {"link", "script"}
+            or resource_attributes & set(values)
+        ) and not self.csp_values:
+            self.resource_before_csp = True
         if "background" in values:
             self._record_url(values.get("background"), "resource", set())
         if tag not in _RESOURCE_ELEMENTS:
@@ -417,8 +426,6 @@ class _PageParser(HTMLParser):
             elif http_equiv == "content-security-policy":
                 self.csp_values.append(values.get("content") or "")
         elif tag == "link":
-            if not self.csp_values:
-                self.resource_before_csp = True
             rel = _rel_tokens(values.get("rel"))
             if rel != {"stylesheet"}:
                 self.issues.add(
@@ -439,8 +446,6 @@ class _PageParser(HTMLParser):
                 self.stylesheet_hrefs.append(values.get("href") or "")
             self._record_url(values.get("href"), "stylesheet", rel)
         elif tag == "script":
-            if self.head_depth:
-                self.resource_before_csp = not self.csp_values
             if set(values) != {"src", "defer"} or values.get("defer") is not None:
                 self.issues.add(
                     self.relative,
