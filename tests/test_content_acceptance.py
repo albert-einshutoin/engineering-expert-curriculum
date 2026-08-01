@@ -34,6 +34,9 @@ CURRICULUM_MAP = REPOSITORY_ROOT / "docs/curriculum-map.md"
 MIGRATION_ORACLE = (
     REPOSITORY_ROOT / "tests/fixtures/visualization-migration-v1.json"
 )
+TASK11_SIMULATION_ORACLE = (
+    REPOSITORY_ROOT / "tests/fixtures/task11-simulation-contract-v1.json"
+)
 BEGIN_GENERATED_MAP = "<!-- BEGIN GENERATED CURRICULUM MAP -->"
 END_GENERATED_MAP = "<!-- END GENERATED CURRICULUM MAP -->"
 LESSON_IDS = (
@@ -380,6 +383,181 @@ TASK11_SIMULATION_CONTRACTS = {
         "interval": 1200,
     },
 }
+
+
+def _task11_simulation_projection(simulation: dict[str, object]) -> dict[str, object]:
+    return {
+        "states": [
+            {
+                "id": state["id"],
+                "status": state["status"],
+                "when": state.get("when", {}),
+                "activeNodeIds": state["activeNodeIds"],
+                "activeEdgeIds": state["activeEdgeIds"],
+            }
+            for state in simulation["states"]
+        ],
+        "transitions": [
+            {
+                "id": transition["id"],
+                "from": transition["from"],
+                "to": transition["to"],
+                "event": transition["event"],
+                "when": transition.get("when", {}),
+            }
+            for transition in simulation["transitions"]
+        ],
+        "outcomes": [
+            {
+                "id": outcome["id"],
+                "stateId": outcome["stateId"],
+                "label": outcome["label"],
+            }
+            for outcome in simulation["outcomes"]
+        ],
+    }
+
+
+def _assert_task11_simulation_contract(
+    lesson_id: str,
+    document: dict[str, object],
+    oracle: dict[str, object],
+) -> None:
+    expected = {
+        item["lessonId"]: item["simulation"]
+        for item in oracle["lessons"]
+    }[lesson_id]
+    simulation = next(
+        visual["simulation"]
+        for visual in document["visualizations"]
+        if "simulation" in visual
+    )
+    if _task11_simulation_projection(simulation) != expected:
+        raise AssertionError(f"{lesson_id}: Task 11 simulation contract drifted")
+
+
+def _assert_task11_accessibility_lenses(
+    document: dict[str, object],
+    oracle: dict[str, object],
+) -> None:
+    visual = document["visualizations"][0]
+    payload = visual["payload"]
+    simulation = visual["simulation"]
+    expected = oracle["accessibilityLens"]
+    node_ids = tuple(item["id"] for item in payload["steps"])
+    edge_ids = tuple(item["id"] for item in payload["transitions"])
+    if tuple(expected["checklistNodeIds"]) != tuple(
+        item for item in node_ids if item.startswith(("viewport-", "focus-", "motion-"))
+    ):
+        raise AssertionError("core-16: static checklist nodes drifted")
+    if tuple(expected["checklistEdgeIds"]) != tuple(
+        item for item in edge_ids if "checklist" in item
+    ):
+        raise AssertionError("core-16: static checklist edges drifted")
+    states = [
+        {
+            "when": state.get("when", {}),
+            "activeNodeIds": state["activeNodeIds"],
+            "activeEdgeIds": state["activeEdgeIds"],
+        }
+        for state in simulation["states"]
+        if state["id"] != simulation["initialStateId"]
+    ]
+    if states != expected["lenses"]:
+        raise AssertionError("core-16: accessibility lens projection drifted")
+    signatures = {
+        (
+            tuple(item["when"].items()),
+            tuple(item["activeNodeIds"]),
+            tuple(item["activeEdgeIds"]),
+        )
+        for item in states
+    }
+    if len(states) != 12 or len(signatures) != 12:
+        raise AssertionError("core-16: accessibility lenses must be distinct")
+    for item in states:
+        when = item["when"]
+        viewport = when["viewport"]
+        focus = when["focus-step"]
+        motion = when["motion-preference"]
+        expected_nodes = [
+            f"viewport-{viewport}", f"focus-{focus}", f"motion-{motion}",
+        ]
+        expected_edges = [
+            f"checklist-observe-{viewport}",
+            f"checklist-{viewport}-{focus}",
+            f"checklist-{focus}-{motion}",
+        ]
+        if item["activeNodeIds"] != expected_nodes:
+            raise AssertionError("core-16: viewport/focus/motion nodes disagree")
+        if item["activeEdgeIds"] != expected_edges:
+            raise AssertionError("core-16: viewport/focus/motion edges disagree")
+    reduced_states = [
+        state for state in simulation["states"]
+        if state.get("when", {}).get("motion-preference") == "reduced"
+    ]
+    if len(reduced_states) != 6 or any(
+        "manual" not in state["status"] and "手動" not in state["status"]
+        for state in reduced_states
+    ):
+        raise AssertionError("core-16: reduced motion must retain manual operation")
+    if any(
+        "実ブラウザと支援技術で確認が必要" not in state["status"]
+        for state in simulation["states"]
+    ):
+        raise AssertionError("core-16: browser and AT verification limit is missing")
+
+
+class _Task11CompatibilityMatrixParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.in_table = False
+        self.capture: str | None = None
+        self.buffer: list[str] = []
+        self.rows: list[list[str]] = []
+        self.current_row: list[str] | None = None
+
+    def handle_starttag(
+        self, tag: str, attrs: list[tuple[str, str | None]]
+    ) -> None:
+        values = dict(attrs)
+        if tag == "table" and values.get("id") == "migration-compatibility-matrix":
+            self.in_table = True
+        elif self.in_table and tag == "tr":
+            self.current_row = []
+        elif self.in_table and tag in {"th", "td", "caption"}:
+            self.capture = tag
+            self.buffer = []
+
+    def handle_data(self, data: str) -> None:
+        if self.capture is not None:
+            self.buffer.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if self.capture == tag:
+            value = " ".join("".join(self.buffer).split())
+            if tag != "caption" and self.current_row is not None:
+                self.current_row.append(value)
+            self.capture = None
+        if self.in_table and tag == "tr" and self.current_row is not None:
+            self.rows.append(self.current_row)
+            self.current_row = None
+        elif self.in_table and tag == "table":
+            self.in_table = False
+
+
+def _task11_compatibility_matrix(body: str) -> list[list[str]]:
+    parser = _Task11CompatibilityMatrixParser()
+    parser.feed(body)
+    parser.close()
+    return parser.rows
+
+
+def _assert_task11_compatibility_matrix(
+    body: str, oracle: dict[str, object]
+) -> None:
+    if _task11_compatibility_matrix(body) != oracle["migrationCompatibilityMatrix"]:
+        raise AssertionError("core-22: compatibility matrix contract drifted")
 TASK7_COMMON_CONTRACTS = {
     "core-02-algorithms-measurement": ("complexity-growth-static", "comparison", "mentalModel", None, "アルゴリズム再選択の検証経路", "同じquery列への構築済みlookupで、入力特性・size・setup・space・query回数が選択をどう変えるか。", "best・average・worst caseを区別し、予測と反復実測の差から再選択条件を説明できる。", ("obj-predict", "obj-measure", "obj-reselect"), ("benchmark-report", "assessment"), ("src-01", "src-02", "src-03", "src-04"), ("操作モデル: 比較、hash計算、割り当てなど、支配的な操作を決める。", "成長率予測: 支配操作がΘ(n)ならnを2倍にしたとき約2倍、Θ(n²)なら約4倍と予測する。", "入力モデル: サイズだけでなく、順序、重複率、問い合わせ位置を固定する。", "測定設計: 準備と対象区間を分け、ウォームアップ後に複数回測る。", "統計要約: 全値、中央値、範囲を残し、除外規則を先に決める。", "差の診断: 定数項、キャッシュ、GC、処理系、外れ値を追加測定で反証する。", "再選択条件: 本番のn、分布、呼出回数の変化を監視する。")),
     "core-03-architecture-memory-caches": ("memory-access-static", "memory", "mentalModel", None, "一つのロードを診断する論理段階", "一つのloadでaddress translationとdata transferの待ちをどう切り分けるか。", "TLB・page tableの変換経路とcache・主記憶の転送経路を区別し、機種依存の階層を普遍的latencyとして扱わない。", ("obj-path", "obj-locality", "obj-transfer"), ("locality-report", "assessment"), ("src-01", "src-02", "src-03"), ("命令: 仮想アドレスAの値を要求する。", "TLB: Aのページ変換を検索する。missならページテーブルwalkが必要になる。", "L1 cache: Aを含むcache lineを検索する。hitなら近い階層で返る。", "L2と最終レベルcache: L1 miss後の候補を調べる。L2やLLCがcore-privateか複数coreでsharedかというprivate/shared範囲は機種依存である。", "memory controller: 全cacheでmissなら主記憶からline単位で転送する。", "再利用: 同じline内の次要素を使えば空間的局所性、短時間に同じ値を使えば時間的局所性を得る。", "このDAGはhit/missの診断依存を示し、VIPTではTLB変換とL1 index lookupが並行し得るため普遍的な逐次latencyではない。")),
@@ -2883,6 +3061,41 @@ def _prior_task_static_visual(
     return normalized
 
 
+def _prior_task7_visual(
+    lesson_id: str, visual: dict[str, object]
+) -> dict[str, object]:
+    """Remove only Task 11 additive material from the Task 7 oracle."""
+    normalized = deepcopy(visual)
+    normalized.pop("simulation", None)
+    if lesson_id == "core-16-hci-usability-accessibility":
+        payload = normalized["payload"]
+        payload["steps"] = [
+            item for item in payload["steps"]
+            if not item["id"].startswith(("viewport-", "focus-", "motion-"))
+        ]
+        payload["transitions"] = [
+            item for item in payload["transitions"]
+            if "checklist" not in item["id"]
+        ]
+    return normalized
+
+
+_TASK11_COMPATIBILITY_TABLE = re.compile(
+    r'^  <table id="migration-compatibility-matrix">.*?^  </table>\n',
+    re.MULTILINE | re.DOTALL,
+)
+
+
+def _prior_task_body(lesson_id: str, body: str) -> str:
+    """Project additive Task 11 body evidence out of the v0.1 oracle."""
+    if lesson_id != "core-22-evolution-safe-migrations":
+        return body
+    normalized, count = _TASK11_COMPATIBILITY_TABLE.subn("", body)
+    if count != 1:
+        raise AssertionError("core-22: expected one additive compatibility matrix")
+    return normalized
+
+
 def _task5_visual_projection(document: dict[str, object]) -> dict[str, object]:
     visual = _prior_task_static_visual(
         document, document["visualizations"][0]  # type: ignore[index]
@@ -4076,6 +4289,186 @@ class ContentAcceptanceTests(unittest.TestCase):
                 for outcome in visual["simulation"]["outcomes"]:
                     self.assertIn(outcome["label"], rendered)
 
+    def test_task11_independent_fixture_freezes_complete_simulation_contracts(self) -> None:
+        oracle = json.loads(TASK11_SIMULATION_ORACLE.read_bytes())
+        self.assertEqual(
+            set(oracle),
+            {
+                "version", "lessons", "accessibilityLens",
+                "migrationCompatibilityMatrix",
+            },
+        )
+        self.assertEqual(oracle["version"], 1)
+        self.assertEqual(
+            tuple(item["lessonId"] for item in oracle["lessons"]),
+            tuple(TASK11_SIMULATION_CONTRACTS),
+        )
+        for lesson in oracle["lessons"]:
+            self.assertEqual(set(lesson), {"lessonId", "simulation"})
+            simulation = lesson["simulation"]
+            self.assertEqual(set(simulation), {"states", "transitions", "outcomes"})
+            self.assertTrue(
+                all(
+                    set(state)
+                    == {"id", "status", "when", "activeNodeIds", "activeEdgeIds"}
+                    for state in simulation["states"]
+                )
+            )
+            self.assertTrue(
+                all(
+                    set(transition) == {"id", "from", "to", "event", "when"}
+                    for transition in simulation["transitions"]
+                )
+            )
+            self.assertTrue(
+                all(set(outcome) == {"id", "stateId", "label"}
+                    for outcome in simulation["outcomes"])
+            )
+        for lesson_id in TASK11_SIMULATION_CONTRACTS:
+            path = REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json"
+            document = json.loads(path.read_bytes())
+            _assert_task11_simulation_contract(lesson_id, document, oracle)
+
+        core16_path = REPOSITORY_ROOT / (
+            "content/lessons/core-16-hci-usability-accessibility/lesson.json"
+        )
+        _assert_task11_accessibility_lenses(
+            json.loads(core16_path.read_bytes()), oracle
+        )
+        core22_body = (
+            REPOSITORY_ROOT
+            / "content/lessons/core-22-evolution-safe-migrations/body.html"
+        ).read_text(encoding="utf-8")
+        _assert_task11_compatibility_matrix(core22_body, oracle)
+
+    def test_task11_fixture_rejects_accessibility_lens_and_checklist_mutations(self) -> None:
+        oracle = json.loads(TASK11_SIMULATION_ORACLE.read_bytes())
+        path = REPOSITORY_ROOT / (
+            "content/lessons/core-16-hci-usability-accessibility/lesson.json"
+        )
+
+        wrong_viewport = json.loads(path.read_bytes())
+        state = next(
+            item for item in wrong_viewport["visualizations"][0]["simulation"]["states"]
+            if item["id"] == "narrow-viewport"
+        )
+        state["activeNodeIds"][0] = "viewport-wide"
+
+        swapped_focus = json.loads(path.read_bytes())
+        states = {
+            item["id"]: item
+            for item in swapped_focus["visualizations"][0]["simulation"]["states"]
+        }
+        states["keyboard-focus"]["activeNodeIds"], states["narrow-reset-motion"]["activeNodeIds"] = (
+            states["narrow-reset-motion"]["activeNodeIds"],
+            states["keyboard-focus"]["activeNodeIds"],
+        )
+
+        reduced_motion_bypass = json.loads(path.read_bytes())
+        reduced = next(
+            item for item in reduced_motion_bypass["visualizations"][0]["simulation"]["states"]
+            if item["id"] == "reduced-motion"
+        )
+        reduced["status"] = "自動再生で監査を完了する。"
+
+        missing_checklist = json.loads(path.read_bytes())
+        payload = missing_checklist["visualizations"][0]["payload"]
+        payload["steps"] = [
+            item for item in payload["steps"] if item["id"] != "motion-reduced"
+        ]
+
+        for name, mutation in (
+            ("viewport", wrong_viewport),
+            ("focus", swapped_focus),
+            ("reduced-motion", reduced_motion_bypass),
+            ("checklist", missing_checklist),
+        ):
+            with self.subTest(name=name), self.assertRaises(AssertionError):
+                _assert_task11_accessibility_lenses(mutation, oracle)
+                _assert_task11_simulation_contract(
+                    "core-16-hci-usability-accessibility", mutation, oracle
+                )
+
+    def test_task11_matrix_and_phase_contract_reject_compatibility_bypasses(self) -> None:
+        oracle = json.loads(TASK11_SIMULATION_ORACLE.read_bytes())
+        body_path = REPOSITORY_ROOT / (
+            "content/lessons/core-22-evolution-safe-migrations/body.html"
+        )
+        body = body_path.read_text(encoding="utf-8")
+        matrix_mutations = (
+            body.replace(
+                "allowed — old reader remains valid",
+                "blocked — old reader is rejected",
+                1,
+            ),
+            body.replace(
+                "blocked — dual write is not enabled",
+                "required — dual write begins",
+                1,
+            ),
+            body.replace(
+                "blocked — old reader usage must be zero",
+                "allowed — old reader remains valid",
+                1,
+            ),
+        )
+        for index, mutated in enumerate(matrix_mutations):
+            with self.subTest(matrix=index), self.assertRaises(AssertionError):
+                _assert_task11_compatibility_matrix(mutated, oracle)
+
+        lesson_path = REPOSITORY_ROOT / (
+            "content/lessons/core-22-evolution-safe-migrations/lesson.json"
+        )
+        for transition_id, unsafe_target in (
+            ("paused-next", "contract-complete"),
+            ("paused-timer", "contract-complete"),
+            ("rollback-next", "contract-complete"),
+        ):
+            mutation = json.loads(lesson_path.read_bytes())
+            transition = next(
+                item
+                for item in mutation["visualizations"][0]["simulation"]["transitions"]
+                if item["id"] == transition_id
+            )
+            transition["to"] = unsafe_target
+            with self.subTest(transition=transition_id), self.assertRaises(AssertionError):
+                _assert_task11_simulation_contract(
+                    "core-22-evolution-safe-migrations", mutation, oracle
+                )
+
+    def test_task11_release_contract_rejects_provenance_and_rollback_bypasses(self) -> None:
+        oracle = json.loads(TASK11_SIMULATION_ORACLE.read_bytes())
+        path = REPOSITORY_ROOT / (
+            "content/lessons/core-24-delivery-ci-release-safety/lesson.json"
+        )
+        for transition_id, unsafe_target in (
+            ("artifact-next", "canary-running"),
+            ("canary-next", "promote-approved"),
+            ("rollback-next", "canary-retried"),
+        ):
+            mutation = json.loads(path.read_bytes())
+            transition = next(
+                item
+                for item in mutation["visualizations"][0]["simulation"]["transitions"]
+                if item["id"] == transition_id
+            )
+            transition["to"] = unsafe_target
+            with self.subTest(transition=transition_id), self.assertRaises(AssertionError):
+                _assert_task11_simulation_contract(
+                    "core-24-delivery-ci-release-safety", mutation, oracle
+                )
+
+        digest_drift = json.loads(path.read_bytes())
+        promote = next(
+            item for item in digest_drift["visualizations"][0]["simulation"]["states"]
+            if item["id"] == "promote-approved"
+        )
+        promote["status"] = "canary後に別digestをpromoteする。"
+        with self.assertRaises(AssertionError):
+            _assert_task11_simulation_contract(
+                "core-24-delivery-ci-release-safety", digest_drift, oracle
+            )
+
     def test_task10_static_oracles_preserve_exact_lesson_fixture_results(self) -> None:
         rendered = {}
         for lesson_id, expected in TASK10_SIMULATION_CONTRACTS.items():
@@ -4735,7 +5128,9 @@ class ContentAcceptanceTests(unittest.TestCase):
                     self.assertEqual(body.count("<figure"), 1)
                 else:
                     self.assertNotIn("<figure", body)
-                residual_sha256 = hashlib.sha256(body.encode("utf-8")).hexdigest()
+                residual_sha256 = hashlib.sha256(
+                    _prior_task_body(lesson_id, body).encode("utf-8")
+                ).hexdigest()
             else:
                 figures, residual_sha256 = _legacy_figure_projection(
                     lesson_id, body
@@ -5020,8 +5415,7 @@ class ContentAcceptanceTests(unittest.TestCase):
             with self.subTest(lesson_id=lesson_id):
                 path = REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json"
                 visual = json.loads(path.read_bytes())["visualizations"][0]
-                static_visual = dict(visual)
-                static_visual.pop("simulation", None)
+                static_visual = _prior_task7_visual(lesson_id, visual)
                 self.assertEqual(
                     (
                         static_visual["id"], static_visual["type"], static_visual["afterSection"],
@@ -5032,7 +5426,7 @@ class ContentAcceptanceTests(unittest.TestCase):
                     ),
                     TASK7_COMMON_CONTRACTS[lesson_id],
                 )
-                payload = visual["payload"]
+                payload = static_visual["payload"]
                 self.assertEqual(payload, TASK7_PAYLOAD_CONTRACTS[lesson_id])
                 encoded = json.dumps(
                     static_visual, ensure_ascii=False, separators=(",", ":")

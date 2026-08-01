@@ -916,6 +916,14 @@ not an assistive-technology emulator. Core-22 includes expand/migrate/contract,
 stop, rollback, and compatibility. Core-24 includes source/digest/provenance,
 canary, promote, and fail-closed rollback.
 
+Review amendment: Core-16 keeps its original flow as a prior-task projection
+and adds a complete static viewport/focus/motion checklist whose 12 authored
+lenses have distinct active nodes and edges. Core-22 adds one authored HTML
+compatibility matrix without changing the visual count or catalog assignment.
+`tests/fixtures/task11-simulation-contract-v1.json` independently freezes every
+Task 11 state, transition, outcome, accessibility lens, and matrix cell; tests
+must not derive this oracle from lesson JSON or generated pages.
+
 - [x] **Step 3: Enforce exact dynamic coverage and commit**
 
 ```bash
