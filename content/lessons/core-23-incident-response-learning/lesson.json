@@ -180,7 +180,7 @@
       "id": "incident-review-timeline",
       "type": "timeline",
       "caption": "incident evidenceを検証可能な学習へ変えるreview chain",
-      "question": "どの順序と境界が、途中の観測を最終判断へ結ぶか。",
+      "question": "incident当時利用可能だったevidenceから、検知遅延のimpactとdecisionをどう再構成するか。",
       "afterSection": "mentalModel",
       "objectiveIds": [
         "obj-evidence",
@@ -195,7 +195,7 @@
         "src-02",
         "src-03"
       ],
-      "expectedObservation": "各eventの順序、技術的な境界、次の判断に必要な観測を、途中を省略せず説明できる。",
+      "expectedObservation": "clockを揃えたtimeline、影響計算、当時の判断、system factor、検証可能なactionを追跡できる。",
       "notes": [],
       "payload": {
         "phases": [

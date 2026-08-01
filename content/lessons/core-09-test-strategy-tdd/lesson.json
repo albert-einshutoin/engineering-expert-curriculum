@@ -194,7 +194,7 @@
       "id": "tdd-evidence-loop",
       "type": "state-loop",
       "caption": "riskから証拠へ進み、mutationで感度を反証するloop",
-      "question": "どのfeedbackと回復経路が、証拠の揃ったexitへ導くか。",
+      "question": "GREEN後のmutationでtestが誤りを検出しなかった時、どの期待へ戻るか。",
       "afterSection": "mentalModel",
       "objectiveIds": [
         "obj-cycle",
@@ -208,7 +208,7 @@
         "src-02",
         "src-03"
       ],
-      "expectedObservation": "各state、feedback cycle、recoveryからexitまでの経路を、観測する証拠とともに説明できる。",
+      "expectedObservation": "risk、RED、GREEN、refactor、mutationを循環させ、生存mutantから期待を改善して証拠成立へ到達できる。",
       "notes": [],
       "payload": {
         "states": [

@@ -194,7 +194,7 @@
       "id": "concurrency-diagnostic-timeline",
       "type": "timeline",
       "caption": "共有境界から不変条件を守る診断経路",
-      "question": "どの順序と境界が、途中の観測を最終判断へ結ぶか。",
+      "question": "どのread・compute・writeのinterleavingがlost updateを起こし、どの同期関係が不変条件を守るか。",
       "afterSection": "mentalModel",
       "objectiveIds": [
         "obj-boundaries",
@@ -207,7 +207,7 @@
         "src-01",
         "src-04"
       ],
-      "expectedObservation": "各eventの順序、技術的な境界、次の判断に必要な観測を、途中を省略せず説明できる。",
+      "expectedObservation": "lost updateを起こす最小event列、不変条件の違反点、同期後の前後関係と同条件回帰を説明できる。",
       "notes": [
         "この注記は旧図の読み順を保持する補助です。",
         "隔離単位: process A、process B、または同一process内thread AとBを置く。",

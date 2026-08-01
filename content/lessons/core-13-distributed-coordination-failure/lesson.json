@@ -188,7 +188,7 @@
       "id": "dedupe-recovery-timeline",
       "type": "timeline",
       "caption": "at-least-once commandを永続dedupeと回復へ接続するmechanism",
-      "question": "どの順序と境界が、途中の観測を最終判断へ結ぶか。",
+      "question": "response lossと再配送があっても副作用を一度だけ進めるdedupeの耐久境界はどこか。",
       "afterSection": "mentalModel",
       "objectiveIds": [
         "obj-idempotency",
@@ -202,7 +202,7 @@
         "src-03",
         "src-04"
       ],
-      "expectedObservation": "各eventの順序、技術的な境界、次の判断に必要な観測を、途中を省略せず説明できる。",
+      "expectedObservation": "stable keyとfingerprintの照合、stateとresultのatomic commit、partition回復後の再評価を説明できる。",
       "notes": [],
       "payload": {
         "phases": [

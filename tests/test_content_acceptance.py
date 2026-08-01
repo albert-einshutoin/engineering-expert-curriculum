@@ -89,18 +89,68 @@ TASK6_VISUAL_TYPES = {
     "core-29-cross-cultural-async-collaboration": "timeline",
 }
 TASK6_VISUAL_CONTRACT_SHA256 = {
-    "core-04-os-processes-concurrency": "8a4bc323ee00c4065166060fa4269b41023ff65dbe89c3f1ed62543b0d74307d",
-    "core-05-networks-latency-failure": "d054bab3119e4e895faeac66b1612c8e30bef62dfd6803eddc49025aacbbc956",
-    "core-07-api-contract-design": "c4b1f54b1a0aa98a706cb190afb3c3dd45359a1e5d56a896db185e79c68f0613",
-    "core-09-test-strategy-tdd": "8cc1d7e2fddb5b85a8e16ffb5c492e873c30b81ae2e28dc3aad609f4d2eca881",
-    "core-12-transactions-isolation-consistency": "d0473f3fbc406606e06596d1da4a724b1c82fa836258144fd5a3deecad54ea16",
-    "core-13-distributed-coordination-failure": "cff41b2944503a2d7354c1ee57d5200cb012e0d3a82be0683b05f9f6c34b9815",
-    "core-15-reliability-observability-slo": "374f8cca2dc29b65423a49fedc013d1ff24f8ea2a6e597836a9a5dd5d620624e",
-    "core-22-evolution-safe-migrations": "da8808faae064ada09f24cdafb8fd07e55d5b714d35c773250a131370edbdcda",
-    "core-23-incident-response-learning": "3dc73e0e56d7e307f2cc9558675e5e9a8fbc9375d7d7dfd69a2ff4dd87b2d989",
-    "core-24-delivery-ci-release-safety": "619f26a3d2c69380b4f01b642184097ea2df4441562beb509b592306b2a9f8d3",
-    "core-26-code-review-collaborative-quality": "70fe28a3669664debf4e94c9fb8072d29bb53ff7af8ccfebf434a4531c534277",
-    "core-29-cross-cultural-async-collaboration": "f2b8fb19214707bcf8428e62aec7214cefb8af8341950eb86b88d2be9c606474",
+    "core-04-os-processes-concurrency": "d97d82054f953594107dae145cd5b9b4021701bac359388070788b5770a1ba94",
+    "core-05-networks-latency-failure": "78c3b3f3e6ea461bb05b35094e5246140dc28e8c0716d3ed49ac720540de428b",
+    "core-07-api-contract-design": "7fc89718157ef6118597c7ee5067fe2f0c0f03103a7b1bd2594eaf09f2e62807",
+    "core-09-test-strategy-tdd": "e3cbfd0a85a97d968ae97031753676bae8c7f1264fb969e41dc5518450e991d4",
+    "core-12-transactions-isolation-consistency": "5e2d513d61d6db8de805d84503e0ba7eb6335ca8b2e2bc8c2af2301919e6aaf3",
+    "core-13-distributed-coordination-failure": "25531e2932f1358bdc26e15ecb3c9aac752f181aaea2a8ec9c55f859eb55fc8e",
+    "core-15-reliability-observability-slo": "1963def9e97269e1ee86a6637b9311c13e9f442e4865800c90135b3716266e22",
+    "core-22-evolution-safe-migrations": "aa04630c0005fb992238aca964bd09d0f95a11b8bacdaffeb79e13e2af868057",
+    "core-23-incident-response-learning": "a8cf68469ee3358c5f6977e3cb58fd9d4648c0c2cf8194adb9c2022547368977",
+    "core-24-delivery-ci-release-safety": "7c795b798c67feffa4660510a12a117d8d3a1da03859d574b12881e9e2c34b4b",
+    "core-26-code-review-collaborative-quality": "5176963308b25a0c2be21e963d43c96274e2e5bfbaf12376dfefde7a5b39ae45",
+    "core-29-cross-cultural-async-collaboration": "ad600a1d0755e79b755c6c0a6c08185cbf8ba349e415345a472d94b15519332e",
+}
+TASK6_LESSON_JUDGMENT_TEXT = {
+    "core-04-os-processes-concurrency": (
+        "どのread・compute・writeのinterleavingがlost updateを起こし、どの同期関係が不変条件を守るか。",
+        "lost updateを起こす最小event列、不変条件の違反点、同期後の前後関係と同条件回帰を説明できる。",
+    ),
+    "core-05-networks-latency-failure": (
+        "deadline超過はDNS、TCP、TLS、server処理、response受信、業務結果確定のどこで観測されたか。",
+        "request pathの各eventへ時間予算を割り当て、deadline超過箇所とtransport完了・業務成功の差を説明できる。",
+    ),
+    "core-07-api-contract-design": (
+        "response喪失後のretryで、どの保存済み副作用を再利用し、何を再実行してはいけないか。",
+        "冪等keyのscope、耐久化済み効果、試行ごとに変わるresponseを分け、安全なretryと拒否遷移を説明できる。",
+    ),
+    "core-09-test-strategy-tdd": (
+        "GREEN後のmutationでtestが誤りを検出しなかった時、どの期待へ戻るか。",
+        "risk、RED、GREEN、refactor、mutationを循環させ、生存mutantから期待を改善して証拠成立へ到達できる。",
+    ),
+    "core-12-transactions-isolation-consistency": (
+        "同じsnapshotを読んだT1とT2のwrite skewを、どの依存検証とretryが防ぐか。",
+        "業務不変条件、並行read、局所判断、Serializableのabort、transaction全体の再読込を順に説明できる。",
+    ),
+    "core-13-distributed-coordination-failure": (
+        "response lossと再配送があっても副作用を一度だけ進めるdedupeの耐久境界はどこか。",
+        "stable keyとfingerprintの照合、stateとresultのatomic commit、partition回復後の再評価を説明できる。",
+    ),
+    "core-15-reliability-observability-slo": (
+        "どのSLIとburn evidenceがpageを起動し、mitigation後の何を確認してloopを終了するか。",
+        "JourneyからSLI・SLO・telemetry・alert・runbookへ進み、復旧証拠が揃ったterminal stateを示せる。",
+    ),
+    "core-22-evolution-safe-migrations": (
+        "dual write、backfill、dual readの各phaseで互換性gateが失敗した時、どの安全状態へ戻すか。",
+        "phase別の停止・rollback先、旧reader互換性、復旧観測、contractへの拒否条件を説明できる。",
+    ),
+    "core-23-incident-response-learning": (
+        "incident当時利用可能だったevidenceから、検知遅延のimpactとdecisionをどう再構成するか。",
+        "clockを揃えたtimeline、影響計算、当時の判断、system factor、検証可能なactionを追跡できる。",
+    ),
+    "core-24-delivery-ci-release-safety": (
+        "canary evidenceからpromote、stop、rollbackのどれを選び、rollback後のservice restorationをどう確認するか。",
+        "CI、digest、provenance、canaryから三つのdecision branchを選び、rollback後の再観測をsafe outcomeへ結べる。",
+    ),
+    "core-26-code-review-collaborative-quality": (
+        "author fix後に別reviewerがどのprobeを再実行し、blocking findingの解消を判断するか。",
+        "riskとfinding IDからpatchを追跡し、独立再評価でactual・expected・system outcomeを確認できる。",
+    ),
+    "core-29-cross-cultural-async-collaboration": (
+        "timezone overlapがなくてもdissentと採否理由を第三者が再評価できる記録は何か。",
+        "decision rights、evidence、参加条件、response window、異論への応答を再生可能なdecision logへ結べる。",
+    ),
 }
 TASK5_READING_ORDER_MARKER = "この注記は旧図の読み順を保持する補助です。"
 TASK5_VISUAL_IDENTITIES = {
@@ -2075,6 +2125,137 @@ class ContentAcceptanceTests(unittest.TestCase):
                 document = json.loads(path.read_bytes())
                 self.assertEqual(_task6_visual_contract_sha256(document), expected)
 
+    def test_task6_questions_and_observations_name_lesson_specific_judgments(
+        self,
+    ) -> None:
+        self.assertEqual(set(TASK6_LESSON_JUDGMENT_TEXT), set(TASK6_VISUAL_TYPES))
+        forbidden = {
+            "どの順序と境界が、途中の観測を最終判断へ結ぶか。",
+            "どのfeedbackと回復経路が、証拠の揃ったexitへ導くか。",
+            "どの証拠で遷移を許可または拒否し、安全な回復へ進むか。",
+        }
+        for lesson_id, expected in TASK6_LESSON_JUDGMENT_TEXT.items():
+            with self.subTest(lesson_id=lesson_id):
+                path = REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json"
+                visual = json.loads(path.read_bytes())["visualizations"][0]
+                actual = (visual["question"], visual["expectedObservation"])
+                self.assertEqual(actual, expected)
+                self.assertNotIn(actual[0], forbidden)
+
+    def test_task6_release_migration_and_slo_models_have_safe_terminal_semantics(
+        self,
+    ) -> None:
+        def payload(lesson_id: str) -> dict[str, object]:
+            path = REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json"
+            return json.loads(path.read_bytes())["visualizations"][0]["payload"]
+
+        release = payload("core-24-delivery-ci-release-safety")
+        self.assertEqual(
+            tuple(state["id"] for state in release["states"]),
+            (
+                "ci", "artifact", "provenance", "canary", "decision",
+                "promoted", "stopped", "rolling-back",
+                "restoration-verified", "outcome",
+            ),
+        )
+        release_edges = tuple(
+            (edge["from"], edge["to"], edge["event"], edge["status"])
+            for edge in release["transitions"]
+        )
+        self.assertEqual(
+            release_edges,
+            (
+                ("ci", "artifact", "next", "allowed"),
+                ("artifact", "provenance", "next", "allowed"),
+                ("provenance", "canary", "next", "allowed"),
+                ("canary", "decision", "next", "allowed"),
+                ("decision", "promoted", "next", "allowed"),
+                ("decision", "stopped", "reset", "allowed"),
+                ("decision", "rolling-back", "previous", "allowed"),
+                ("promoted", "outcome", "next", "allowed"),
+                ("stopped", "outcome", "next", "allowed"),
+                ("rolling-back", "restoration-verified", "next", "allowed"),
+                ("restoration-verified", "outcome", "next", "allowed"),
+                ("ci", "artifact", "timer", "rejected"),
+                ("artifact", "provenance", "timer", "rejected"),
+                ("canary", "outcome", "next", "rejected"),
+            ),
+        )
+
+        migration = payload("core-22-evolution-safe-migrations")
+        self.assertEqual(
+            tuple(state["id"] for state in migration["states"]),
+            (
+                "expand", "dual-write", "backfill", "dual-read", "contract",
+                "dual-write-compatible", "backfill-compatible",
+                "dual-read-compatible", "restoration-verified",
+            ),
+        )
+        migration_edges = tuple(
+            (edge["from"], edge["to"], edge["event"], edge["status"])
+            for edge in migration["transitions"]
+        )
+        self.assertEqual(
+            migration_edges,
+            (
+                ("expand", "dual-write", "next", "allowed"),
+                ("dual-write", "backfill", "next", "allowed"),
+                ("backfill", "dual-read", "next", "allowed"),
+                ("dual-read", "contract", "next", "allowed"),
+                ("dual-write", "dual-write-compatible", "reset", "allowed"),
+                ("backfill", "backfill-compatible", "reset", "allowed"),
+                ("dual-read", "dual-read-compatible", "reset", "allowed"),
+                ("dual-write-compatible", "restoration-verified", "next", "allowed"),
+                ("backfill-compatible", "restoration-verified", "next", "allowed"),
+                ("dual-read-compatible", "restoration-verified", "next", "allowed"),
+                ("dual-write", "backfill", "timer", "rejected"),
+                ("backfill", "dual-read", "timer", "rejected"),
+                ("dual-read", "contract", "timer", "rejected"),
+            ),
+        )
+
+        slo = payload("core-15-reliability-observability-slo")
+        slo_path = (
+            REPOSITORY_ROOT
+            / "content/lessons/core-15-reliability-observability-slo/lesson.json"
+        )
+        slo_visual = json.loads(slo_path.read_bytes())["visualizations"][0]
+        self.assertEqual(
+            tuple(slo_visual["notes"]),
+            (
+                TASK5_READING_ORDER_MARKER,
+                "Journey: 利用者が達成したい結果とvalidな試行を定める。",
+                "SLI: goodの結果とlatency境界をevent単位で計算する。",
+                "SLO: window、target、error budget、例外を合意する。",
+                "Alert: 短窓と長窓のburnをpageとticketへ分ける。",
+                "Runbook: impact確認、mitigation、rollback、escalationを結ぶ。",
+                "Telemetry: traceで原因へ相関し、意味とprivacyを検証する。",
+            ),
+        )
+        self.assertEqual(
+            tuple(state["id"] for state in slo["states"]),
+            ("journey", "sli", "slo", "telemetry", "alert", "runbook", "evidence-ready"),
+        )
+        self.assertEqual(slo["exitStateId"], "evidence-ready")
+        self.assertEqual(
+            tuple((edge["from"], edge["to"]) for edge in slo["transitions"]),
+            (
+                ("journey", "sli"), ("sli", "slo"),
+                ("slo", "telemetry"), ("telemetry", "alert"),
+                ("alert", "runbook"), ("runbook", "telemetry"),
+                ("runbook", "evidence-ready"),
+            ),
+        )
+        self.assertFalse(
+            any(
+                edge["from"] == slo["exitStateId"]
+                for edge in slo["transitions"]
+            )
+        )
+        state_order = [state["id"] for state in slo["states"]]
+        self.assertLess(state_order.index("telemetry"), state_order.index("alert"))
+        self.assertLess(state_order.index("runbook"), state_order.index("evidence-ready"))
+
     def test_task6_contract_rejects_order_transition_text_source_note_and_placement_mutations(
         self,
     ) -> None:
@@ -2122,6 +2303,11 @@ class ContentAcceptanceTests(unittest.TestCase):
 
         for field, value in (
             ("caption", "誤ったcaption"),
+            ("question", "どの証拠で遷移を許可または拒否し、安全な回復へ進むか。"),
+            (
+                "expectedObservation",
+                "初期stateからの許可遷移と拒否理由を説明できる。",
+            ),
             ("sourceIds", ["src-02"]),
             ("notes", ["誤った注記"]),
             ("afterSection", "workedExample"),

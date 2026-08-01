@@ -188,7 +188,7 @@
       "id": "collaborative-review-loop",
       "type": "state-loop",
       "caption": "sample changeから共同で品質を改善し独立再評価するreview loop",
-      "question": "どのfeedbackと回復経路が、証拠の揃ったexitへ導くか。",
+      "question": "author fix後に別reviewerがどのprobeを再実行し、blocking findingの解消を判断するか。",
       "afterSection": "mentalModel",
       "objectiveIds": [
         "obj-review-priority",
@@ -203,7 +203,7 @@
         "src-02",
         "src-04"
       ],
-      "expectedObservation": "各state、feedback cycle、recoveryからexitまでの経路を、観測する証拠とともに説明できる。",
+      "expectedObservation": "riskとfinding IDからpatchを追跡し、独立再評価でactual・expected・system outcomeを確認できる。",
       "notes": [],
       "payload": {
         "states": [

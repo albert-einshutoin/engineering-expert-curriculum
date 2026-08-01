@@ -195,7 +195,7 @@
       "id": "slo-action-loop",
       "type": "state-loop",
       "caption": "利用者結果からon-call actionまでを閉じるflow",
-      "question": "どのfeedbackと回復経路が、証拠の揃ったexitへ導くか。",
+      "question": "どのSLIとburn evidenceがpageを起動し、mitigation後の何を確認してloopを終了するか。",
       "afterSection": "mentalModel",
       "objectiveIds": [
         "obj-sli-slo",
@@ -210,8 +210,16 @@
         "src-02",
         "src-04"
       ],
-      "expectedObservation": "各state、feedback cycle、recoveryからexitまでの経路を、観測する証拠とともに説明できる。",
-      "notes": [],
+      "expectedObservation": "JourneyからSLI・SLO・telemetry・alert・runbookへ進み、復旧証拠が揃ったterminal stateを示せる。",
+      "notes": [
+        "この注記は旧図の読み順を保持する補助です。",
+        "Journey: 利用者が達成したい結果とvalidな試行を定める。",
+        "SLI: goodの結果とlatency境界をevent単位で計算する。",
+        "SLO: window、target、error budget、例外を合意する。",
+        "Alert: 短窓と長窓のburnをpageとticketへ分ける。",
+        "Runbook: impact確認、mitigation、rollback、escalationを結ぶ。",
+        "Telemetry: traceで原因へ相関し、意味とprivacyを検証する。"
+      ],
       "payload": {
         "states": [
           {
@@ -230,6 +238,11 @@
             "detail": "window、target、error budget、例外を合意する。"
           },
           {
+            "id": "telemetry",
+            "label": "Telemetry",
+            "detail": "traceで原因へ相関し、意味とprivacyを検証する。"
+          },
+          {
             "id": "alert",
             "label": "Alert",
             "detail": "短窓と長窓のburnをpageとticketへ分ける。"
@@ -240,9 +253,9 @@
             "detail": "impact確認、mitigation、rollback、escalationを結ぶ。"
           },
           {
-            "id": "telemetry",
-            "label": "Telemetry",
-            "detail": "traceで原因へ相関し、意味とprivacyを検証する。"
+            "id": "evidence-ready",
+            "label": "復旧証拠成立",
+            "detail": "利用者結果、burn rate、mitigation後のservice状態を再観測し、pageを閉じられる。"
           }
         ],
         "transitions": [
@@ -250,40 +263,46 @@
             "id": "journey-to-sli",
             "from": "journey",
             "to": "sli",
-            "label": "次の証拠を得る"
+            "label": "valid eventからgoodを計算する"
           },
           {
             "id": "sli-to-slo",
             "from": "sli",
             "to": "slo",
-            "label": "次の証拠を得る"
+            "label": "windowとtargetを合意する"
           },
           {
-            "id": "slo-to-alert",
+            "id": "slo-to-telemetry",
             "from": "slo",
+            "to": "telemetry",
+            "label": "SLIを安定したsignalとして収集する"
+          },
+          {
+            "id": "telemetry-to-alert",
+            "from": "telemetry",
             "to": "alert",
-            "label": "次の証拠を得る"
+            "label": "短窓と長窓のburnを評価する"
           },
           {
             "id": "alert-to-runbook",
             "from": "alert",
             "to": "runbook",
-            "label": "次の証拠を得る"
+            "label": "pageからmitigationへ進む"
           },
           {
-            "id": "runbook-to-telemetry",
+            "id": "runbook-feedback",
             "from": "runbook",
             "to": "telemetry",
-            "label": "次の証拠を得る"
+            "label": "mitigation後の利用者結果を再観測する"
           },
           {
-            "id": "telemetry-feedback",
-            "from": "telemetry",
-            "to": "journey",
-            "label": "意味のずれをjourney定義へ戻す"
+            "id": "runbook-to-evidence",
+            "from": "runbook",
+            "to": "evidence-ready",
+            "label": "復旧とburn正常化を確認してpageを閉じる"
           }
         ],
-        "exitStateId": "runbook",
+        "exitStateId": "evidence-ready",
         "recoveryStateId": "alert"
       }
     }

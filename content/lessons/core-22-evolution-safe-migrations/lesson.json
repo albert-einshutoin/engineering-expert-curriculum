@@ -181,7 +181,7 @@
       "id": "expand-contract-state-machine",
       "type": "state-machine",
       "caption": "互換性と観測gateを持つexpand-contract state machine",
-      "question": "どの証拠で遷移を許可または拒否し、安全な回復へ進むか。",
+      "question": "dual write、backfill、dual readの各phaseで互換性gateが失敗した時、どの安全状態へ戻すか。",
       "afterSection": "mentalModel",
       "objectiveIds": [
         "obj-state-machine",
@@ -195,7 +195,7 @@
         "src-02",
         "src-03"
       ],
-      "expectedObservation": "初期stateからの許可遷移と、危険な遷移を拒否する理由を、技術的な証拠に基づいて説明できる。",
+      "expectedObservation": "phase別の停止・rollback先、旧reader互換性、復旧観測、contractへの拒否条件を説明できる。",
       "notes": [
         "この注記は旧図の読み順を保持する補助です。",
         "expand: old readerを壊さないnullable構造を追加する。",
@@ -233,9 +233,24 @@
             "detail": "利用停止の証拠を確認してから旧構造を除く。"
           },
           {
-            "id": "rollback-ready",
-            "label": "rollback",
-            "detail": "各stateで戻す対象と回復確認を先に定義する。"
+            "id": "dual-write-compatible",
+            "label": "dual write停止・旧構造互換",
+            "detail": "新fieldへのwriteを停止し、old readerが旧fieldから正しい値を読める状態へ戻す。"
+          },
+          {
+            "id": "backfill-compatible",
+            "label": "backfill停止・旧構造互換",
+            "detail": "bounded batchを停止し、dual writeと旧fieldを維持して未移行rowを安全に残す。"
+          },
+          {
+            "id": "dual-read-compatible",
+            "label": "old readへfallback",
+            "detail": "新readerを停止し、old readerの結果へfallbackして利用者結果を回復する。"
+          },
+          {
+            "id": "restoration-verified",
+            "label": "互換性回復を検証済み",
+            "detail": "old reader成功率、値のparity、error rate、利用者結果を再観測して安全状態を確認する。"
           }
         ],
         "initialStateId": "expand",
@@ -269,21 +284,49 @@
             "status": "allowed"
           },
           {
-            "id": "backfill-rollback",
+            "id": "dual-write-stop",
+            "from": "dual-write",
+            "to": "dual-write-compatible",
+            "event": "reset",
+            "status": "allowed"
+          },
+          {
+            "id": "backfill-stop",
             "from": "backfill",
-            "to": "rollback-ready",
-            "event": "previous",
+            "to": "backfill-compatible",
+            "event": "reset",
             "status": "allowed"
           },
           {
             "id": "dual-read-rollback",
             "from": "dual-read",
-            "to": "rollback-ready",
-            "event": "previous",
+            "to": "dual-read-compatible",
+            "event": "reset",
             "status": "allowed"
           },
           {
-            "id": "parity-failed",
+            "id": "dual-write-verify",
+            "from": "dual-write-compatible",
+            "to": "restoration-verified",
+            "event": "next",
+            "status": "allowed"
+          },
+          {
+            "id": "backfill-verify",
+            "from": "backfill-compatible",
+            "to": "restoration-verified",
+            "event": "next",
+            "status": "allowed"
+          },
+          {
+            "id": "dual-read-verify",
+            "from": "dual-read-compatible",
+            "to": "restoration-verified",
+            "event": "next",
+            "status": "allowed"
+          },
+          {
+            "id": "parity-forward-rejected",
             "from": "dual-write",
             "to": "backfill",
             "event": "timer",
@@ -291,7 +334,15 @@
             "reason": "成功率または値のparityがgateを満たさない間はbackfillへ進まない。"
           },
           {
-            "id": "contract-too-early",
+            "id": "backfill-forward-rejected",
+            "from": "backfill",
+            "to": "dual-read",
+            "event": "timer",
+            "status": "rejected",
+            "reason": "backfillのerror rateまたはlagがgateを満たさない間はdual readへ進まない。"
+          },
+          {
+            "id": "contract-forward-rejected",
             "from": "dual-read",
             "to": "contract",
             "event": "timer",

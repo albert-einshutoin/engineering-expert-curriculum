@@ -188,7 +188,7 @@
       "id": "release-evidence-state-machine",
       "type": "state-machine",
       "caption": "source変更からrollback outcomeまでを結ぶdelivery evidence chain",
-      "question": "どの証拠で遷移を許可または拒否し、安全な回復へ進むか。",
+      "question": "canary evidenceからpromote、stop、rollbackのどれを選び、rollback後のservice restorationをどう確認するか。",
       "afterSection": "mentalModel",
       "objectiveIds": [
         "obj-ci",
@@ -203,7 +203,7 @@
         "src-03",
         "src-04"
       ],
-      "expectedObservation": "初期stateからの許可遷移と、危険な遷移を拒否する理由を、技術的な証拠に基づいて説明できる。",
+      "expectedObservation": "CI、digest、provenance、canaryから三つのdecision branchを選び、rollback後の再観測をsafe outcomeへ結べる。",
       "notes": [],
       "payload": {
         "states": [
@@ -231,6 +231,26 @@
             "id": "decision",
             "label": "Decision",
             "detail": "advance、stop、rollbackを入力から導く。"
+          },
+          {
+            "id": "promoted",
+            "label": "promote実行",
+            "detail": "canaryが閾値内なら同一digestのartifactを次の配信段階へ進める。"
+          },
+          {
+            "id": "stopped",
+            "label": "stop実行",
+            "detail": "証拠が不足または閾値外なら追加配信を停止し、現行serviceを維持する。"
+          },
+          {
+            "id": "rolling-back",
+            "label": "rollback実行",
+            "detail": "検証済みの直前artifactへ戻し、command成功だけを復旧とは扱わない。"
+          },
+          {
+            "id": "restoration-verified",
+            "label": "service restoration再観測",
+            "detail": "rollback後の利用者可視error rate、health、artifact digestを再観測して復旧を確認する。"
           },
           {
             "id": "outcome",
@@ -269,8 +289,50 @@
             "status": "allowed"
           },
           {
-            "id": "decision-to-outcome",
+            "id": "decision-promote",
             "from": "decision",
+            "to": "promoted",
+            "event": "next",
+            "status": "allowed"
+          },
+          {
+            "id": "decision-stop",
+            "from": "decision",
+            "to": "stopped",
+            "event": "reset",
+            "status": "allowed"
+          },
+          {
+            "id": "decision-rollback",
+            "from": "decision",
+            "to": "rolling-back",
+            "event": "previous",
+            "status": "allowed"
+          },
+          {
+            "id": "promote-outcome",
+            "from": "promoted",
+            "to": "outcome",
+            "event": "next",
+            "status": "allowed"
+          },
+          {
+            "id": "stop-outcome",
+            "from": "stopped",
+            "to": "outcome",
+            "event": "next",
+            "status": "allowed"
+          },
+          {
+            "id": "rollback-restoration",
+            "from": "rolling-back",
+            "to": "restoration-verified",
+            "event": "next",
+            "status": "allowed"
+          },
+          {
+            "id": "restoration-outcome",
+            "from": "restoration-verified",
             "to": "outcome",
             "event": "next",
             "status": "allowed"
@@ -297,7 +359,7 @@
             "to": "outcome",
             "event": "next",
             "status": "rejected",
-            "reason": "canary観測からadvance、stop、rollbackのdecisionを導く前にoutcomeへ進まない。"
+            "reason": "canary観測からpromote、stop、rollbackのdecisionを導く前にoutcomeへ進まない。"
           }
         ]
       }

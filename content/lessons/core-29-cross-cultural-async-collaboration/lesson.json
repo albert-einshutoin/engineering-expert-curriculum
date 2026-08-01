@@ -194,7 +194,7 @@
       "id": "async-review-timeline",
       "type": "timeline",
       "caption": "proposal contextからreasoned decisionへ進む非同期review chain",
-      "question": "どの順序と境界が、途中の観測を最終判断へ結ぶか。",
+      "question": "timezone overlapがなくてもdissentと採否理由を第三者が再評価できる記録は何か。",
       "afterSection": "mentalModel",
       "objectiveIds": [
         "obj-async-context",
@@ -210,7 +210,7 @@
         "src-02",
         "src-03"
       ],
-      "expectedObservation": "各eventの順序、技術的な境界、次の判断に必要な観測を、途中を省略せず説明できる。",
+      "expectedObservation": "decision rights、evidence、参加条件、response window、異論への応答を再生可能なdecision logへ結べる。",
       "notes": [],
       "payload": {
         "phases": [
@@ -225,7 +225,7 @@
             "detail": "安全なresponse windowで異論と応答を追跡する。"
           },
           {
-          "id": "decision-phase",
+            "id": "decision-phase",
             "label": "決定",
             "detail": "第三者がmeetingなしで再評価できる形にする。"
           }
@@ -270,7 +270,7 @@
             "id": "replay",
             "label": "Replay",
             "detail": "meeting unnecessaryな状態で第三者が判断を再評価する。",
-          "phaseId": "decision-phase",
+            "phaseId": "decision-phase",
             "order": 5
           }
         ]

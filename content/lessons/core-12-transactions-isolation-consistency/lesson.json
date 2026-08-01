@@ -187,7 +187,7 @@
       "id": "isolation-schedule-timeline",
       "type": "timeline",
       "caption": "snapshotから依存関係、commit判定、retryへ進む分離異常の因果経路",
-      "question": "どの順序と境界が、途中の観測を最終判断へ結ぶか。",
+      "question": "同じsnapshotを読んだT1とT2のwrite skewを、どの依存検証とretryが防ぐか。",
       "afterSection": "mentalModel",
       "objectiveIds": [
         "obj-anomaly",
@@ -201,7 +201,7 @@
         "src-02",
         "src-04"
       ],
-      "expectedObservation": "各eventの順序、技術的な境界、次の判断に必要な観測を、途中を省略せず説明できる。",
+      "expectedObservation": "業務不変条件、並行read、局所判断、Serializableのabort、transaction全体の再読込を順に説明できる。",
       "notes": [],
       "payload": {
         "phases": [
@@ -216,7 +216,7 @@
             "detail": "二つのtransactionのreadと局所判断を並べる。"
           },
           {
-          "id": "validation-phase",
+            "id": "validation-phase",
             "label": "検証と回復",
             "detail": "commit可否を判断し、abort後は読み直す。"
           }
@@ -247,14 +247,14 @@
             "id": "validation",
             "label": "検証",
             "detail": "Snapshot Isolationでは別rowへのwriteが双方commitし得る。Serializableでは危険な依存を検出して一方をabortする。",
-          "phaseId": "validation-phase",
+            "phaseId": "validation-phase",
             "order": 3
           },
           {
             "id": "retry",
             "label": "retry",
             "detail": "abortされたT2は古い判断を再利用せず、transaction開始から読み直す。aliceが外れているためbobを当直に残す。",
-          "phaseId": "validation-phase",
+            "phaseId": "validation-phase",
             "order": 4
           }
         ]

@@ -194,7 +194,7 @@
       "id": "offline-operation-state-machine",
       "type": "state-machine",
       "caption": "オフライン操作を副作用と観測へ分ける契約経路",
-      "question": "どの証拠で遷移を許可または拒否し、安全な回復へ進むか。",
+      "question": "response喪失後のretryで、どの保存済み副作用を再利用し、何を再実行してはいけないか。",
       "afterSection": "mentalModel",
       "objectiveIds": [
         "obj-contract",
@@ -209,7 +209,7 @@
         "src-02",
         "src-03"
       ],
-      "expectedObservation": "初期stateからの許可遷移と、危険な遷移を拒否する理由を、技術的な証拠に基づいて説明できる。",
+      "expectedObservation": "冪等keyのscope、耐久化済み効果、試行ごとに変わるresponseを分け、安全なretryと拒否遷移を説明できる。",
       "notes": [],
       "payload": {
         "states": [

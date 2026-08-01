@@ -193,7 +193,7 @@
       "id": "request-path-timeline",
       "type": "timeline",
       "caption": "DNSから業務結果までの時系列",
-      "question": "どの順序と境界が、途中の観測を最終判断へ結ぶか。",
+      "question": "deadline超過はDNS、TCP、TLS、server処理、response受信、業務結果確定のどこで観測されたか。",
       "afterSection": "mentalModel",
       "objectiveIds": [
         "obj-timeline",
@@ -208,7 +208,7 @@
         "src-04",
         "src-05"
       ],
-      "expectedObservation": "各eventの順序、技術的な境界、次の判断に必要な観測を、途中を省略せず説明できる。",
+      "expectedObservation": "request pathの各eventへ時間予算を割り当て、deadline超過箇所とtransport完了・業務成功の差を説明できる。",
       "notes": [],
       "payload": {
         "phases": [
