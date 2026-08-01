@@ -203,7 +203,7 @@
         "src-02",
         "src-04"
       ],
-      "expectedObservation": "riskとfinding IDからpatchを追跡し、独立再評価でactual・expected・system outcomeを確認できる。",
+      "expectedObservation": "riskとfinding IDからpatchを追跡し、feedback cycleを保ちながら独立再評価の証拠をterminalへ確定できる。",
       "notes": [],
       "payload": {
         "states": [
@@ -231,6 +231,11 @@
             "id": "enablement",
             "label": "Enablement",
             "detail": "判断根拠を残し、他のcontributorが再利用できるようにする。"
+          },
+          {
+            "id": "evidence-ready",
+            "label": "Review evidence ready",
+            "detail": "別reviewerのprobe、blocking finding解消、system outcome、再利用可能な判断根拠を一つの完了証拠として確定する。"
           }
         ],
         "transitions": [
@@ -269,9 +274,15 @@
             "from": "enablement",
             "to": "scope",
             "label": "次のchangeでriskを再評価する"
+          },
+          {
+            "id": "enablement-to-evidence-ready",
+            "from": "enablement",
+            "to": "evidence-ready",
+            "label": "独立再評価とsystem outcomeの証拠を確定する"
           }
         ],
-        "exitStateId": "enablement",
+        "exitStateId": "evidence-ready",
         "recoveryStateId": "author-fix"
       }
     }

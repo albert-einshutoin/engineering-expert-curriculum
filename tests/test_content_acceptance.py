@@ -89,8 +89,8 @@ TASK6_VISUAL_TYPES = {
     "core-29-cross-cultural-async-collaboration": "timeline",
 }
 TASK6_VISUAL_CONTRACT_SHA256 = {
-    "core-04-os-processes-concurrency": "d97d82054f953594107dae145cd5b9b4021701bac359388070788b5770a1ba94",
-    "core-05-networks-latency-failure": "78c3b3f3e6ea461bb05b35094e5246140dc28e8c0716d3ed49ac720540de428b",
+    "core-04-os-processes-concurrency": "01e944d4d1847cc76b638183bdf58f4613eb55fb2da38d2d491ba30d8df6ae13",
+    "core-05-networks-latency-failure": "6985c88dd048dd0bc6893a28ba3febfad7fff2a47648f4ae270a1f2eb4f3a5b2",
     "core-07-api-contract-design": "7fc89718157ef6118597c7ee5067fe2f0c0f03103a7b1bd2594eaf09f2e62807",
     "core-09-test-strategy-tdd": "e3cbfd0a85a97d968ae97031753676bae8c7f1264fb969e41dc5518450e991d4",
     "core-12-transactions-isolation-consistency": "5e2d513d61d6db8de805d84503e0ba7eb6335ca8b2e2bc8c2af2301919e6aaf3",
@@ -98,18 +98,901 @@ TASK6_VISUAL_CONTRACT_SHA256 = {
     "core-15-reliability-observability-slo": "1963def9e97269e1ee86a6637b9311c13e9f442e4865800c90135b3716266e22",
     "core-22-evolution-safe-migrations": "aa04630c0005fb992238aca964bd09d0f95a11b8bacdaffeb79e13e2af868057",
     "core-23-incident-response-learning": "a8cf68469ee3358c5f6977e3cb58fd9d4648c0c2cf8194adb9c2022547368977",
-    "core-24-delivery-ci-release-safety": "faec54fc1dec292dee9c46b0136471d8b753a753fa820860265169a2999c364b",
-    "core-26-code-review-collaborative-quality": "5176963308b25a0c2be21e963d43c96274e2e5bfbaf12376dfefde7a5b39ae45",
+    "core-24-delivery-ci-release-safety": "80557db3e04b3746228f3593862c94f1cf78abf0877fc0fb98334a46f2319352",
+    "core-26-code-review-collaborative-quality": "228db9f1634d55d8fef51d184d29dc74b017468fb8f6b846ef70f1d8baadccb9",
     "core-29-cross-cultural-async-collaboration": "ad600a1d0755e79b755c6c0a6c08185cbf8ba349e415345a472d94b15519332e",
 }
+TASK6_VISUAL_CONTRACTS = {'core-04-os-processes-concurrency': {'common': ('concurrency-diagnostic-timeline',
+                                                 'timeline',
+                                                 'mentalModel',
+                                                 None,
+                                                 '共有境界から不変条件を守る診断経路',
+                                                 '説明用のx=10で、Thread A/Bのどのinterleavingがlost updateを起こし、mutex後に何が変わるか。',
+                                                 '両threadがx=10を読む最小trace、期待値x=8に対する違反点、mutex後のx=8を順に説明できる。',
+                                                 ('obj-boundaries', 'obj-race'),
+                                                 ('race-record',),
+                                                 ('src-01', 'src-04'),
+                                                 ('この注記は旧図の読み順を保持する補助です。',
+                                                  '隔離単位: process A、process B、または同一process内thread AとBを置く。',
+                                                  '共有対象: memory、file、socket、database row、queueを列挙する。',
+                                                  '操作分解: read、compute、write、publishをイベントへ分ける。',
+                                                  '不変条件: 在庫は0以上、合計減算数と最終値が一致、同じ注文を二度確定しない。',
+                                                  '同期関係: mutex、atomic operation、message passingのどれが前後関係を作るか示す。',
+                                                  '停止性: lock順、待機資源、timeout、cancel経路を観測する。',
+                                                  '回帰: 同じstress条件で違反頻度と所要時間を再測定する。')),
+                                      'phases': (('boundary',
+                                                  '境界と説明用fixture',
+                                                  '同一processのThread A/Bが共有整数xを1ずつ減算する説明用scenario。初期値x = 10は普遍値ではない。'),
+                                                 ('lost-update-trace',
+                                                  '同期なしのlost update',
+                                                  '両threadが同じx = 10を読んで9を書き、二回減算の期待値x = 8を破る最小trace。'),
+                                                 ('synchronized-trace',
+                                                  'mutexによる比較trace',
+                                                  '同じ説明用fixtureをmutexで直列化し、二回目のreadがx = 9を見る比較。'),
+                                                 ('verification', '停止性と回帰', '安全性だけでなくlock順、timeout、同条件stressを再確認する。')),
+                                      'events': (('isolation-unit',
+                                                  '隔離単位・shared context',
+                                                  'process A/Bまたは同一processのThread '
+                                                  'A/Bを置く。この説明用traceは同一processの二threadを使う。',
+                                                  'boundary',
+                                                  0,
+                                                  'shared-context'),
+                                                 ('shared-target',
+                                                  '共有対象・x',
+                                                  'memory上の共有整数x = 10を説明用fixtureとし、実systemではfile、socket、database '
+                                                  'row、queueも列挙する。',
+                                                  'boundary',
+                                                  1,
+                                                  'shared-context'),
+                                                 ('unsynchronized-start',
+                                                  '同期なし開始',
+                                                  '説明用の値は初期値x = 10。Thread AとThread Bがmutexなしで1ずつ減算する。',
+                                                  'lost-update-trace',
+                                                  2,
+                                                  'shared-context'),
+                                                 ('a-read',
+                                                  'Thread A read',
+                                                  'Thread Aが共有値x = 10を読む。',
+                                                  'lost-update-trace',
+                                                  3,
+                                                  'thread-a'),
+                                                 ('b-read',
+                                                  'Thread B read',
+                                                  'Thread BもAのwrite前に同じ共有値x = 10を読む。',
+                                                  'lost-update-trace',
+                                                  4,
+                                                  'thread-b'),
+                                                 ('a-compute',
+                                                  'Thread A compute',
+                                                  'Thread Aはlocalに10 - 1 = 9を計算する。',
+                                                  'lost-update-trace',
+                                                  5,
+                                                  'thread-a'),
+                                                 ('b-compute',
+                                                  'Thread B compute',
+                                                  'Thread Bもlocalに10 - 1 = 9を計算する。',
+                                                  'lost-update-trace',
+                                                  6,
+                                                  'thread-b'),
+                                                 ('a-write',
+                                                  'Thread A write',
+                                                  'Thread Aが共有値へx = 9を書き込む。',
+                                                  'lost-update-trace',
+                                                  7,
+                                                  'thread-a'),
+                                                 ('b-write',
+                                                  'Thread B write',
+                                                  'Thread Bが同じx = 9を上書きし、Thread Aの減算を失わせる。',
+                                                  'lost-update-trace',
+                                                  8,
+                                                  'thread-b'),
+                                                 ('lost-update-violation',
+                                                  'lost update違反点',
+                                                  '二回減算後の期待値 x = 8に対しactual x = 9。Thread B writeの完了時点でlost '
+                                                  'updateが観測可能になる。',
+                                                  'lost-update-trace',
+                                                  9,
+                                                  'shared-context'),
+                                                 ('a-lock',
+                                                  'Thread A mutex取得',
+                                                  '同じ説明用fixtureをx = 10へ戻し、Thread Aがmutexを取得する。',
+                                                  'synchronized-trace',
+                                                  10,
+                                                  'thread-a'),
+                                                 ('a-locked-update',
+                                                  'Thread A read/compute/write',
+                                                  'mutex内でThread Aがx = 10を読み、9を計算してx = 9を書く。',
+                                                  'synchronized-trace',
+                                                  11,
+                                                  'thread-a'),
+                                                 ('a-unlock',
+                                                  'Thread A mutex解放',
+                                                  'Thread Aのwrite後にmutexを解放し、happens-beforeを作る。',
+                                                  'synchronized-trace',
+                                                  12,
+                                                  'thread-a'),
+                                                 ('b-lock',
+                                                  'Thread B mutex取得',
+                                                  'Thread BはAの解放後にmutexを取得する。',
+                                                  'synchronized-trace',
+                                                  13,
+                                                  'thread-b'),
+                                                 ('b-locked-update',
+                                                  'Thread B read/compute/write',
+                                                  'Thread Bは同期後のx = 9を読み、8を計算してx = 8を書く。',
+                                                  'synchronized-trace',
+                                                  14,
+                                                  'thread-b'),
+                                                 ('synchronized-invariant',
+                                                  '同期後の不変条件',
+                                                  '同期後の x = 8は二回減算後の期待値 x = 8と一致し、lost updateはない。',
+                                                  'synchronized-trace',
+                                                  15,
+                                                  'shared-context'),
+                                                 ('liveness',
+                                                  '停止性',
+                                                  'mutexのlock順、待機資源、timeout、cancel経路を観測する。',
+                                                  'verification',
+                                                  16,
+                                                  'shared-context'),
+                                                 ('regression',
+                                                  '回帰',
+                                                  '同期なしとmutexありを同じstress条件で反復し、違反頻度と所要時間を再測定する。',
+                                                  'verification',
+                                                  17,
+                                                  'shared-context'))},
+ 'core-05-networks-latency-failure': {'common': ('request-path-timeline',
+                                                 'timeline',
+                                                 'mentalModel',
+                                                 None,
+                                                 'DNSから業務結果までの時系列',
+                                                 '説明用の総deadline 300msで、どのeventが最初の超過点となり、残りbudgetはどう変化したか。',
+                                                 '各eventのbudgetと累積observedを追い、first-byteの310msを最初の超過点として説明できる。これは普遍的なlatency値ではない。',
+                                                 ('obj-timeline', 'obj-budget'),
+                                                 ('trace-budget',),
+                                                 ('src-01', 'src-02', 'src-04', 'src-05'),
+                                                 ()),
+                                      'phases': (('connection',
+                                                  '接続準備 budget 120ms',
+                                                  '説明用の総deadline 300msのうちDNS 30ms、TCP 40ms、TLS '
+                                                  '50msを割り当てる。observed合計105ms。普遍値ではない。'),
+                                                 ('exchange',
+                                                  'HTTP交換 budget 160ms',
+                                                  'request 10ms、server 100ms、first-byte 20ms、body 30ms。first-byte '
+                                                  'observedで総deadlineを初めて超える。'),
+                                                 ('business-result',
+                                                  '業務結果 budget 20ms',
+                                                  'transport完了後の結果永続化へ20msを割り当てる。数値はtraceの読み方を示す説明用。')),
+                                      'events': (('dns',
+                                                  '名前解決（説明用budget）',
+                                                  'DNS queryを送り、候補addressとTTLを得る。budget 30ms、observed '
+                                                  '25ms、累積25ms・残り275ms。',
+                                                  'connection',
+                                                  0,
+                                                  None),
+                                                 ('tcp',
+                                                  '輸送接続（説明用budget）',
+                                                  'TCP SYN、SYN-ACK、ACKで接続状態を確立する。budget 40ms、observed '
+                                                  '35ms、累積60ms・残り240ms。',
+                                                  'connection',
+                                                  1,
+                                                  None),
+                                                 ('tls',
+                                                  '暗号接続（説明用budget）',
+                                                  'TLSでversion、鍵、相手のidentityを検証する。budget 50ms、observed '
+                                                  '45ms、累積105ms・残り195ms。',
+                                                  'connection',
+                                                  2,
+                                                  None),
+                                                 ('request',
+                                                  'request送信（説明用budget）',
+                                                  'HTTP method、target、header、bodyを送る。budget 10ms、observed '
+                                                  '10ms、累積115ms・残り185ms。',
+                                                  'exchange',
+                                                  3,
+                                                  None),
+                                                 ('server',
+                                                  'server処理（説明用budget）',
+                                                  'handlerと依存serviceが状態を読み書きする。budget 100ms、observed '
+                                                  '120ms、累積235ms・残り65ms。',
+                                                  'exchange',
+                                                  4,
+                                                  None),
+                                                 ('first-byte',
+                                                  '最初のbyte（説明用budget）',
+                                                  'statusとheaderを受け始める。budget 20ms、observed '
+                                                  '75ms、累積310ms。ここが最初のdeadline超過点（10ms超過）。',
+                                                  'exchange',
+                                                  5,
+                                                  None),
+                                                 ('body-complete',
+                                                  '本文完了（説明用budget）',
+                                                  'responseを読み終える。ただし業務結果はstatusとbodyの契約で判定する。budget 30ms、observed '
+                                                  '25ms、累積335ms・残り-35ms。',
+                                                  'exchange',
+                                                  6,
+                                                  None),
+                                                 ('result',
+                                                  '結果確定（説明用budget）',
+                                                  'clientが結果を永続化し、必要なら冪等keyで後から照会できる。budget 20ms、observed '
+                                                  '10ms、累積345ms・残り-45ms。',
+                                                  'business-result',
+                                                  7,
+                                                  None))},
+ 'core-07-api-contract-design': {'common': ('offline-operation-state-machine',
+                                            'state-machine',
+                                            'mentalModel',
+                                            None,
+                                            'オフライン操作を副作用と観測へ分ける契約経路',
+                                            'response喪失後のretryで、どの保存済み副作用を再利用し、何を再実行してはいけないか。',
+                                            '冪等keyのscope、耐久化済み効果、試行ごとに変わるresponseを分け、安全なretryと拒否遷移を説明できる。',
+                                            ('obj-contract', 'obj-replay', 'obj-evolution'),
+                                            ('api-contract',),
+                                            ('src-01', 'src-02', 'src-03'),
+                                            ()),
+                                 'states': (('created',
+                                             '作成',
+                                             'clientは操作ID、冪等key、対象version、tenantを永続化する。serverは認証済みprincipal、tenant、route、keyを保存scopeにする。'),
+                                            ('sent', '送信', 'serverはschema、意味、認証、認可を順に検査する。'),
+                                            ('applied', '適用', 'keyと操作結果を同じ耐久境界で記録し、状態を一度だけ進める。'),
+                                            ('responded', '応答', '現在時刻やtrace IDを含むresponseは試行ごとに違ってよい。'),
+                                            ('response-lost', '喪失', 'responseが届かなくても、clientは同じkeyで安全に再送する。'),
+                                            ('queried', '照会', '保存済み効果を返し、同じ配送や同じresponseを保証したとは主張しない。'),
+                                            ('evolved', '進化', '旧versionの利用状況を観測し、source、wire、意味の互換性を別々に判定する。')),
+                                 'initialStateId': 'created',
+                                 'transitions': (('created-to-sent', 'created', 'sent', 'next', 'allowed', None),
+                                                 ('sent-to-applied', 'sent', 'applied', 'next', 'allowed', None),
+                                                 ('applied-to-responded',
+                                                  'applied',
+                                                  'responded',
+                                                  'next',
+                                                  'allowed',
+                                                  None),
+                                                 ('applied-to-lost',
+                                                  'applied',
+                                                  'response-lost',
+                                                  'timer',
+                                                  'allowed',
+                                                  None),
+                                                 ('lost-to-query', 'response-lost', 'queried', 'next', 'allowed', None),
+                                                 ('responded-to-evolved',
+                                                  'responded',
+                                                  'evolved',
+                                                  'next',
+                                                  'allowed',
+                                                  None),
+                                                 ('queried-to-evolved', 'queried', 'evolved', 'next', 'allowed', None),
+                                                 ('lost-reapply',
+                                                  'response-lost',
+                                                  'applied',
+                                                  'next',
+                                                  'rejected',
+                                                  '同じ冪等keyの保存済み効果を再適用してはならない。'))},
+ 'core-09-test-strategy-tdd': {'common': ('tdd-evidence-loop',
+                                          'state-loop',
+                                          'mentalModel',
+                                          None,
+                                          'riskから証拠へ進み、mutationで感度を反証するloop',
+                                          'GREEN後のmutationでtestが誤りを検出しなかった時、どの期待へ戻るか。',
+                                          'risk、RED、GREEN、refactor、mutationを循環させ、生存mutantから期待を改善して証拠成立へ到達できる。',
+                                          ('obj-cycle', 'obj-strategy'),
+                                          ('tdd-history',),
+                                          ('src-01', 'src-02', 'src-03'),
+                                          ()),
+                               'states': (('risk', 'Step 1', '利用者影響と守る不変条件を一つ選ぶ。'),
+                                          ('red', 'Step 2', '失敗する最小の期待を実行し、REDの理由を読む。'),
+                                          ('green', 'Step 3', '最小実装でGREENにし、別の入力でも性質を確認する。'),
+                                          ('refactor', 'Step 4', '振る舞いを保って構造を整理し、同じ観測を再実行する。'),
+                                          ('mutation', 'Step 5', 'mutantまたは障害注入で、testが実際に誤りを検出するか確かめる。'),
+                                          ('evidence-ready', '証拠成立', 'mutantを検出し、同じ観測を再実行できる。')),
+                               'entryStateId': 'risk',
+                               'exitStateId': 'evidence-ready',
+                               'recoveryStateId': 'mutation',
+                               'transitions': (('risk-to-red', 'risk', 'red', '次の証拠を得る', None),
+                                               ('red-to-green', 'red', 'green', '次の証拠を得る', None),
+                                               ('green-to-refactor', 'green', 'refactor', '次の証拠を得る', None),
+                                               ('refactor-to-mutation', 'refactor', 'mutation', '次の証拠を得る', None),
+                                               ('mutation-feedback', 'mutation', 'red', 'mutantが生存したら期待を改善する', None),
+                                               ('mutation-exit',
+                                                'mutation',
+                                                'evidence-ready',
+                                                'mutantを検出したら証拠を確定する',
+                                                None)),
+                               'feedbackTransitionIds': ('mutation-feedback',)},
+ 'core-12-transactions-isolation-consistency': {'common': ('isolation-schedule-timeline',
+                                                           'timeline',
+                                                           'mentalModel',
+                                                           None,
+                                                           'snapshotから依存関係、commit判定、retryへ進む分離異常の因果経路',
+                                                           '同じsnapshotを読んだT1とT2のwrite skewを、どの依存検証とretryが防ぐか。',
+                                                           '業務不変条件、並行read、局所判断、Serializableのabort、transaction全体の再読込を順に説明できる。',
+                                                           ('obj-anomaly', 'obj-serializable'),
+                                                           ('transaction-experiment',),
+                                                           ('src-01', 'src-02', 'src-04'),
+                                                           ()),
+                                                'phases': (('contract', '不変条件', 'rowとは別に業務不変条件を固定する。'),
+                                                           ('concurrent',
+                                                            '並行schedule',
+                                                            '二つのtransactionのreadと局所判断を並べる。'),
+                                                           ('validation-phase', '検証と回復', 'commit可否を判断し、abort後は読み直す。')),
+                                                'events': (('invariant',
+                                                            '不変条件',
+                                                            '「aliceまたはbobの少なくとも一人が当直」をdatabaseのrowとは別に明示する。',
+                                                            'contract',
+                                                            0,
+                                                            None),
+                                                           ('snapshot',
+                                                            'snapshot',
+                                                            'T1とT2が同じ開始状態 {alice: on, bob: on} を読む。',
+                                                            'concurrent',
+                                                            1,
+                                                            None),
+                                                           ('local-decision',
+                                                            '局所判断',
+                                                            'T1はbobが当直なのでaliceを外し、T2はaliceが当直なのでbobを外す。',
+                                                            'concurrent',
+                                                            2,
+                                                            None),
+                                                           ('validation',
+                                                            '検証',
+                                                            'Snapshot '
+                                                            'Isolationでは別rowへのwriteが双方commitし得る。Serializableでは危険な依存を検出して一方をabortする。',
+                                                            'validation-phase',
+                                                            3,
+                                                            None),
+                                                           ('retry',
+                                                            'retry',
+                                                            'abortされたT2は古い判断を再利用せず、transaction開始から読み直す。aliceが外れているためbobを当直に残す。',
+                                                            'validation-phase',
+                                                            4,
+                                                            None))},
+ 'core-13-distributed-coordination-failure': {'common': ('dedupe-recovery-timeline',
+                                                         'timeline',
+                                                         'mentalModel',
+                                                         None,
+                                                         'at-least-once commandを永続dedupeと回復へ接続するmechanism',
+                                                         'response lossと再配送があっても副作用を一度だけ進めるdedupeの耐久境界はどこか。',
+                                                         'stable keyとfingerprintの照合、stateとresultのatomic '
+                                                         'commit、partition回復後の再評価を説明できる。',
+                                                         ('obj-idempotency', 'obj-recovery'),
+                                                         ('coordination-simulation',),
+                                                         ('src-01', 'src-03', 'src-04'),
+                                                         ()),
+                                              'phases': (('dedupe', '重複排除', 'stable keyと入力fingerprintで再配送を識別する。'),
+                                                         ('durability', '耐久化', '状態遷移と再利用resultを同じ境界で保存する。'),
+                                                         ('recovery', '回復', 'partition後の順序差と期限超過を再評価する。')),
+                                              'events': (('receive',
+                                                          'receive',
+                                                          'tenant、resource、operationを含むstable keyと入力fingerprintを受け取る。',
+                                                          'dedupe',
+                                                          0,
+                                                          None),
+                                                         ('lookup',
+                                                          'lookup',
+                                                          '永続dedupe '
+                                                          'storeにkeyがあれば入力fingerprintを照合し、一致時だけ状態遷移を再実行せず最初のresultを再利用する。不一致はkey衝突として拒否する。',
+                                                          'dedupe',
+                                                          1,
+                                                          None),
+                                                         ('apply',
+                                                          'apply',
+                                                          'keyがなければ現在stateから許可された次stateへ一度だけ遷移する。',
+                                                          'durability',
+                                                          2,
+                                                          None),
+                                                         ('commit',
+                                                          'commit',
+                                                          'state、fingerprint、resultを同じdurability境界で保存する。response '
+                                                          'lossはcommitを取り消さない。',
+                                                          'durability',
+                                                          3,
+                                                          None),
+                                                         ('recover',
+                                                          'recover',
+                                                          'partition中のmessageを再開後に処理し、logical sequenceとdelivery '
+                                                          'orderの差を検査する。',
+                                                          'recovery',
+                                                          4,
+                                                          None),
+                                                         ('reevaluate',
+                                                          're-evaluate',
+                                                          'partitionがdeadlineを越えたら、queue、retention、stale '
+                                                          'command、reconciliation、利用者結果を更新する。',
+                                                          'recovery',
+                                                          5,
+                                                          None))},
+ 'core-15-reliability-observability-slo': {'common': ('slo-action-loop',
+                                                      'state-loop',
+                                                      'mentalModel',
+                                                      None,
+                                                      '利用者結果からon-call actionまでを閉じるflow',
+                                                      'どのSLIとburn evidenceがpageを起動し、mitigation後の何を確認してloopを終了するか。',
+                                                      'JourneyからSLI・SLO・telemetry・alert・runbookへ進み、復旧証拠が揃ったterminal '
+                                                      'stateを示せる。',
+                                                      ('obj-sli-slo', 'obj-alert', 'obj-telemetry'),
+                                                      ('slo-runbook',),
+                                                      ('src-01', 'src-02', 'src-04'),
+                                                      ('この注記は旧図の読み順を保持する補助です。',
+                                                       'Journey: 利用者が達成したい結果とvalidな試行を定める。',
+                                                       'SLI: goodの結果とlatency境界をevent単位で計算する。',
+                                                       'SLO: window、target、error budget、例外を合意する。',
+                                                       'Alert: 短窓と長窓のburnをpageとticketへ分ける。',
+                                                       'Runbook: impact確認、mitigation、rollback、escalationを結ぶ。',
+                                                       'Telemetry: traceで原因へ相関し、意味とprivacyを検証する。')),
+                                           'states': (('journey', 'Journey', '利用者が達成したい結果とvalidな試行を定める。'),
+                                                      ('sli', 'SLI', 'goodの結果とlatency境界をevent単位で計算する。'),
+                                                      ('slo', 'SLO', 'window、target、error budget、例外を合意する。'),
+                                                      ('telemetry', 'Telemetry', 'traceで原因へ相関し、意味とprivacyを検証する。'),
+                                                      ('alert', 'Alert', '短窓と長窓のburnをpageとticketへ分ける。'),
+                                                      ('runbook',
+                                                       'Runbook',
+                                                       'impact確認、mitigation、rollback、escalationを結ぶ。'),
+                                                      ('evidence-ready',
+                                                       '復旧証拠成立',
+                                                       '利用者結果、burn rate、mitigation後のservice状態を再観測し、pageを閉じられる。')),
+                                           'entryStateId': 'journey',
+                                           'exitStateId': 'evidence-ready',
+                                           'recoveryStateId': 'alert',
+                                           'transitions': (('journey-to-sli',
+                                                            'journey',
+                                                            'sli',
+                                                            'valid eventからgoodを計算する',
+                                                            None),
+                                                           ('sli-to-slo', 'sli', 'slo', 'windowとtargetを合意する', None),
+                                                           ('slo-to-telemetry',
+                                                            'slo',
+                                                            'telemetry',
+                                                            'SLIを安定したsignalとして収集する',
+                                                            None),
+                                                           ('telemetry-to-alert',
+                                                            'telemetry',
+                                                            'alert',
+                                                            '短窓と長窓のburnを評価する',
+                                                            None),
+                                                           ('alert-to-runbook',
+                                                            'alert',
+                                                            'runbook',
+                                                            'pageからmitigationへ進む',
+                                                            None),
+                                                           ('runbook-feedback',
+                                                            'runbook',
+                                                            'telemetry',
+                                                            'mitigation後の利用者結果を再観測する',
+                                                            None),
+                                                           ('runbook-to-evidence',
+                                                            'runbook',
+                                                            'evidence-ready',
+                                                            '復旧とburn正常化を確認してpageを閉じる',
+                                                            None)),
+                                           'feedbackTransitionIds': ('runbook-feedback',)},
+ 'core-22-evolution-safe-migrations': {'common': ('expand-contract-state-machine',
+                                                  'state-machine',
+                                                  'mentalModel',
+                                                  None,
+                                                  '互換性と観測gateを持つexpand-contract state machine',
+                                                  'dual write、backfill、dual readの各phaseで互換性gateが失敗した時、どの安全状態へ戻すか。',
+                                                  'phase別の停止・rollback先、旧reader互換性、復旧観測、contractへの拒否条件を説明できる。',
+                                                  ('obj-state-machine', 'obj-observation'),
+                                                  ('migration-plan',),
+                                                  ('src-01', 'src-02', 'src-03'),
+                                                  ('この注記は旧図の読み順を保持する補助です。',
+                                                   'expand: old readerを壊さないnullable構造を追加する。',
+                                                   'dual write: 新旧fieldへ書き、成功率と値のparityを観測する。',
+                                                   'backfill: bounded batchで既存rowを移しerror rateとlagを測る。',
+                                                   'dual read: 新旧readerの結果差を比較しfallbackを保持する。',
+                                                   'contract: 利用停止の証拠を確認してから旧構造を除く。',
+                                                   'rollback: 各stateで戻す対象と回復確認を先に定義する。')),
+                                       'states': (('expand', 'expand', 'old readerを壊さないnullable構造を追加する。'),
+                                                  ('dual-write', 'dual write', '新旧fieldへ書き、成功率と値のparityを観測する。'),
+                                                  ('backfill', 'backfill', 'bounded batchで既存rowを移しerror rateとlagを測る。'),
+                                                  ('dual-read', 'dual read', '新旧readerの結果差を比較しfallbackを保持する。'),
+                                                  ('contract', 'contract', '利用停止の証拠を確認してから旧構造を除く。'),
+                                                  ('dual-write-compatible',
+                                                   'dual write停止・旧構造互換',
+                                                   '新fieldへのwriteを停止し、old readerが旧fieldから正しい値を読める状態へ戻す。'),
+                                                  ('backfill-compatible',
+                                                   'backfill停止・旧構造互換',
+                                                   'bounded batchを停止し、dual writeと旧fieldを維持して未移行rowを安全に残す。'),
+                                                  ('dual-read-compatible',
+                                                   'old readへfallback',
+                                                   '新readerを停止し、old readerの結果へfallbackして利用者結果を回復する。'),
+                                                  ('restoration-verified',
+                                                   '互換性回復を検証済み',
+                                                   'old reader成功率、値のparity、error rate、利用者結果を再観測して安全状態を確認する。')),
+                                       'initialStateId': 'expand',
+                                       'transitions': (('expand-to-dual-write',
+                                                        'expand',
+                                                        'dual-write',
+                                                        'next',
+                                                        'allowed',
+                                                        None),
+                                                       ('dual-write-to-backfill',
+                                                        'dual-write',
+                                                        'backfill',
+                                                        'next',
+                                                        'allowed',
+                                                        None),
+                                                       ('backfill-to-dual-read',
+                                                        'backfill',
+                                                        'dual-read',
+                                                        'next',
+                                                        'allowed',
+                                                        None),
+                                                       ('dual-read-to-contract',
+                                                        'dual-read',
+                                                        'contract',
+                                                        'next',
+                                                        'allowed',
+                                                        None),
+                                                       ('dual-write-stop',
+                                                        'dual-write',
+                                                        'dual-write-compatible',
+                                                        'reset',
+                                                        'allowed',
+                                                        None),
+                                                       ('backfill-stop',
+                                                        'backfill',
+                                                        'backfill-compatible',
+                                                        'reset',
+                                                        'allowed',
+                                                        None),
+                                                       ('dual-read-rollback',
+                                                        'dual-read',
+                                                        'dual-read-compatible',
+                                                        'reset',
+                                                        'allowed',
+                                                        None),
+                                                       ('dual-write-verify',
+                                                        'dual-write-compatible',
+                                                        'restoration-verified',
+                                                        'next',
+                                                        'allowed',
+                                                        None),
+                                                       ('backfill-verify',
+                                                        'backfill-compatible',
+                                                        'restoration-verified',
+                                                        'next',
+                                                        'allowed',
+                                                        None),
+                                                       ('dual-read-verify',
+                                                        'dual-read-compatible',
+                                                        'restoration-verified',
+                                                        'next',
+                                                        'allowed',
+                                                        None),
+                                                       ('parity-forward-rejected',
+                                                        'dual-write',
+                                                        'backfill',
+                                                        'timer',
+                                                        'rejected',
+                                                        '成功率または値のparityがgateを満たさない間はbackfillへ進まない。'),
+                                                       ('backfill-forward-rejected',
+                                                        'backfill',
+                                                        'dual-read',
+                                                        'timer',
+                                                        'rejected',
+                                                        'backfillのerror rateまたはlagがgateを満たさない間はdual readへ進まない。'),
+                                                       ('contract-forward-rejected',
+                                                        'dual-read',
+                                                        'contract',
+                                                        'timer',
+                                                        'rejected',
+                                                        '旧構造の利用停止証拠が揃うまでcontractを開始しない。'))},
+ 'core-23-incident-response-learning': {'common': ('incident-review-timeline',
+                                                   'timeline',
+                                                   'mentalModel',
+                                                   None,
+                                                   'incident evidenceを検証可能な学習へ変えるreview chain',
+                                                   'incident当時利用可能だったevidenceから、検知遅延のimpactとdecisionをどう再構成するか。',
+                                                   'clockを揃えたtimeline、影響計算、当時の判断、system factor、検証可能なactionを追跡できる。',
+                                                   ('obj-evidence', 'obj-learning', 'obj-action'),
+                                                   ('incident-review',),
+                                                   ('src-01', 'src-02', 'src-03'),
+                                                   ()),
+                                        'phases': (('reconstruct', '再構成', '観測事実とclockを揃える。'),
+                                                   ('analyze', '分析', '影響、当時の判断、system conditionを証拠へ結ぶ。'),
+                                                   ('learn', '学習', '検証可能なactionとして完了条件を固定する。')),
+                                        'events': (('evidence',
+                                                    'Evidence',
+                                                    'timestamp、source、観測値、evidence IDを固定する。',
+                                                    'reconstruct',
+                                                    0,
+                                                    None),
+                                                   ('timeline',
+                                                    'Timeline',
+                                                    'clockを揃えて観測事実を時刻順に並べる。',
+                                                    'reconstruct',
+                                                    1,
+                                                    None),
+                                                   ('impact',
+                                                    'Impact',
+                                                    'incident startからdetectionまでの未緩和時間とaffected rateから検知遅延の影響を導く。',
+                                                    'analyze',
+                                                    2,
+                                                    None),
+                                                   ('decision',
+                                                    'Decision',
+                                                    '当時利用可能だったevidenceと判断を結ぶ。',
+                                                    'analyze',
+                                                    3,
+                                                    None),
+                                                   ('factor',
+                                                    'Factor',
+                                                    '複数のsystem conditionと反証可能な仮説を残す。',
+                                                    'analyze',
+                                                    4,
+                                                    None),
+                                                   ('action',
+                                                    'Action',
+                                                    'owner、due、verification、evidenceで完了を定義する。',
+                                                    'learn',
+                                                    5,
+                                                    None))},
+ 'core-24-delivery-ci-release-safety': {'common': ('release-evidence-state-machine',
+                                                   'state-machine',
+                                                   'mentalModel',
+                                                   None,
+                                                   'source変更からrollback outcomeまでを結ぶdelivery evidence chain',
+                                                   'required '
+                                                   'check不足でstopした後、原因解消から全gateを再実行し、canaryでpromoteとrollbackのどちらを選ぶか。',
+                                                   'stopを未配信の安全な中断としてCIへ戻し、promoteまたはrollback復旧だけを完了outcomeへ結べる。',
+                                                   ('obj-ci', 'obj-provenance', 'obj-outcome'),
+                                                   ('delivery-evidence',),
+                                                   ('src-01', 'src-03', 'src-04'),
+                                                   ('この注記は旧図の読み順を保持する補助です。',
+                                                    '現行modelではstopはCI evidence '
+                                                    'missing/unknown、promote/rollbackはpost-canary判断です。',
+                                                    'CI: required check集合がすべて観測され成功したか検査する。',
+                                                    'Artifact: 配信対象bytesからdigestを計算して固定する。',
+                                                    'Provenance: subject digestとtrusted builderを独立に検証する。',
+                                                    'Canary: 利用者可視のerror rateを閾値と比較する。',
+                                                    'Decision: advance、stop、rollbackを入力から導く。',
+                                                    'Outcome: command完了後にservice restorationを再観測する。')),
+                                        'states': (('ci', 'CI', 'required check集合がすべて観測され成功したか検査する。'),
+                                                   ('artifact', 'Artifact', '配信対象bytesからdigestを計算して固定する。'),
+                                                   ('provenance',
+                                                    'Provenance',
+                                                    'subject digestとtrusted builderを独立に検証する。'),
+                                                   ('canary', 'Canary', '利用者可視のerror rateを閾値と比較する。'),
+                                                   ('decision', 'Decision', 'canary thresholdからpromoteまたはrollbackを導く。'),
+                                                   ('promoted',
+                                                    'promote実行',
+                                                    'canaryが閾値内なら同一digestのartifactを次の配信段階へ進める。'),
+                                                   ('stopped',
+                                                    'required check不足でstop',
+                                                    'required '
+                                                    'checkがmissing、unknown、failedなら配信せず現行serviceを維持し、原因を解消してCIから全gateを再実行する。'),
+                                                   ('rolling-back',
+                                                    'rollback実行',
+                                                    '検証済みの直前artifactへ戻し、command成功だけを復旧とは扱わない。'),
+                                                   ('restoration-verified',
+                                                    'service restoration再観測',
+                                                    'rollback後の利用者可視error rate、health、artifact digestを再観測して復旧を確認する。'),
+                                                   ('outcome', 'Outcome', 'command完了後にservice restorationを再観測する。')),
+                                        'initialStateId': 'ci',
+                                        'transitions': (('checks-known-pass',
+                                                         'ci',
+                                                         'artifact',
+                                                         'next',
+                                                         'allowed',
+                                                         None),
+                                                        ('checks-missing-unknown-stop',
+                                                         'ci',
+                                                         'stopped',
+                                                         'reset',
+                                                         'allowed',
+                                                         None),
+                                                        ('artifact-to-provenance',
+                                                         'artifact',
+                                                         'provenance',
+                                                         'next',
+                                                         'allowed',
+                                                         None),
+                                                        ('provenance-to-canary',
+                                                         'provenance',
+                                                         'canary',
+                                                         'next',
+                                                         'allowed',
+                                                         None),
+                                                        ('canary-to-decision',
+                                                         'canary',
+                                                         'decision',
+                                                         'next',
+                                                         'allowed',
+                                                         None),
+                                                        ('threshold-within-promote',
+                                                         'decision',
+                                                         'promoted',
+                                                         'next',
+                                                         'allowed',
+                                                         None),
+                                                        ('threshold-exceeded-rollback',
+                                                         'decision',
+                                                         'rolling-back',
+                                                         'previous',
+                                                         'allowed',
+                                                         None),
+                                                        ('promote-outcome',
+                                                         'promoted',
+                                                         'outcome',
+                                                         'next',
+                                                         'allowed',
+                                                         None),
+                                                        ('stop-cause-resolved-rerun',
+                                                         'stopped',
+                                                         'ci',
+                                                         'reset',
+                                                         'allowed',
+                                                         None),
+                                                        ('rollback-restoration',
+                                                         'rolling-back',
+                                                         'restoration-verified',
+                                                         'next',
+                                                         'allowed',
+                                                         None),
+                                                        ('restoration-outcome',
+                                                         'restoration-verified',
+                                                         'outcome',
+                                                         'next',
+                                                         'allowed',
+                                                         None),
+                                                        ('checks-not-passed',
+                                                         'ci',
+                                                         'artifact',
+                                                         'timer',
+                                                         'rejected',
+                                                         'required '
+                                                         'checkがmissing、unknown、failedの時はartifact確定へ進まずstopする。'),
+                                                        ('digest-mismatch',
+                                                         'artifact',
+                                                         'provenance',
+                                                         'timer',
+                                                         'rejected',
+                                                         'subject digestが配信対象bytesと一致しない時はprovenanceを受理しない。'),
+                                                        ('builder-mismatch',
+                                                         'provenance',
+                                                         'canary',
+                                                         'timer',
+                                                         'rejected',
+                                                         'trusted builderと一致しないprovenanceではcanaryへ進まない。'),
+                                                        ('skip-decision',
+                                                         'canary',
+                                                         'outcome',
+                                                         'next',
+                                                         'rejected',
+                                                         'canary thresholdからpromoteまたはrollbackを決める前にoutcomeへ進まない。'))},
+ 'core-26-code-review-collaborative-quality': {'common': ('collaborative-review-loop',
+                                                          'state-loop',
+                                                          'mentalModel',
+                                                          None,
+                                                          'sample changeから共同で品質を改善し独立再評価するreview loop',
+                                                          'author fix後に別reviewerがどのprobeを再実行し、blocking '
+                                                          'findingの解消を判断するか。',
+                                                          'riskとfinding IDからpatchを追跡し、feedback '
+                                                          'cycleを保ちながら独立再評価の証拠をterminalへ確定できる。',
+                                                          ('obj-review-priority',
+                                                           'obj-author-enablement',
+                                                           'obj-independent-review'),
+                                                          ('review-cycle',),
+                                                          ('src-01', 'src-02', 'src-04'),
+                                                          ()),
+                                               'states': (('scope', 'Scope', 'changeとrisk kind、review budgetを固定する。'),
+                                                          ('initial-review',
+                                                           'Initial review',
+                                                           'priority、evidence、actionable fixを同じ入力から導く。'),
+                                                          ('author-fix',
+                                                           'Author fix',
+                                                           '指摘IDに対応するpatchをactual artifactへ適用し、patch IDを残す。'),
+                                                          ('independent-review',
+                                                           'Independent re-evaluation',
+                                                           '初回とは別のreviewerがprobeを再実行し、actualとexpectedからblocking '
+                                                           'findingとsystem outcomeを確認する。'),
+                                                          ('enablement',
+                                                           'Enablement',
+                                                           '判断根拠を残し、他のcontributorが再利用できるようにする。'),
+                                                          ('evidence-ready',
+                                                           'Review evidence ready',
+                                                           '別reviewerのprobe、blocking finding解消、system '
+                                                           'outcome、再利用可能な判断根拠を一つの完了証拠として確定する。')),
+                                               'entryStateId': 'scope',
+                                               'exitStateId': 'evidence-ready',
+                                               'recoveryStateId': 'author-fix',
+                                               'transitions': (('scope-to-initial-review',
+                                                                'scope',
+                                                                'initial-review',
+                                                                '次の証拠を得る',
+                                                                None),
+                                                               ('initial-review-to-author-fix',
+                                                                'initial-review',
+                                                                'author-fix',
+                                                                '次の証拠を得る',
+                                                                None),
+                                                               ('author-fix-to-independent-review',
+                                                                'author-fix',
+                                                                'independent-review',
+                                                                '次の証拠を得る',
+                                                                None),
+                                                               ('independent-review-to-enablement',
+                                                                'independent-review',
+                                                                'enablement',
+                                                                '次の証拠を得る',
+                                                                None),
+                                                               ('independent-feedback',
+                                                                'independent-review',
+                                                                'author-fix',
+                                                                'blocking findingが残れば再修正する',
+                                                                None),
+                                                               ('enablement-feedback',
+                                                                'enablement',
+                                                                'scope',
+                                                                '次のchangeでriskを再評価する',
+                                                                None),
+                                                               ('enablement-to-evidence-ready',
+                                                                'enablement',
+                                                                'evidence-ready',
+                                                                '独立再評価とsystem outcomeの証拠を確定する',
+                                                                None)),
+                                               'feedbackTransitionIds': ('independent-feedback',
+                                                                         'enablement-feedback')},
+ 'core-29-cross-cultural-async-collaboration': {'common': ('async-review-timeline',
+                                                           'timeline',
+                                                           'mentalModel',
+                                                           None,
+                                                           'proposal contextからreasoned decisionへ進む非同期review chain',
+                                                           'timezone overlapがなくてもdissentと採否理由を第三者が再評価できる記録は何か。',
+                                                           'decision rights、evidence、参加条件、response '
+                                                           'window、異論への応答を再生可能なdecision logへ結べる。',
+                                                           ('obj-async-context', 'obj-dissent', 'obj-zero-overlap'),
+                                                           ('async-rfc', 'decision-log'),
+                                                           ('src-01', 'src-02', 'src-03'),
+                                                           ()),
+                                                'phases': (('context', '文脈', '判断範囲、代替案、参加条件を文書へ揃える。'),
+                                                           ('review', 'レビュー', '安全なresponse windowで異論と応答を追跡する。'),
+                                                           ('decision-phase', '決定', '第三者がmeetingなしで再評価できる形にする。')),
+                                                'events': (('frame',
+                                                            'Frame',
+                                                            'problem、decision rights、対象外を固定する。',
+                                                            'context',
+                                                            0,
+                                                            None),
+                                                           ('expose',
+                                                            'Expose',
+                                                            'alternatives、evidence、uncertaintyを同じ文書に置く。',
+                                                            'context',
+                                                            1,
+                                                            None),
+                                                           ('include',
+                                                            'Include',
+                                                            'timezone、working language、用語、UTC期限を示す。',
+                                                            'context',
+                                                            2,
+                                                            None),
+                                                           ('invite',
+                                                            'Invite',
+                                                            'dissentを安全に記録するresponse-windowを開く。',
+                                                            'review',
+                                                            3,
+                                                            None),
+                                                           ('resolve',
+                                                            'Resolve',
+                                                            '異論ごとのresponseと採否理由を残す。',
+                                                            'review',
+                                                            4,
+                                                            None),
+                                                           ('replay',
+                                                            'Replay',
+                                                            'meeting unnecessaryな状態で第三者が判断を再評価する。',
+                                                            'decision-phase',
+                                                            5,
+                                                            None))}}
 TASK6_LESSON_JUDGMENT_TEXT = {
     "core-04-os-processes-concurrency": (
-        "どのread・compute・writeのinterleavingがlost updateを起こし、どの同期関係が不変条件を守るか。",
-        "lost updateを起こす最小event列、不変条件の違反点、同期後の前後関係と同条件回帰を説明できる。",
+        "説明用のx=10で、Thread A/Bのどのinterleavingがlost updateを起こし、mutex後に何が変わるか。",
+        "両threadがx=10を読む最小trace、期待値x=8に対する違反点、mutex後のx=8を順に説明できる。",
     ),
     "core-05-networks-latency-failure": (
-        "deadline超過はDNS、TCP、TLS、server処理、response受信、業務結果確定のどこで観測されたか。",
-        "request pathの各eventへ時間予算を割り当て、deadline超過箇所とtransport完了・業務成功の差を説明できる。",
+        "説明用の総deadline 300msで、どのeventが最初の超過点となり、残りbudgetはどう変化したか。",
+        "各eventのbudgetと累積observedを追い、first-byteの310msを最初の超過点として説明できる。これは普遍的なlatency値ではない。",
     ),
     "core-07-api-contract-design": (
         "response喪失後のretryで、どの保存済み副作用を再利用し、何を再実行してはいけないか。",
@@ -145,7 +1028,7 @@ TASK6_LESSON_JUDGMENT_TEXT = {
     ),
     "core-26-code-review-collaborative-quality": (
         "author fix後に別reviewerがどのprobeを再実行し、blocking findingの解消を判断するか。",
-        "riskとfinding IDからpatchを追跡し、独立再評価でactual・expected・system outcomeを確認できる。",
+        "riskとfinding IDからpatchを追跡し、feedback cycleを保ちながら独立再評価の証拠をterminalへ確定できる。",
     ),
     "core-29-cross-cultural-async-collaboration": (
         "timezone overlapがなくてもdissentと採否理由を第三者が再評価できる記録は何か。",
@@ -1141,13 +2024,76 @@ def _task5_visual_projection(document: dict[str, object]) -> dict[str, object]:
 
 
 def _task6_visual_contract_sha256(document: dict[str, object]) -> str:
-    """Freeze every ordered Task 6 field without sharing parser internals."""
+    """Provide a compact secondary corruption signal for the readable oracle."""
     encoded = json.dumps(
         document["visualizations"][0],
         ensure_ascii=False,
         separators=(",", ":"),
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _task6_visual_projection(document: dict[str, object]) -> dict[str, object]:
+    """Project every authored field without using production model objects."""
+    visual = document["visualizations"][0]
+    payload = visual["payload"]
+    projection: dict[str, object] = {
+        "common": (
+            visual["id"], visual["type"], visual["afterSection"],
+            visual.get("simulation"), visual["caption"], visual["question"],
+            visual["expectedObservation"], tuple(visual["objectiveIds"]),
+            tuple(visual["evidenceIds"]), tuple(visual["sourceIds"]),
+            tuple(visual.get("notes", ())),
+        )
+    }
+    if visual["type"] == "timeline":
+        projection["phases"] = tuple(
+            (item["id"], item["label"], item["detail"])
+            for item in payload["phases"]
+        )
+        projection["events"] = tuple(
+            (
+                item["id"], item["label"], item["detail"], item["phaseId"],
+                item["order"], item.get("lane"),
+            )
+            for item in payload["events"]
+        )
+    elif visual["type"] == "state-machine":
+        projection["states"] = tuple(
+            (item["id"], item["label"], item["detail"])
+            for item in payload["states"]
+        )
+        projection["initialStateId"] = payload["initialStateId"]
+        projection["transitions"] = tuple(
+            (
+                item["id"], item["from"], item["to"], item["event"],
+                item["status"], item.get("reason"),
+            )
+            for item in payload["transitions"]
+        )
+    else:
+        states = payload["states"]
+        projection["states"] = tuple(
+            (item["id"], item["label"], item["detail"])
+            for item in states
+        )
+        projection["entryStateId"] = states[0]["id"]
+        projection["exitStateId"] = payload["exitStateId"]
+        projection["recoveryStateId"] = payload["recoveryStateId"]
+        projection["transitions"] = tuple(
+            (
+                item["id"], item["from"], item["to"], item["label"],
+                item.get("kind"),
+            )
+            for item in payload["transitions"]
+        )
+        state_order = {item["id"]: index for index, item in enumerate(states)}
+        projection["feedbackTransitionIds"] = tuple(
+            item["id"]
+            for item in payload["transitions"]
+            if state_order[item["to"]] <= state_order[item["from"]]
+        )
+    return projection
 
 
 def _snapshot(root: Path) -> dict[PurePosixPath, bytes]:
@@ -2118,12 +3064,79 @@ class ContentAcceptanceTests(unittest.TestCase):
                 load_lesson_bytes(path.read_bytes(), "lesson.json")
 
     def test_task6_visual_contracts_freeze_every_ordered_authored_field(self) -> None:
+        self.assertEqual(set(TASK6_VISUAL_CONTRACTS), set(TASK6_VISUAL_TYPES))
         self.assertEqual(set(TASK6_VISUAL_CONTRACT_SHA256), set(TASK6_VISUAL_TYPES))
-        for lesson_id, expected in TASK6_VISUAL_CONTRACT_SHA256.items():
+        for lesson_id, expected in TASK6_VISUAL_CONTRACTS.items():
             with self.subTest(lesson_id=lesson_id):
                 path = REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json"
                 document = json.loads(path.read_bytes())
-                self.assertEqual(_task6_visual_contract_sha256(document), expected)
+                self.assertEqual(_task6_visual_projection(document), expected)
+                self.assertEqual(
+                    _task6_visual_contract_sha256(document),
+                    TASK6_VISUAL_CONTRACT_SHA256[lesson_id],
+                )
+
+    def test_task6_readable_contract_rejects_semantic_mutations_even_with_a_new_hash(
+        self,
+    ) -> None:
+        def document(lesson_id: str) -> dict[str, object]:
+            path = REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json"
+            return json.loads(path.read_bytes())
+
+        reversed_timeline = document("core-05-networks-latency-failure")
+        reversed_timeline["visualizations"][0]["payload"]["events"].reverse()
+        self.assertNotEqual(
+            _task6_visual_projection(reversed_timeline),
+            TASK6_VISUAL_CONTRACTS["core-05-networks-latency-failure"],
+        )
+        self.assertNotEqual(
+            _task6_visual_contract_sha256(reversed_timeline),
+            TASK6_VISUAL_CONTRACT_SHA256["core-05-networks-latency-failure"],
+        )
+
+        status_flip = document("core-24-delivery-ci-release-safety")
+        builder = next(
+            edge
+            for edge in status_flip["visualizations"][0]["payload"]["transitions"]
+            if edge["id"] == "builder-mismatch"
+        )
+        builder["status"] = "allowed"
+        builder.pop("reason")
+        self.assertNotEqual(
+            _task6_visual_projection(status_flip),
+            TASK6_VISUAL_CONTRACTS["core-24-delivery-ci-release-safety"],
+        )
+
+        source_swap = document("core-13-distributed-coordination-failure")
+        source_swap["visualizations"][0]["sourceIds"] = ["src-01", "src-02"]
+        self.assertNotEqual(
+            _task6_visual_projection(source_swap),
+            TASK6_VISUAL_CONTRACTS["core-13-distributed-coordination-failure"],
+        )
+
+        detail_swap = document("core-04-os-processes-concurrency")
+        events = detail_swap["visualizations"][0]["payload"]["events"]
+        events[3]["detail"], events[4]["detail"] = (
+            events[4]["detail"], events[3]["detail"]
+        )
+        self.assertNotEqual(
+            _task6_visual_projection(detail_swap),
+            TASK6_VISUAL_CONTRACTS["core-04-os-processes-concurrency"],
+        )
+
+        exit_outgoing = document("core-26-code-review-collaborative-quality")
+        exit_outgoing["visualizations"][0]["payload"]["transitions"].append(
+            {
+                "id": "incorrect-exit-feedback",
+                "from": "evidence-ready",
+                "to": "scope",
+                "label": "誤ったexit outgoing",
+            }
+        )
+        self.assertNotEqual(
+            _task6_visual_projection(exit_outgoing),
+            TASK6_VISUAL_CONTRACTS["core-26-code-review-collaborative-quality"],
+        )
 
     def test_task6_questions_and_observations_name_lesson_specific_judgments(
         self,
@@ -2285,6 +3298,97 @@ class ContentAcceptanceTests(unittest.TestCase):
         state_order = [state["id"] for state in slo["states"]]
         self.assertLess(state_order.index("telemetry"), state_order.index("alert"))
         self.assertLess(state_order.index("runbook"), state_order.index("evidence-ready"))
+
+    def test_task6_core04_has_an_exact_illustrative_lost_update_and_synchronized_trace(
+        self,
+    ) -> None:
+        path = REPOSITORY_ROOT / "content/lessons/core-04-os-processes-concurrency/lesson.json"
+        visual = json.loads(path.read_bytes())["visualizations"][0]
+        events = visual["payload"]["events"]
+        self.assertEqual(
+            tuple((item["id"], item["phaseId"], item["order"], item.get("lane")) for item in events),
+            (
+                ("isolation-unit", "boundary", 0, "shared-context"),
+                ("shared-target", "boundary", 1, "shared-context"),
+                ("unsynchronized-start", "lost-update-trace", 2, "shared-context"),
+                ("a-read", "lost-update-trace", 3, "thread-a"),
+                ("b-read", "lost-update-trace", 4, "thread-b"),
+                ("a-compute", "lost-update-trace", 5, "thread-a"),
+                ("b-compute", "lost-update-trace", 6, "thread-b"),
+                ("a-write", "lost-update-trace", 7, "thread-a"),
+                ("b-write", "lost-update-trace", 8, "thread-b"),
+                ("lost-update-violation", "lost-update-trace", 9, "shared-context"),
+                ("a-lock", "synchronized-trace", 10, "thread-a"),
+                ("a-locked-update", "synchronized-trace", 11, "thread-a"),
+                ("a-unlock", "synchronized-trace", 12, "thread-a"),
+                ("b-lock", "synchronized-trace", 13, "thread-b"),
+                ("b-locked-update", "synchronized-trace", 14, "thread-b"),
+                ("synchronized-invariant", "synchronized-trace", 15, "shared-context"),
+                ("liveness", "verification", 16, "shared-context"),
+                ("regression", "verification", 17, "shared-context"),
+            ),
+        )
+        trace = json.dumps(events, ensure_ascii=False)
+        for atom in (
+            "説明用の値", "x = 10", "Thread A", "Thread B", "x = 9",
+            "期待値 x = 8", "lost update", "mutex", "同期後の x = 8",
+        ):
+            self.assertIn(atom, trace)
+
+    def test_task6_core05_has_an_exact_illustrative_deadline_budget_trace(self) -> None:
+        path = REPOSITORY_ROOT / "content/lessons/core-05-networks-latency-failure/lesson.json"
+        visual = json.loads(path.read_bytes())["visualizations"][0]
+        events = visual["payload"]["events"]
+        self.assertEqual(
+            tuple((item["id"], item["order"]) for item in events),
+            (("dns", 0), ("tcp", 1), ("tls", 2), ("request", 3),
+             ("server", 4), ("first-byte", 5), ("body-complete", 6), ("result", 7)),
+        )
+        self.assertIn("説明用の総deadline 300ms", visual["payload"]["phases"][0]["detail"])
+        observed = {item["id"]: item["detail"] for item in events}
+        self.assertIn("累積235ms・残り65ms", observed["server"])
+        self.assertIn("累積310ms", observed["first-byte"])
+        self.assertIn("最初のdeadline超過点（10ms超過）", observed["first-byte"])
+        self.assertIn("普遍的なlatency値ではない", visual["expectedObservation"])
+
+    def test_task6_core24_clarifies_legacy_decision_wording_before_the_model(self) -> None:
+        path = REPOSITORY_ROOT / "content/lessons/core-24-delivery-ci-release-safety/lesson.json"
+        document = json.loads(path.read_bytes())
+        notes = document["visualizations"][0]["notes"]
+        clarification = (
+            "現行modelではstopはCI evidence missing/unknown、"
+            "promote/rollbackはpost-canary判断です。"
+        )
+        legacy = "Decision: advance、stop、rollbackを入力から導く。"
+        self.assertEqual(notes[1], clarification)
+        self.assertEqual(notes[6], legacy)
+        lesson = load_lesson_bytes(path.read_bytes(), "lesson.json")
+        rendered = render_visualization(
+            document["id"], lesson.visualizations[0]
+        ).value
+        self.assertLess(rendered.index(clarification), rendered.index(legacy))
+        self.assertLess(
+            rendered.index(legacy), rendered.index("visualization__states")
+        )
+
+    def test_task6_state_loop_exit_states_are_terminal_and_core26_keeps_feedback(
+        self,
+    ) -> None:
+        for lesson_id, visual_type in TASK6_VISUAL_TYPES.items():
+            if visual_type != "state-loop":
+                continue
+            with self.subTest(lesson_id=lesson_id):
+                path = REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json"
+                payload = json.loads(path.read_bytes())["visualizations"][0]["payload"]
+                self.assertFalse(
+                    any(edge["from"] == payload["exitStateId"] for edge in payload["transitions"])
+                )
+        path = REPOSITORY_ROOT / "content/lessons/core-26-code-review-collaborative-quality/lesson.json"
+        payload = json.loads(path.read_bytes())["visualizations"][0]["payload"]
+        self.assertEqual(payload["exitStateId"], "evidence-ready")
+        edges = {(edge["from"], edge["to"], edge["label"]) for edge in payload["transitions"]}
+        self.assertIn(("enablement", "scope", "次のchangeでriskを再評価する"), edges)
+        self.assertIn(("enablement", "evidence-ready", "独立再評価とsystem outcomeの証拠を確定する"), edges)
 
     def test_task6_contract_rejects_order_transition_text_source_note_and_placement_mutations(
         self,

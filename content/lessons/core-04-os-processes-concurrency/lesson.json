@@ -194,7 +194,7 @@
       "id": "concurrency-diagnostic-timeline",
       "type": "timeline",
       "caption": "共有境界から不変条件を守る診断経路",
-      "question": "どのread・compute・writeのinterleavingがlost updateを起こし、どの同期関係が不変条件を守るか。",
+      "question": "説明用のx=10で、Thread A/Bのどのinterleavingがlost updateを起こし、mutex後に何が変わるか。",
       "afterSection": "mentalModel",
       "objectiveIds": [
         "obj-boundaries",
@@ -207,7 +207,7 @@
         "src-01",
         "src-04"
       ],
-      "expectedObservation": "lost updateを起こす最小event列、不変条件の違反点、同期後の前後関係と同条件回帰を説明できる。",
+      "expectedObservation": "両threadがx=10を読む最小trace、期待値x=8に対する違反点、mutex後のx=8を順に説明できる。",
       "notes": [
         "この注記は旧図の読み順を保持する補助です。",
         "隔離単位: process A、process B、または同一process内thread AとBを置く。",
@@ -222,69 +222,169 @@
         "phases": [
           {
             "id": "boundary",
-            "label": "境界を固定",
-            "detail": "隔離単位と共有対象を先に確定する。"
+            "label": "境界と説明用fixture",
+            "detail": "同一processのThread A/Bが共有整数xを1ずつ減算する説明用scenario。初期値x = 10は普遍値ではない。"
           },
           {
-            "id": "execution",
-            "label": "操作を観測",
-            "detail": "共有操作をeventへ分解する。"
+            "id": "lost-update-trace",
+            "label": "同期なしのlost update",
+            "detail": "両threadが同じx = 10を読んで9を書き、二回減算の期待値x = 8を破る最小trace。"
+          },
+          {
+            "id": "synchronized-trace",
+            "label": "mutexによる比較trace",
+            "detail": "同じ説明用fixtureをmutexで直列化し、二回目のreadがx = 9を見る比較。"
           },
           {
             "id": "verification",
-            "label": "性質を検証",
-            "detail": "安全性、前後関係、停止性、再現性を検証する。"
+            "label": "停止性と回帰",
+            "detail": "安全性だけでなくlock順、timeout、同条件stressを再確認する。"
           }
         ],
         "events": [
           {
             "id": "isolation-unit",
-            "label": "隔離単位",
-            "detail": "process A、process B、または同一process内thread AとBを置く。",
+            "label": "隔離単位・shared context",
+            "detail": "process A/Bまたは同一processのThread A/Bを置く。この説明用traceは同一processの二threadを使う。",
             "phaseId": "boundary",
-            "order": 0
+            "order": 0,
+            "lane": "shared-context"
           },
           {
             "id": "shared-target",
-            "label": "共有対象",
-            "detail": "memory、file、socket、database row、queueを列挙する。",
+            "label": "共有対象・x",
+            "detail": "memory上の共有整数x = 10を説明用fixtureとし、実systemではfile、socket、database row、queueも列挙する。",
             "phaseId": "boundary",
-            "order": 1
+            "order": 1,
+            "lane": "shared-context"
           },
           {
-            "id": "operation-events",
-            "label": "操作分解",
-            "detail": "read、compute、write、publishをイベントへ分ける。",
-            "phaseId": "execution",
-            "order": 2
+            "id": "unsynchronized-start",
+            "label": "同期なし開始",
+          "detail": "説明用の値は初期値x = 10。Thread AとThread Bがmutexなしで1ずつ減算する。",
+            "phaseId": "lost-update-trace",
+            "order": 2,
+            "lane": "shared-context"
           },
           {
-            "id": "invariant-check",
-            "label": "不変条件",
-            "detail": "在庫は0以上、合計減算数と最終値が一致、同じ注文を二度確定しない。",
-            "phaseId": "verification",
-            "order": 3
+            "id": "a-read",
+            "label": "Thread A read",
+            "detail": "Thread Aが共有値x = 10を読む。",
+            "phaseId": "lost-update-trace",
+            "order": 3,
+            "lane": "thread-a"
           },
           {
-            "id": "synchronization",
-            "label": "同期関係",
-            "detail": "mutex、atomic operation、message passingのどれが前後関係を作るか示す。",
-            "phaseId": "verification",
-            "order": 4
+            "id": "b-read",
+            "label": "Thread B read",
+            "detail": "Thread BもAのwrite前に同じ共有値x = 10を読む。",
+            "phaseId": "lost-update-trace",
+            "order": 4,
+            "lane": "thread-b"
+          },
+          {
+            "id": "a-compute",
+            "label": "Thread A compute",
+            "detail": "Thread Aはlocalに10 - 1 = 9を計算する。",
+            "phaseId": "lost-update-trace",
+            "order": 5,
+            "lane": "thread-a"
+          },
+          {
+            "id": "b-compute",
+            "label": "Thread B compute",
+            "detail": "Thread Bもlocalに10 - 1 = 9を計算する。",
+            "phaseId": "lost-update-trace",
+            "order": 6,
+            "lane": "thread-b"
+          },
+          {
+            "id": "a-write",
+            "label": "Thread A write",
+            "detail": "Thread Aが共有値へx = 9を書き込む。",
+            "phaseId": "lost-update-trace",
+            "order": 7,
+            "lane": "thread-a"
+          },
+          {
+            "id": "b-write",
+            "label": "Thread B write",
+            "detail": "Thread Bが同じx = 9を上書きし、Thread Aの減算を失わせる。",
+            "phaseId": "lost-update-trace",
+            "order": 8,
+            "lane": "thread-b"
+          },
+          {
+            "id": "lost-update-violation",
+            "label": "lost update違反点",
+            "detail": "二回減算後の期待値 x = 8に対しactual x = 9。Thread B writeの完了時点でlost updateが観測可能になる。",
+            "phaseId": "lost-update-trace",
+            "order": 9,
+            "lane": "shared-context"
+          },
+          {
+            "id": "a-lock",
+            "label": "Thread A mutex取得",
+            "detail": "同じ説明用fixtureをx = 10へ戻し、Thread Aがmutexを取得する。",
+            "phaseId": "synchronized-trace",
+            "order": 10,
+            "lane": "thread-a"
+          },
+          {
+            "id": "a-locked-update",
+            "label": "Thread A read/compute/write",
+            "detail": "mutex内でThread Aがx = 10を読み、9を計算してx = 9を書く。",
+            "phaseId": "synchronized-trace",
+            "order": 11,
+            "lane": "thread-a"
+          },
+          {
+            "id": "a-unlock",
+            "label": "Thread A mutex解放",
+            "detail": "Thread Aのwrite後にmutexを解放し、happens-beforeを作る。",
+            "phaseId": "synchronized-trace",
+            "order": 12,
+            "lane": "thread-a"
+          },
+          {
+            "id": "b-lock",
+            "label": "Thread B mutex取得",
+            "detail": "Thread BはAの解放後にmutexを取得する。",
+            "phaseId": "synchronized-trace",
+            "order": 13,
+            "lane": "thread-b"
+          },
+          {
+            "id": "b-locked-update",
+            "label": "Thread B read/compute/write",
+            "detail": "Thread Bは同期後のx = 9を読み、8を計算してx = 8を書く。",
+            "phaseId": "synchronized-trace",
+            "order": 14,
+            "lane": "thread-b"
+          },
+          {
+            "id": "synchronized-invariant",
+            "label": "同期後の不変条件",
+          "detail": "同期後の x = 8は二回減算後の期待値 x = 8と一致し、lost updateはない。",
+            "phaseId": "synchronized-trace",
+            "order": 15,
+            "lane": "shared-context"
           },
           {
             "id": "liveness",
             "label": "停止性",
-            "detail": "lock順、待機資源、timeout、cancel経路を観測する。",
+            "detail": "mutexのlock順、待機資源、timeout、cancel経路を観測する。",
             "phaseId": "verification",
-            "order": 5
+            "order": 16,
+            "lane": "shared-context"
           },
           {
             "id": "regression",
             "label": "回帰",
-            "detail": "同じstress条件で違反頻度と所要時間を再測定する。",
+            "detail": "同期なしとmutexありを同じstress条件で反復し、違反頻度と所要時間を再測定する。",
             "phaseId": "verification",
-            "order": 6
+            "order": 17,
+            "lane": "shared-context"
           }
         ]
       }

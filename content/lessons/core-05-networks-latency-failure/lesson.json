@@ -193,7 +193,7 @@
       "id": "request-path-timeline",
       "type": "timeline",
       "caption": "DNSから業務結果までの時系列",
-      "question": "deadline超過はDNS、TCP、TLS、server処理、response受信、業務結果確定のどこで観測されたか。",
+      "question": "説明用の総deadline 300msで、どのeventが最初の超過点となり、残りbudgetはどう変化したか。",
       "afterSection": "mentalModel",
       "objectiveIds": [
         "obj-timeline",
@@ -208,80 +208,80 @@
         "src-04",
         "src-05"
       ],
-      "expectedObservation": "request pathの各eventへ時間予算を割り当て、deadline超過箇所とtransport完了・業務成功の差を説明できる。",
+      "expectedObservation": "各eventのbudgetと累積observedを追い、first-byteの310msを最初の超過点として説明できる。これは普遍的なlatency値ではない。",
       "notes": [],
       "payload": {
         "phases": [
           {
             "id": "connection",
-            "label": "接続準備",
-            "detail": "名前解決、輸送、暗号の前提を成立させる。"
+            "label": "接続準備 budget 120ms",
+            "detail": "説明用の総deadline 300msのうちDNS 30ms、TCP 40ms、TLS 50msを割り当てる。observed合計105ms。普遍値ではない。"
           },
           {
             "id": "exchange",
-            "label": "HTTP交換",
-            "detail": "request送信からresponse本文完了までを観測する。"
+            "label": "HTTP交換 budget 160ms",
+            "detail": "request 10ms、server 100ms、first-byte 20ms、body 30ms。first-byte observedで総deadlineを初めて超える。"
           },
           {
             "id": "business-result",
-            "label": "業務結果",
-            "detail": "transport完了と業務上の成功を分けて確定する。"
+            "label": "業務結果 budget 20ms",
+            "detail": "transport完了後の結果永続化へ20msを割り当てる。数値はtraceの読み方を示す説明用。"
           }
         ],
         "events": [
           {
             "id": "dns",
-            "label": "名前解決",
-            "detail": "DNS queryを送り、候補addressとTTLを得る。",
+            "label": "名前解決（説明用budget）",
+          "detail": "DNS queryを送り、候補addressとTTLを得る。budget 30ms、observed 25ms、累積25ms・残り275ms。",
             "phaseId": "connection",
             "order": 0
           },
           {
             "id": "tcp",
-            "label": "輸送接続",
-            "detail": "TCP SYN、SYN-ACK、ACKで接続状態を確立する。",
+            "label": "輸送接続（説明用budget）",
+          "detail": "TCP SYN、SYN-ACK、ACKで接続状態を確立する。budget 40ms、observed 35ms、累積60ms・残り240ms。",
             "phaseId": "connection",
             "order": 1
           },
           {
             "id": "tls",
-            "label": "暗号接続",
-            "detail": "TLSでversion、鍵、相手のidentityを検証する。",
+            "label": "暗号接続（説明用budget）",
+          "detail": "TLSでversion、鍵、相手のidentityを検証する。budget 50ms、observed 45ms、累積105ms・残り195ms。",
             "phaseId": "connection",
             "order": 2
           },
           {
             "id": "request",
-            "label": "request送信",
-            "detail": "HTTP method、target、header、bodyを送る。",
+            "label": "request送信（説明用budget）",
+            "detail": "HTTP method、target、header、bodyを送る。budget 10ms、observed 10ms、累積115ms・残り185ms。",
             "phaseId": "exchange",
             "order": 3
           },
           {
             "id": "server",
-            "label": "server処理",
-            "detail": "handlerと依存serviceが状態を読み書きする。",
+            "label": "server処理（説明用budget）",
+            "detail": "handlerと依存serviceが状態を読み書きする。budget 100ms、observed 120ms、累積235ms・残り65ms。",
             "phaseId": "exchange",
             "order": 4
           },
           {
             "id": "first-byte",
-            "label": "最初のbyte",
-            "detail": "statusとheaderを受け始める。",
+            "label": "最初のbyte（説明用budget）",
+            "detail": "statusとheaderを受け始める。budget 20ms、observed 75ms、累積310ms。ここが最初のdeadline超過点（10ms超過）。",
             "phaseId": "exchange",
             "order": 5
           },
           {
             "id": "body-complete",
-            "label": "本文完了",
-            "detail": "responseを読み終える。ただし業務結果はstatusとbodyの契約で判定する。",
+            "label": "本文完了（説明用budget）",
+          "detail": "responseを読み終える。ただし業務結果はstatusとbodyの契約で判定する。budget 30ms、observed 25ms、累積335ms・残り-35ms。",
             "phaseId": "exchange",
             "order": 6
           },
           {
             "id": "result",
-            "label": "結果確定",
-            "detail": "clientが結果を永続化し、必要なら冪等keyで後から照会できる。",
+            "label": "結果確定（説明用budget）",
+          "detail": "clientが結果を永続化し、必要なら冪等keyで後から照会できる。budget 20ms、observed 10ms、累積345ms・残り-45ms。",
             "phaseId": "business-result",
             "order": 7
           }
