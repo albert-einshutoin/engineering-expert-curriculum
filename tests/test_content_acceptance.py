@@ -1539,6 +1539,18 @@ class ContentAcceptanceTests(unittest.TestCase):
                     for item in items
                     for value in (item["label"], item["detail"])
                 ]
+                if lesson_id == "core-08-modularity-evolutionary-architecture":
+                    dependency_view = payload["components"][0]
+                    remaining_atoms = [
+                        atom[:-1] if atom.endswith(":") else atom
+                        for atom in legacy_by_lesson[lesson_id]["visibleAtoms"][8:]
+                    ]
+                    positions = [
+                        dependency_view["detail"].index(atom)
+                        for atom in remaining_atoms
+                    ]
+                    self.assertEqual(positions, sorted(positions))
+                    actual_fact_values.extend(remaining_atoms)
                 self.assertEqual(
                     actual_fact_values,
                     [
@@ -1550,6 +1562,118 @@ class ContentAcceptanceTests(unittest.TestCase):
                 self.assertTrue(
                     all(relation["label"].strip() for relation in relations)
                 )
+
+    def test_core08_network_keeps_reporting_outside_the_pricing_dependency_graph(self) -> None:
+        lesson_root = (
+            REPOSITORY_ROOT
+            / "content/lessons/core-08-modularity-evolutionary-architecture"
+        )
+        document = json.loads((lesson_root / "lesson.json").read_bytes())
+        payload = document["visualizations"][0]["payload"]
+
+        self.assertEqual(
+            tuple(node["label"] for node in payload["nodes"]),
+            (
+                "pricing-domain",
+                "pricing-application",
+                "pricing-adapters",
+                "reporting",
+            ),
+        )
+        self.assertEqual(
+            {
+                node["id"]: node["componentId"]
+                for node in payload["nodes"]
+            },
+            {
+                "pricing-domain": "pricing-layers",
+                "pricing-application": "pricing-layers",
+                "pricing-adapters": "pricing-layers",
+                "reporting": "independent-reporting",
+            },
+        )
+        self.assertEqual(
+            tuple(
+                (component["id"], component["label"])
+                for component in payload["components"]
+            ),
+            (
+                ("pricing-layers", "pricing三層のsource dependency view"),
+                ("independent-reporting", "変更対象外のreporting境界"),
+            ),
+        )
+        self.assertEqual(
+            tuple(
+                (edge["from"], edge["to"], edge["label"])
+                for edge in payload["connections"]
+            ),
+            (
+                (
+                    "pricing-adapters",
+                    "pricing-application",
+                    "adapter形式をapplicationのuse caseへ変換する",
+                ),
+                (
+                    "pricing-application",
+                    "pricing-domain",
+                    "applicationはdomain portへ依存する",
+                ),
+            ),
+        )
+        self.assertFalse(
+            any(
+                "reporting" in {edge["from"], edge["to"]}
+                for edge in payload["connections"]
+            )
+        )
+
+    def test_core27_network_keeps_cognitive_load_and_slo_as_independent_inputs(self) -> None:
+        lesson_root = (
+            REPOSITORY_ROOT
+            / "content/lessons/core-27-team-interfaces-sociotechnical-architecture"
+        )
+        document = json.loads((lesson_root / "lesson.json").read_bytes())
+        connections = document["visualizations"][0]["payload"]["connections"]
+        actual = tuple(
+            (edge["from"], edge["to"], edge["label"])
+            for edge in connections
+        )
+
+        self.assertEqual(
+            actual,
+            (
+                (
+                    "ownership",
+                    "dependency",
+                    "checkout capabilityのdecision rightとplatform依存を分ける",
+                ),
+                (
+                    "ownership",
+                    "cognitive-load",
+                    "assigned領域をcapacityと比較する",
+                ),
+                (
+                    "dependency",
+                    "slo",
+                    "dependency latencyのtargetとobservedを比較する",
+                ),
+                (
+                    "cognitive-load",
+                    "enablement",
+                    "capacity内かをenablement判断へ渡す",
+                ),
+                (
+                    "slo",
+                    "enablement",
+                    "dependency SLO statusをenablement判断へ渡す",
+                ),
+            ),
+        )
+        endpoints = {
+            (source, target) for source, target, _ in actual
+        }
+        self.assertNotIn(("cognitive-load", "slo"), endpoints)
+        self.assertNotIn(("dependency", "cognitive-load"), endpoints)
 
     def test_authored_bodies_have_six_sections_and_unique_visible_text(self) -> None:
         visible_bodies: dict[str, str] = {}

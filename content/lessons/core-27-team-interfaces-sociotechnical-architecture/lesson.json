@@ -180,10 +180,11 @@
         {"id": "enablement", "label": "Enablement", "detail": "各interface snapshotから判断を再計算し、healthyならmonitor、breachedならescalateとしてcheckoutの自律判断を増やす。", "componentId": "delivery-interface"}
       ],
       "connections": [
-        {"id": "ownership-declares-dependency", "from": "ownership", "to": "dependency", "label": "decision rightと依存先を分ける"},
-        {"id": "dependency-adds-load", "from": "dependency", "to": "cognitive-load", "label": "teamが扱う領域へ反映する"},
-        {"id": "load-evaluated-by-slo", "from": "cognitive-load", "to": "slo", "label": "capacityとdependency latencyを測る"},
-        {"id": "slo-guides-enablement", "from": "slo", "to": "enablement", "label": "monitorまたはescalateを選ぶ"}
+        {"id": "ownership-declares-dependency", "from": "ownership", "to": "dependency", "label": "checkout capabilityのdecision rightとplatform依存を分ける"},
+        {"id": "ownership-bounds-cognitive-load", "from": "ownership", "to": "cognitive-load", "label": "assigned領域をcapacityと比較する"},
+        {"id": "dependency-defines-slo", "from": "dependency", "to": "slo", "label": "dependency latencyのtargetとobservedを比較する"},
+        {"id": "cognitive-load-guides-enablement", "from": "cognitive-load", "to": "enablement", "label": "capacity内かをenablement判断へ渡す"},
+        {"id": "slo-guides-enablement", "from": "slo", "to": "enablement", "label": "dependency SLO statusをenablement判断へ渡す"}
       ]
     }
   }],

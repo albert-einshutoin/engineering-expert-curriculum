@@ -170,19 +170,19 @@
     "objectiveIds": ["obj-boundary", "obj-direction"], "evidenceIds": ["module-adr"], "sourceIds": ["src-01", "src-02"],
     "expectedObservation": "adapterからapplication、domainへの依存方向と、独立したreporting境界を指し示せる。",
     "payload": {
-      "components": [{"id": "pricing-system", "label": "pricing system", "detail": "変更理由を内側へ隠蔽し、変更対象外の境界も比較できるmodule群。"}],
+      "components": [
+        {"id": "pricing-layers", "label": "pricing三層のsource dependency view", "detail": "source dependencyはadaptersからapplication、applicationからdomainへ向ける。運用viewでは逆向きのrequest flowを別の矢印として記述し、意味を混ぜない。"},
+        {"id": "independent-reporting", "label": "変更対象外のreporting境界", "detail": "pricingの依存graphから隔離し、impact計算のfalse positiveを検出する基準にする。"}
+      ],
       "nodes": [
-        {"id": "pricing-domain", "label": "pricing-domain", "detail": "料金規則と不変条件。UIやDB形式を知らない。", "componentId": "pricing-system"},
-        {"id": "pricing-application", "label": "pricing-application", "detail": "use caseを順序付け、domainのportを使う。", "componentId": "pricing-system"},
-        {"id": "pricing-adapters", "label": "pricing-adapters", "detail": "HTTP、DB、batch形式をdomainの語彙へ変換する。", "componentId": "pricing-system"},
-        {"id": "reporting", "label": "reporting", "detail": "料金計算の変更対象外となる独立module。impact計算のfalse positiveを検出する基準にする。", "componentId": "pricing-system"},
-        {"id": "source-dependency", "label": "source dependencyはadaptersからapplication、applicationからdomainへ向ける。", "detail": "運用viewでは逆向きのrequest flowを別の矢印として記述し、意味を混ぜない。", "componentId": "pricing-system"}
+        {"id": "pricing-domain", "label": "pricing-domain", "detail": "料金規則と不変条件。UIやDB形式を知らない。", "componentId": "pricing-layers"},
+        {"id": "pricing-application", "label": "pricing-application", "detail": "use caseを順序付け、domainのportを使う。", "componentId": "pricing-layers"},
+        {"id": "pricing-adapters", "label": "pricing-adapters", "detail": "HTTP、DB、batch形式をdomainの語彙へ変換する。", "componentId": "pricing-layers"},
+        {"id": "reporting", "label": "reporting", "detail": "料金計算の変更対象外となる独立module。impact計算のfalse positiveを検出する基準にする。", "componentId": "independent-reporting"}
       ],
       "connections": [
-        {"id": "application-depends-on-domain", "from": "pricing-application", "to": "pricing-domain", "label": "domain portへsource dependencyを向ける"},
-        {"id": "adapters-depend-on-application", "from": "pricing-adapters", "to": "pricing-application", "label": "外部形式を内側の語彙へ変換する"},
-        {"id": "adapters-compared-with-reporting", "from": "pricing-adapters", "to": "reporting", "label": "変更対象外をimpact基準にする"},
-        {"id": "direction-rule-governs-adapters", "from": "source-dependency", "to": "pricing-adapters", "label": "source dependencyとrequest flowを別々に記述する"}
+        {"id": "adapters-depend-on-application", "from": "pricing-adapters", "to": "pricing-application", "label": "adapter形式をapplicationのuse caseへ変換する"},
+        {"id": "application-depends-on-domain", "from": "pricing-application", "to": "pricing-domain", "label": "applicationはdomain portへ依存する"}
       ]
     }
   }],
