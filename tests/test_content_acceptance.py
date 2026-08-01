@@ -323,6 +323,63 @@ TASK10_SIMULATION_CONTRACTS = {
         "interval": None,
     },
 }
+TASK11_SIMULATION_CONTRACTS = {
+    "core-16-hci-usability-accessibility": {
+        "visual": "accessible-ui-state-static",
+        "kind": "accessible-ui-state",
+        "mode": "explorer",
+        "parameters": ("viewport", "focus-step", "motion-preference"),
+        "states": (
+            "audit-start", "wide-heading-motion", "wide-control-motion",
+            "wide-reset-motion", "wide-heading-reduced", "wide-control-reduced",
+            "reduced-motion", "narrow-viewport", "keyboard-focus",
+            "narrow-reset-motion", "narrow-heading-reduced",
+            "narrow-control-reduced", "narrow-reset-reduced",
+        ),
+        "outcomes": (
+            "wide-heading-motion-result", "wide-control-motion-result",
+            "wide-reset-motion-result", "wide-heading-reduced-result",
+            "wide-control-reduced-result", "wide-reset-reduced-result",
+            "narrow-heading-motion-result", "narrow-control-motion-result",
+            "narrow-reset-motion-result", "narrow-heading-reduced-result",
+            "narrow-control-reduced-result", "narrow-reset-reduced-result",
+        ),
+        "interval": None,
+    },
+    "core-22-evolution-safe-migrations": {
+        "visual": "migration-phase-static",
+        "kind": "migration-phase",
+        "mode": "playback",
+        "parameters": (),
+        "states": (
+            "expand-ready", "dual-write-compatible", "migration-running",
+            "backfill-paused", "rollback-complete", "migration-retried",
+            "compatibility-verified", "contract-complete",
+        ),
+        "outcomes": (
+            "unsafe-contract-blocked", "compatibility-restored",
+            "contract-after-evidence",
+        ),
+        "interval": 1200,
+    },
+    "core-24-delivery-ci-release-safety": {
+        "visual": "release-safety-static",
+        "kind": "release-safety",
+        "mode": "playback",
+        "parameters": (),
+        "states": (
+            "source-fixed", "digest-computed", "artifact-verified",
+            "provenance-verified", "canary-running", "canary-rejected",
+            "rollback-running", "rollback-complete", "canary-retried",
+            "promote-approved",
+        ),
+        "outcomes": (
+            "provenance-bound", "unsafe-promote-blocked",
+            "service-restored", "promoted-same-digest",
+        ),
+        "interval": 1200,
+    },
+}
 TASK7_COMMON_CONTRACTS = {
     "core-02-algorithms-measurement": ("complexity-growth-static", "comparison", "mentalModel", None, "アルゴリズム再選択の検証経路", "同じquery列への構築済みlookupで、入力特性・size・setup・space・query回数が選択をどう変えるか。", "best・average・worst caseを区別し、予測と反復実測の差から再選択条件を説明できる。", ("obj-predict", "obj-measure", "obj-reselect"), ("benchmark-report", "assessment"), ("src-01", "src-02", "src-03", "src-04"), ("操作モデル: 比較、hash計算、割り当てなど、支配的な操作を決める。", "成長率予測: 支配操作がΘ(n)ならnを2倍にしたとき約2倍、Θ(n²)なら約4倍と予測する。", "入力モデル: サイズだけでなく、順序、重複率、問い合わせ位置を固定する。", "測定設計: 準備と対象区間を分け、ウォームアップ後に複数回測る。", "統計要約: 全値、中央値、範囲を残し、除外規則を先に決める。", "差の診断: 定数項、キャッシュ、GC、処理系、外れ値を追加測定で反証する。", "再選択条件: 本番のn、分布、呼出回数の変化を監視する。")),
     "core-03-architecture-memory-caches": ("memory-access-static", "memory", "mentalModel", None, "一つのロードを診断する論理段階", "一つのloadでaddress translationとdata transferの待ちをどう切り分けるか。", "TLB・page tableの変換経路とcache・主記憶の転送経路を区別し、機種依存の階層を普遍的latencyとして扱わない。", ("obj-path", "obj-locality", "obj-transfer"), ("locality-report", "assessment"), ("src-01", "src-02", "src-03"), ("命令: 仮想アドレスAの値を要求する。", "TLB: Aのページ変換を検索する。missならページテーブルwalkが必要になる。", "L1 cache: Aを含むcache lineを検索する。hitなら近い階層で返る。", "L2と最終レベルcache: L1 miss後の候補を調べる。L2やLLCがcore-privateか複数coreでsharedかというprivate/shared範囲は機種依存である。", "memory controller: 全cacheでmissなら主記憶からline単位で転送する。", "再利用: 同じline内の次要素を使えば空間的局所性、短時間に同じ値を使えば時間的局所性を得る。", "このDAGはhit/missの診断依存を示し、VIPTではTLB変換とL1 index lookupが並行し得るため普遍的な逐次latencyではない。")),
@@ -2798,6 +2855,8 @@ _TASK10_PRIOR_VISUAL_IDS = {
     "core-13-distributed-coordination-failure": "dedupe-recovery-timeline",
     "core-14-performance-capacity": "capacity-causal-cycle",
     "core-15-reliability-observability-slo": "slo-action-loop",
+    "core-22-evolution-safe-migrations": "expand-contract-state-machine",
+    "core-24-delivery-ci-release-safety": "release-evidence-state-machine",
 }
 
 
@@ -3867,7 +3926,8 @@ class ContentAcceptanceTests(unittest.TestCase):
         self.assertEqual(set(catalog), set(TASK10_SIMULATION_CONTRACTS))
 
         authored_simulations = {}
-        for lesson_id in LESSON_IDS:
+        task10_subset = set(TASK9_SIMULATION_CONTRACTS) | set(TASK10_SIMULATION_CONTRACTS)
+        for lesson_id in task10_subset:
             document = json.loads(
                 (REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json")
                 .read_bytes()
@@ -3876,8 +3936,8 @@ class ContentAcceptanceTests(unittest.TestCase):
                 if "simulation" in visual:
                     authored_simulations[lesson_id] = visual
 
-        # This is intentionally independent from the catalog projection: Task 10
-        # advances the implemented boundary from five to exactly nine lessons.
+        # This remains independent from the catalog projection and freezes the
+        # exact nine-lesson Task 10 subset after the final three are authored.
         self.assertEqual(
             set(authored_simulations),
             set(TASK9_SIMULATION_CONTRACTS) | set(TASK10_SIMULATION_CONTRACTS),
@@ -3915,6 +3975,106 @@ class ContentAcceptanceTests(unittest.TestCase):
                 self.assertTrue(
                     set(approved["visualRegressionStateIds"]) <= state_ids
                 )
+
+    def test_task11_final_inventory_has_exact_independent_finite_contracts(self) -> None:
+        catalog_document = json.loads(
+            (REPOSITORY_ROOT / "content/visualization-catalog.json").read_bytes()
+        )
+        catalog = {
+            item["lessonId"]: item["simulation"]
+            for item in catalog_document["lessons"]
+            if item["lessonId"] in TASK11_SIMULATION_CONTRACTS
+        }
+        self.assertEqual(set(catalog), set(TASK11_SIMULATION_CONTRACTS))
+
+        authored_simulations = {}
+        for lesson_id in LESSON_IDS:
+            document = json.loads(
+                (REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json")
+                .read_bytes()
+            )
+            matches = [
+                visual for visual in document["visualizations"]
+                if "simulation" in visual
+            ]
+            self.assertLessEqual(len(matches), 1)
+            if matches:
+                authored_simulations[lesson_id] = matches[0]
+
+        expected_ids = (
+            set(TASK9_SIMULATION_CONTRACTS)
+            | set(TASK10_SIMULATION_CONTRACTS)
+            | set(TASK11_SIMULATION_CONTRACTS)
+        )
+        self.assertEqual(set(authored_simulations), expected_ids)
+        self.assertEqual(len(authored_simulations), 12)
+
+        for lesson_id, expected in TASK11_SIMULATION_CONTRACTS.items():
+            with self.subTest(lesson_id=lesson_id):
+                visual = authored_simulations[lesson_id]
+                simulation = visual["simulation"]
+                approved = catalog[lesson_id]
+                self.assertEqual(visual["id"], expected["visual"])
+                self.assertEqual(simulation["kind"], expected["kind"])
+                self.assertEqual(simulation["interactionMode"], expected["mode"])
+                self.assertEqual(approved["staticEquivalentId"], visual["id"])
+                self.assertEqual(approved["kind"], simulation["kind"])
+                self.assertEqual(approved["interactionMode"], simulation["interactionMode"])
+                self.assertEqual(
+                    tuple(item["id"] for item in simulation["parameters"]),
+                    expected["parameters"],
+                )
+                self.assertEqual(
+                    tuple(item["id"] for item in simulation["states"]),
+                    expected["states"],
+                )
+                self.assertEqual(
+                    tuple(item["id"] for item in simulation["outcomes"]),
+                    expected["outcomes"],
+                )
+                self.assertEqual(
+                    simulation.get("defaultIntervalMs"), expected["interval"]
+                )
+                state_ids = set(expected["states"])
+                self.assertIn(simulation["initialStateId"], state_ids)
+                self.assertTrue(
+                    set(approved["visualRegressionStateIds"]) <= state_ids
+                )
+
+    def test_task11_static_oracles_preserve_required_safety_boundaries(self) -> None:
+        atoms = {
+            "core-16-hci-usability-accessibility": (
+                "viewport=320px", "focus order", "reflow checklist",
+                "prefers-reduced-motion", "支援技術のエミュレータではありません",
+            ),
+            "core-22-evolution-safe-migrations": (
+                "expand", "migrate", "contract", "compatibility",
+                "停止", "rollback", "unsafe contractをblocked",
+            ),
+            "core-24-delivery-ci-release-safety": (
+                "source", "digest", "provenance", "canary", "promote",
+                "fail-closed", "rollback", "実artifactの検証結果ではありません",
+            ),
+        }
+        for lesson_id, required_atoms in atoms.items():
+            with self.subTest(lesson_id=lesson_id):
+                path = REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json"
+                document = json.loads(path.read_bytes())
+                visual = next(
+                    item for item in document["visualizations"]
+                    if "simulation" in item
+                )
+                model = next(
+                    item for item in load_lesson_bytes(path.read_bytes(), lesson_id).visualizations
+                    if item.id == visual["id"]
+                )
+                rendered = str(render_visualization(lesson_id, model))
+                for atom in required_atoms:
+                    self.assertIn(atom, rendered)
+                for state in visual["simulation"]["states"]:
+                    self.assertIn(state["status"], rendered)
+                for outcome in visual["simulation"]["outcomes"]:
+                    self.assertIn(outcome["label"], rendered)
 
     def test_task10_static_oracles_preserve_exact_lesson_fixture_results(self) -> None:
         rendered = {}
@@ -4646,7 +4806,10 @@ class ContentAcceptanceTests(unittest.TestCase):
                 visual = document["visualizations"][0]
                 self.assertEqual(visual["type"], expected_type)
                 self.assertEqual(visual["caption"], legacy[lesson_id]["caption"])
-                if lesson_id not in TASK9_SIMULATION_CONTRACTS:
+                if lesson_id not in (
+                    set(TASK9_SIMULATION_CONTRACTS)
+                    | set(TASK11_SIMULATION_CONTRACTS)
+                ):
                     self.assertNotIn("simulation", visual)
                 rendered = str(render_visualization(
                     lesson_id,
@@ -4743,6 +4906,83 @@ class ContentAcceptanceTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(CurriculumValidationError, "unapproved simulation"):
             validate_visualization_assignments(catalog, broken_dynamic_relation)
+
+        missing_dynamic = dict(visuals)
+        missing_dynamic["core-16-hci-usability-accessibility"] = (
+            replace(
+                visuals["core-16-hci-usability-accessibility"][0],
+                simulation=None,
+            ),
+        )
+        with self.assertRaisesRegex(
+            CurriculumValidationError, "requires exactly one simulation"
+        ):
+            validate_visualization_assignments(catalog, missing_dynamic)
+
+        release_visual = visuals["core-24-delivery-ci-release-safety"][0]
+        release_simulation = release_visual.simulation
+        assert release_simulation is not None
+        accessibility_simulation = visuals[
+            "core-16-hci-usability-accessibility"
+        ][0].simulation
+        assert accessibility_simulation is not None
+        for mutation in (
+            replace(
+                release_simulation,
+                kind=accessibility_simulation.kind,
+            ),
+            replace(
+                release_simulation,
+                interaction_mode=accessibility_simulation.interaction_mode,
+            ),
+        ):
+            with self.subTest(mutation=mutation), self.assertRaisesRegex(
+                CurriculumValidationError, "unapproved simulation"
+            ):
+                swapped = dict(visuals)
+                swapped["core-24-delivery-ci-release-safety"] = (
+                    replace(release_visual, simulation=mutation),
+                )
+                validate_visualization_assignments(catalog, swapped)
+
+        wrong_static_equivalent = dict(visuals)
+        wrong_static_equivalent["core-24-delivery-ci-release-safety"] = (
+            replace(release_visual, id="wrong-static-equivalent"),
+        )
+        with self.assertRaisesRegex(CurriculumValidationError, "unapproved simulation"):
+            validate_visualization_assignments(catalog, wrong_static_equivalent)
+
+        extra_dynamic = dict(visuals)
+        accessibility_visual = visuals["core-16-hci-usability-accessibility"][0]
+        extra_dynamic["core-16-hci-usability-accessibility"] = (
+            accessibility_visual,
+            replace(
+                visuals["core-11-data-modeling-storage"][0],
+                simulation=accessibility_simulation,
+            ),
+        )
+        with self.assertRaisesRegex(
+            CurriculumValidationError, "requires exactly one simulation"
+        ):
+            validate_visualization_assignments(catalog, extra_dynamic)
+
+        missing_regression_state = dict(visuals)
+        missing_regression_state["core-24-delivery-ci-release-safety"] = (
+            replace(
+                release_visual,
+                simulation=replace(
+                    release_simulation,
+                    states=tuple(
+                        state for state in release_simulation.states
+                        if state.id != "canary-rejected"
+                    ),
+                ),
+            ),
+        )
+        with self.assertRaisesRegex(
+            CurriculumValidationError, "visual regression state is missing"
+        ):
+            validate_visualization_assignments(catalog, missing_regression_state)
 
     def test_production_build_rejects_a_catalog_assignment_mutation(self) -> None:
         with TemporaryDirectory(
@@ -5024,7 +5264,10 @@ class ContentAcceptanceTests(unittest.TestCase):
                 self.assertEqual(
                     visual["caption"], legacy_by_lesson[lesson_id]["caption"]
                 )
-                if lesson_id not in TASK10_SIMULATION_CONTRACTS:
+                if lesson_id not in (
+                    set(TASK10_SIMULATION_CONTRACTS)
+                    | set(TASK11_SIMULATION_CONTRACTS)
+                ):
                     self.assertNotIn("simulation", visual)
                 self.assertTrue(visual["objectiveIds"])
                 self.assertTrue(visual["evidenceIds"])
@@ -5115,7 +5358,10 @@ class ContentAcceptanceTests(unittest.TestCase):
                     visual["caption"], legacy_by_lesson[lesson_id]["caption"]
                 )
                 self.assertEqual(visual["afterSection"], "mentalModel")
-                if lesson_id not in TASK10_SIMULATION_CONTRACTS:
+                if lesson_id not in (
+                    set(TASK10_SIMULATION_CONTRACTS)
+                    | set(TASK11_SIMULATION_CONTRACTS)
+                ):
                     self.assertNotIn("simulation", visual)
                 semantic_text = json.dumps(visual, ensure_ascii=False)
                 for atom in legacy_by_lesson[lesson_id]["visibleAtoms"]:
@@ -6170,7 +6416,7 @@ class ContentAcceptanceTests(unittest.TestCase):
                 for path, source in first.items()
                 if path.suffix.casefold() == ".html"
             ),
-            9,
+            12,
         )
         legacy_by_lesson = {
             entry["lessonId"]: entry

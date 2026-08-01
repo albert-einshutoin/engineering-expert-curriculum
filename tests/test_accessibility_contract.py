@@ -33,6 +33,13 @@ TASK10_SCRIPTED_LESSONS = frozenset(
         "core-15-reliability-observability-slo",
     }
 )
+TASK11_SCRIPTED_LESSONS = TASK10_SCRIPTED_LESSONS | frozenset(
+    {
+        "core-16-hci-usability-accessibility",
+        "core-22-evolution-safe-migrations",
+        "core-24-delivery-ci-release-safety",
+    }
+)
 _ACTIVE_CONTENT = frozenset(
     {
         "audio",
@@ -185,7 +192,11 @@ class AccessibilityContractTests(unittest.TestCase):
             scripted_lessons & TASK9_SCRIPTED_LESSONS,
             TASK9_SCRIPTED_LESSONS,
         )
-        self.assertEqual(scripted_lessons, TASK10_SCRIPTED_LESSONS)
+        self.assertEqual(
+            scripted_lessons & TASK10_SCRIPTED_LESSONS,
+            TASK10_SCRIPTED_LESSONS,
+        )
+        self.assertEqual(scripted_lessons, TASK11_SCRIPTED_LESSONS)
 
     def test_release_checker_rejects_semantics_hidden_in_template(self) -> None:
         page = next(iter(sorted(self.site.rglob("*.html"))))

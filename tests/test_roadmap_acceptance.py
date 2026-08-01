@@ -41,6 +41,13 @@ TASK10_SCRIPTED_LESSONS = frozenset(
         "core-15-reliability-observability-slo",
     }
 )
+TASK11_SCRIPTED_LESSONS = TASK10_SCRIPTED_LESSONS | frozenset(
+    {
+        "core-16-hci-usability-accessibility",
+        "core-22-evolution-safe-migrations",
+        "core-24-delivery-ci-release-safety",
+    }
+)
 
 
 def _scripted_lesson_ids(output: Path) -> set[str]:
@@ -707,7 +714,8 @@ class RoadmapAcceptanceTests(unittest.TestCase):
                 (Path("static/visualization.js"),),
             )
             scripted = _scripted_lesson_ids(output)
-            self.assertEqual(scripted, TASK10_SCRIPTED_LESSONS)
+            self.assertEqual(scripted, TASK11_SCRIPTED_LESSONS)
+            self.assertEqual(scripted & TASK10_SCRIPTED_LESSONS, TASK10_SCRIPTED_LESSONS)
             self.assertEqual(scripted & TASK9_SCRIPTED_LESSONS, TASK9_SCRIPTED_LESSONS)
             self.assertEqual(tuple(project.glob(".site.staging-*")), ())
 
@@ -821,7 +829,8 @@ class RoadmapAcceptanceTests(unittest.TestCase):
                 (Path("static/visualization.js"),),
             )
             scripted = _scripted_lesson_ids(output)
-            self.assertEqual(scripted, TASK10_SCRIPTED_LESSONS)
+            self.assertEqual(scripted, TASK11_SCRIPTED_LESSONS)
+            self.assertEqual(scripted & TASK10_SCRIPTED_LESSONS, TASK10_SCRIPTED_LESSONS)
             self.assertEqual(scripted & TASK9_SCRIPTED_LESSONS, TASK9_SCRIPTED_LESSONS)
             stylesheet = (output / "styles.css").read_text(encoding="utf-8")
             self.assertIn(".mastery-gate h3", stylesheet)

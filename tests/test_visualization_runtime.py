@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+import re
 import subprocess
 from tempfile import TemporaryDirectory
 import unittest
@@ -14,6 +15,44 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class VisualizationRuntimeContractTests(unittest.TestCase):
+    def test_task11_build_has_exactly_twelve_simulation_script_pages(self) -> None:
+        expected = {
+            "core-02-algorithms-measurement": "scenario",
+            "core-03-architecture-memory-caches": "hybrid",
+            "core-04-os-processes-concurrency": "playback",
+            "core-05-networks-latency-failure": "hybrid",
+            "core-07-api-contract-design": "playback",
+            "core-12-transactions-isolation-consistency": "hybrid",
+            "core-13-distributed-coordination-failure": "hybrid",
+            "core-14-performance-capacity": "scenario",
+            "core-15-reliability-observability-slo": "scenario",
+            "core-16-hci-usability-accessibility": "explorer",
+            "core-22-evolution-safe-migrations": "playback",
+            "core-24-delivery-ci-release-safety": "playback",
+        }
+        with TemporaryDirectory(prefix=".task11-runtime-", dir=ROOT.parent) as temporary:
+            output = Path(temporary) / "site"
+            build_site(
+                ROOT / "content", ROOT / "templates", ROOT / "static", output,
+                require_complete_curriculum=True,
+            )
+            actual = {}
+            for path in (output / "lessons").glob("*/index.html"):
+                generated = path.read_text(encoding="utf-8")
+                if '<script src="../../static/visualization.js" defer></script>' in generated:
+                    match = re.search(
+                        r'data-interaction-mode="([a-z-]+)"', generated
+                    )
+                    self.assertIsNotNone(match)
+                    actual[path.parent.name] = match.group(1)
+                    self.assertEqual(
+                        generated.count(
+                            '<script src="../../static/visualization.js" defer></script>'
+                        ),
+                        1,
+                    )
+            self.assertEqual(actual, expected)
+
     def test_task9_build_preserves_the_independent_five_lesson_boundary(self) -> None:
         expected = {
             "core-02-algorithms-measurement",
@@ -62,7 +101,7 @@ class VisualizationRuntimeContractTests(unittest.TestCase):
                 in path.read_bytes()
             }
 
-        self.assertEqual(actual, expected)
+        self.assertEqual(actual & expected, expected)
 
     def test_task10_real_dom_exposes_complete_oracles_and_controls(self) -> None:
         expected = {

@@ -1559,9 +1559,10 @@ def validate_visualization_assignments(
     """Bind every complete lesson to the reviewed release-wide catalog.
 
     Comparing full lesson IDs and ordered types prevents a correct aggregate
-    count from hiding swapped diagrams. Simulation metadata remains optional
-    until runtime migration, but any authored simulation must already match the
-    sole catalog capability granted to that lesson.
+    count from hiding swapped diagrams. The final v0.2.0 contract also binds
+    every dynamic lesson to exactly one simulation and verifies its reviewed
+    regression states; otherwise a correct script-page count could still hide
+    a missing, swapped, or unusable assignment.
     """
     expected = {assignment.lesson_id: assignment for assignment in catalog.lessons}
     actual_ids = set(lesson_visualizations)
@@ -1576,11 +1577,21 @@ def validate_visualization_assignments(
             _fail(f"lesson[{lesson_id}]", "has the wrong primary visualization type")
         if len(visuals) == 2 and visuals[1].type is not assignment.optional_secondary_type:
             _fail(f"lesson[{lesson_id}]", "has an unapproved secondary visualization type")
-        for visual in visuals:
+        authored_simulations = tuple(
+            visual for visual in visuals if visual.simulation is not None
+        )
+        approved = assignment.simulation
+        if assignment.dynamic:
+            if approved is None or len(authored_simulations) != 1:
+                _fail(
+                    f"lesson[{lesson_id}]",
+                    "dynamic catalog lesson requires exactly one simulation",
+                )
+        elif approved is not None or authored_simulations:
+            _fail(f"lesson[{lesson_id}]", "has an unapproved simulation")
+        for visual in authored_simulations:
             simulation = visual.simulation
-            if simulation is None:
-                continue
-            approved = assignment.simulation
+            assert simulation is not None
             if (
                 not assignment.dynamic
                 or approved is None
@@ -1589,6 +1600,12 @@ def validate_visualization_assignments(
                 or simulation.interaction_mode is not approved.interaction_mode
             ):
                 _fail(f"lesson[{lesson_id}]", "has an unapproved simulation")
+            state_ids = {state.id for state in simulation.states}
+            if not set(approved.visual_regression_state_ids) <= state_ids:
+                _fail(
+                    f"lesson[{lesson_id}]",
+                    "catalog visual regression state is missing",
+                )
 
 
 def parse_visualizations(

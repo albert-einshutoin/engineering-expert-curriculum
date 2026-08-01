@@ -178,7 +178,7 @@
   ],
   "visualizations": [
     {
-      "id": "expand-contract-state-machine",
+      "id": "migration-phase-static",
       "type": "state-machine",
       "caption": "互換性と観測gateを持つexpand-contract state machine",
       "question": "dual write、backfill、dual readの各phaseで互換性gateが失敗した時、どの安全状態へ戻すか。",
@@ -349,6 +349,58 @@
             "status": "rejected",
             "reason": "旧構造の利用停止証拠が揃うまでcontractを開始しない。"
           }
+        ]
+      },
+      "simulation": {
+        "kind": "migration-phase",
+        "interactionMode": "playback",
+        "parameters": [],
+        "initialStateId": "expand-ready",
+        "defaultIntervalMs": 1200,
+        "states": [
+          {"id": "expand-ready", "label": "expand ready", "status": "expandでold/new readerが共存できるnullable構造を用意し、compatibilityを確認する。", "activeNodeIds": ["expand"], "activeEdgeIds": []},
+          {"id": "dual-write-compatible", "label": "dual write compatible", "status": "新旧fieldへのwrite parityを観測し、old reader compatibilityを維持する。", "activeNodeIds": ["dual-write"], "activeEdgeIds": ["expand-to-dual-write"]},
+          {"id": "migration-running", "label": "migrate running", "status": "migrate phaseでbounded backfillを実行し、error rateとlagを観測する。", "activeNodeIds": ["backfill"], "activeEdgeIds": ["dual-write-to-backfill"]},
+          {"id": "backfill-paused", "label": "backfill paused", "status": "threshold超過で停止し、compatibility証拠がないunsafe contractをblockedにする。", "activeNodeIds": ["backfill", "backfill-compatible"], "activeEdgeIds": ["backfill-stop"]},
+          {"id": "rollback-complete", "label": "rollback complete", "status": "rollback後も旧fieldとdual writeを維持し、old readerの結果を回復確認する。", "activeNodeIds": ["backfill-compatible", "restoration-verified"], "activeEdgeIds": ["backfill-verify"]},
+          {"id": "migration-retried", "label": "migrate retried", "status": "原因解消後にbounded migrateを再開し、error rateとlagを再観測する。", "activeNodeIds": ["backfill"], "activeEdgeIds": ["dual-write-to-backfill"]},
+          {"id": "compatibility-verified", "label": "compatibility verified", "status": "新旧readerの同値性と旧構造の利用停止を確認してcontract gateを開く。", "activeNodeIds": ["dual-read"], "activeEdgeIds": ["backfill-to-dual-read"]},
+          {"id": "contract-complete", "label": "contract complete", "status": "compatibility証拠が揃った後だけ旧構造をcontractし、移行結果を再観測する。", "activeNodeIds": ["contract"], "activeEdgeIds": ["dual-read-to-contract"]}
+        ],
+        "transitions": [
+          {"id": "expand-next", "from": "expand-ready", "to": "dual-write-compatible", "event": "next"},
+          {"id": "expand-timer", "from": "expand-ready", "to": "dual-write-compatible", "event": "timer"},
+          {"id": "dual-write-next", "from": "dual-write-compatible", "to": "migration-running", "event": "next"},
+          {"id": "dual-write-timer", "from": "dual-write-compatible", "to": "migration-running", "event": "timer"},
+          {"id": "migration-next", "from": "migration-running", "to": "backfill-paused", "event": "next"},
+          {"id": "migration-timer", "from": "migration-running", "to": "backfill-paused", "event": "timer"},
+          {"id": "paused-next", "from": "backfill-paused", "to": "rollback-complete", "event": "next"},
+          {"id": "paused-timer", "from": "backfill-paused", "to": "rollback-complete", "event": "timer"},
+          {"id": "rollback-next", "from": "rollback-complete", "to": "migration-retried", "event": "next"},
+          {"id": "rollback-timer", "from": "rollback-complete", "to": "migration-retried", "event": "timer"},
+          {"id": "retry-next", "from": "migration-retried", "to": "compatibility-verified", "event": "next"},
+          {"id": "retry-timer", "from": "migration-retried", "to": "compatibility-verified", "event": "timer"},
+          {"id": "compatibility-next", "from": "compatibility-verified", "to": "contract-complete", "event": "next"},
+          {"id": "compatibility-timer", "from": "compatibility-verified", "to": "contract-complete", "event": "timer"},
+          {"id": "dual-write-previous", "from": "dual-write-compatible", "to": "expand-ready", "event": "previous"},
+          {"id": "migration-previous", "from": "migration-running", "to": "dual-write-compatible", "event": "previous"},
+          {"id": "paused-previous", "from": "backfill-paused", "to": "migration-running", "event": "previous"},
+          {"id": "rollback-previous", "from": "rollback-complete", "to": "backfill-paused", "event": "previous"},
+          {"id": "retry-previous", "from": "migration-retried", "to": "rollback-complete", "event": "previous"},
+          {"id": "compatibility-previous", "from": "compatibility-verified", "to": "migration-retried", "event": "previous"},
+          {"id": "contract-previous", "from": "contract-complete", "to": "compatibility-verified", "event": "previous"},
+          {"id": "dual-write-reset", "from": "dual-write-compatible", "to": "expand-ready", "event": "reset"},
+          {"id": "migration-reset", "from": "migration-running", "to": "expand-ready", "event": "reset"},
+          {"id": "paused-reset", "from": "backfill-paused", "to": "expand-ready", "event": "reset"},
+          {"id": "rollback-reset", "from": "rollback-complete", "to": "expand-ready", "event": "reset"},
+          {"id": "retry-reset", "from": "migration-retried", "to": "expand-ready", "event": "reset"},
+          {"id": "compatibility-reset", "from": "compatibility-verified", "to": "expand-ready", "event": "reset"},
+          {"id": "contract-reset", "from": "contract-complete", "to": "expand-ready", "event": "reset"}
+        ],
+        "outcomes": [
+          {"id": "unsafe-contract-blocked", "stateId": "backfill-paused", "label": "unsafe contractをblockedにして停止する"},
+          {"id": "compatibility-restored", "stateId": "rollback-complete", "label": "rollback後のcompatibilityを再観測する"},
+          {"id": "contract-after-evidence", "stateId": "contract-complete", "label": "互換性証拠の後だけcontractを完了する"}
         ]
       }
     }

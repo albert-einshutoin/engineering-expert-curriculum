@@ -896,7 +896,7 @@ git commit -m "content: add data and reliability simulations"
 - Modify: `tests/test_visualization_runtime.py`
 - Modify: `tests/test_visualization_accessibility.py`
 
-- [ ] **Step 1: Add RED final-inventory tests**
+- [x] **Step 1: Add RED final-inventory tests**
 
 Require:
 
@@ -909,14 +909,14 @@ core-24 release-safety / playback
 Require exactly 12 simulations total and reject any missing, extra, swapped
 kind/mode, missing static equivalent, or invalid regression-state reference.
 
-- [ ] **Step 2: Author simulations and explicit limitations**
+- [x] **Step 2: Author simulations and explicit limitations**
 
 Core-16 demonstrates focus/reflow/motion preference but explicitly says it is
 not an assistive-technology emulator. Core-22 includes expand/migrate/contract,
 stop, rollback, and compatibility. Core-24 includes source/digest/provenance,
 canary, promote, and fail-closed rollback.
 
-- [ ] **Step 3: Enforce exact dynamic coverage and commit**
+- [x] **Step 3: Enforce exact dynamic coverage and commit**
 
 ```bash
 python3.13 -m unittest tests.test_content_acceptance tests.test_visualization_runtime tests.test_visualization_accessibility -v

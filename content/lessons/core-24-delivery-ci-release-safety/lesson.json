@@ -185,7 +185,7 @@
   ],
   "visualizations": [
     {
-      "id": "release-evidence-state-machine",
+      "id": "release-safety-static",
       "type": "state-machine",
       "caption": "source変更からrollback outcomeまでを結ぶdelivery evidence chain",
       "question": "required check不足でstopした後、原因解消から全gateを再実行し、canaryでpromoteとrollbackのどちらを選ぶか。",
@@ -378,6 +378,69 @@
             "status": "rejected",
             "reason": "canary thresholdからpromoteまたはrollbackを決める前にoutcomeへ進まない。"
           }
+        ]
+      },
+      "simulation": {
+        "kind": "release-safety",
+        "interactionMode": "playback",
+        "parameters": [],
+        "initialStateId": "source-fixed",
+        "defaultIntervalMs": 1200,
+        "states": [
+          {"id": "source-fixed", "label": "source fixed", "status": "review済みsourceを固定する判断fixtureであり、実artifactの検証結果ではありません。required checksを確認する。", "activeNodeIds": ["ci"], "activeEdgeIds": []},
+          {"id": "digest-computed", "label": "digest computed", "status": "固定sourceからbuildした候補bytesのdigestを計算し、配信対象を識別する。", "activeNodeIds": ["artifact"], "activeEdgeIds": ["checks-known-pass"]},
+          {"id": "artifact-verified", "label": "artifact verified", "status": "候補artifactのbytesとdigestが一致することを独立に検証する。", "activeNodeIds": ["artifact", "provenance"], "activeEdgeIds": ["artifact-to-provenance"]},
+          {"id": "provenance-verified", "label": "provenance verified", "status": "provenanceのsubject digestとtrusted builderを検証し、sourceからartifactを追跡可能にする。", "activeNodeIds": ["provenance"], "activeEdgeIds": ["provenance-to-canary"]},
+          {"id": "canary-running", "label": "canary running", "status": "同じdigestの候補をcanaryへ限定配信し、利用者可視error rateを観測する。", "activeNodeIds": ["canary"], "activeEdgeIds": ["canary-to-decision"]},
+          {"id": "canary-rejected", "label": "canary rejected", "status": "threshold超過またはunknownをfail-closedに扱い、promoteを拒否してrollbackを選ぶ。", "activeNodeIds": ["decision", "rolling-back"], "activeEdgeIds": ["threshold-exceeded-rollback"]},
+          {"id": "rollback-running", "label": "rollback running", "status": "検証済みの直前digestへrollbackし、command成功だけを復旧とは扱わない。", "activeNodeIds": ["rolling-back"], "activeEdgeIds": ["rollback-restoration"]},
+          {"id": "rollback-complete", "label": "rollback complete", "status": "service health、利用者可視error rate、稼働artifact digestを再観測して復旧を確認する。", "activeNodeIds": ["restoration-verified", "outcome"], "activeEdgeIds": ["restoration-outcome"]},
+          {"id": "canary-retried", "label": "canary retried", "status": "原因解消後に全gateを再実行し、新しい検証済みdigestをcanaryで再評価する。", "activeNodeIds": ["canary", "decision"], "activeEdgeIds": ["canary-to-decision"]},
+          {"id": "promote-approved", "label": "promote approved", "status": "canaryがknown goodの時だけ、検証済みの同一digestを次の段階へpromoteする。", "activeNodeIds": ["promoted", "outcome"], "activeEdgeIds": ["promote-outcome"]}
+        ],
+        "transitions": [
+          {"id": "source-next", "from": "source-fixed", "to": "digest-computed", "event": "next"},
+          {"id": "source-timer", "from": "source-fixed", "to": "digest-computed", "event": "timer"},
+          {"id": "digest-next", "from": "digest-computed", "to": "artifact-verified", "event": "next"},
+          {"id": "digest-timer", "from": "digest-computed", "to": "artifact-verified", "event": "timer"},
+          {"id": "artifact-next", "from": "artifact-verified", "to": "provenance-verified", "event": "next"},
+          {"id": "artifact-timer", "from": "artifact-verified", "to": "provenance-verified", "event": "timer"},
+          {"id": "provenance-next", "from": "provenance-verified", "to": "canary-running", "event": "next"},
+          {"id": "provenance-timer", "from": "provenance-verified", "to": "canary-running", "event": "timer"},
+          {"id": "canary-next", "from": "canary-running", "to": "canary-rejected", "event": "next"},
+          {"id": "canary-timer", "from": "canary-running", "to": "canary-rejected", "event": "timer"},
+          {"id": "rejected-next", "from": "canary-rejected", "to": "rollback-running", "event": "next"},
+          {"id": "rejected-timer", "from": "canary-rejected", "to": "rollback-running", "event": "timer"},
+          {"id": "rollback-next", "from": "rollback-running", "to": "rollback-complete", "event": "next"},
+          {"id": "rollback-timer", "from": "rollback-running", "to": "rollback-complete", "event": "timer"},
+          {"id": "restored-next", "from": "rollback-complete", "to": "canary-retried", "event": "next"},
+          {"id": "restored-timer", "from": "rollback-complete", "to": "canary-retried", "event": "timer"},
+          {"id": "retry-next", "from": "canary-retried", "to": "promote-approved", "event": "next"},
+          {"id": "retry-timer", "from": "canary-retried", "to": "promote-approved", "event": "timer"},
+          {"id": "digest-previous", "from": "digest-computed", "to": "source-fixed", "event": "previous"},
+          {"id": "artifact-previous", "from": "artifact-verified", "to": "digest-computed", "event": "previous"},
+          {"id": "provenance-previous", "from": "provenance-verified", "to": "artifact-verified", "event": "previous"},
+          {"id": "canary-previous", "from": "canary-running", "to": "provenance-verified", "event": "previous"},
+          {"id": "rejected-previous", "from": "canary-rejected", "to": "canary-running", "event": "previous"},
+          {"id": "rollback-previous", "from": "rollback-running", "to": "canary-rejected", "event": "previous"},
+          {"id": "restored-previous", "from": "rollback-complete", "to": "rollback-running", "event": "previous"},
+          {"id": "retry-previous", "from": "canary-retried", "to": "rollback-complete", "event": "previous"},
+          {"id": "promote-previous", "from": "promote-approved", "to": "canary-retried", "event": "previous"},
+          {"id": "digest-reset", "from": "digest-computed", "to": "source-fixed", "event": "reset"},
+          {"id": "artifact-reset", "from": "artifact-verified", "to": "source-fixed", "event": "reset"},
+          {"id": "provenance-reset", "from": "provenance-verified", "to": "source-fixed", "event": "reset"},
+          {"id": "canary-reset", "from": "canary-running", "to": "source-fixed", "event": "reset"},
+          {"id": "rejected-reset", "from": "canary-rejected", "to": "source-fixed", "event": "reset"},
+          {"id": "rollback-reset", "from": "rollback-running", "to": "source-fixed", "event": "reset"},
+          {"id": "restored-reset", "from": "rollback-complete", "to": "source-fixed", "event": "reset"},
+          {"id": "retry-reset", "from": "canary-retried", "to": "source-fixed", "event": "reset"},
+          {"id": "promote-reset", "from": "promote-approved", "to": "source-fixed", "event": "reset"}
+        ],
+        "outcomes": [
+          {"id": "provenance-bound", "stateId": "provenance-verified", "label": "source・digest・provenanceを同じ候補へ結ぶ"},
+          {"id": "unsafe-promote-blocked", "stateId": "canary-rejected", "label": "unknownまたは閾値超過ならfail-closedでpromoteを拒否する"},
+          {"id": "service-restored", "stateId": "rollback-complete", "label": "rollback後のservice outcomeを再観測する"},
+          {"id": "promoted-same-digest", "stateId": "promote-approved", "label": "検証済みの同一digestだけをpromoteする"}
         ]
       }
     }

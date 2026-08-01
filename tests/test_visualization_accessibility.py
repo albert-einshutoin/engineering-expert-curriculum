@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from html.parser import HTMLParser
+import json
 from pathlib import Path
 import re
 import unittest
@@ -9,6 +10,7 @@ from curriculum_builder.visualizations import (
     VisualizationType,
     render_visualization,
 )
+from curriculum_builder.lessons import load_lesson_bytes
 import tests.test_visualization_rendering as visualization_rendering_tests
 
 
@@ -241,6 +243,35 @@ class VisualizationAccessibilityTests(unittest.TestCase):
         cls.payloads = (
             visualization_rendering_tests.VisualizationRenderingTests().payloads()
         )
+
+    def test_accessibility_explorer_is_a_finite_manual_audit_not_an_at_emulator(self) -> None:
+        path = REPOSITORY_ROOT / (
+            "content/lessons/core-16-hci-usability-accessibility/lesson.json"
+        )
+        document = json.loads(path.read_bytes())
+        visual = document["visualizations"][0]
+        simulation = visual["simulation"]
+        self.assertEqual(simulation["interactionMode"], "explorer")
+        self.assertEqual(
+            tuple(parameter["id"] for parameter in simulation["parameters"]),
+            ("viewport", "focus-step", "motion-preference"),
+        )
+        selections = {
+            tuple(sorted(state.get("when", {}).items()))
+            for state in simulation["states"]
+            if state["id"] != simulation["initialStateId"]
+        }
+        self.assertEqual(len(selections), 12)
+        self.assertEqual(len(selections), len(simulation["states"]) - 1)
+        model = load_lesson_bytes(path.read_bytes(), path.name).visualizations[0]
+        rendered = str(render_visualization(document["id"], model))
+        for atom in (
+            "focus order", "reflow checklist", "prefers-reduced-motion",
+            "支援技術のエミュレータではありません", 'data-action="next"',
+            'data-action="previous"', 'data-action="reset"',
+            "完全な遷移", "観測結果",
+        ):
+            self.assertIn(atom, rendered)
 
     def test_meaning_specific_selectors_match_real_renderer_containers(self) -> None:
         selectors = {selector for selector, _, _ in _rules(self.css)}
