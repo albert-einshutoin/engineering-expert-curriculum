@@ -12,7 +12,8 @@ import sys
 from tempfile import TemporaryDirectory
 import unittest
 
-from curriculum_builder.lessons import load_lesson
+from curriculum_builder.lessons import load_lesson, load_lesson_bytes
+from curriculum_builder.visualizations import MemoryPayload, VisualizationType
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -2076,6 +2077,61 @@ class CoreTrackTests(unittest.TestCase):
             f"{lesson_id}: inline behavior or remote resource",
         )
 
+    def assert_memory_visual_contract(self, raw: bytes) -> None:
+        lesson = load_lesson_bytes(
+            raw,
+            "lesson.json",
+        )
+        self.assertEqual(len(lesson.visualizations), 1)
+        visual = lesson.visualizations[0]
+        self.assertIs(visual.type, VisualizationType.MEMORY)
+        self.assertEqual(visual.after_section.value, "mentalModel")
+        self.assertIs(type(visual.payload), MemoryPayload)
+        payload = visual.payload
+        assert isinstance(payload, MemoryPayload)
+        self.assertEqual(
+            tuple(
+                (layer.id, layer.label, layer.detail, layer.group)
+                for layer in payload.layers
+            ),
+            (
+                ("instruction", "命令", "仮想アドレスAの値を要求する。", "request"),
+                ("tlb", "TLB", "Aのページ変換を検索し、missならpage table walkを開始する。", "translation"),
+                ("page-table", "page table walk", "TLB miss branchだけで仮想pageから物理pageへの変換情報を取得する。", "translation"),
+                ("address-ready", "物理address ready", "TLB hitまたはpage table walk完了が合流し、物理tag照合へ必要なaddressを渡す。", "translation"),
+                ("l1-cache", "L1 cache", "VIPTでは仮想addressのindex lookupがTLBと並行し得るが、物理tag照合後にhit/missを判断する。", "transfer"),
+                ("lower-cache", "L2と最終レベルcache", "private/shared範囲と段数は機種依存で、固定latencyではない。", "transfer"),
+                ("memory-controller", "memory controller", "全cache miss時に主記憶からline単位で転送する。", "transfer"),
+                ("return", "値を命令へreturn", "L1 hit、lower cache hit、またはmemory転送完了が共通returnへ合流する。", "return"),
+                ("reuse", "再利用", "return後、空間的局所性または時間的局所性で後続accessのhitを増やす。", "reuse"),
+            ),
+        )
+        self.assertEqual(
+            tuple(
+                (
+                    transfer.id,
+                    transfer.from_id,
+                    transfer.to_id,
+                    transfer.label,
+                    transfer.kind,
+                )
+                for transfer in payload.transfers
+            ),
+            (
+                ("instruction-to-tlb", "instruction", "tlb", "仮想アドレスAの変換を検索", "translation-request"),
+                ("instruction-to-l1", "instruction", "l1-cache", "VIPT index lookupは変換と並行し得る", "vipt-parallel-index"),
+                ("tlb-hit", "tlb", "address-ready", "TLB hitなら保持した変換を使う", "tlb-hit"),
+                ("tlb-miss", "tlb", "page-table", "TLB miss時だけpage table walk", "tlb-miss"),
+                ("walk-complete", "page-table", "address-ready", "walk完了で物理addressを得る", "translation-result"),
+                ("address-to-l1", "address-ready", "l1-cache", "物理tag照合でdata hit/missを確定", "tag-check"),
+                ("l1-hit-return", "l1-cache", "return", "L1 hitなら値を返す", "l1-hit"),
+                ("l1-miss-lower", "l1-cache", "lower-cache", "L1 miss時だけ下位cacheへ", "l1-miss"),
+                ("lower-hit-return", "lower-cache", "return", "lower cache hitなら値を返す", "lower-hit"),
+                ("lower-miss-memory", "lower-cache", "memory-controller", "全cache miss時だけ主記憶へ", "lower-miss"),
+                ("memory-return", "memory-controller", "return", "line転送完了後に値を返す", "memory-return"),
+                ("return-to-reuse", "return", "reuse", "返却後のlineを後続accessで再利用", "reuse"),
+            ),
+        )
     def assert_track(
         self,
         contract: dict[str, dict[str, object]],
@@ -2528,34 +2584,47 @@ class CoreTrackTests(unittest.TestCase):
         self.assertIn("trace-fixture.csv", networks)
         self.assertIn("curl", networks)
 
-    def test_memory_model_diagram_is_a_machine_specific_diagnostic(
+    def test_memory_model_prose_is_a_machine_specific_diagnostic(
         self,
     ) -> None:
         memory = self.body_path(
             "core-03-architecture-memory-caches"
         ).read_text(encoding="utf-8")
-        lesson = json.dumps(
-            json.loads(
-                self.body_path("core-03-architecture-memory-caches")
-                .with_name("lesson.json")
-                .read_text(encoding="utf-8")
-            ),
-            ensure_ascii=False,
-        )
-        memory += lesson
 
         for marker in (
             "診断用の論理段階",
             "VIPT",
             "並行",
             "private/shared",
-            "機種依存",
+            "実装依存",
         ):
             self.assertIn(marker, memory)
         self.assertNotIn(
             "L1 miss時により大きい共有階層を探索する",
             memory,
         )
+
+    def test_memory_visual_is_an_exact_branched_diagnostic(self) -> None:
+        path = self.body_path(
+            "core-03-architecture-memory-caches"
+        ).with_name("lesson.json")
+        self.assert_memory_visual_contract(path.read_bytes())
+
+    def test_memory_diagram_contract_rejects_markers_moved_out_of_the_payload(self) -> None:
+        path = self.body_path(
+            "core-03-architecture-memory-caches"
+        ).with_name("lesson.json")
+        document = json.loads(path.read_text(encoding="utf-8"))
+        document["title"] += " VIPT private/shared 機種依存"
+        document["sources"][0]["title"] += " VIPT private/shared 機種依存"
+        visual = document["visualizations"][0]
+        for layer in visual["payload"]["layers"]:
+            layer["detail"] = "汎用的な段階。"
+
+        with self.assertRaises(AssertionError):
+            self.assert_memory_visual_contract(
+                json.dumps(document, ensure_ascii=False).encode("utf-8")
+            )
 
     def test_java_memory_model_claims_are_language_scoped(self) -> None:
         concurrency = self.body_path(

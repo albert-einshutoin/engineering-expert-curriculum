@@ -54,29 +54,7 @@ CAPABILITY_PROGRESSION = [
 
 
 def _complete_fixture_document() -> dict[str, object]:
-    document = json.loads(COMPLETE.read_text(encoding="utf-8"))
-    document["visualizations"] = [{
-        "id": "decision-flow",
-        "type": "flow",
-        "caption": "判断の流れ",
-        "question": "証拠はどこで判断を変えるか",
-        "afterSection": "mentalModel",
-        "objectiveIds": ["obj-1"],
-        "evidenceIds": ["lab-map"],
-        "sourceIds": ["src-nasa-handbook"],
-        "expectedObservation": "制約から再評価までを説明する",
-        "payload": {
-            "steps": [
-                {"id": "observe", "label": "観測", "detail": "証拠を集める"},
-                {"id": "decide", "label": "判断", "detail": "制約で比較する"},
-            ],
-            "transitions": [{
-                "id": "observe-to-decide", "from": "observe", "to": "decide",
-                "label": "証拠を渡す",
-            }],
-        },
-    }]
-    return document
+    return json.loads(COMPLETE.read_text(encoding="utf-8"))
 
 
 def _complete_fixture_bytes() -> bytes:
@@ -141,6 +119,25 @@ class LessonQualityTests(unittest.TestCase):
         )
         self.assertEqual(lesson.visualizations[0].id, "decision-flow")
 
+    def test_complete_fixture_visual_mutations_are_not_hidden_by_the_helper(self) -> None:
+        fixture = json.loads(COMPLETE.read_text(encoding="utf-8"))
+        mutations = []
+        missing = json.loads(json.dumps(fixture, ensure_ascii=False))
+        missing.pop("visualizations")
+        mutations.append(missing)
+        invalid = json.loads(json.dumps(fixture, ensure_ascii=False))
+        invalid["visualizations"][0]["payload"]["transitions"][0]["to"] = "missing-step"
+        mutations.append(invalid)
+
+        for mutated in mutations:
+            with self.subTest(mutation=mutated.get("visualizations")):
+                with patch.object(
+                    Path,
+                    "read_text",
+                    return_value=json.dumps(mutated, ensure_ascii=False),
+                ), self.assertRaises(CurriculumValidationError):
+                    load_lesson_bytes(_complete_fixture_bytes(), COMPLETE.name)
+
     def test_complete_lesson_requires_visualizations_and_stable_source_ids(self) -> None:
         legacy = self.complete_document()
         legacy.pop("visualizations")
@@ -149,27 +146,6 @@ class LessonQualityTests(unittest.TestCase):
         self.assert_invalid(legacy, "complete lessons require visualizations")
 
         visualized = self.complete_document()
-        visualized["visualizations"] = [{
-            "id": "decision-flow",
-            "type": "flow",
-            "caption": "判断の流れ",
-            "question": "証拠はどこで判断を変えるか",
-            "afterSection": "mentalModel",
-            "objectiveIds": ["obj-1"],
-            "evidenceIds": ["lab-map"],
-            "sourceIds": ["src-nasa-handbook"],
-            "expectedObservation": "制約から再評価までを説明する",
-            "payload": {
-                "steps": [
-                    {"id": "observe", "label": "観測", "detail": "証拠を集める"},
-                    {"id": "decide", "label": "判断", "detail": "制約で比較する"},
-                ],
-                "transitions": [{
-                    "id": "observe-to-decide", "from": "observe", "to": "decide",
-                    "label": "証拠を渡す",
-                }],
-            },
-        }]
         with TemporaryDirectory() as directory:
             lesson = load_lesson(self.write_document(directory, visualized))
         self.assertEqual(lesson.visualizations[0].id, "decision-flow")
