@@ -430,6 +430,38 @@ class RendererTests(unittest.TestCase):
             content=forged,
         )
 
+    def test_renderer_rejects_forged_generated_control_relationships(self) -> None:
+        valid = (
+            '<div class="visualization__controls" hidden>'
+            '<label for="choice">選択</label><select id="choice" disabled>'
+            '<option value="one" selected>一つ</option>'
+            '<option value="two">二つ</option></select>'
+            '<label for="mode-one"><input id="mode-one" type="radio" '
+            'name="mode" value="one" disabled checked>一つ</label>'
+            '<label for="mode-two"><input id="mode-two" type="radio" '
+            'name="mode" value="two" disabled>二つ</label></div>'
+        )
+        generated = validate_generated_fragment(valid)
+        mutations = (
+            valid.replace('for="choice"', 'for="missing"', 1),
+            valid.replace('value="two">二つ', 'value="two" selected>二つ', 1),
+            valid.replace(" disabled>二つ", " disabled checked>二つ", 1),
+        )
+
+        for mutation in mutations:
+            with self.subTest(mutation=mutation[-120:]):
+                object.__setattr__(generated, "value", mutation)
+                with self.assertRaisesRegex(
+                    CurriculumValidationError,
+                    "generated",
+                ):
+                    self.renderer.page(
+                        output_path=Path("lesson.html"),
+                        title="教材",
+                        description="説明",
+                        content=generated,
+                    )
+
     def test_fragment_supports_braced_placeholders_in_safe_contexts(self) -> None:
         renderer = self.renderer_with_fragment(
             "braced.html",

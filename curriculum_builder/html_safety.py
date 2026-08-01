@@ -21,6 +21,7 @@ MAX_GENERATED_DOCUMENT_BYTES = 16 * 1024 * 1024
 MAX_NESTING_DEPTH = 64
 MAX_ATTRIBUTES_PER_ELEMENT = 16
 MAX_ATTRIBUTE_VALUE_CHARS = 4_096
+MAX_GENERATED_CONTROL_REFERENCES = 4_096
 MAX_TABLE_SPAN = 100
 
 ALLOWED_TAGS = frozenset(
@@ -220,6 +221,7 @@ class _ElementFrame:
     summary_seen: bool = False
     figcaption_seen: bool = False
     caption_seen: bool = False
+    selected_options: int = 0
 
 
 @dataclass(frozen=True, slots=True, init=False)
@@ -315,6 +317,11 @@ class _FragmentParser(HTMLParser):
         self._doctype_seen = False
         self._open_tags: list[_ElementFrame] = []
         self._ids: set[str] = set()
+        self._labelable_ids: set[str] = set()
+        self._label_references: list[str] = []
+        self._select_default_counts: list[int] = []
+        self._radio_group_defaults: dict[str, tuple[int, int]] = {}
+        self._generated_control_references = 0
 
     def handle_starttag(
         self,
@@ -376,6 +383,8 @@ class _FragmentParser(HTMLParser):
                 "fragment exceeds maximum nesting depth"
             )
         self._validate_content_model(tag)
+        if self._generated:
+            self._track_generated_control(tag, attrs)
         if self._generated and tag in _GENERATED_VOID_TAGS:
             return
         self._open_tags.append(_ElementFrame(tag=tag))
@@ -409,6 +418,8 @@ class _FragmentParser(HTMLParser):
             raise CurriculumValidationError(
                 "invalid HTML content model: details requires a leading summary"
             )
+        if self._generated and tag == "select":
+            self._select_default_counts.append(frame.selected_options)
         self._open_tags.pop()
 
     def handle_data(self, data: str) -> None:
@@ -462,6 +473,27 @@ class _FragmentParser(HTMLParser):
             raise CurriculumValidationError(
                 "generated document requires an HTML doctype"
             )
+        if self._generated:
+            dangling = [
+                target
+                for target in self._label_references
+                if target not in self._labelable_ids
+            ]
+            if dangling:
+                raise CurriculumValidationError(
+                    "generated label for must resolve to a labelable control"
+                )
+            if any(count != 1 for count in self._select_default_counts):
+                raise CurriculumValidationError(
+                    "generated select requires exactly one selected option"
+                )
+            if any(
+                checked != 1
+                for _, checked in self._radio_group_defaults.values()
+            ):
+                raise CurriculumValidationError(
+                    "generated radio group requires exactly one checked input"
+                )
 
     def _validate_content_model(self, tag: str) -> None:
         parent = self._open_tags[-1] if self._open_tags else None
@@ -622,6 +654,34 @@ class _FragmentParser(HTMLParser):
         if not required <= names:
             raise CurriculumValidationError(
                 f"generated {tag} is missing required attributes"
+            )
+
+    def _track_generated_control(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+    ) -> None:
+        values = {name.casefold(): value for name, value in attrs}
+        if tag in {"button", "input", "label", "option", "select"}:
+            self._generated_control_references += 1
+        if tag in {"button", "input", "select"} and values.get("id") is not None:
+            self._labelable_ids.add(values["id"] or "")
+        if tag == "label" and values.get("for") is not None:
+            self._label_references.append(values["for"] or "")
+        elif tag == "option":
+            if "selected" in values:
+                assert self._open_tags and self._open_tags[-1].tag == "select"
+                self._open_tags[-1].selected_options += 1
+        elif tag == "input":
+            name = values.get("name") or ""
+            total, checked = self._radio_group_defaults.get(name, (0, 0))
+            self._radio_group_defaults[name] = (
+                total + 1,
+                checked + int("checked" in values),
+            )
+        if self._generated_control_references > MAX_GENERATED_CONTROL_REFERENCES:
+            raise CurriculumValidationError(
+                "generated controls exceed maximum reference count"
             )
 
     def _validate_generated_attribute(

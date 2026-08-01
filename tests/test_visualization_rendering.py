@@ -160,9 +160,27 @@ class VisualizationRenderingTests(unittest.TestCase):
             VisualizationType.COMPARISON: ComparisonPayload(
                 (a,), (b,), (ComparisonCell("cell", "a", "b", "value < x"),)
             ),
-            VisualizationType.STATE_LOOP: StateLoopPayload((a, b), (edge,), "b", "a"),
+            VisualizationType.STATE_LOOP: StateLoopPayload(
+                (a, b),
+                (edge, Relationship("b-to-a", "b", "a", "B to A")),
+                "b",
+                "a",
+            ),
             VisualizationType.CAUSAL: CausalPayload(
-                (a,), (b,), (_item("outcome"),), (_item("mitigation"),), (edge,)
+                (a,),
+                (b,),
+                (_item("outcome"),),
+                (_item("mitigation"),),
+                (
+                    edge,
+                    Relationship("b-to-outcome", "b", "outcome", "leads"),
+                    Relationship(
+                        "mitigation-to-outcome",
+                        "mitigation",
+                        "outcome",
+                        "reduces",
+                    ),
+                ),
             ),
             VisualizationType.TIMELINE: TimelinePayload(
                 (a,), (TimelineEvent("event", "Event", "detail", "a", 0, None),)
@@ -308,6 +326,41 @@ class VisualizationRenderingTests(unittest.TestCase):
                 (first, second),
             )
 
+    def test_renderer_rejects_direct_payload_type_mismatch(self) -> None:
+        flow = _visual(
+            VisualizationType.FLOW,
+            self.payloads()[VisualizationType.FLOW],
+        )
+        matrix = self.payloads()[VisualizationType.MATRIX]
+
+        with self.assertRaisesRegex(CurriculumValidationError, "payload"):
+            render_visualization(
+                "core-01-systems-tradeoffs",
+                replace(flow, payload=matrix),
+            )
+
+    def test_renderer_rejects_direct_dangling_flow_relationship(self) -> None:
+        payload = FlowPayload(
+            (_item("start"), _item("finish")),
+            (Relationship("dangling", "start", "missing", "進む"),),
+        )
+
+        with self.assertRaisesRegex(CurriculumValidationError, "dangling"):
+            render_visualization(
+                "core-01-systems-tradeoffs",
+                _visual(VisualizationType.FLOW, payload),
+            )
+
+    def test_renderer_rejects_enum_shaped_direct_visualization(self) -> None:
+        visual = _visual(
+            VisualizationType.FLOW,
+            self.payloads()[VisualizationType.FLOW],
+        )
+        object.__setattr__(visual, "type", "flow")
+
+        with self.assertRaisesRegex(CurriculumValidationError, "type"):
+            render_visualization("core-01-systems-tradeoffs", visual)
+
     def test_simulation_static_oracle_precedes_controls_and_is_complete(self) -> None:
         visual = _visual(VisualizationType.FLOW, self.payloads()[VisualizationType.FLOW])
         simulation = Simulation(
@@ -319,12 +372,18 @@ class VisualizationRenderingTests(unittest.TestCase):
                 "none",
             ),),
             "ready",
-            (SimulationState(
-                "ready", "準備", "送信可能", {"fault": "none"},
-                ("a",), ("a-to-b",),
-            ),),
+            (
+                SimulationState(
+                    "ready", "準備", "送信可能", {},
+                    ("a",), ("a-to-b",),
+                ),
+                SimulationState(
+                    "dropped", "破棄", "再試行", {"fault": "drop"},
+                    ("b",), (),
+                ),
+            ),
             (SimulationTransition(
-                "retry", "ready", "ready", "parameter-change", {"fault": "drop"}
+                "retry", "ready", "dropped", "parameter-change", {"fault": "drop"}
             ),),
             (SimulationOutcome("delivered", "ready", "到達を観測"),),
             1000,
@@ -334,7 +393,7 @@ class VisualizationRenderingTests(unittest.TestCase):
         html = render_visualization("core-01-systems-tradeoffs", visual).value
 
         for expected in (
-            "障害なし", "破棄", "fault=none", "a-to-b",
+            "障害なし", "破棄", "a-to-b",
             "fault=drop", "parameter-change", "到達を観測",
             "現在の状態", "送信可能", "例示的", "決定的",
             "visualization__controls", "hidden", "disabled",
@@ -407,9 +466,18 @@ class VisualizationRenderingTests(unittest.TestCase):
         payload = self.payloads()[VisualizationType.FLOW]
         for mode, (present, absent) in expected.items():
             with self.subTest(mode=mode):
+                interval = (
+                    1000
+                    if mode in {InteractionMode.PLAYBACK, InteractionMode.HYBRID}
+                    else None
+                )
                 visual = replace(
                     _visual(VisualizationType.FLOW, payload),
-                    simulation=replace(base, interaction_mode=mode),
+                    simulation=replace(
+                        base,
+                        interaction_mode=mode,
+                        default_interval_ms=interval,
+                    ),
                 )
                 html = render_visualization("core-01-systems-tradeoffs", visual).value
                 controls = html[html.index("visualization__controls"):]

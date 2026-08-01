@@ -1470,6 +1470,404 @@ def parse_visualizations(
     return result
 
 
+_PAYLOAD_TYPES = MappingProxyType(
+    {
+        VisualizationType.FLOW: FlowPayload,
+        VisualizationType.HIERARCHY: HierarchyPayload,
+        VisualizationType.COMPARISON: ComparisonPayload,
+        VisualizationType.STATE_LOOP: StateLoopPayload,
+        VisualizationType.CAUSAL: CausalPayload,
+        VisualizationType.TIMELINE: TimelinePayload,
+        VisualizationType.NETWORK: NetworkPayload,
+        VisualizationType.MEMORY: MemoryPayload,
+        VisualizationType.MATRIX: MatrixPayload,
+        VisualizationType.STATE_MACHINE: StateMachinePayload,
+    }
+)
+
+
+def _bounded_models(
+    value: object,
+    expected: type[object],
+    path: str,
+    maximum: int = 128,
+) -> tuple[object, ...]:
+    if type(value) is not tuple or len(value) > maximum:
+        _fail(path, "must be a bounded exact tuple")
+    assert isinstance(value, tuple)
+    if any(type(item) is not expected for item in value):
+        _fail(path, "contains an invalid immutable model")
+    return value
+
+
+def _bounded_id_values(value: object, path: str, maximum: int) -> list[object]:
+    if type(value) is not tuple or len(value) > maximum:
+        _fail(path, "must be a bounded exact tuple")
+    assert isinstance(value, tuple)
+    return list(value)
+
+
+def _item_raw(item: Item) -> dict[str, object]:
+    return {"id": item.id, "label": item.label, "detail": item.detail}
+
+
+def _relationship_raw(edge: Relationship) -> dict[str, object]:
+    raw: dict[str, object] = {
+        "id": edge.id,
+        "from": edge.from_id,
+        "to": edge.to_id,
+        "label": edge.label,
+    }
+    if edge.kind is not None:
+        raw["kind"] = edge.kind
+    return raw
+
+
+def _payload_render_raw(
+    kind: VisualizationType,
+    payload: VisualizationPayload,
+    path: str,
+) -> dict[str, object]:
+    """Snapshot a direct model into the same bounded grammar used at parse time."""
+    expected = _PAYLOAD_TYPES[kind]
+    if type(payload) is not expected:
+        _fail(path, "payload type does not match visualization type")
+    if type(payload) is FlowPayload:
+        return {
+            "steps": [
+                _item_raw(item)
+                for item in _bounded_models(payload.steps, Item, f"{path}.steps")
+            ],
+            "transitions": [
+                _relationship_raw(edge)
+                for edge in _bounded_models(
+                    payload.transitions, Relationship, f"{path}.transitions"
+                )
+            ],
+        }
+    if type(payload) is HierarchyPayload:
+        return {"nodes": [
+            {
+                **_item_raw(node),
+                "parentId": node.parent_id,
+            }
+            for node in _bounded_models(payload.nodes, HierarchyNode, f"{path}.nodes")
+        ]}
+    if type(payload) is ComparisonPayload:
+        return {
+            "alternatives": [
+                _item_raw(item) for item in _bounded_models(
+                    payload.alternatives, Item, f"{path}.alternatives"
+                )
+            ],
+            "criteria": [
+                _item_raw(item) for item in _bounded_models(
+                    payload.criteria, Item, f"{path}.criteria"
+                )
+            ],
+            "cells": [
+                {
+                    "id": cell.id,
+                    "alternativeId": cell.alternative_id,
+                    "criterionId": cell.criterion_id,
+                    "value": cell.value,
+                }
+                for cell in _bounded_models(
+                    payload.cells, ComparisonCell, f"{path}.cells"
+                )
+            ],
+        }
+    if type(payload) is StateLoopPayload:
+        return {
+            "states": [
+                _item_raw(item) for item in _bounded_models(
+                    payload.states, Item, f"{path}.states"
+                )
+            ],
+            "transitions": [
+                _relationship_raw(edge) for edge in _bounded_models(
+                    payload.transitions, Relationship, f"{path}.transitions"
+                )
+            ],
+            "exitStateId": payload.exit_state_id,
+            "recoveryStateId": payload.recovery_state_id,
+        }
+    if type(payload) is CausalPayload:
+        return {
+            name: [
+                _item_raw(item) for item in _bounded_models(
+                    getattr(payload, name), Item, f"{path}.{name}"
+                )
+            ]
+            for name in ("causes", "mechanisms", "outcomes", "mitigations")
+        } | {
+            "relations": [
+                _relationship_raw(edge) for edge in _bounded_models(
+                    payload.relations, Relationship, f"{path}.relations"
+                )
+            ]
+        }
+    if type(payload) is TimelinePayload:
+        return {
+            "phases": [
+                _item_raw(item) for item in _bounded_models(
+                    payload.phases, Item, f"{path}.phases"
+                )
+            ],
+            "events": [
+                {
+                    "id": event.id,
+                    "label": event.label,
+                    "detail": event.detail,
+                    "phaseId": event.phase_id,
+                    "order": event.order,
+                    **({"lane": event.lane} if event.lane is not None else {}),
+                }
+                for event in _bounded_models(
+                    payload.events, TimelineEvent, f"{path}.events"
+                )
+            ],
+        }
+    if type(payload) is NetworkPayload:
+        return {
+            "nodes": [
+                {
+                    **_item_raw(node),
+                    "componentId": node.component_id,
+                }
+                for node in _bounded_models(
+                    payload.nodes, NetworkNode, f"{path}.nodes"
+                )
+            ],
+            "components": [
+                _item_raw(item) for item in _bounded_models(
+                    payload.components, Item, f"{path}.components"
+                )
+            ],
+            "connections": [
+                _relationship_raw(edge) for edge in _bounded_models(
+                    payload.connections, Relationship, f"{path}.connections"
+                )
+            ],
+        }
+    if type(payload) is MemoryPayload:
+        return {
+            "layers": [
+                {**_item_raw(layer), "group": layer.group}
+                for layer in _bounded_models(
+                    payload.layers, MemoryLayer, f"{path}.layers"
+                )
+            ],
+            "transfers": [
+                _relationship_raw(edge) for edge in _bounded_models(
+                    payload.transfers, Relationship, f"{path}.transfers"
+                )
+            ],
+        }
+    if type(payload) is MatrixPayload:
+        return {
+            "rows": [
+                _item_raw(item) for item in _bounded_models(
+                    payload.rows, Item, f"{path}.rows"
+                )
+            ],
+            "columns": [
+                _item_raw(item) for item in _bounded_models(
+                    payload.columns, Item, f"{path}.columns"
+                )
+            ],
+            "cells": [
+                {
+                    "id": cell.id,
+                    "rowId": cell.row_id,
+                    "columnId": cell.column_id,
+                    "value": cell.value,
+                    "status": cell.status,
+                }
+                for cell in _bounded_models(
+                    payload.cells, MatrixCell, f"{path}.cells"
+                )
+            ],
+        }
+    assert type(payload) is StateMachinePayload
+    return {
+        "states": [
+            _item_raw(item) for item in _bounded_models(
+                payload.states, Item, f"{path}.states"
+            )
+        ],
+        "initialStateId": payload.initial_state_id,
+        "transitions": [
+            {
+                "id": edge.id,
+                "from": edge.from_id,
+                "to": edge.to_id,
+                "event": edge.event,
+                "status": edge.status,
+                **({"reason": edge.reason} if edge.reason is not None else {}),
+            }
+            for edge in _bounded_models(
+                payload.transitions,
+                StateMachineTransition,
+                f"{path}.transitions",
+            )
+        ],
+    }
+
+
+def _simulation_render_raw(simulation: Simulation, path: str) -> dict[str, object]:
+    if type(simulation.kind) is not SimulationKind:
+        _fail(f"{path}.kind", "must be an exact simulation enum")
+    if type(simulation.interaction_mode) is not InteractionMode:
+        _fail(f"{path}.interactionMode", "must be an exact interaction enum")
+    parameters = []
+    for parameter in _bounded_models(
+        simulation.parameters, SimulationParameter, f"{path}.parameters"
+    ):
+        assert isinstance(parameter, SimulationParameter)
+        parameters.append({
+            "id": parameter.id,
+            "label": parameter.label,
+            "control": parameter.control,
+            "options": [
+                {"id": option.id, "label": option.label}
+                for option in _bounded_models(
+                    parameter.options,
+                    ParameterOption,
+                    f"{path}.parameters.options",
+                )
+            ],
+            "defaultOptionId": parameter.default_option_id,
+        })
+    states = []
+    for state in _bounded_models(
+        simulation.states, SimulationState, f"{path}.states"
+    ):
+        assert isinstance(state, SimulationState)
+        if type(state.when) is not MappingProxyType:
+            _fail(f"{path}.states.when", "must be an immutable mapping")
+        if len(state.when) > 8:
+            _fail(f"{path}.states.when", "exceeds parameter count")
+        states.append({
+            "id": state.id,
+            "label": state.label,
+            "status": state.status,
+            "when": dict(state.when),
+            "activeNodeIds": _bounded_id_values(
+                state.active_node_ids, f"{path}.states.activeNodeIds", 64
+            ),
+            "activeEdgeIds": _bounded_id_values(
+                state.active_edge_ids, f"{path}.states.activeEdgeIds", 128
+            ),
+        })
+    transitions = []
+    for edge in _bounded_models(
+        simulation.transitions, SimulationTransition, f"{path}.transitions"
+    ):
+        assert isinstance(edge, SimulationTransition)
+        if type(edge.when) is not MappingProxyType:
+            _fail(f"{path}.transitions.when", "must be an immutable mapping")
+        if len(edge.when) > 8:
+            _fail(f"{path}.transitions.when", "exceeds parameter count")
+        transitions.append({
+            "id": edge.id,
+            "from": edge.from_id,
+            "to": edge.to_id,
+            "event": edge.event,
+            "when": dict(edge.when),
+        })
+    raw: dict[str, object] = {
+        "kind": simulation.kind.value,
+        "interactionMode": simulation.interaction_mode.value,
+        "parameters": parameters,
+        "initialStateId": simulation.initial_state_id,
+        "states": states,
+        "transitions": transitions,
+        "outcomes": [
+            {
+                "id": outcome.id,
+                "stateId": outcome.state_id,
+                "label": outcome.label,
+            }
+            for outcome in _bounded_models(
+                simulation.outcomes, SimulationOutcome, f"{path}.outcomes"
+            )
+        ],
+    }
+    if simulation.default_interval_ms is not None:
+        raw["defaultIntervalMs"] = simulation.default_interval_ms
+    return raw
+
+
+def _validate_visualization_for_rendering(
+    lesson_id: object,
+    visual: object,
+) -> tuple[str, Visualization]:
+    """Reissue a fresh model so low-level mutation cannot bypass parse invariants."""
+    validated_lesson_id = _id(lesson_id, "visualization.render.lessonId")
+    if type(visual) is not Visualization:
+        _fail("visualization.render", "requires an exact Visualization model")
+    assert isinstance(visual, Visualization)
+    if type(visual.type) is not VisualizationType:
+        _fail("visualization.render.type", "must be an exact visualization enum")
+    if type(visual.after_section) is not LessonSectionRole:
+        _fail("visualization.render.afterSection", "must be an exact section enum")
+    path = "visualization.render"
+    visual_id = _id(visual.id, f"{path}.id")
+    for name, value, maximum in (
+        ("caption", visual.caption, 160),
+        ("question", visual.question, 160),
+        ("expectedObservation", visual.expected_observation, 300),
+    ):
+        _text(value, f"{path}.{name}", maximum)
+    for name, values, low, high in (
+        ("objectiveIds", visual.objective_ids, 1, 6),
+        ("evidenceIds", visual.evidence_ids, 1, 8),
+        ("sourceIds", visual.source_ids, 1, 8),
+    ):
+        if type(values) is not tuple:
+            _fail(f"{path}.{name}", "must be an exact tuple")
+        if not low <= len(values) <= high:
+            _fail(f"{path}.{name}", "has an invalid item count")
+        _ids(list(values), f"{path}.{name}", low, high)
+    if type(visual.notes) is not tuple or len(visual.notes) > 8:
+        _fail(f"{path}.notes", "must be a bounded exact tuple")
+    notes = tuple(
+        _text(note, f"{path}.notes[{index}]", 600)
+        for index, note in enumerate(visual.notes)
+    )
+    payload = _parse_payload(
+        visual.type,
+        _payload_render_raw(visual.type, visual.payload, f"{path}.payload"),
+        f"{path}.payload",
+    )
+    node_ids, edge_ids = _payload_ids(payload)
+    simulation = None
+    if visual.simulation is not None:
+        if type(visual.simulation) is not Simulation:
+            _fail(f"{path}.simulation", "must be an exact Simulation model")
+        simulation = _parse_simulation(
+            _simulation_render_raw(visual.simulation, f"{path}.simulation"),
+            f"{path}.simulation",
+            node_ids,
+            edge_ids,
+        )
+    return validated_lesson_id, Visualization(
+        visual_id,
+        visual.type,
+        visual.caption,
+        visual.question,
+        visual.after_section,
+        visual.objective_ids,
+        visual.evidence_ids,
+        visual.source_ids,
+        visual.expected_observation,
+        payload,
+        notes,
+        simulation,
+    )
+
+
 def _e(value: str, *, quote: bool = False) -> str:
     return escape(value, quote=quote)
 
@@ -1939,6 +2337,7 @@ def visualization_dom_namespace(lesson_id: str, visual_id: str) -> str:
 
 def render_visualization(lesson_id: str, visual: Visualization) -> SafeHtml:
     """Render a complete semantic model before optional enhancement controls."""
+    lesson_id, visual = _validate_visualization_for_rendering(lesson_id, visual)
     figure_id = visualization_dom_namespace(lesson_id, visual.id)
     notes = "".join(f"<li>{_e(note)}</li>" for note in visual.notes)
     simulation_oracle = (

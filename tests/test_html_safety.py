@@ -18,6 +18,7 @@ from curriculum_builder.html_safety import (
     MAX_NESTING_DEPTH,
     TAG_ATTRIBUTES,
     SafeHtml,
+    validate_generated_document,
     validate_generated_fragment,
     validate_fragment,
 )
@@ -87,6 +88,43 @@ class HtmlSafetyTests(unittest.TestCase):
             with self.subTest(mutation=mutation[-80:]):
                 with self.assertRaises(CurriculumValidationError):
                     validate_generated_fragment(mutation)
+
+    def test_generated_controls_require_resolved_labels_and_one_default(self) -> None:
+        valid = (
+            '<div class="visualization__controls" hidden>'
+            '<label for="choice">選択</label><select id="choice" disabled>'
+            '<option value="one" selected>一つ</option>'
+            '<option value="two">二つ</option></select>'
+            '<label for="mode-one"><input id="mode-one" type="radio" '
+            'name="mode" value="one" disabled checked>一つ</label>'
+            '<label for="mode-two"><input id="mode-two" type="radio" '
+            'name="mode" value="two" disabled>二つ</label>'
+            '</div>'
+        )
+        invalid = (
+            valid.replace('for="choice"', 'for="missing"', 1),
+            valid.replace('value="two">二つ', 'value="two" selected>二つ', 1),
+            valid.replace(" selected>一つ", ">一つ", 1),
+            valid.replace(" disabled>二つ", " disabled checked>二つ", 1),
+            valid.replace(" disabled checked>一つ", " disabled>一つ", 1),
+        )
+
+        validate_generated_fragment(valid)
+        for fragment in invalid:
+            with self.subTest(fragment=fragment[-120:]):
+                with self.assertRaises(CurriculumValidationError):
+                    validate_generated_fragment(fragment)
+
+        document = '<!doctype html><html lang="ja"><body>' + valid + '</body></html>'
+        validate_generated_document(document)
+        for fragment in invalid:
+            with self.subTest(document=fragment[-120:]):
+                with self.assertRaises(CurriculumValidationError):
+                    validate_generated_document(
+                        '<!doctype html><html lang="ja"><body>'
+                        + fragment
+                        + '</body></html>'
+                    )
 
     def test_accepts_mixed_case_markup_and_safe_character_references(self) -> None:
         fragment = (
