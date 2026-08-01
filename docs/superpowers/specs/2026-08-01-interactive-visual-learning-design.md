@@ -603,7 +603,11 @@ Generated deferred script elements are direct children of `body` and have no
 non-whitespace data, character/entity reference, or comment content. The model
 validator, generated-document validator, build parser, and release checker all
 enforce the same empty, explicitly paired external-script contract; non-void
-self-closing syntax such as `<script />` is malformed.
+self-closing syntax such as `<script />` is malformed. The release checker calls
+the same generated-document closed grammar before its independent link, CSP,
+and inventory checks, so unapproved elements such as `img`, `svg`, and `video`
+cannot bypass renderer validation. Every permitted resource-bearing element is
+then independently required to occur after the CSP declaration.
 5. Reveal controls and mark the root as enhanced.
 
 Any exception before step 5 leaves the complete static figure visible. Any
@@ -772,6 +776,9 @@ fresh builds.
   constant requires reviewing the runtime diff, running DOM/security tests,
   independently calculating SHA-256, and committing the literal digest. Tests
   neither derive nor rewrite the accepted digest.
+- The defense-in-depth lexer also rejects runtime-unneeded reflection and
+  computed-key generators, including `join` and `fromCharCode`; the reviewed
+  runtime uses direct deterministic comparisons instead.
 - A transition is O(V + E), does not perform forced layout in a loop, and leaves
   no active timer at completion.
 

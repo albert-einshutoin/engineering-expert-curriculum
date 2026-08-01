@@ -24,6 +24,7 @@ if str(_REPOSITORY_ROOT) not in sys.path:
 
 from curriculum_builder.css_safety import validate_stylesheet_bytes  # noqa: E402
 from curriculum_builder.errors import CurriculumValidationError  # noqa: E402
+from curriculum_builder.html_safety import validate_generated_document  # noqa: E402
 from curriculum_builder.javascript_safety import (  # noqa: E402
     MAX_JAVASCRIPT_BYTES,
     validate_reviewed_visualization_runtime,
@@ -891,6 +892,10 @@ def _validate_html(
     except SiteValidationError:
         issues.add(relative, "malformed HTML")
         return None
+    try:
+        validate_generated_document(document)
+    except CurriculumValidationError:
+        issues.add(relative, "HTML violates the generated document grammar")
     parser = _PageParser(relative, issues, document)
     try:
         parser.feed(document)

@@ -138,6 +138,44 @@ class SiteCheckerHappyPathTests(unittest.TestCase):
             }
             self.assertEqual(inventory, set(CURRENT_RELEASE_INVENTORY))
 
+    def test_complete_release_rejects_generated_grammar_mutations(self) -> None:
+        with TemporaryDirectory(
+            prefix=".site-checker-grammar-",
+            dir=REPOSITORY_ROOT.parent,
+        ) as directory:
+            site = Path(directory) / "site"
+            build_site(
+                REPOSITORY_ROOT / "content",
+                REPOSITORY_ROOT / "templates",
+                REPOSITORY_ROOT / "static",
+                site,
+                require_complete_curriculum=True,
+            )
+            index = site / "index.html"
+            original = index.read_text(encoding="utf-8")
+            mutations = (
+                original.replace(
+                    '<meta charset="utf-8">',
+                    '<img src="pixel.png"><meta charset="utf-8">',
+                    1,
+                ),
+                original.replace("</main>", "<svg></svg></main>", 1),
+                original.replace(
+                    "</main>",
+                    '<video src="forged.mp4"></video></main>',
+                    1,
+                ),
+            )
+            for document in mutations:
+                index.write_text(document, encoding="utf-8")
+                with self.subTest(document=document[:80]):
+                    self.assertTrue(any(
+                        "generated document grammar" in issue
+                        for issue in check_site(site, require_current_release=True)
+                    ))
+            index.write_text(original, encoding="utf-8")
+            self.assertEqual(check_site(site, require_current_release=True), [])
+
 
 class SiteCheckerFilesystemTests(unittest.TestCase):
     def test_missing_and_empty_roots_fail_closed(self) -> None:
@@ -379,6 +417,22 @@ class SiteCheckerHtmlTests(unittest.TestCase):
                         for issue in self._issues_for(mutation)
                     )
                 )
+
+    def test_rejects_elements_outside_the_generated_document_grammar(self) -> None:
+        mutations = (
+            _page().replace(
+                '<meta charset="utf-8">',
+                '<img src="pixel.png"><meta charset="utf-8">',
+            ),
+            _page(body='<svg><title>forged</title></svg>'),
+            _page(body='<video src="forged.mp4"></video>'),
+        )
+        for document in mutations:
+            with self.subTest(document=document[:80]):
+                self.assertTrue(any(
+                    "generated document grammar" in issue
+                    for issue in self._issues_for(document)
+                ))
 
     def test_deferred_script_rejects_inline_data_entities_and_comments(self) -> None:
         figure = '<figure data-visualization-id="v" data-simulation-kind="request-path" data-interaction-mode="stepper"></figure>'

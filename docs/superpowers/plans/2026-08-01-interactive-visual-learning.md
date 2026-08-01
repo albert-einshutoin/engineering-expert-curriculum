@@ -726,6 +726,10 @@ independently calculated literal; tests must not self-update it. Limit
 `document` to the fixed complete direct `querySelectorAll` call. Validate
 deferred scripts as empty, paired direct `body` children in generated-document
 validation, the build parser, and the checker; reject non-void `<script />`.
+Reject runtime-unneeded computed-key generators such as `join` and
+`fromCharCode`. The checker must invoke the shared generated-document grammar
+before its independent CSP, reference, and inventory checks, rejecting
+unapproved resource elements such as `img`, `svg`, and `video`.
 
 Keep timer-driven visible status synchronized without writing to the polite
 live region; reserve announcements for explicit actions. Scenario Reset first
