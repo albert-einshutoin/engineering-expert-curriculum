@@ -6,12 +6,14 @@ from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
+from html import escape
 from itertools import product
 import re
 from types import MappingProxyType
 import unicodedata
 
 from .errors import CurriculumValidationError
+from .html_safety import SafeHtml, validate_fragment
 
 
 _ID = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
@@ -1455,3 +1457,332 @@ def parse_visualizations(
             "lesson must contain at most one simulation",
         )
     return result
+
+
+def _e(value: str, *, quote: bool = False) -> str:
+    return escape(value, quote=quote)
+
+
+def _item_description(item: Item | HierarchyNode | NetworkNode | MemoryLayer) -> str:
+    return (
+        f"<dt>{_e(item.label)}</dt>"
+        f"<dd>{_e(item.detail)}</dd>"
+    )
+
+
+def _relationship_list(
+    relationships: tuple[Relationship, ...],
+    labels: Mapping[str, str],
+) -> str:
+    entries = "".join(
+        "<li>"
+        f"{_e(labels[edge.from_id])} → {_e(labels[edge.to_id])}: "
+        f"{_e(edge.label)}"
+        + (f" ({_e(edge.kind)})" if edge.kind is not None else "")
+        + "</li>"
+        for edge in relationships
+    )
+    return f'<ul class="visualization__relationships">{entries}</ul>'
+
+
+def _render_flow(payload: FlowPayload) -> str:
+    outgoing = {step.id: [] for step in payload.steps}
+    labels = {step.id: step.label for step in payload.steps}
+    for edge in payload.transitions:
+        outgoing[edge.from_id].append(edge)
+    entries = "".join(
+        "<li><dl>"
+        + _item_description(step)
+        + "</dl>"
+        + (
+            _relationship_list(tuple(outgoing[step.id]), labels)
+            if outgoing[step.id]
+            else ""
+        )
+        + "</li>"
+        for step in payload.steps
+    )
+    return f'<ol class="visualization__ordered-model">{entries}</ol>'
+
+
+def _render_hierarchy(payload: HierarchyPayload) -> str:
+    children: dict[str | None, list[HierarchyNode]] = {}
+    for node in payload.nodes:
+        children.setdefault(node.parent_id, []).append(node)
+
+    # Validation caps and proves acyclicity before rendering; recursion follows
+    # that authored tree and is therefore bounded by the 64-node schema limit.
+    def branch(parent: str | None) -> str:
+        return "<ul>" + "".join(
+            "<li><dl>"
+            + _item_description(node)
+            + "</dl>"
+            + (branch(node.id) if node.id in children else "")
+            + "</li>"
+            for node in children.get(parent, ())
+        ) + "</ul>"
+
+    return f'<div class="visualization__hierarchy">{branch(None)}</div>'
+
+
+def _render_table(
+    caption: str,
+    rows: tuple[Item, ...],
+    columns: tuple[Item, ...],
+    values: Mapping[tuple[str, str], str],
+) -> str:
+    headings = "".join(
+        f'<th scope="col">{_e(column.label)}'
+        f"<small>{_e(column.detail)}</small></th>"
+        for column in columns
+    )
+    body = "".join(
+        "<tr>"
+        f'<th scope="row">{_e(row.label)}<small>{_e(row.detail)}</small></th>'
+        + "".join(
+            f"<td>{_e(values[(row.id, column.id)])}</td>"
+            for column in columns
+        )
+        + "</tr>"
+        for row in rows
+    )
+    return (
+        '<table class="visualization__table">'
+        f"<caption>{_e(caption)}</caption>"
+        f'<thead><tr><th scope="col">項目</th>{headings}</tr></thead>'
+        f"<tbody>{body}</tbody></table>"
+    )
+
+
+def _render_causal(payload: CausalPayload) -> str:
+    groups = (
+        ("原因", payload.causes),
+        ("機構", payload.mechanisms),
+        ("結果", payload.outcomes),
+        ("対策", payload.mitigations),
+    )
+    definitions = "".join(
+        f"<dt>{label}</dt><dd><dl>"
+        + "".join(_item_description(item) for item in items)
+        + "</dl></dd>"
+        for label, items in groups
+    )
+    labels = {
+        item.id: item.label
+        for _, items in groups
+        for item in items
+    }
+    return (
+        f'<dl class="visualization__causal-model">{definitions}</dl>'
+        + _relationship_list(payload.relations, labels)
+    )
+
+
+def _render_timeline(payload: TimelinePayload) -> str:
+    phases = {phase.id: phase for phase in payload.phases}
+    entries = "".join(
+        "<li>"
+        f"<strong>{_e(phases[event.phase_id].label)}: {_e(event.label)}</strong>"
+        f"<p>{_e(phases[event.phase_id].detail)}</p>"
+        f"<p>{_e(event.detail)}</p>"
+        f"<p>順序: {event.order}</p>"
+        + (f"<p>lane: {_e(event.lane)}</p>" if event.lane else "")
+        + "</li>"
+        for event in payload.events
+    )
+    return f'<ol class="visualization__timeline">{entries}</ol>'
+
+
+def _render_nodes_and_edges(
+    nodes: tuple[Item | NetworkNode | MemoryLayer, ...],
+    relationships: tuple[Relationship, ...],
+    *, ordered: bool = False,
+) -> str:
+    tag = "ol" if ordered else "ul"
+    node_entries = "".join(
+        f"<li><dl>{_item_description(node)}</dl></li>" for node in nodes
+    )
+    labels = {node.id: node.label for node in nodes}
+    return (
+        f'<{tag} class="visualization__nodes">{node_entries}</{tag}>'
+        + _relationship_list(relationships, labels)
+    )
+
+
+def _render_state_loop(payload: StateLoopPayload) -> str:
+    labels = {state.id: state.label for state in payload.states}
+    return (
+        _render_nodes_and_edges(payload.states, payload.transitions)
+        + '<dl class="visualization__state-loop-contract">'
+        f"<dt>終了状態</dt><dd>{_e(labels[payload.exit_state_id])}</dd>"
+        f"<dt>回復状態</dt><dd>{_e(labels[payload.recovery_state_id])}</dd>"
+        "</dl>"
+    )
+
+
+def _render_network(payload: NetworkPayload) -> str:
+    components = {component.id: component for component in payload.components}
+    component_model = "".join(
+        _item_description(component) for component in payload.components
+    )
+    nodes = "".join(
+        "<li><dl>"
+        + _item_description(node)
+        + f"<dt>component</dt><dd>{_e(components[node.component_id].label)}</dd>"
+        + "</dl></li>"
+        for node in payload.nodes
+    )
+    labels = {node.id: node.label for node in payload.nodes}
+    return (
+        f'<dl class="visualization__components">{component_model}</dl>'
+        f'<ul class="visualization__nodes">{nodes}</ul>'
+        + _relationship_list(payload.connections, labels)
+    )
+
+
+def _render_memory(payload: MemoryPayload) -> str:
+    nodes = "".join(
+        "<li><dl>"
+        + _item_description(layer)
+        + f"<dt>group</dt><dd>{_e(layer.group)}</dd>"
+        + "</dl></li>"
+        for layer in payload.layers
+    )
+    labels = {layer.id: layer.label for layer in payload.layers}
+    return (
+        f'<ol class="visualization__nodes">{nodes}</ol>'
+        + _relationship_list(payload.transfers, labels)
+    )
+
+
+def _render_state_machine(payload: StateMachinePayload) -> str:
+    state_entries = "".join(
+        "<li>"
+        + ("<strong>初期状態: </strong>" if state.id == payload.initial_state_id else "")
+        + f"{_e(state.label)}: {_e(state.detail)}</li>"
+        for state in payload.states
+    )
+    labels = {state.id: state.label for state in payload.states}
+    rows = "".join(
+        "<tr>"
+        f'<th scope="row">{_e(edge.event)}</th>'
+        f"<td>{_e(labels[edge.from_id])}</td>"
+        f"<td>{_e(labels[edge.to_id])}</td>"
+        f"<td>{_e(edge.status)}</td>"
+        f"<td>{_e(edge.reason or '—')}</td>"
+        "</tr>"
+        for edge in payload.transitions
+    )
+    return (
+        f'<ul class="visualization__states">{state_entries}</ul>'
+        '<table class="visualization__transitions"><caption>状態遷移</caption>'
+        '<thead><tr><th scope="col">イベント</th><th scope="col">開始</th>'
+        '<th scope="col">終了</th><th scope="col">判定</th>'
+        '<th scope="col">理由</th></tr></thead>'
+        f"<tbody>{rows}</tbody></table>"
+    )
+
+
+def _render_payload(payload: VisualizationPayload) -> str:
+    if isinstance(payload, FlowPayload):
+        return _render_flow(payload)
+    if isinstance(payload, HierarchyPayload):
+        return _render_hierarchy(payload)
+    if isinstance(payload, ComparisonPayload):
+        values = {
+            (cell.alternative_id, cell.criterion_id): cell.value
+            for cell in payload.cells
+        }
+        return _render_table("選択肢の比較", payload.alternatives, payload.criteria, values)
+    if isinstance(payload, StateLoopPayload):
+        return _render_state_loop(payload)
+    if isinstance(payload, CausalPayload):
+        return _render_causal(payload)
+    if isinstance(payload, TimelinePayload):
+        return _render_timeline(payload)
+    if isinstance(payload, NetworkPayload):
+        return _render_network(payload)
+    if isinstance(payload, MemoryPayload):
+        return _render_memory(payload)
+    if isinstance(payload, MatrixPayload):
+        values = {
+            (cell.row_id, cell.column_id): (
+                cell.value if cell.status == "value" else f"該当なし: {cell.value}"
+            )
+            for cell in payload.cells
+        }
+        return _render_table("判断マトリクス", payload.rows, payload.columns, values)
+    return _render_state_machine(payload)
+
+
+def _render_simulation(simulation: Simulation) -> str:
+    def mapping_text(values: Mapping[str, str]) -> str:
+        return "、".join(
+            f"{_e(key)}={_e(value)}" for key, value in sorted(values.items())
+        ) or "常時"
+
+    parameter_rows = "".join(
+        "<tr>"
+        f'<th scope="row">{_e(parameter.label)}</th>'
+        f"<td>{'、'.join(_e(option.label) for option in parameter.options)}</td>"
+        f"<td>{_e(parameter.default_option_id)}</td>"
+        "</tr>"
+        for parameter in simulation.parameters
+    )
+    state_items = "".join(
+        f"<li><strong>{_e(state.label)}</strong>: {_e(state.status)}"
+        f"; 条件 {_e(mapping_text(state.when))}"
+        f"; node {'、'.join(_e(value) for value in state.active_node_ids) or 'なし'}"
+        f"; edge {'、'.join(_e(value) for value in state.active_edge_ids) or 'なし'}"
+        "</li>"
+        for state in simulation.states
+    )
+    transition_rows = "".join(
+        "<tr>"
+        f'<th scope="row">{_e(edge.event)}</th>'
+        f"<td>{_e(edge.from_id)}</td><td>{_e(edge.to_id)}</td>"
+        f"<td>{mapping_text(edge.when)}</td>"
+        "</tr>"
+        for edge in simulation.transitions
+    )
+    outcome_rows = "".join(
+        "<tr>"
+        f'<th scope="row">{_e(outcome.label)}</th>'
+        f"<td>{_e(outcome.state_id)}</td></tr>"
+        for outcome in simulation.outcomes
+    )
+    static_oracle = (
+        '<div class="visualization__simulation-oracle">'
+        '<table><caption>パラメータと選択肢</caption><thead><tr>'
+        '<th scope="col">パラメータ</th><th scope="col">選択肢</th>'
+        '<th scope="col">既定値</th></tr></thead>'
+        f"<tbody>{parameter_rows}</tbody></table>"
+        f'<ol class="visualization__simulation-states">{state_items}</ol>'
+        '<table><caption>完全な遷移</caption><thead><tr>'
+        '<th scope="col">イベント</th><th scope="col">開始</th>'
+        '<th scope="col">終了</th><th scope="col">条件</th></tr></thead>'
+        f"<tbody>{transition_rows}</tbody></table>"
+        '<table><caption>観測結果</caption><thead><tr>'
+        '<th scope="col">結果</th><th scope="col">状態</th></tr></thead>'
+        f"<tbody>{outcome_rows}</tbody></table>"
+        "</div>"
+    )
+    return static_oracle
+
+
+def render_visualization(lesson_id: str, visual: Visualization) -> SafeHtml:
+    """Render a complete semantic model before optional enhancement controls."""
+    figure_id = f"{lesson_id}-{visual.id}"
+    notes = "".join(f"<li>{_e(note)}</li>" for note in visual.notes)
+    simulation = "" if visual.simulation is None else _render_simulation(visual.simulation)
+    return validate_fragment(
+        f'<figure id="{_e(figure_id, quote=True)}" '
+        f'class="visualization visualization--{_e(visual.type.value, quote=True)}">'
+        f"<figcaption>{_e(visual.caption)}</figcaption>"
+        f'<p class="visualization__question">{_e(visual.question)}</p>'
+        + _render_payload(visual.payload)
+        + f'<p class="visualization__observation">{_e(visual.expected_observation)}</p>'
+        + (f'<ul class="visualization__notes">{notes}</ul>' if notes else "")
+        + simulation
+        + "</figure>"
+    )

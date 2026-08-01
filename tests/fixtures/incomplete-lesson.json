@@ -149,11 +149,13 @@
   ],
   "sources": [
     {
+      "id": "src-nasa-handbook",
       "title": "NASA Systems Engineering Handbook",
       "url": "https://www.nasa.gov/reference/systems-engineering-handbook/",
       "kind": "primary"
     },
     {
+      "id": "src-iso-42010",
       "title": "ISO/IEC/IEEE 42010 overview",
       "url": "https://www.iso-architecture.org/ieee-1471/",
       "kind": "standard"

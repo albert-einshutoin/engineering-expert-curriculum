@@ -99,6 +99,48 @@ class LessonQualityTests(unittest.TestCase):
         for objective in lesson.objectives:
             self.assertTrue(objective.evidence_ids)
             self.assertLessEqual(set(objective.evidence_ids), evidence_ids)
+        self.assertEqual(
+            tuple(source.id for source in lesson.sources),
+            ("src-nasa-handbook", "src-iso-42010"),
+        )
+        self.assertEqual(lesson.visualizations, ())
+
+    def test_visualization_traceability_is_required_only_when_visual_exists(self) -> None:
+        legacy = self.complete_document()
+        for source in legacy["sources"]:
+            source.pop("id")
+        with TemporaryDirectory() as directory:
+            lesson = load_lesson(self.write_document(directory, legacy))
+        self.assertTrue(all(source.id is None for source in lesson.sources))
+
+        visualized = self.complete_document()
+        visualized["visualizations"] = [{
+            "id": "decision-flow",
+            "type": "flow",
+            "caption": "判断の流れ",
+            "question": "証拠はどこで判断を変えるか",
+            "afterSection": "mentalModel",
+            "objectiveIds": ["obj-1"],
+            "evidenceIds": ["lab-map"],
+            "sourceIds": ["src-nasa-handbook"],
+            "expectedObservation": "制約から再評価までを説明する",
+            "payload": {
+                "steps": [
+                    {"id": "observe", "label": "観測", "detail": "証拠を集める"},
+                    {"id": "decide", "label": "判断", "detail": "制約で比較する"},
+                ],
+                "transitions": [{
+                    "id": "observe-to-decide", "from": "observe", "to": "decide",
+                    "label": "証拠を渡す",
+                }],
+            },
+        }]
+        with TemporaryDirectory() as directory:
+            lesson = load_lesson(self.write_document(directory, visualized))
+        self.assertEqual(lesson.visualizations[0].id, "decision-flow")
+
+        visualized["sources"][0].pop("id")
+        self.assert_invalid(visualized, "dangling source reference")
 
     def test_load_lesson_bytes_parses_the_callers_pinned_snapshot(self) -> None:
         raw = COMPLETE.read_bytes()

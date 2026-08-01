@@ -20,16 +20,27 @@ from curriculum_builder.errors import (
     IncompleteLessonReleaseError,
 )
 from curriculum_builder.html_safety import MAX_FRAGMENT_BYTES
+from curriculum_builder.lesson_rendering import parse_lesson_body
+from curriculum_builder.visualizations import LessonSectionRole
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 COMPLETE = REPOSITORY_ROOT / "tests/fixtures/complete-lesson.json"
-BODY = (
-    '<section id="mechanism">'
-    "<h2>判断を構成する機構</h2>"
-    "<p>制約、証拠、再評価条件を結び付けます。</p>"
-    "</section>"
+BODY = "".join(
+    f'<section id="{section_id}"><h2>{section_id}</h2><p>本文</p></section>'
+    for section_id in (
+        "why",
+        "mental-model",
+        "worked-example",
+        "tradeoffs",
+        "knowledge-check",
+        "sources-next",
+    )
 )
+
+
+def _body_with_text(text: str) -> str:
+    return BODY.replace("本文", text, 1)
 
 
 class _SyntheticDirEntry:
@@ -178,6 +189,63 @@ def _add_lesson(
 
 
 class LessonRenderingTests(unittest.TestCase):
+    def test_lesson_body_maps_generic_and_prefixed_sections_by_order(self) -> None:
+        prefixed_sequences = (
+            ("review-why", "review-mental-model", "worked-example",
+             "review-tradeoffs", "review-knowledge-check", "review-sources-next"),
+            ("team-why", "team-mental-model", "worked-example",
+             "team-tradeoffs", "team-knowledge-check", "team-sources-next"),
+            ("oss-why", "oss-mental-model", "worked-example",
+             "oss-tradeoffs", "oss-knowledge-check", "oss-sources-next"),
+            ("async-why", "async-mental-model", "worked-example",
+             "async-tradeoffs", "async-check", "async-sources"),
+            ("leadership-why", "leadership-mental-model", "worked-example",
+             "leadership-tradeoffs", "leadership-check", "leadership-sources"),
+        )
+        fragments = (BODY,) + tuple(
+            "".join(
+                f'<section id="{section_id}"><h2>{section_id}</h2><p>本文</p></section>'
+                for section_id in section_ids
+            )
+            for section_ids in prefixed_sequences
+        )
+        for fragment in fragments:
+            with self.subTest(fragment=fragment[:40]):
+                body = parse_lesson_body(fragment)
+                self.assertEqual(
+                    tuple(section.role for section in body.sections),
+                    tuple(LessonSectionRole),
+                )
+                self.assertEqual(
+                    "".join(section.html.value for section in body.sections),
+                    fragment,
+                )
+
+    def test_lesson_body_rejects_invalid_top_level_section_contracts(self) -> None:
+        sections = [
+            '<section id="why"><h2>why</h2></section>',
+            '<section id="mental-model"><h2>mental</h2></section>',
+            '<section id="worked-example"><h2>worked</h2></section>',
+            '<section id="tradeoffs"><h2>tradeoffs</h2></section>',
+            '<section id="knowledge-check"><h2>check</h2></section>',
+            '<section id="sources-next"><h2>sources</h2></section>',
+        ]
+        cases = {
+            "missing": "".join(sections[:-1]),
+            "reordered": "".join((sections[1], sections[0], *sections[2:])),
+            "duplicated": "".join((*sections[:-1], sections[0])),
+            "seventh": "".join((*sections, '<section id="extra"><h2>x</h2></section>')),
+            "unclosed": "".join(sections)[:-10],
+            "nested impersonation": sections[0].replace(
+                "</section>",
+                '<section id="mental-model"><h2>fake</h2></section></section>',
+            ) + "".join(sections[1:]),
+        }
+        for label, fragment in cases.items():
+            with self.subTest(label=label):
+                with self.assertRaises(CurriculumValidationError):
+                    parse_lesson_body(fragment)
+
     def test_draft_lesson_has_a_typed_structural_completion_failure(
         self,
     ) -> None:
@@ -221,7 +289,12 @@ class LessonRenderingTests(unittest.TestCase):
                 "review-schedule",
                 "rubric",
                 "sources",
-                "mechanism",
+                "why",
+                "mental-model",
+                "worked-example",
+                "tradeoffs",
+                "knowledge-check",
+                "sources-next",
             ):
                 self.assertIn(f'id="{section_id}"', html)
             for level in ("recognize", "explain", "apply", "diagnose", "lead"):
@@ -533,7 +606,7 @@ class LessonRenderingTests(unittest.TestCase):
             first = _add_lesson(
                 content,
                 _complete_document(title="PRIVATE-FIRST-TITLE"),
-                body="<p>PRIVATE-FIRST-BODY</p>",
+                body=_body_with_text("PRIVATE-FIRST-BODY"),
             )
             second = _add_lesson(
                 content,
@@ -541,7 +614,7 @@ class LessonRenderingTests(unittest.TestCase):
                     lesson_id="core-02-aggregate-boundary",
                     title="PRIVATE-SECOND-TITLE",
                 ),
-                body="<p>PRIVATE-SECOND-BODY</p>",
+                body=_body_with_text("PRIVATE-SECOND-BODY"),
             )
             lesson_bytes = tuple(
                 sum(
@@ -602,7 +675,7 @@ class LessonRenderingTests(unittest.TestCase):
             _add_lesson(
                 content,
                 _complete_document(title="PRIVATE-ARTIFACT-TITLE"),
-                body="<p>PRIVATE-ARTIFACT-BODY</p>",
+                body=_body_with_text("PRIVATE-ARTIFACT-BODY"),
             )
             baseline = root / "baseline"
             build_site(content, templates, static_root, baseline)
@@ -735,7 +808,7 @@ class LessonRenderingTests(unittest.TestCase):
                 _add_lesson(
                     content,
                     _complete_document(title="PRIVATE-TITLE-CONTENT"),
-                    body="<p>PRIVATE-BODY-CONTENT</p>",
+                    body=_body_with_text("PRIVATE-BODY-CONTENT"),
                 )
                 real_open = os.open
                 real_close = os.close
