@@ -15,7 +15,14 @@ from string import Template
 from types import MappingProxyType
 
 from .errors import CurriculumValidationError
-from .html_safety import SafeHtml, validate_fragment
+from .html_safety import (
+    HtmlProvenance,
+    SafeHtml,
+    revalidate_safe_html,
+    validate_fragment,
+    validate_generated_document,
+    validate_generated_fragment,
+)
 
 
 MAX_TEMPLATE_BYTES = 262_144
@@ -475,15 +482,17 @@ def _validate_structured_text(value: object, *, label: str) -> str:
 def _require_exact_safe_html(value: object) -> SafeHtml:
     if type(value) is not SafeHtml:
         raise CurriculumValidationError("raw HTML requires exact SafeHtml")
-    # A frozen capability can still be forged with low-level Python APIs. Issue
-    # a fresh capability so the inserted bytes are exactly those just validated.
     try:
-        fragment = value.value
+        # A frozen capability can still be forged with low-level Python APIs.
+        # Provenance selects the issuing grammar and fresh validation binds the
+        # exact bytes immediately before template substitution.
+        return revalidate_safe_html(value)
+    except CurriculumValidationError:
+        raise
     except Exception:
         raise CurriculumValidationError(
             "raw HTML could not be revalidated"
         ) from None
-    return validate_fragment(fragment)
 
 
 def _validate_output_path(output_path: object) -> tuple[Path, int]:
@@ -1058,7 +1067,7 @@ class Renderer:
                 "base template substitution failed"
             ) from None
         _reject_duplicate_document_ids(document)
-        return document
+        return validate_generated_document(document).value
 
     def fragment(
         self,
@@ -1111,18 +1120,22 @@ class Renderer:
         }
         # Revalidation happens after template analysis and immediately before
         # substitution, minimizing the stale-capability window.
-        values.update(
-            {
-                key: _require_exact_safe_html(value).value
-                for key, value in html_entries
-            }
-        )
+        safe_values = {
+            key: _require_exact_safe_html(value)
+            for key, value in html_entries
+        }
+        values.update({key: value.value for key, value in safe_values.items()})
         try:
             rendered = Template(source).substitute(values)
         except (KeyError, ValueError):
             raise CurriculumValidationError(
                 "template substitution failed"
             ) from None
+        if any(
+            value.provenance is HtmlProvenance.GENERATED
+            for value in safe_values.values()
+        ):
+            return validate_generated_fragment(rendered)
         return validate_fragment(rendered)
 
     def _read_template(self, name: str) -> str:

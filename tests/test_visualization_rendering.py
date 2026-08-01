@@ -4,7 +4,14 @@ from dataclasses import replace
 from html.parser import HTMLParser
 import unittest
 
-from curriculum_builder.lesson_rendering import parse_lesson_body, render_lesson_body
+from curriculum_builder.errors import CurriculumValidationError
+from curriculum_builder.html_safety import validate_generated_fragment
+from curriculum_builder.lesson_rendering import (
+    LessonBody,
+    LessonSection,
+    parse_lesson_body,
+    render_lesson_body,
+)
 from curriculum_builder.visualizations import (
     CausalPayload,
     ComparisonCell,
@@ -36,6 +43,7 @@ from curriculum_builder.visualizations import (
     TimelinePayload,
     Visualization,
     VisualizationType,
+    parse_visualizations,
     render_visualization,
 )
 
@@ -164,6 +172,24 @@ class VisualizationRenderingTests(unittest.TestCase):
         self.assertLess(mental_end, figure)
         self.assertLess(figure, worked)
 
+    def test_lesson_body_renderer_requires_authored_section_provenance(self) -> None:
+        body = parse_lesson_body(BODY)
+        forged_section = LessonSection(
+            LessonSectionRole.WHY,
+            validate_generated_fragment(
+                '<section id="why"><button type="button" disabled>'
+                "unsafe</button></section>"
+            ),
+        )
+        forged_body = LessonBody((forged_section, *body.sections[1:]))
+
+        with self.assertRaisesRegex(CurriculumValidationError, "authored"):
+            render_lesson_body(
+                "core-01-systems-tradeoffs",
+                forged_body,
+                (),
+            )
+
     def test_simulation_static_oracle_precedes_controls_and_is_complete(self) -> None:
         visual = _visual(VisualizationType.FLOW, self.payloads()[VisualizationType.FLOW])
         simulation = Simulation(
@@ -257,6 +283,60 @@ class VisualizationRenderingTests(unittest.TestCase):
                     self.assertIn(label, controls)
                 for label in absent:
                     self.assertNotIn(label, controls)
+
+    def test_stepper_without_parameters_omits_empty_parameter_table(self) -> None:
+        simulation = Simulation(
+            SimulationKind.REQUEST_PATH,
+            InteractionMode.STEPPER,
+            (), "ready",
+            (SimulationState("ready", "準備", "待機", {}, (), ()),),
+            (),
+            (SimulationOutcome("ready-outcome", "ready", "準備完了"),),
+            None,
+        )
+        visual = replace(
+            _visual(VisualizationType.FLOW, self.payloads()[VisualizationType.FLOW]),
+            simulation=simulation,
+        )
+
+        html = render_visualization("core-01-systems-tradeoffs", visual).value
+
+        self.assertNotIn("パラメータと選択肢", html)
+        self.assertIn("完全な遷移", html)
+        self.assertIn("観測結果", html)
+
+    def test_timeline_rejects_phase_order_that_reverses_total_event_order(self) -> None:
+        raw = [{
+            "id": "timeline-order",
+            "type": "timeline",
+            "caption": "順序",
+            "question": "どの順で進むか",
+            "afterSection": "mentalModel",
+            "objectiveIds": ["obj-1"],
+            "evidenceIds": ["evidence"],
+            "sourceIds": ["source"],
+            "expectedObservation": "前期から後期へ進む",
+            "payload": {
+                "phases": [
+                    {"id": "late", "label": "後期", "detail": "後半"},
+                    {"id": "early", "label": "前期", "detail": "前半"},
+                ],
+                "events": [
+                    {"id": "first", "label": "開始", "detail": "先", "phaseId": "early", "order": 0},
+                    {"id": "second", "label": "終了", "detail": "後", "phaseId": "late", "order": 1},
+                ],
+            },
+        }]
+
+        with self.assertRaisesRegex(CurriculumValidationError, "phase order"):
+            parse_visualizations(
+                raw,
+                lesson_id="core-01-systems-tradeoffs",
+                complete=False,
+                objective_evidence={"obj-1": frozenset({"evidence"})},
+                evidence_ids=frozenset({"evidence"}),
+                source_ids=frozenset({"source"}),
+            )
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ from curriculum_builder.errors import CurriculumValidationError
 from curriculum_builder.html_safety import (
     ALLOWED_TAGS,
     GLOBAL_ATTRIBUTES,
+    HtmlProvenance,
     MAX_ATTRIBUTES_PER_ELEMENT,
     MAX_ATTRIBUTE_VALUE_CHARS,
     MAX_FRAGMENT_BYTES,
@@ -17,6 +18,7 @@ from curriculum_builder.html_safety import (
     MAX_NESTING_DEPTH,
     TAG_ATTRIBUTES,
     SafeHtml,
+    validate_generated_fragment,
     validate_fragment,
 )
 
@@ -45,8 +47,46 @@ class HtmlSafetyTests(unittest.TestCase):
         safe = validate_fragment(fragment)
 
         self.assertEqual(safe.value, fragment)
+        self.assertIs(safe.provenance, HtmlProvenance.AUTHORED)
         self.assertEqual(safe, validate_fragment(fragment))
         self.assertEqual(hash(safe), hash(validate_fragment(fragment)))
+
+    def test_authored_grammar_rejects_native_interactive_elements(self) -> None:
+        for fragment in (
+            '<button type="button" disabled>実行</button>',
+            '<select disabled><option value="one">一つ</option></select>',
+            '<label><input type="radio" name="choice" value="one" disabled>一つ</label>',
+        ):
+            with self.subTest(fragment=fragment):
+                with self.assertRaises(CurriculumValidationError):
+                    validate_fragment(fragment)
+
+    def test_generated_grammar_accepts_only_closed_native_controls(self) -> None:
+        fragment = (
+            '<figure id="lesson-visual"><figcaption>図</figcaption>'
+            '<p>静的説明</p><div class="visualization__controls" hidden>'
+            '<label for="choice">選択</label><select id="choice" disabled>'
+            '<option value="one" selected>一つ</option></select>'
+            '<fieldset disabled><legend>方式</legend><label>'
+            '<input type="radio" name="mode" value="safe" disabled checked>'
+            '安全</label></fieldset><button type="button" disabled>適用</button>'
+            '</div></figure>'
+        )
+
+        generated = validate_generated_fragment(fragment)
+        self.assertEqual(generated.value, fragment)
+        self.assertIs(generated.provenance, HtmlProvenance.GENERATED)
+
+        for mutation in (
+            fragment.replace("<button", "<marquee", 1).replace("</button>", "</marquee>", 1),
+            fragment.replace(" disabled>適用", ' onclick="run()" disabled>適用'),
+            fragment.replace(" disabled>適用", ' style="color:red" disabled>適用'),
+            fragment.replace(" disabled>適用", ' data-action="run" disabled>適用'),
+            fragment.replace(" disabled>適用", ' disabled="disabled">適用'),
+        ):
+            with self.subTest(mutation=mutation[-80:]):
+                with self.assertRaises(CurriculumValidationError):
+                    validate_generated_fragment(mutation)
 
     def test_accepts_mixed_case_markup_and_safe_character_references(self) -> None:
         fragment = (
@@ -85,7 +125,7 @@ class HtmlSafetyTests(unittest.TestCase):
             with self.subTest(args=args):
                 with self.assertRaisesRegex(
                     TypeError,
-                    r"^SafeHtml values must be created by validate_fragment$",
+                    r"^SafeHtml values must be created by HTML validators$",
                 ):
                     SafeHtml(*args)  # type: ignore[call-arg]
 
@@ -94,6 +134,8 @@ class HtmlSafetyTests(unittest.TestCase):
 
         with self.assertRaises(FrozenInstanceError):
             safe.value = "changed"  # type: ignore[misc]
+        with self.assertRaises(FrozenInstanceError):
+            safe.provenance = HtmlProvenance.GENERATED  # type: ignore[misc]
         self.assertFalse(hasattr(safe, "__dict__"))
 
     def test_allowlists_are_immutable(self) -> None:

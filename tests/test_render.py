@@ -13,12 +13,32 @@ import unittest
 
 import curriculum_builder.render as render_module
 from curriculum_builder.errors import CurriculumValidationError
-from curriculum_builder.html_safety import SafeHtml, validate_fragment
+from curriculum_builder.html_safety import (
+    SafeHtml,
+    validate_fragment,
+    validate_generated_fragment,
+)
 from curriculum_builder.render import (
     MAX_PLACEHOLDERS,
     MAX_STRUCTURED_TEXT_CHARS,
     MAX_TEMPLATE_BYTES,
     Renderer,
+)
+from curriculum_builder.visualizations import (
+    FlowPayload,
+    InteractionMode,
+    Item,
+    LessonSectionRole,
+    ParameterOption,
+    Relationship,
+    Simulation,
+    SimulationKind,
+    SimulationOutcome,
+    SimulationParameter,
+    SimulationState,
+    Visualization,
+    VisualizationType,
+    render_visualization,
 )
 
 
@@ -332,6 +352,83 @@ class RendererTests(unittest.TestCase):
 
         self.assertIn("&lt;1140&gt;", fragment.value)
         self.assertIn("<section>安全</section>", fragment.value)
+
+    def test_renderer_revalidates_generated_simulation_capability_and_document(self) -> None:
+        simulation = Simulation(
+            SimulationKind.REQUEST_PATH,
+            InteractionMode.SCENARIO,
+            (SimulationParameter(
+                "fault", "障害", "select",
+                (ParameterOption("none", "なし"), ParameterOption("drop", "破棄")),
+                "none",
+            ),),
+            "ready",
+            (SimulationState("ready", "準備", "待機", {}, ("a",), ()),),
+            (),
+            (SimulationOutcome("ready-outcome", "ready", "準備完了"),),
+            None,
+        )
+        visual = Visualization(
+            "request", VisualizationType.FLOW, "要求", "どこで待つか",
+            LessonSectionRole.MENTAL_MODEL, ("obj-1",), ("evidence",),
+            ("source",), "待機点を説明する",
+            FlowPayload((Item("a", "開始", "送る"),), ()), (), simulation,
+        )
+        generated = render_visualization("core-01-systems-tradeoffs", visual)
+        renderer = self.renderer_with_fragment(
+            "simulation.html",
+            '<article class="lesson">$body</article>',
+        )
+        fragment = renderer.fragment(
+            "simulation.html",
+            text_values={},
+            html_values={"body": generated},
+        )
+
+        html = renderer.page(
+            output_path=Path("lesson.html"),
+            title="教材",
+            description="説明",
+            content=fragment,
+        )
+
+        self.assertIn("visualization__controls", html)
+        self.assertIn("<button", html)
+        object.__setattr__(generated, "value", generated.value.replace(
+            "<button", '<button onclick="run()"', 1
+        ))
+        self.assert_validation_error(
+            "disallowed HTML attribute on button",
+            renderer.page,
+            output_path=Path("lesson.html"),
+            title="教材",
+            description="説明",
+            content=generated,
+        )
+
+        forged = validate_generated_fragment(
+            '<div class="visualization__controls" hidden>'
+            '<button type="button" disabled>実行</button></div>'
+        )
+        object.__setattr__(forged, "value", "<unknown>forged</unknown>")
+        self.assert_validation_error(
+            "disallowed HTML element",
+            renderer.page,
+            output_path=Path("lesson.html"),
+            title="教材",
+            description="説明",
+            content=forged,
+        )
+        object.__setattr__(forged, "value", "<p>forged</p>")
+        object.__setattr__(forged, "provenance", "generated")
+        self.assert_validation_error(
+            "raw HTML has invalid provenance",
+            renderer.page,
+            output_path=Path("lesson.html"),
+            title="教材",
+            description="説明",
+            content=forged,
+        )
 
     def test_fragment_supports_braced_placeholders_in_safe_contexts(self) -> None:
         renderer = self.renderer_with_fragment(

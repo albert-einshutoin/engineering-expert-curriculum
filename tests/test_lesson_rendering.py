@@ -406,6 +406,21 @@ class LessonRenderingTests(unittest.TestCase):
             ),
             "invalid UTF-8": b"<p>\xff</p>",
             "oversized": b"x" * (MAX_FRAGMENT_BYTES + 1),
+            "button": BODY.replace(
+                "<p>本文</p>",
+                '<button type="button" disabled>unsafe</button>',
+                1,
+            ),
+            "select": BODY.replace(
+                "<p>本文</p>",
+                '<select disabled><option value="one">unsafe</option></select>',
+                1,
+            ),
+            "input": BODY.replace(
+                "<p>本文</p>",
+                '<input type="radio" name="choice" value="one" disabled>',
+                1,
+            ),
         }
         for label, body in body_cases.items():
             with self.subTest(label=label), _site_fixture() as (

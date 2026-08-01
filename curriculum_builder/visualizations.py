@@ -13,7 +13,11 @@ from types import MappingProxyType
 import unicodedata
 
 from .errors import CurriculumValidationError
-from .html_safety import SafeHtml, _issue_safe_html, validate_fragment
+from .html_safety import (
+    SafeHtml,
+    validate_fragment,
+    validate_generated_fragment,
+)
 
 
 _ID = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
@@ -706,6 +710,10 @@ def _parse_timeline_payload(
         _fail(path, "timeline order must be total")
     if keys != sorted(keys, key=lambda key: (key[0], key[1] or "")):
         _fail(path, "timeline events must retain total authored order")
+    phase_order = {phase.id: index for index, phase in enumerate(phases)}
+    event_phase_order = [phase_order[event.phase_id] for event in events]
+    if event_phase_order != sorted(event_phase_order):
+        _fail(path, "timeline phase order must preserve total event order")
     return TimelinePayload(phases, events)
 
 
@@ -1765,13 +1773,18 @@ def _render_simulation_oracle(simulation: Simulation) -> str:
         f"<td>{_e(outcome.state_id)}</td></tr>"
         for outcome in simulation.outcomes
     )
-    static_oracle = (
-        '<div class="visualization__simulation-oracle">'
+    parameter_table = (
         '<table><caption>パラメータと選択肢</caption><thead><tr>'
         '<th scope="col">パラメータ</th><th scope="col">選択肢</th>'
         '<th scope="col">既定値</th></tr></thead>'
         f"<tbody>{parameter_rows}</tbody></table>"
-        f'<ol class="visualization__simulation-states">{state_items}</ol>'
+        if simulation.parameters
+        else ""
+    )
+    static_oracle = (
+        '<div class="visualization__simulation-oracle">'
+        + parameter_table
+        + f'<ol class="visualization__simulation-states">{state_items}</ol>'
         '<table><caption>完全な遷移</caption><thead><tr>'
         '<th scope="col">イベント</th><th scope="col">開始</th>'
         '<th scope="col">終了</th><th scope="col">条件</th></tr></thead>'
@@ -1913,11 +1926,10 @@ def render_visualization(lesson_id: str, visual: Visualization) -> SafeHtml:
     if visual.simulation is None:
         return safe_figure
     controls = _render_simulation_controls(visual.simulation, figure_id)
-    # Author-controlled values were escaped and the semantic figure was
-    # validated above. Controls are a closed renderer-owned grammar containing
-    # only fixed native elements and escaped schema-bounded IDs/labels, so the
-    # authored-fragment allowlist does not need to admit interactive elements.
-    return _issue_safe_html(
+    # Author-controlled values were escaped and validated above. The combined
+    # renderer-owned control grammar is independently validated without
+    # widening the authored-fragment allowlist.
+    return validate_generated_fragment(
         safe_figure.value[:-len("</figure>")]
         + controls
         + "</figure>"

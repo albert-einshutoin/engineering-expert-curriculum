@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 from html.parser import HTMLParser
 import ipaddress
 import re
@@ -15,6 +16,8 @@ from .errors import CurriculumValidationError
 
 MAX_FRAGMENT_CHARS = 100_000
 MAX_FRAGMENT_BYTES = 262_144
+MAX_GENERATED_DOCUMENT_CHARS = 4_000_000
+MAX_GENERATED_DOCUMENT_BYTES = 16 * 1024 * 1024
 MAX_NESTING_DEPTH = 64
 MAX_ATTRIBUTES_PER_ELEMENT = 16
 MAX_ATTRIBUTE_VALUE_CHARS = 4_096
@@ -94,6 +97,25 @@ _START_TAG_PATTERN = re.compile(
     """,
     re.ASCII | re.VERBOSE,
 )
+_GENERATED_START_TAG_PATTERN = re.compile(
+    r"""
+    <
+    (?P<tag>[A-Za-z][A-Za-z0-9-]*)
+    (?P<attributes>
+        (?:
+            [\t\n\r ]+
+            [A-Za-z_:][A-Za-z0-9_.:-]*
+            (?:
+                [\t\n\r ]*=[\t\n\r ]*
+                (?:"[^"<>]*"|'[^'<>]*')
+            )?
+        )*
+    )
+    [\t\n\r ]*
+    >
+    """,
+    re.ASCII | re.VERBOSE,
+)
 _END_TAG_PATTERN = re.compile(
     r"</[A-Za-z][A-Za-z0-9-]*[\t\n\r ]*>",
     re.ASCII,
@@ -159,6 +181,37 @@ _REQUIRED_PARENTS = MappingProxyType(
     }
 )
 
+_GENERATED_CONTROL_TAGS = frozenset(
+    {"button", "fieldset", "input", "label", "legend", "option", "select"}
+)
+_GENERATED_DOCUMENT_TAGS = frozenset(
+    {"body", "footer", "head", "html", "link", "main", "meta", "nav", "title"}
+)
+_GENERATED_FRAGMENT_TAGS = ALLOWED_TAGS | _GENERATED_CONTROL_TAGS
+_GENERATED_ATTRIBUTES = MappingProxyType(
+    {
+        "button": frozenset({"disabled", "type"}),
+        "div": frozenset({"hidden"}),
+        "fieldset": frozenset({"disabled"}),
+        "html": frozenset({"lang"}),
+        "input": frozenset({"checked", "disabled", "name", "type", "value"}),
+        "label": frozenset({"for"}),
+        "link": frozenset({"href", "rel"}),
+        "main": frozenset({"id"}),
+        "meta": frozenset({"charset", "content", "http-equiv", "name"}),
+        "nav": frozenset({"aria-label"}),
+        "option": frozenset({"selected", "value"}),
+        "select": frozenset({"disabled", "id"}),
+    }
+)
+_BOOLEAN_ATTRIBUTES = frozenset({"checked", "disabled", "hidden", "selected"})
+_GENERATED_VOID_TAGS = frozenset({"input", "link", "meta"})
+
+
+class HtmlProvenance(StrEnum):
+    AUTHORED = "authored"
+    GENERATED = "generated"
+
 
 @dataclass(slots=True)
 class _ElementFrame:
@@ -171,21 +224,30 @@ class _ElementFrame:
 
 @dataclass(frozen=True, slots=True, init=False)
 class SafeHtml:
-    """An immutable fragment that can only be issued by ``validate_fragment``."""
+    """Immutable HTML issued only by the matching closed grammar validator."""
 
     value: str
+    provenance: HtmlProvenance
 
     def __new__(cls, *_args: object, **_kwargs: object) -> SafeHtml:
-        raise TypeError("SafeHtml values must be created by validate_fragment")
+        raise TypeError("SafeHtml values must be created by HTML validators")
 
 
-def _issue_safe_html(fragment: str) -> SafeHtml:
+def _issue_safe_html(
+    fragment: str,
+    provenance: HtmlProvenance,
+) -> SafeHtml:
     safe = object.__new__(SafeHtml)
     object.__setattr__(safe, "value", fragment)
+    object.__setattr__(safe, "provenance", provenance)
     return safe
 
 
-def _scan_markup_syntax(fragment: str) -> None:
+def _scan_markup_syntax(
+    fragment: str,
+    *,
+    generated: bool = False,
+) -> None:
     """Reject syntax outside the small subset interpreted identically by browsers."""
     cursor = 0
     while True:
@@ -228,16 +290,29 @@ def _scan_markup_syntax(fragment: str) -> None:
             pass
         elif token.endswith("/>"):
             ordinary_token = f"{token[:-2]}>"
-            if _START_TAG_PATTERN.fullmatch(ordinary_token) is None:
+            pattern = (
+                _GENERATED_START_TAG_PATTERN if generated else _START_TAG_PATTERN
+            )
+            if pattern.fullmatch(ordinary_token) is None:
                 raise CurriculumValidationError("malformed HTML start tag")
-        elif _START_TAG_PATTERN.fullmatch(token) is None:
+        elif (
+            _GENERATED_START_TAG_PATTERN if generated else _START_TAG_PATTERN
+        ).fullmatch(token) is None:
             raise CurriculumValidationError("malformed HTML start tag")
         cursor = closing + 1
 
 
 class _FragmentParser(HTMLParser):
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        generated: bool = False,
+        document: bool = False,
+    ) -> None:
         super().__init__(convert_charrefs=True)
+        self._generated = generated
+        self._document = document
+        self._doctype_seen = False
         self._open_tags: list[_ElementFrame] = []
         self._ids: set[str] = set()
 
@@ -247,9 +322,19 @@ class _FragmentParser(HTMLParser):
         attrs: list[tuple[str, str | None]],
     ) -> None:
         raw_tag = self.get_starttag_text()
-        if raw_tag is None or _START_TAG_PATTERN.fullmatch(raw_tag) is None:
+        pattern = (
+            _GENERATED_START_TAG_PATTERN
+            if self._generated
+            else _START_TAG_PATTERN
+        )
+        if raw_tag is None or pattern.fullmatch(raw_tag) is None:
             raise CurriculumValidationError("malformed HTML start tag")
-        if tag not in ALLOWED_TAGS:
+        allowed_tags = ALLOWED_TAGS
+        if self._generated:
+            allowed_tags = _GENERATED_FRAGMENT_TAGS
+            if self._document:
+                allowed_tags |= _GENERATED_DOCUMENT_TAGS
+        if tag not in allowed_tags:
             raise CurriculumValidationError("disallowed HTML element")
         if len(attrs) > MAX_ATTRIBUTES_PER_ELEMENT:
             raise CurriculumValidationError(
@@ -261,12 +346,20 @@ class _FragmentParser(HTMLParser):
             raise CurriculumValidationError("duplicate HTML attribute")
 
         allowed = GLOBAL_ATTRIBUTES | TAG_ATTRIBUTES.get(tag, _EMPTY_ATTRIBUTES)
+        if self._generated:
+            allowed |= _GENERATED_ATTRIBUTES.get(tag, _EMPTY_ATTRIBUTES)
         for name, value in attrs:
             normalized_name = name.casefold()
             if normalized_name.startswith("on") or normalized_name not in allowed:
                 raise CurriculumValidationError(
                     f"disallowed HTML attribute on {tag}"
                 )
+            if normalized_name in _BOOLEAN_ATTRIBUTES:
+                if not self._generated or value is not None:
+                    raise CurriculumValidationError(
+                        "boolean HTML attributes must not have values"
+                    )
+                continue
             if value is None:
                 raise CurriculumValidationError("HTML attributes require values")
             if len(value) > MAX_ATTRIBUTE_VALUE_CHARS:
@@ -275,11 +368,16 @@ class _FragmentParser(HTMLParser):
                 )
             self._validate_attribute(tag, normalized_name, value)
 
+        if self._generated:
+            self._validate_generated_control(tag, attrs)
+
         if len(self._open_tags) >= MAX_NESTING_DEPTH:
             raise CurriculumValidationError(
                 "fragment exceeds maximum nesting depth"
             )
         self._validate_content_model(tag)
+        if self._generated and tag in _GENERATED_VOID_TAGS:
+            return
         self._open_tags.append(_ElementFrame(tag=tag))
 
     def handle_startendtag(
@@ -293,8 +391,15 @@ class _FragmentParser(HTMLParser):
         )
 
     def handle_endtag(self, tag: str) -> None:
-        if tag not in ALLOWED_TAGS:
+        allowed_tags = ALLOWED_TAGS
+        if self._generated:
+            allowed_tags = _GENERATED_FRAGMENT_TAGS
+            if self._document:
+                allowed_tags |= _GENERATED_DOCUMENT_TAGS
+        if tag not in allowed_tags:
             raise CurriculumValidationError("disallowed HTML element")
+        if self._generated and tag in _GENERATED_VOID_TAGS:
+            raise CurriculumValidationError(f"stray closing tag: {tag}")
         if not self._open_tags:
             raise CurriculumValidationError(f"stray closing tag: {tag}")
         frame = self._open_tags[-1]
@@ -328,8 +433,15 @@ class _FragmentParser(HTMLParser):
         raise CurriculumValidationError("HTML comments are not allowed")
 
     def handle_decl(self, decl: str) -> None:
-        del decl
-        raise CurriculumValidationError("HTML declarations are not allowed")
+        if (
+            not self._generated
+            or not self._document
+            or self._doctype_seen
+            or decl.casefold() != "doctype html"
+            or self._open_tags
+        ):
+            raise CurriculumValidationError("HTML declarations are not allowed")
+        self._doctype_seen = True
 
     def unknown_decl(self, data: str) -> None:
         del data
@@ -346,10 +458,32 @@ class _FragmentParser(HTMLParser):
             raise CurriculumValidationError(
                 f"unclosed HTML element: {self._open_tags[-1].tag}"
             )
+        if self._document and not self._doctype_seen:
+            raise CurriculumValidationError(
+                "generated document requires an HTML doctype"
+            )
 
     def _validate_content_model(self, tag: str) -> None:
         parent = self._open_tags[-1] if self._open_tags else None
         parent_tag = parent.tag if parent is not None else None
+
+        if self._generated:
+            if tag == "option" and parent_tag != "select":
+                raise CurriculumValidationError(
+                    "invalid HTML content model: option requires parent select"
+                )
+            if tag == "legend" and parent_tag != "fieldset":
+                raise CurriculumValidationError(
+                    "invalid HTML content model: legend requires parent fieldset"
+                )
+            if parent_tag == "select" and tag != "option":
+                raise CurriculumValidationError(
+                    "invalid HTML content model: select only allows option children"
+                )
+            if parent_tag in {"button", "option"}:
+                raise CurriculumValidationError(
+                    f"invalid HTML content model: {parent_tag} cannot contain elements"
+                )
 
         required = _REQUIRED_PARENTS.get(tag)
         if required is not None:
@@ -424,7 +558,6 @@ class _FragmentParser(HTMLParser):
         parent.has_direct_content = True
 
     def _validate_attribute(self, tag: str, name: str, value: str) -> None:
-        del tag
         if name == "class":
             tokens = value.split(" ")
             if (
@@ -444,6 +577,10 @@ class _FragmentParser(HTMLParser):
                 raise CurriculumValidationError("duplicate HTML id")
             self._ids.add(value)
         elif name == "rel":
+            if self._generated and tag == "link":
+                if value != "stylesheet":
+                    raise CurriculumValidationError("invalid rel attribute")
+                return
             tokens = value.split(" ")
             if (
                 not tokens
@@ -463,6 +600,69 @@ class _FragmentParser(HTMLParser):
                 raise CurriculumValidationError(f"invalid {name} attribute")
         elif name == "href":
             _validate_url(value)
+        elif self._generated:
+            self._validate_generated_attribute(tag, name, value)
+
+    def _validate_generated_control(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+    ) -> None:
+        names = {name.casefold() for name, _ in attrs}
+        if tag in {"button", "fieldset", "input", "select"} and "disabled" not in names:
+            raise CurriculumValidationError(
+                f"generated {tag} must be disabled before enhancement"
+            )
+        required = {
+            "button": {"type"},
+            "input": {"name", "type", "value"},
+            "option": {"value"},
+            "select": {"id"},
+        }.get(tag, set())
+        if not required <= names:
+            raise CurriculumValidationError(
+                f"generated {tag} is missing required attributes"
+            )
+
+    def _validate_generated_attribute(
+        self,
+        tag: str,
+        name: str,
+        value: str,
+    ) -> None:
+        if name == "type":
+            expected = "button" if tag == "button" else "radio"
+            if value != expected:
+                raise CurriculumValidationError(f"invalid type attribute on {tag}")
+        elif name == "for":
+            if _ID_PATTERN.fullmatch(value) is None:
+                raise CurriculumValidationError(f"invalid {name} attribute")
+        elif name == "name":
+            if tag == "meta":
+                if value not in {"description", "viewport"}:
+                    raise CurriculumValidationError("invalid name attribute")
+            elif _ID_PATTERN.fullmatch(value) is None:
+                raise CurriculumValidationError("invalid name attribute")
+        elif name == "value":
+            if (
+                _ID_PATTERN.fullmatch(value) is None
+                and value not in {"0.5", "1", "2"}
+            ):
+                raise CurriculumValidationError("invalid value attribute")
+        elif name == "lang":
+            if value != "ja":
+                raise CurriculumValidationError("invalid lang attribute")
+        elif name == "charset":
+            if value.casefold() != "utf-8":
+                raise CurriculumValidationError("invalid charset attribute")
+        elif name == "http-equiv":
+            if value.casefold() != "content-security-policy":
+                raise CurriculumValidationError("invalid http-equiv attribute")
+        elif name in {"aria-label", "content"}:
+            if len(value) > MAX_ATTRIBUTE_VALUE_CHARS:
+                raise CurriculumValidationError(
+                    "HTML attribute value exceeds maximum character count"
+                )
 
 
 def _validate_url(value: str) -> None:
@@ -523,13 +723,23 @@ def _is_valid_hostname(hostname: str) -> bool:
     return True
 
 
-def validate_fragment(fragment: str) -> SafeHtml:
-    """Validate an authored fragment and return an immutable trusted value."""
+def _validate_html_input(
+    fragment: str,
+    *,
+    generated: bool,
+    document: bool,
+) -> None:
     if type(fragment) is not str:
         raise CurriculumValidationError("fragment must be an exact string")
     if not fragment.strip():
         raise CurriculumValidationError("fragment must not be empty")
-    if len(fragment) > MAX_FRAGMENT_CHARS:
+    maximum_chars = (
+        MAX_GENERATED_DOCUMENT_CHARS if document else MAX_FRAGMENT_CHARS
+    )
+    maximum_bytes = (
+        MAX_GENERATED_DOCUMENT_BYTES if document else MAX_FRAGMENT_BYTES
+    )
+    if len(fragment) > maximum_chars:
         raise CurriculumValidationError(
             "fragment exceeds maximum character count"
         )
@@ -537,7 +747,7 @@ def validate_fragment(fragment: str) -> SafeHtml:
         encoded = fragment.encode("utf-8")
     except UnicodeError:
         raise CurriculumValidationError("fragment is not valid UTF-8 text") from None
-    if len(encoded) > MAX_FRAGMENT_BYTES:
+    if len(encoded) > maximum_bytes:
         raise CurriculumValidationError(
             "fragment exceeds maximum UTF-8 byte count"
         )
@@ -549,8 +759,8 @@ def validate_fragment(fragment: str) -> SafeHtml:
             "fragment contains a disallowed control character"
         )
 
-    _scan_markup_syntax(fragment)
-    parser = _FragmentParser()
+    _scan_markup_syntax(fragment, generated=generated)
+    parser = _FragmentParser(generated=generated, document=document)
     try:
         parser.feed(fragment)
         parser.close()
@@ -559,4 +769,39 @@ def validate_fragment(fragment: str) -> SafeHtml:
         raise
     except Exception:
         raise CurriculumValidationError("could not parse HTML fragment") from None
-    return _issue_safe_html(fragment)
+
+
+def validate_fragment(fragment: str) -> SafeHtml:
+    """Validate repository-authored HTML with the strict non-interactive grammar."""
+    _validate_html_input(fragment, generated=False, document=False)
+    return _issue_safe_html(fragment, HtmlProvenance.AUTHORED)
+
+
+def validate_generated_fragment(fragment: str) -> SafeHtml:
+    """Validate renderer-owned HTML with closed, disabled native controls."""
+    _validate_html_input(fragment, generated=True, document=False)
+    return _issue_safe_html(fragment, HtmlProvenance.GENERATED)
+
+
+def validate_generated_document(document: str) -> SafeHtml:
+    """Validate the complete renderer output using the generated grammar."""
+    _validate_html_input(document, generated=True, document=True)
+    return _issue_safe_html(document, HtmlProvenance.GENERATED)
+
+
+def revalidate_safe_html(value: object) -> SafeHtml:
+    """Revalidate exact bytes against the provenance-bearing issuing grammar."""
+    if type(value) is not SafeHtml:
+        raise CurriculumValidationError("raw HTML requires exact SafeHtml")
+    try:
+        fragment = value.value
+        provenance = value.provenance
+    except Exception:
+        raise CurriculumValidationError(
+            "raw HTML could not be revalidated"
+        ) from None
+    if provenance is HtmlProvenance.AUTHORED:
+        return validate_fragment(fragment)
+    if provenance is HtmlProvenance.GENERATED:
+        return validate_generated_fragment(fragment)
+    raise CurriculumValidationError("raw HTML has invalid provenance")

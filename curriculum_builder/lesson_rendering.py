@@ -16,10 +16,12 @@ from urllib.parse import urlsplit
 from .errors import CurriculumValidationError, IncompleteLessonReleaseError
 from .graph import topological_stages
 from .html_safety import (
+    HtmlProvenance,
     MAX_FRAGMENT_BYTES,
     SafeHtml,
-    _issue_safe_html,
+    revalidate_safe_html,
     validate_fragment,
+    validate_generated_fragment,
 )
 from .lessons import Lesson, MAX_LESSON_BYTES, load_lesson_bytes
 from .render import Renderer
@@ -710,6 +712,25 @@ def render_lesson_body(
     """Interleave visuals after complete typed sections, never by DOM ID."""
     if type(body) is not LessonBody or type(visualizations) is not tuple:
         raise CurriculumValidationError("lesson body rendering input is invalid")
+    if (
+        type(body.sections) is not tuple
+        or len(body.sections) != len(LessonSectionRole)
+    ):
+        raise CurriculumValidationError("lesson body sections are invalid")
+    safe_sections: list[tuple[LessonSectionRole, SafeHtml]] = []
+    for expected_role, section in zip(
+        LessonSectionRole,
+        body.sections,
+        strict=True,
+    ):
+        if type(section) is not LessonSection or section.role is not expected_role:
+            raise CurriculumValidationError("lesson body sections are invalid")
+        safe_section = revalidate_safe_html(section.html)
+        if safe_section.provenance is not HtmlProvenance.AUTHORED:
+            raise CurriculumValidationError(
+                "lesson body sections require authored HTML provenance"
+            )
+        safe_sections.append((section.role, safe_section))
     by_role: dict[LessonSectionRole, list[Visualization]] = {
         role: [] for role in LessonSectionRole
     }
@@ -718,17 +739,16 @@ def render_lesson_body(
             raise CurriculumValidationError("visualizations must be immutable models")
         by_role[visual.after_section].append(visual)
     rendered = "".join(
-        section.html.value
+        section_html.value
         + "".join(
             render_visualization(lesson_id, visual).value
-            for visual in by_role[section.role]
+            for visual in by_role[role]
         )
-        for section in body.sections
+        for role, section_html in safe_sections
     )
-    # Each component is already an exact SafeHtml instance. Re-issuing the
-    # concatenation preserves renderer-owned native controls without widening
-    # the stricter repository-authored fragment grammar.
-    return _issue_safe_html(rendered)
+    # Authored sections were strict-validated during parsing; this second,
+    # generated-grammar pass validates their typed interleaving with controls.
+    return validate_generated_fragment(rendered)
 
 
 def render_lesson_artifacts(
