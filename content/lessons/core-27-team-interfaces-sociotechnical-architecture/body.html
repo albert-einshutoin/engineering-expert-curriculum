@@ -10,16 +10,6 @@
 <section id="team-mental-model">
   <h2>メンタルモデル</h2>
   <p>team interfaceを、ownerが提供するcapability、receiving teamが持つdependency、双方が観測するSLO、変更を理解するためのcognitive load、境界を改善するenablementの組として捉える。</p>
-  <figure>
-    <figcaption>team ownershipからdependency SLOとcontributor enablementへ至る社会技術interface</figcaption>
-    <ol>
-      <li><strong>Ownership:</strong> checkout teamがcheckout capabilityのdecision rightを持つ。</li>
-      <li><strong>Dependency:</strong> checkoutはplatform capabilityへ依存する。</li>
-      <li><strong>Cognitive load:</strong> assigned領域をcapacityと比較し、過負荷を個人努力へ隠さない。</li>
-      <li><strong>SLO:</strong> dependency latencyのtargetとobservedを同じ単位で評価する。</li>
-      <li><strong>Enablement:</strong> 各interface snapshotから判断を再計算し、healthyならmonitor、breachedならescalateとしてcheckoutの自律判断を増やす。</li>
-    </ol>
-  </figure>
   <p>dependencyをゼロにすることが目的ではない。同期調整が必要な箇所を小さくし、残る依存を観測可能な契約へ変える。cognitive loadがcapacity内でもSLO breachならdeliveryは止まり得るため、teamとserviceの両方を同時に見る。</p>
 </section>
 <section id="worked-example">

@@ -9,17 +9,6 @@
 <section id="mental-model">
   <h2>メンタルモデル</h2>
   <p>変更を「request、execution path、observed behavior、unknown、decision」の連鎖として扱う。先にchange reasonを固定し、小さいfixtureでentry pointから経路を追う。owner、仕様根拠、観測が欠ける場所はunknownとして消さず、追加調査と停止条件へ結ぶ。最後に現在の出力をcharacterization testへ保存し、編集後の差分を意図した変化と回帰へ分ける。</p>
-  <figure>
-    <figcaption>change requestから変更前証拠を作るlegacy comprehension loop</figcaption>
-    <ol>
-      <li><strong>Reason:</strong> 誰のどの結果を変える要求かを一文で固定する。</li>
-      <li><strong>Trace:</strong> entry pointから実際のexecution pathを入力付きで追う。</li>
-      <li><strong>Map:</strong> component、data、side effect、ownerを経路へ結ぶ。</li>
-      <li><strong>Unknown:</strong> 未観測、未所有、仕様不明を仮説から分離する。</li>
-      <li><strong>Characterize:</strong> 現在のexpected、actual、observed pathをtestへ残す。</li>
-      <li><strong>Decide:</strong> 証拠が足りなければ編集せず調査または停止を選ぶ。</li>
-    </ol>
-  </figure>
   <p>system mapは全systemを描く百科事典ではない。対象change requestに必要な範囲と、範囲外だと判断した根拠を示す作業仮説である。要求が変われば、同じfixtureでもaffected pathと必要なcharacterization testを再計算する。</p>
 </section>
 <section id="worked-example">

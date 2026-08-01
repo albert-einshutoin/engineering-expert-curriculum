@@ -1980,10 +1980,29 @@ class CoreTrackTests(unittest.TestCase):
             self.assertEqual(len(result.stderr.splitlines()), 1)
             self.assertTrue(result.stderr.endswith("\n"))
 
-    def assert_body_contract(self, body: str, lesson_id: str) -> None:
+    def assert_body_contract(
+        self,
+        body: str,
+        lesson_id: str,
+        *,
+        visualization_captions: tuple[str, ...] | None = None,
+    ) -> None:
         parser = _BodyContractParser()
         parser.feed(body)
         parser.close()
+        if visualization_captions is None:
+            lesson = load_lesson(
+                self.body_path(lesson_id).with_name("lesson.json")
+            )
+            visualization_captions = tuple(
+                visual.caption for visual in lesson.visualizations
+            )
+        semantic_figure_count = parser.figure_count + len(
+            visualization_captions
+        )
+        semantic_figure_captions = (
+            tuple(parser.figure_captions) + visualization_captions
+        )
 
         self.assertEqual(
             tuple(parser.headings),
@@ -1991,17 +2010,17 @@ class CoreTrackTests(unittest.TestCase):
             f"{lesson_id}: ordered section headings",
         )
         self.assertGreaterEqual(
-            parser.figure_count,
+            semantic_figure_count,
             1,
             f"{lesson_id}: mechanism figure",
         )
         self.assertEqual(
-            len(parser.figure_captions),
-            parser.figure_count,
+            len(semantic_figure_captions),
+            semantic_figure_count,
             f"{lesson_id}: every figure has a caption",
         )
         self.assertTrue(
-            all(parser.figure_captions),
+            all(semantic_figure_captions),
             f"{lesson_id}: non-empty figure caption",
         )
         self.assertEqual(
@@ -2399,36 +2418,37 @@ class CoreTrackTests(unittest.TestCase):
             + body[rebuttal_start + len("<strong>反証:</strong>"):]
         )
         mutations = {
-            "non-empty figure caption": body.replace(
-                "判断を更新可能にする因果ループ",
-                "",
-                1,
+            "non-empty figure caption": (body, ("",)),
+            "non-empty table caption": (
+                body.replace(
+                    "受付方式を選ぶdecision table",
+                    "",
+                    1,
+                ),
+                None,
             ),
-            "non-empty table caption": body.replace(
-                "受付方式を選ぶdecision table",
-                "",
-                1,
+            "every table header has scope": (
+                body.replace(' scope="col"', "", 1),
+                None,
             ),
-            "every table header has scope": body.replace(
-                ' scope="col"',
-                "",
-                1,
-            ),
-            "misdiagnosis and rebuttal": without_paired_rebuttal,
+            "misdiagnosis and rebuttal": (without_paired_rebuttal, None),
             "numeric or executable worked example": (
-                body[:worked_start]
-                + without_marker
-                + body[worked_end:]
+                body[:worked_start] + without_marker + body[worked_end:],
+                None,
             ),
         }
 
-        for expected_message, mutated in mutations.items():
+        for expected_message, (mutated, captions) in mutations.items():
             with self.subTest(expected_message=expected_message):
                 with self.assertRaisesRegex(
                     AssertionError,
                     expected_message,
                 ):
-                    self.assert_body_contract(mutated, lesson_id)
+                    self.assert_body_contract(
+                        mutated,
+                        lesson_id,
+                        visualization_captions=captions,
+                    )
 
     def test_systems_weighted_score_is_arithmetically_correct(self) -> None:
         systems = self.body_path(

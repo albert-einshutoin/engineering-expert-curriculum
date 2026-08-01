@@ -16,6 +16,7 @@ from curriculum_builder.build import build_site
 from curriculum_builder.capstones import parse_capstone_documents
 from curriculum_builder.competencies import parse_competencies_bytes
 from curriculum_builder.errors import CurriculumValidationError
+from curriculum_builder.lessons import load_lesson_bytes
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -58,6 +59,18 @@ LESSON_IDS = (
     "core-29-cross-cultural-async-collaboration",
     "core-30-evidence-based-technical-leadership",
 )
+TASK5_VISUAL_TYPES = {
+    "core-01-systems-tradeoffs": "causal",
+    "core-06-requirements-domain-modeling": "network",
+    "core-08-modularity-evolutionary-architecture": "network",
+    "core-10-threat-modeling-secure-design": "network",
+    "core-14-performance-capacity": "causal",
+    "core-18-product-discovery-experiments": "causal",
+    "core-20-ethics-privacy-societal-impact": "causal",
+    "core-21-maintenance-legacy-comprehension": "network",
+    "core-27-team-interfaces-sociotechnical-architecture": "network",
+    "core-30-evidence-based-technical-leadership": "causal",
+}
 CAPSTONE_IDS = ("global-service", "legacy-evolution", "oss-launch")
 CATALOG_SHA256 = (
     "4f38b5f63931a7f06e13f90f5d9ef90a0a435f30dae5d4fe70720d730a057473"
@@ -1406,10 +1419,14 @@ class ContentAcceptanceTests(unittest.TestCase):
         for lesson_id in LESSON_IDS:
             lesson_root = REPOSITORY_ROOT / "content/lessons" / lesson_id
             body = (lesson_root / "body.html").read_text(encoding="utf-8")
-            figures, residual_sha256 = _legacy_figure_projection(
-                lesson_id, body
-            )
-            actual_figures.extend(figures)
+            if lesson_id in TASK5_VISUAL_TYPES:
+                self.assertNotIn("<figure", body)
+                residual_sha256 = hashlib.sha256(body.encode("utf-8")).hexdigest()
+            else:
+                figures, residual_sha256 = _legacy_figure_projection(
+                    lesson_id, body
+                )
+                actual_figures.extend(figures)
             actual_residuals.append(
                 {"lessonId": lesson_id, "sha256": residual_sha256}
             )
@@ -1437,11 +1454,12 @@ class ContentAcceptanceTests(unittest.TestCase):
                 }
             )
 
-        self.assertEqual(len(actual_figures), 31)
-        self.assertEqual(
-            sum(item["disposition"] == "migrate" for item in actual_figures),
-            30,
-        )
+        expected_remaining_figures = [
+            item
+            for item in oracle["figures"]
+            if item["lessonId"] not in TASK5_VISUAL_TYPES
+        ]
+        self.assertEqual(len(actual_figures), 21)
         self.assertEqual(
             [
                 (item["lessonId"], item["sectionRole"], item["caption"])
@@ -1456,13 +1474,82 @@ class ContentAcceptanceTests(unittest.TestCase):
                 )
             ],
         )
-        self.assertEqual(actual_figures, oracle["figures"])
+        self.assertEqual(actual_figures, expected_remaining_figures)
         self.assertEqual(actual_residuals, oracle["residualBodies"])
         self.assertEqual(actual_sources, oracle["sourceProjections"])
         self.assertEqual(
             sum(len(item["sources"]) for item in actual_sources),
             126,
         )
+
+    def test_task5_causal_and_network_visuals_preserve_ordered_legacy_facts(self) -> None:
+        oracle = json.loads(MIGRATION_ORACLE.read_bytes())
+        legacy_by_lesson = {
+            item["lessonId"]: item
+            for item in oracle["figures"]
+            if item["lessonId"] in TASK5_VISUAL_TYPES
+        }
+
+        for lesson_id, expected_type in TASK5_VISUAL_TYPES.items():
+            with self.subTest(lesson_id=lesson_id):
+                lesson_root = REPOSITORY_ROOT / "content/lessons" / lesson_id
+                document = json.loads((lesson_root / "lesson.json").read_bytes())
+                lesson = load_lesson_bytes(
+                    (lesson_root / "lesson.json").read_bytes(), "lesson.json"
+                )
+                self.assertEqual(len(lesson.visualizations), 1)
+                visual = document["visualizations"][0]
+                self.assertEqual(visual["type"], expected_type)
+                self.assertEqual(
+                    visual["caption"], legacy_by_lesson[lesson_id]["caption"]
+                )
+                self.assertNotIn("simulation", visual)
+                self.assertTrue(visual["objectiveIds"])
+                self.assertTrue(visual["evidenceIds"])
+                self.assertTrue(visual["sourceIds"])
+                self.assertTrue(visual["expectedObservation"].strip())
+
+                objectives = {
+                    item["id"]: set(item["evidenceIds"])
+                    for item in document["objectives"]
+                }
+                reachable = set().union(
+                    *(objectives[item] for item in visual["objectiveIds"])
+                )
+                self.assertLessEqual(set(visual["evidenceIds"]), reachable)
+
+                payload = visual["payload"]
+                if expected_type == "causal":
+                    items = [
+                        item
+                        for group in (
+                            "causes",
+                            "mechanisms",
+                            "outcomes",
+                            "mitigations",
+                        )
+                        for item in payload[group]
+                    ]
+                    relations = payload["relations"]
+                else:
+                    items = payload["nodes"]
+                    relations = payload["connections"]
+                actual_fact_values = [
+                    value
+                    for item in items
+                    for value in (item["label"], item["detail"])
+                ]
+                self.assertEqual(
+                    actual_fact_values,
+                    [
+                        atom[:-1] if atom.endswith(":") else atom
+                        for atom in legacy_by_lesson[lesson_id]["visibleAtoms"]
+                    ],
+                )
+                self.assertTrue(relations)
+                self.assertTrue(
+                    all(relation["label"].strip() for relation in relations)
+                )
 
     def test_authored_bodies_have_six_sections_and_unique_visible_text(self) -> None:
         visible_bodies: dict[str, str] = {}

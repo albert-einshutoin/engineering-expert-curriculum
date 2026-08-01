@@ -170,6 +170,30 @@
       "kind": "primary"
     }
   ],
+  "visualizations": [{
+    "id": "threat-trace-network", "type": "network", "caption": "assetから攻撃経路、control、verification、残余riskを結ぶtrace",
+    "question": "各 threat をどの control、verification、残余 risk の判断まで追跡できるか。", "afterSection": "mentalModel",
+    "objectiveIds": ["obj-model", "obj-control"], "evidenceIds": ["threat-model"], "sourceIds": ["src-01", "src-04"],
+    "expectedObservation": "assetと境界から観測可能なthreatをたどり、予防・検知・回復、test結果、残余riskの所有者まで説明できる。",
+    "payload": {
+      "components": [{"id": "threat-trace", "label": "threat trace", "detail": "資産から残余riskの意思決定までをIDで追跡する安全設計モデル。"}],
+      "nodes": [
+        {"id": "asset", "label": "asset", "detail": "customer data、deployment credential、audit logの価値と安全性目標を定義する。", "componentId": "threat-trace"},
+        {"id": "actor-boundary", "label": "actorとboundary", "detail": "external customer、operations contractor、platform adminをID・type・scopeを持つentityとして定義し、flowの起点と越境点へ参照させる。", "componentId": "threat-trace"},
+        {"id": "threat", "label": "threat", "detail": "意図ではなく、credential再利用、誤ったbulk export、audit停止など観測可能な行為で表す。", "componentId": "threat-trace"},
+        {"id": "control", "label": "control", "detail": "prevent、detect、recoverを型として区別し、各threatへ三種類すべてを重ねる。", "componentId": "threat-trace"},
+        {"id": "verification", "label": "verification", "detail": "具体的なtest ID、control ID、resultをthreatへ接続する。", "componentId": "threat-trace"},
+        {"id": "residual-risk", "label": "residual risk", "detail": "threat ID、decision、uncertainty、owner、期限を付け、未解決を隠さない。", "componentId": "threat-trace"}
+      ],
+      "connections": [
+        {"id": "asset-crosses-boundary", "from": "asset", "to": "actor-boundary", "label": "価値ある対象と越境点を対応付ける"},
+        {"id": "boundary-exposes-threat", "from": "actor-boundary", "to": "threat", "label": "actorの行為として脅威を具体化する"},
+        {"id": "threat-covered-by-control", "from": "threat", "to": "control", "label": "予防・検知・回復を重ねる"},
+        {"id": "control-tested-by-verification", "from": "control", "to": "verification", "label": "test結果で有効性を確かめる"},
+        {"id": "verification-informs-risk", "from": "verification", "to": "residual-risk", "label": "未解決riskの判断根拠にする"}
+      ]
+    }
+  }],
   "review": {
     "intervalDays": [1, 7, 30, 90],
     "prompts": [

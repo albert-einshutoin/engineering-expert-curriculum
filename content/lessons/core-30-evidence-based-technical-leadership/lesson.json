@@ -167,6 +167,29 @@
       "kind": "standard"
     }
   ],
+  "visualizations": [{
+    "id": "leadership-decision-causal", "type": "causal", "caption": "多面的evidenceから可逆な投資と撤退判断へ進むleadership loop",
+    "question": "対立する指標と不確実性を、どの撤退条件を持つ投資判断へ変えるか。", "afterSection": "mentalModel",
+    "objectiveIds": ["obj-strategy-evidence", "obj-reversible-leadership"], "evidenceIds": ["technical-strategy"], "sourceIds": ["src-01", "src-02", "src-03", "src-04"],
+    "expectedObservation": "system outcome、複数metric、反証条件、投資順、可逆なfirst step、withdrawal conditionを一つの判断経路として説明できる。",
+    "payload": {
+      "causes": [{"id": "frame", "label": "Frame", "detail": "system outcome、非目標、decision rightsを合意する。"}],
+      "mechanisms": [
+        {"id": "measure", "label": "Measure", "detail": "five metrics、risk、cost、利用者影響を別々に観測する。"},
+        {"id": "challenge", "label": "Challenge", "detail": "uncertaintyとdissentから反証条件を作る。"},
+        {"id": "order", "label": "Order", "detail": "制約を守るoptionを投資順へ置く。"}
+      ],
+      "outcomes": [{"id": "act", "label": "Act", "detail": "reversible first stepだけにtimeboxしたbudgetを与える。"}],
+      "mitigations": [{"id": "review", "label": "Review", "detail": "withdrawal conditionsでstop、adapt、expandを判断する。"}],
+      "relations": [
+        {"id": "frame-selects-measures", "from": "frame", "to": "measure", "label": "outcomeに必要な証拠を分ける"},
+        {"id": "measures-enable-challenge", "from": "measure", "to": "challenge", "label": "不確実性とdissentで反証する"},
+        {"id": "challenge-orders-options", "from": "challenge", "to": "order", "label": "制約を守る投資順を作る"},
+        {"id": "order-bounds-action", "from": "order", "to": "act", "label": "可逆なfirst stepだけを実行する"},
+        {"id": "action-enters-review", "from": "act", "to": "review", "label": "撤退条件で次の判断を校正する"}
+      ]
+    }
+  }],
   "review": {
     "intervalDays": [1, 7, 30, 90],
     "prompts": [

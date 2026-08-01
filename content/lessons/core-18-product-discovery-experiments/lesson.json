@@ -164,6 +164,27 @@
       "kind": "peer-reviewed"
     }
   ],
+  "visualizations": [{
+    "id": "experiment-decision-causal", "type": "causal", "caption": "問題発見から事前固定した停止判断までの因果flow",
+    "question": "観測後に基準を変えず、どの条件で継続または停止を判断するか。", "afterSection": "mentalModel",
+    "objectiveIds": ["obj-falsifiable-hypothesis", "obj-analysis-plan"], "evidenceIds": ["experiment-plan"], "sourceIds": ["src-02", "src-04"],
+    "expectedObservation": "問題、反証可能な仮説、事前固定した解析、固定集計、guardrailを含む判断を順に説明できる。",
+    "payload": {
+      "causes": [{"id": "problem", "label": "Problem", "detail": "利用者の行動と制約を観察し、solutionから独立した問題を記述する。"}],
+      "mechanisms": [
+        {"id": "hypothesis", "label": "Hypothesis", "detail": "介入、success metricの期待差、反証条件を宣言する。"},
+        {"id": "plan", "label": "Plan", "detail": "primary metric、guardrail、stop condition、always-valid解析を観測前に固定する。"}
+      ],
+      "outcomes": [{"id": "simulate", "label": "Simulate", "detail": "controlとtreatmentの固定集計からrateと差分を導出する。"}],
+      "mitigations": [{"id": "decide", "label": "Decide", "detail": "successとguardrailを同時評価し、continue、stop、learnを記録する。"}],
+      "relations": [
+        {"id": "problem-forms-hypothesis", "from": "problem", "to": "hypothesis", "label": "問題から反証可能な介入を定める"},
+        {"id": "hypothesis-fixes-plan", "from": "hypothesis", "to": "plan", "label": "観測前に評価契約を固定する"},
+        {"id": "plan-governs-simulation", "from": "plan", "to": "simulate", "label": "固定集計から差分を計算する"},
+        {"id": "simulation-informs-decision", "from": "simulate", "to": "decide", "label": "successとguardrailを同時評価する"}
+      ]
+    }
+  }],
   "review": {
     "intervalDays": [1, 7, 30, 90],
     "prompts": [

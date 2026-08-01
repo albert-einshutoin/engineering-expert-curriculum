@@ -171,6 +171,31 @@
       "kind": "standard"
     }
   ],
+  "visualizations": [{
+    "id": "impact-causal-chain", "type": "causal", "caption": "affected peopleから残余riskの意思決定へ至るimpact chain",
+    "question": "誰にどの害が残り、誰がどの条件で停止を判断するか。", "afterSection": "mentalModel",
+    "objectiveIds": ["obj-impact", "obj-residual"], "evidenceIds": ["assessment"], "sourceIds": ["src-01", "src-02", "src-04"],
+    "expectedObservation": "affected peopleとdata lifecycleから害を具体化し、軽減前risk、軽減策、unevenな残余riskまで追跡できる。",
+    "payload": {
+      "causes": [{"id": "people", "label": "People", "detail": "利益、害、権力、退出可能性が異なる集団を列挙する。"}],
+      "mechanisms": [{"id": "lifecycle", "label": "Lifecycle", "detail": "collect、use、share、retain、deleteの目的とownerを追う。"}],
+      "outcomes": [
+        {"id": "harm", "label": "Harm", "detail": "privacy、security、accessibility、人権、労働への害を具体化する。"},
+        {"id": "inherent-risk", "label": "Inherent risk", "detail": "likelihood、severity、exposureを軽減前に評価する。"}
+      ],
+      "mitigations": [
+        {"id": "mitigation", "label": "Mitigation", "detail": "回避、最小化、検知、救済、退出を設計する。"},
+        {"id": "residual-risk", "label": "Residual risk", "detail": "残る害、uneven harm、owner、期限、停止条件を記録する。"}
+      ],
+      "relations": [
+        {"id": "people-enter-lifecycle", "from": "people", "to": "lifecycle", "label": "集団ごとのdata接点を追う"},
+        {"id": "lifecycle-exposes-harm", "from": "lifecycle", "to": "harm", "label": "各段階で害を具体化する"},
+        {"id": "harm-establishes-risk", "from": "harm", "to": "inherent-risk", "label": "軽減前のriskを評価する"},
+        {"id": "risk-drives-mitigation", "from": "inherent-risk", "to": "mitigation", "label": "回避・最小化・救済を設計する"},
+        {"id": "mitigation-leaves-residual", "from": "mitigation", "to": "residual-risk", "label": "残る害と停止条件を明示する"}
+      ]
+    }
+  }],
   "review": {
     "intervalDays": [1, 7, 30, 90],
     "prompts": [

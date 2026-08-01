@@ -421,6 +421,7 @@ class CapstoneContractTests(unittest.TestCase):
                 "transferTask",
                 "rubric",
                 "sources",
+                "visualizations",
                 "review",
             ):
                 document.pop(field)

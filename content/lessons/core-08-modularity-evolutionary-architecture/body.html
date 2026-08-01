@@ -9,17 +9,6 @@
 <section id="mental-model">
   <h2>メンタルモデル</h2>
   <p>moduleは関連する変更を内側へまとめ、変わりやすいdecisionを安定したinterfaceの背後へ隠す。runtimeでdomainがadapterを呼ぶ場合でも、source dependencyはdomainが定義したportへ外側が従うようにできる。</p>
-  <figure>
-    <figcaption>変更理由を内側へ隠蔽する三層の依存graph</figcaption>
-    <ol>
-      <li><strong>pricing-domain:</strong> 料金規則と不変条件。UIやDB形式を知らない。</li>
-      <li><strong>pricing-application:</strong> use caseを順序付け、domainのportを使う。</li>
-      <li><strong>pricing-adapters:</strong> HTTP、DB、batch形式をdomainの語彙へ変換する。</li>
-      <li><strong>reporting:</strong> 料金計算の変更対象外となる独立module。impact計算のfalse positiveを検出する基準にする。</li>
-      <li>source dependencyはadaptersからapplication、applicationからdomainへ向ける。</li>
-      <li>運用viewでは逆向きのrequest flowを別の矢印として記述し、意味を混ぜない。</li>
-    </ol>
-  </figure>
   <table>
     <caption>料金変更hotspotの境界を選ぶdecision table</caption>
     <thead>

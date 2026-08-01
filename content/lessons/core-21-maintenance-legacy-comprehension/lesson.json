@@ -162,6 +162,30 @@
       "kind": "peer-reviewed"
     }
   ],
+  "visualizations": [{
+    "id": "legacy-comprehension-network", "type": "network", "caption": "change requestから変更前証拠を作るlegacy comprehension loop",
+    "question": "編集前に、要求からexecution pathと未知領域をどこまで証拠化できているか。", "afterSection": "mentalModel",
+    "objectiveIds": ["obj-comprehension", "obj-characterization"], "evidenceIds": ["system-map"], "sourceIds": ["src-01", "src-02"],
+    "expectedObservation": "change requestから実行経路、component、side effect、未知領域、characterization test、停止判断までを指し示せる。",
+    "payload": {
+      "components": [{"id": "change-evidence", "label": "変更前証拠", "detail": "編集せずに要求と現行挙動を結ぶcomprehension範囲。"}],
+      "nodes": [
+        {"id": "reason", "label": "Reason", "detail": "誰のどの結果を変える要求かを一文で固定する。", "componentId": "change-evidence"},
+        {"id": "trace", "label": "Trace", "detail": "entry pointから実際のexecution pathを入力付きで追う。", "componentId": "change-evidence"},
+        {"id": "map", "label": "Map", "detail": "component、data、side effect、ownerを経路へ結ぶ。", "componentId": "change-evidence"},
+        {"id": "unknown", "label": "Unknown", "detail": "未観測、未所有、仕様不明を仮説から分離する。", "componentId": "change-evidence"},
+        {"id": "characterize", "label": "Characterize", "detail": "現在のexpected、actual、observed pathをtestへ残す。", "componentId": "change-evidence"},
+        {"id": "decide", "label": "Decide", "detail": "証拠が足りなければ編集せず調査または停止を選ぶ。", "componentId": "change-evidence"}
+      ],
+      "connections": [
+        {"id": "reason-selects-trace", "from": "reason", "to": "trace", "label": "変更対象の実行経路を選ぶ"},
+        {"id": "trace-builds-map", "from": "trace", "to": "map", "label": "観測したcomponentと副作用を結ぶ"},
+        {"id": "map-exposes-unknown", "from": "map", "to": "unknown", "label": "未観測と仮説を分離する"},
+        {"id": "unknown-bounds-characterization", "from": "unknown", "to": "characterize", "label": "現行挙動をtestへ固定する"},
+        {"id": "characterization-gates-decision", "from": "characterize", "to": "decide", "label": "証拠量で編集開始を判断する"}
+      ]
+    }
+  }],
   "review": {
     "intervalDays": [1, 7, 30, 90],
     "prompts": [

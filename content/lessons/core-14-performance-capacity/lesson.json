@@ -171,6 +171,27 @@
       "kind": "primary"
     }
   ],
+  "visualizations": [{
+    "id": "capacity-causal-cycle", "type": "causal", "caption": "負荷を証拠へ変えて安全容量を更新する循環",
+    "question": "固定した負荷条件から、どの証拠を経て安全容量を決めるか。", "afterSection": "mentalModel",
+    "objectiveIds": ["obj-load-curve", "obj-profile"], "evidenceIds": ["performance-report"], "sourceIds": ["src-01", "src-02", "src-03"],
+    "expectedObservation": "負荷曲線のknee、tail、queue、局所profileを結び、headroomを引いた容量と再測定条件を示せる。",
+    "payload": {
+      "causes": [{"id": "fixture", "label": "Fixture", "detail": "request mix、payload、依存、処理上限、環境を固定する。"}],
+      "mechanisms": [
+        {"id": "curve", "label": "Curve", "detail": "低負荷、限界付近、超過、回復を同じ列で記録する。"},
+        {"id": "diagnose", "label": "Diagnose", "detail": "plateau、tail、error、queue、resource、downstreamを結ぶ。"}
+      ],
+      "outcomes": [{"id": "profile", "label": "Profile", "detail": "仮説に合う実processの局所証拠を別に採取する。"}],
+      "mitigations": [{"id": "capacity", "label": "Capacity", "detail": "observed kneeからheadroomを引き、再測定条件を残す。"}],
+      "relations": [
+        {"id": "fixture-produces-curve", "from": "fixture", "to": "curve", "label": "同じ条件で負荷曲線を得る"},
+        {"id": "curve-guides-diagnosis", "from": "curve", "to": "diagnose", "label": "飽和の兆候を層別する"},
+        {"id": "diagnosis-guides-profile", "from": "diagnose", "to": "profile", "label": "仮説に合う局所証拠を採る"},
+        {"id": "profile-bounds-capacity", "from": "profile", "to": "capacity", "label": "headroomと再測定条件を決める"}
+      ]
+    }
+  }],
   "review": {
     "intervalDays": [1, 7, 30, 90],
     "prompts": [

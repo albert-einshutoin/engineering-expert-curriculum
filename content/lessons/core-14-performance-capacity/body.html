@@ -9,16 +9,6 @@
 <section id="mental-model">
   <h2>メンタルモデル</h2>
   <p>性能判断を、需要、受理、完了、待機、resource、依存、利用者結果のflowとして扱う。offered loadを上げた時にaccepted throughputが横ばいになり、p99、error、queueのどれが先に変わるかを観測する。負荷を戻した後の値も取り、回復hysteresisを見逃さない。</p>
-  <figure>
-    <figcaption>負荷を証拠へ変えて安全容量を更新する循環</figcaption>
-    <ol>
-      <li><strong>Fixture:</strong> request mix、payload、依存、処理上限、環境を固定する。</li>
-      <li><strong>Curve:</strong> 低負荷、限界付近、超過、回復を同じ列で記録する。</li>
-      <li><strong>Diagnose:</strong> plateau、tail、error、queue、resource、downstreamを結ぶ。</li>
-      <li><strong>Profile:</strong> 仮説に合う実processの局所証拠を別に採取する。</li>
-      <li><strong>Capacity:</strong> observed kneeからheadroomを引き、再測定条件を残す。</li>
-    </ol>
-  </figure>
   <p>平均同時実行数L、平均到着または完了率λ、平均滞在時間Wの関係L = λWは、単位と観測窓を揃えた定常区間の整合確認に使う。式が合うことは、個別requestのtailや将来の容量を保証しない。</p>
 </section>
 <section id="worked-example">

@@ -165,6 +165,28 @@
       "kind": "standard"
     }
   ],
+  "visualizations": [{
+    "id": "team-interface-network", "type": "network", "caption": "team ownershipからdependency SLOとcontributor enablementへ至る社会技術interface",
+    "question": "ownershipとdependencyの設計は、認知負荷とdelivery SLOへどう現れるか。", "afterSection": "mentalModel",
+    "objectiveIds": ["obj-team-interface", "obj-cognitive-load"], "evidenceIds": ["team-interface"], "sourceIds": ["src-01", "src-02", "src-03"],
+    "expectedObservation": "checkoutとplatformの依存を、decision right、認知負荷、dependency latency、enablement判断まで結んで説明できる。",
+    "payload": {
+      "components": [{"id": "delivery-interface", "label": "delivery interface", "detail": "team境界とsoftware dependencyを同じsnapshotで評価する社会技術範囲。"}],
+      "nodes": [
+        {"id": "ownership", "label": "Ownership", "detail": "checkout teamがcheckout capabilityのdecision rightを持つ。", "componentId": "delivery-interface"},
+        {"id": "dependency", "label": "Dependency", "detail": "checkoutはplatform capabilityへ依存する。", "componentId": "delivery-interface"},
+        {"id": "cognitive-load", "label": "Cognitive load", "detail": "assigned領域をcapacityと比較し、過負荷を個人努力へ隠さない。", "componentId": "delivery-interface"},
+        {"id": "slo", "label": "SLO", "detail": "dependency latencyのtargetとobservedを同じ単位で評価する。", "componentId": "delivery-interface"},
+        {"id": "enablement", "label": "Enablement", "detail": "各interface snapshotから判断を再計算し、healthyならmonitor、breachedならescalateとしてcheckoutの自律判断を増やす。", "componentId": "delivery-interface"}
+      ],
+      "connections": [
+        {"id": "ownership-declares-dependency", "from": "ownership", "to": "dependency", "label": "decision rightと依存先を分ける"},
+        {"id": "dependency-adds-load", "from": "dependency", "to": "cognitive-load", "label": "teamが扱う領域へ反映する"},
+        {"id": "load-evaluated-by-slo", "from": "cognitive-load", "to": "slo", "label": "capacityとdependency latencyを測る"},
+        {"id": "slo-guides-enablement", "from": "slo", "to": "enablement", "label": "monitorまたはescalateを選ぶ"}
+      ]
+    }
+  }],
   "review": {
     "intervalDays": [1, 7, 30, 90],
     "prompts": [

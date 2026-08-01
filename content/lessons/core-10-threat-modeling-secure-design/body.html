@@ -9,17 +9,6 @@
 <section id="mental-model">
   <h2>メンタルモデル</h2>
   <p>assetから逆向きに考える。誰がどのentry pointから、どのtrust boundaryとdata flowを通ってassetへ作用できるかを記述し、その経路を短くする、権限を狭める、検知する、回復するcontrolを配置する。</p>
-  <figure>
-    <figcaption>assetから攻撃経路、control、verification、残余riskを結ぶtrace</figcaption>
-    <ol>
-      <li><strong>asset:</strong> customer data、deployment credential、audit logの価値と安全性目標を定義する。</li>
-      <li><strong>actorとboundary:</strong> external customer、operations contractor、platform adminをID・type・scopeを持つentityとして定義し、flowの起点と越境点へ参照させる。</li>
-      <li><strong>threat:</strong> 意図ではなく、credential再利用、誤ったbulk export、audit停止など観測可能な行為で表す。</li>
-      <li><strong>control:</strong> prevent、detect、recoverを型として区別し、各threatへ三種類すべてを重ねる。</li>
-      <li><strong>verification:</strong> 具体的なtest ID、control ID、resultをthreatへ接続する。</li>
-      <li><strong>residual risk:</strong> threat ID、decision、uncertainty、owner、期限を付け、未解決を隠さない。</li>
-    </ol>
-  </figure>
   <table>
     <caption>運用portalのcontrolを選ぶdecision table</caption>
     <thead>
