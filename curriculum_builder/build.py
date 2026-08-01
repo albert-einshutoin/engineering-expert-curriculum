@@ -56,6 +56,7 @@ from .render import MAX_TEMPLATE_BYTES, Renderer
 
 
 MAX_CATALOG_BYTES: Final = 8 * 1024 * 1024
+MAX_VISUALIZATION_STYLESHEET_BYTES: Final = 80 * 1024
 MAX_ROADMAP_BYTES: Final = 256 * 1024
 MAX_ROADMAP_SOURCE_NAME_CHARS: Final = 255
 MAX_ROADMAP_NODES: Final = 4096
@@ -95,12 +96,42 @@ _BASE_ARTIFACTS = frozenset(
     {
         PurePosixPath("index.html"),
         PurePosixPath("styles.css"),
+        PurePosixPath("static/visualizations.css"),
         PurePosixPath("catalog/index.html"),
         PurePosixPath("competencies/index.html"),
         PurePosixPath("capstones/index.html"),
         PurePosixPath("roadmap/index.html"),
         PurePosixPath("lessons/index.html"),
     }
+)
+
+
+@dataclass(frozen=True, slots=True)
+class _StaticAsset:
+    source_name: str
+    output_path: PurePosixPath
+    maximum_bytes: int
+
+
+@dataclass(frozen=True, slots=True)
+class _StaticAssetSnapshot:
+    source: bytes
+    identity: tuple[int, int]
+
+
+# This closed table is a security boundary: new repository files are never
+# published merely because they happen to appear beneath static/.
+_STATIC_ASSETS: Final = (
+    _StaticAsset(
+        source_name="styles.css",
+        output_path=PurePosixPath("styles.css"),
+        maximum_bytes=MAX_STYLESHEET_BYTES,
+    ),
+    _StaticAsset(
+        source_name="visualizations.css",
+        output_path=PurePosixPath("static/visualizations.css"),
+        maximum_bytes=MAX_VISUALIZATION_STYLESHEET_BYTES,
+    ),
 )
 
 
@@ -536,6 +567,38 @@ def _read_stable_regular_file(
                 raise RuntimeError(
                     f"{name} descriptor close failed: {close_error}"
                 ) from active
+
+
+def _read_static_asset_snapshot(
+    directory: _DirectoryHandle,
+    asset: _StaticAsset,
+) -> _StaticAssetSnapshot:
+    """Bind copied bytes to one source inode across the complete build."""
+    try:
+        before = os.stat(
+            asset.source_name,
+            dir_fd=directory.descriptor,
+            follow_symlinks=False,
+        )
+        source = _read_stable_regular_file(
+            directory,
+            asset.source_name,
+            asset.maximum_bytes,
+        )
+        after = os.stat(
+            asset.source_name,
+            dir_fd=directory.descriptor,
+            follow_symlinks=False,
+        )
+    except CurriculumValidationError:
+        raise
+    except OSError:
+        raise _validation(
+            f"{asset.source_name} cannot be read safely"
+        ) from None
+    if _identity(before) != _identity(after):
+        raise _validation(f"{asset.source_name} changed during build")
+    return _StaticAssetSnapshot(source=source, identity=_identity(after))
 
 
 def _load_catalog_from_root(
@@ -1663,7 +1726,7 @@ def _render_artifacts(
     items: tuple[CatalogItem, ...],
     roadmap: Roadmap,
     template_sources: Mapping[str, bytes],
-    stylesheet: bytes,
+    static_assets: Mapping[PurePosixPath, bytes],
     lessons: tuple[LoadedLesson, ...],
     competencies: CompetencyMatrix | None,
     capstones: tuple[Capstone, ...],
@@ -1734,7 +1797,7 @@ def _render_artifacts(
         path: document.encode("utf-8")
         for path, document in pages.items()
     }
-    artifacts[PurePosixPath("styles.css")] = stylesheet
+    artifacts.update(static_assets)
     artifacts.update(render_lesson_artifacts(renderer, lessons))
     lesson_titles = {
         item.lesson.id: item.lesson.title
@@ -2831,12 +2894,18 @@ def build_site(
                     item.lesson.id for item in lessons
                 ),
             )
-        stylesheet = _read_stable_regular_file(
-            static_files,
-            "styles.css",
-            MAX_STYLESHEET_BYTES,
-        )
-        validate_stylesheet_bytes(stylesheet)
+        static_asset_snapshots = {
+            asset.output_path: _read_static_asset_snapshot(
+                static_files, asset
+            )
+            for asset in _STATIC_ASSETS
+        }
+        static_assets = {
+            path: snapshot.source
+            for path, snapshot in static_asset_snapshots.items()
+        }
+        for snapshot in static_asset_snapshots.values():
+            validate_stylesheet_bytes(snapshot.source)
         before_templates = {
             name: _read_stable_regular_file(
                 templates,
@@ -2849,7 +2918,7 @@ def build_site(
             items,
             roadmap,
             before_templates,
-            stylesheet,
+            static_assets,
             lessons,
             competencies,
             capstones,
@@ -2864,12 +2933,18 @@ def build_site(
         }
         if before_templates != after_templates:
             raise _validation("templates changed during build")
-        if stylesheet != _read_stable_regular_file(
-            static_files,
-            "styles.css",
-            MAX_STYLESHEET_BYTES,
-        ):
-            raise _validation("styles.css changed during build")
+        after_static_asset_snapshots = {
+            asset.output_path: _read_static_asset_snapshot(
+                static_files, asset
+            )
+            for asset in _STATIC_ASSETS
+        }
+        for asset in _STATIC_ASSETS:
+            if (
+                static_asset_snapshots[asset.output_path]
+                != after_static_asset_snapshots[asset.output_path]
+            ):
+                raise _validation(f"{asset.source_name} changed during build")
         if lesson_snapshot != load_lessons_from_root(content.descriptor):
             raise _validation("lessons changed during build")
         if (

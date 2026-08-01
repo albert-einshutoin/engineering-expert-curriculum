@@ -861,6 +861,16 @@ class RendererTests(unittest.TestCase):
         exact_root = "../" * render_module.MAX_OUTPUT_DEPTH
         self.assertEqual(len(exact_root), 96)
         self.assertIn(f'href="{exact_root}styles.css"', exact_depth_html)
+        self.assertIn(
+            f'href="{exact_root}static/visualizations.css"',
+            exact_depth_html,
+        )
+        self.assertLess(
+            exact_depth_html.index(f'href="{exact_root}styles.css"'),
+            exact_depth_html.index(
+                f'href="{exact_root}static/visualizations.css"'
+            ),
+        )
 
         exact_length = path_with_exact_length(
             render_module.MAX_OUTPUT_PATH_CHARS
@@ -1219,6 +1229,10 @@ class RendererTests(unittest.TestCase):
         stylesheet = (
             '  <link rel="stylesheet" href="${root}styles.css">\n'
         )
+        visualization_stylesheet = (
+            '  <link rel="stylesheet" '
+            'href="${root}static/visualizations.css">\n'
+        )
         skip = '  <a class="skip-link" href="#main">本文へ移動</a>\n'
         brand = (
             '    <a class="brand" href="${root}index.html">'
@@ -1365,7 +1379,19 @@ class RendererTests(unittest.TestCase):
                 "base template markup is invalid",
             ),
             (
-                base.replace(title + stylesheet, stylesheet + title, 1),
+                base.replace(
+                    title + stylesheet,
+                    stylesheet + title,
+                    1,
+                ),
+                "base template markup is invalid",
+            ),
+            (
+                base.replace(
+                    stylesheet + visualization_stylesheet,
+                    visualization_stylesheet + stylesheet,
+                    1,
+                ),
                 "base template markup is invalid",
             ),
             (

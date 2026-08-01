@@ -45,6 +45,7 @@ def _page(
   <meta http-equiv="Content-Security-Policy" content="{csp}">
   <title>検証ページ</title>
   <link rel="stylesheet" href="{root}styles.css">
+  <link rel="stylesheet" href="{root}static/visualizations.css">
   {head}
 </head>
 <body>
@@ -62,6 +63,11 @@ def _fixture():
         (root / "guide").mkdir()
         (root / "styles.css").write_text(
             "body { color: #123456; }\n",
+            encoding="utf-8",
+        )
+        (root / "static").mkdir()
+        (root / "static" / "visualizations.css").write_text(
+            ".visualization { display: grid; }\n",
             encoding="utf-8",
         )
         (root / "index.html").write_text(
@@ -97,6 +103,7 @@ class SiteCheckerHappyPathTests(unittest.TestCase):
                         "index.html",
                         "guide/index.html",
                         "styles.css",
+                        "static/visualizations.css",
                     },
                 ),
                 [],
@@ -554,11 +561,17 @@ class SiteCheckerHtmlTests(unittest.TestCase):
                     )
                 )
 
-    def test_allows_only_one_local_stylesheet(self) -> None:
+    def test_requires_exactly_two_ordered_local_stylesheets(self) -> None:
         mutations = (
             _page().replace("styles.css", "https://example.com/styles.css", 1),
             _page(head='<link rel="stylesheet" href="styles.css">'),
             _page().replace('rel="stylesheet"', 'rel="preload"', 1),
+            _page().replace(
+                '  <link rel="stylesheet" href="styles.css">\n'
+                '  <link rel="stylesheet" href="static/visualizations.css">',
+                '  <link rel="stylesheet" href="static/visualizations.css">\n'
+                '  <link rel="stylesheet" href="styles.css">',
+            ),
         )
         for document in mutations:
             issues = self._issues_for(document)
@@ -577,6 +590,21 @@ class SiteCheckerHtmlTests(unittest.TestCase):
 
 
 class SiteCheckerCssAndCliTests(unittest.TestCase):
+    def test_visualization_css_has_an_80_kib_deployed_budget(self) -> None:
+        with _fixture() as root:
+            (root / "static/visualizations.css").write_bytes(
+                b"a" * ((80 * 1024) + 1)
+            )
+            issues = check_site(root)
+            self.assertTrue(
+                any(
+                    "static/visualizations.css" in issue
+                    and "too large" in issue
+                    for issue in issues
+                ),
+                issues,
+            )
+
     def test_css_must_be_nonempty_utf8_and_local_only(self) -> None:
         payloads = (
             b"",

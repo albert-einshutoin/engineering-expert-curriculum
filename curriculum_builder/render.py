@@ -66,7 +66,7 @@ _BASE_PLACEHOLDER_COUNTS = MappingProxyType(
     {
         "title": 1,
         "description": 1,
-        "root": 7,
+        "root": 8,
         "content": 1,
     }
 )
@@ -93,7 +93,8 @@ _BASE_CHILDREN = MappingProxyType(
             "meta:description",
             "meta:csp",
             "title",
-            "link:stylesheet",
+            "link:stylesheet-base",
+            "link:stylesheet-visualizations",
         ),
         "body": ("a:skip", "header", "main", "footer"),
         "header": ("a:brand", "nav"),
@@ -129,6 +130,7 @@ _REQUIRED_BASE_HREFS = MappingProxyType(
     {
         "#main": 1,
         "${root}styles.css": 1,
+        "${root}static/visualizations.css": 1,
         "${root}index.html": 1,
         "${root}roadmap/index.html": 1,
         "${root}lessons/index.html": 1,
@@ -701,7 +703,7 @@ class _BasePolicyParser(HTMLParser):
             self.csp_values.append(content)
         if role == "meta:description":
             self.description_placeholder_count += 1
-        if role == "link:stylesheet":
+        if role.startswith("link:stylesheet-"):
             self.stylesheet_count += 1
 
         for attribute_name in ("href", "src"):
@@ -795,14 +797,25 @@ class _BasePolicyParser(HTMLParser):
         if tag == "meta":
             return self._classify_meta(attributes)
         if tag == "link":
-            if attributes != {
-                "rel": "stylesheet",
-                "href": "${root}styles.css",
+            roles = {
+                "${root}styles.css": "link:stylesheet-base",
+                "${root}static/visualizations.css": (
+                    "link:stylesheet-visualizations"
+                ),
+            }
+            if attributes.get("rel") != "stylesheet" or set(attributes) != {
+                "rel",
+                "href",
             }:
                 raise CurriculumValidationError(
                     "base template markup is invalid"
                 )
-            return "link:stylesheet"
+            role = roles.get(attributes["href"])
+            if role is None:
+                raise CurriculumValidationError(
+                    "base template markup is invalid"
+                )
+            return role
         if tag == "a":
             roles = {
                 (("class", "skip-link"), ("href", "#main")): "a:skip",
@@ -910,7 +923,7 @@ def _validate_base_policy(source: str) -> None:
         or parser.nav_count != 1
         or parser.description_placeholder_count != 1
         or parser.title_placeholder_count != 1
-        or parser.stylesheet_count != 1
+        or parser.stylesheet_count != 2
         or parser.meta_counts
         != Counter(
             {

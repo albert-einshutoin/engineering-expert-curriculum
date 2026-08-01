@@ -485,6 +485,7 @@ def _expected_artifacts() -> frozenset[PurePosixPath]:
     paths = {
         PurePosixPath("index.html"),
         PurePosixPath("styles.css"),
+        PurePosixPath("static/visualizations.css"),
         PurePosixPath("catalog/index.html"),
         PurePosixPath("roadmap/index.html"),
         PurePosixPath("competencies/index.html"),
@@ -1561,9 +1562,9 @@ class ContentAcceptanceTests(unittest.TestCase):
 
         self.assertEqual(first, second)
         self.assertEqual(frozenset(first), _expected_artifacts())
-        self.assertEqual(len(first), 40)
+        self.assertEqual(len(first), 41)
         self.assertEqual(sum(path.suffix.casefold() == ".html" for path in first), 39)
-        self.assertEqual(sum(path.suffix.casefold() == ".css" for path in first), 1)
+        self.assertEqual(sum(path.suffix.casefold() == ".css" for path in first), 2)
         self.assertEqual(sum(path.suffix.casefold() == ".js" for path in first), 0)
 
 

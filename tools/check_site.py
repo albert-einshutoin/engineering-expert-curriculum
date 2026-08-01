@@ -31,6 +31,7 @@ MAX_FILES: Final = 4_096
 MAX_DEPTH: Final = 32
 MAX_HTML_BYTES: Final = 4 * 1024 * 1024
 MAX_CSS_BYTES: Final = 1024 * 1024
+MAX_VISUALIZATION_CSS_BYTES: Final = 80 * 1024
 MAX_DIAGNOSTIC_VALUE_CHARS: Final = 160
 
 REQUIRED_CSP: Final = (
@@ -81,6 +82,7 @@ _BASE_INVENTORY: Final = frozenset(
     {
         "index.html",
         "styles.css",
+        "static/visualizations.css",
         "catalog/index.html",
         "competencies/index.html",
         "capstones/index.html",
@@ -269,6 +271,7 @@ class _PageParser(HTMLParser):
         self.head_depth = 0
         self.csp_values: list[str] = []
         self.stylesheet_count = 0
+        self.stylesheet_hrefs: list[str] = []
         self.doctype_count = 0
         self.malformed = False
 
@@ -401,6 +404,7 @@ class _PageParser(HTMLParser):
                 )
             else:
                 self.stylesheet_count += 1
+                self.stylesheet_hrefs.append(values.get("href") or "")
             self._record_url(values.get("href"), "stylesheet", rel)
         elif tag == "a":
             href = values.get("href")
@@ -544,8 +548,16 @@ class _PageParser(HTMLParser):
             )
         if self.csp_values != [REQUIRED_CSP]:
             self.issues.add(self.relative, "CSP must match the exact safe contract")
-        if self.stylesheet_count != 1:
-            self.issues.add(self.relative, "page must contain exactly one stylesheet")
+        root = "../" * len(self.relative.parent.parts)
+        expected_stylesheets = [
+            f"{root}styles.css",
+            f"{root}static/visualizations.css",
+        ]
+        if self.stylesheet_hrefs != expected_stylesheets:
+            self.issues.add(
+                self.relative,
+                "page must contain exactly two ordered local stylesheets",
+            )
         return _Page(ids=self.ids, references=self.references)
 
 
@@ -739,7 +751,12 @@ def _scan_tree(root: Path, issues: _Issues) -> _Tree | None:
             if suffix not in _ALLOWED_SUFFIXES:
                 issues.add(child, "disallowed static file type")
                 continue
-            maximum = MAX_HTML_BYTES if suffix == ".html" else MAX_CSS_BYTES
+            if suffix == ".html":
+                maximum = MAX_HTML_BYTES
+            elif child == PurePosixPath("static/visualizations.css"):
+                maximum = MAX_VISUALIZATION_CSS_BYTES
+            else:
+                maximum = MAX_CSS_BYTES
             result = _read_regular_file(directory_fd, entry.name, status, maximum)
             if result.source is None:
                 issues.add(child, "file is too large, unstable, or unreadable")
@@ -948,7 +965,7 @@ def _argument_parser() -> argparse.ArgumentParser:
     inventory.add_argument(
         "--require-current-release",
         action="store_true",
-        help="require the exact current 40-artifact release inventory",
+        help="require the exact current 41-artifact release inventory",
     )
     inventory.add_argument(
         "--expected-entrypoint",

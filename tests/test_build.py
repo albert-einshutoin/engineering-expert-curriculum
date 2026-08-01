@@ -25,6 +25,7 @@ from curriculum_builder.build import (
     BuildStagingCleanupError,
     MAX_ROADMAP_BYTES,
     MAX_STYLESHEET_BYTES,
+    MAX_VISUALIZATION_STYLESHEET_BYTES,
     _open_trusted_directory,
     _publish_directory,
     _read_stable_regular_file,
@@ -234,6 +235,9 @@ def _fixture(
         (static_root / "styles.css").write_bytes(
             (REPOSITORY_ROOT / "static" / "styles.css").read_bytes()
         )
+        (static_root / "visualizations.css").write_bytes(
+            (REPOSITORY_ROOT / "static" / "visualizations.css").read_bytes()
+        )
         (content / "catalog.json").write_bytes(
             serialize_catalog_document(
                 catalog_items or [_catalog_item()],
@@ -313,6 +317,7 @@ def _assert_static_site(
     expected = {
         Path("index.html"),
         Path("styles.css"),
+        Path("static/visualizations.css"),
         Path("catalog/index.html"),
         Path("capstones/index.html"),
         Path("competencies/index.html"),
@@ -339,6 +344,10 @@ def _assert_static_site(
     }
     test.assertEqual(actual, expected)
     test.assertEqual(list(output.rglob("*.js")), [])
+    test.assertEqual(
+        (output / "static/visualizations.css").read_bytes(),
+        (REPOSITORY_ROOT / "static/visualizations.css").read_bytes(),
+    )
 
     ids_by_page: dict[Path, set[str]] = {}
     links_by_page: dict[Path, list[str]] = {}
@@ -759,7 +768,7 @@ class BuildInputValidationTests(unittest.TestCase):
                 items: object,
                 roadmap: object,
                 template_source: object,
-                stylesheet: bytes,
+                static_assets: object,
                 lessons: object,
                 competencies: object,
                 capstones: object,
@@ -772,7 +781,7 @@ class BuildInputValidationTests(unittest.TestCase):
                         items,  # type: ignore[arg-type]
                         roadmap,  # type: ignore[arg-type]
                         template_source,  # type: ignore[arg-type]
-                        stylesheet,
+                        static_assets,  # type: ignore[arg-type]
                         lessons,  # type: ignore[arg-type]
                         competencies,  # type: ignore[arg-type]
                         capstones,  # type: ignore[arg-type]
@@ -970,6 +979,64 @@ class BuildInputValidationTests(unittest.TestCase):
                             "styles.css",
                             MAX_STYLESHEET_BYTES,
                         )
+
+    def test_visualization_stylesheet_is_regular_bounded_and_rechecked(self) -> None:
+        with _fixture() as (root, content, templates, static_root):
+            stylesheet = static_root / "visualizations.css"
+            stylesheet.unlink()
+            stylesheet.symlink_to(REPOSITORY_ROOT / "static/visualizations.css")
+            with self.assertRaisesRegex(
+                CurriculumValidationError,
+                "visualizations.css must be a regular file",
+            ):
+                build_site(content, templates, static_root, root / "site")
+
+        with _fixture() as (root, content, templates, static_root):
+            (static_root / "visualizations.css").write_bytes(
+                b"x" * (MAX_VISUALIZATION_STYLESHEET_BYTES + 1)
+            )
+            with self.assertRaisesRegex(
+                CurriculumValidationError,
+                "visualizations.css exceeds maximum byte count",
+            ):
+                build_site(content, templates, static_root, root / "site")
+
+        with _fixture() as (root, content, templates, static_root):
+            original_render = build_module._render_artifacts
+
+            def racing_render(*args: object, **kwargs: object) -> object:
+                result = original_render(*args, **kwargs)  # type: ignore[arg-type]
+                (static_root / "visualizations.css").write_bytes(b"changed")
+                return result
+
+            with patch(
+                "curriculum_builder.build._render_artifacts",
+                side_effect=racing_render,
+            ), self.assertRaisesRegex(
+                CurriculumValidationError,
+                "visualizations.css changed during build",
+            ):
+                build_site(content, templates, static_root, root / "site")
+
+        with _fixture() as (root, content, templates, static_root):
+            original_render = build_module._render_artifacts
+
+            def replacing_render(*args: object, **kwargs: object) -> object:
+                result = original_render(*args, **kwargs)  # type: ignore[arg-type]
+                stylesheet = static_root / "visualizations.css"
+                replacement = static_root / "visualizations.replacement"
+                replacement.write_bytes(stylesheet.read_bytes())
+                os.replace(replacement, stylesheet)
+                return result
+
+            with patch(
+                "curriculum_builder.build._render_artifacts",
+                side_effect=replacing_render,
+            ), self.assertRaisesRegex(
+                CurriculumValidationError,
+                "visualizations.css changed during build",
+            ):
+                build_site(content, templates, static_root, root / "site")
 
     def test_roots_and_output_boundaries_reject_symlinks_permissions_and_overlap(
         self,

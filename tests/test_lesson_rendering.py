@@ -1196,6 +1196,7 @@ class LessonRenderingTests(unittest.TestCase):
             expected = {
                 Path("index.html"),
                 Path("styles.css"),
+                Path("static/visualizations.css"),
                 Path("catalog/index.html"),
                 Path("capstones/index.html"),
                 Path("competencies/index.html"),
