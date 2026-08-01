@@ -300,6 +300,8 @@ git commit -m "feat: render semantic lesson visualizations"
 - Modify: `tests/test_build.py`
 - Modify: `tests/test_site_checker.py`
 - Create: `tests/test_visualization_accessibility.py`
+- Modify: `tests/test_content_acceptance.py`
+- Modify: `tests/test_lesson_rendering.py`
 
 - [ ] **Step 1: Write RED tests for the second local stylesheet**
 
@@ -317,6 +319,10 @@ not replace it with glob discovery. The expected output paths are exactly:
 PurePosixPath("styles.css")
 PurePosixPath("static/visualizations.css")
 ```
+
+Update every independent exact-artifact oracle, including content acceptance
+and lesson rendering tests, in the same commit so the second stylesheet cannot
+be omitted by one production path while focused asset tests remain green.
 
 - [ ] **Step 3: Write RED CSS semantics and accessibility tests**
 
@@ -352,7 +358,7 @@ oracles and hides only enhancement controls.
 ```bash
 python3.13 -m unittest tests.test_styles tests.test_render tests.test_build tests.test_site_checker tests.test_visualization_accessibility -v
 python3.13 -m unittest discover -s tests -v
-git add static/visualizations.css templates/base.html curriculum_builder/render.py curriculum_builder/build.py tools/check_site.py tests/test_styles.py tests/test_render.py tests/test_build.py tests/test_site_checker.py tests/test_visualization_accessibility.py
+git add static/visualizations.css templates/base.html curriculum_builder/render.py curriculum_builder/build.py tools/check_site.py tests/test_styles.py tests/test_render.py tests/test_build.py tests/test_site_checker.py tests/test_visualization_accessibility.py tests/test_content_acceptance.py tests/test_lesson_rendering.py
 git commit -m "feat: add accessible CSS visualization system"
 ```
 
