@@ -310,6 +310,54 @@
           }
         ]
       }
+    },
+    {
+      "id": "retry-contract-static",
+      "type": "timeline",
+      "caption": "side effectとobserved responseを分離するretry trace",
+      "question": "response喪失後に、同じ冪等keyのretryがside effectを二重適用せず結果を返すには何が必要か。",
+      "afterSection": "workedExample",
+      "objectiveIds": ["obj-contract", "obj-replay"],
+      "evidenceIds": ["api-contract"],
+      "sourceIds": ["src-01", "src-02"],
+      "expectedObservation": "request受理、side effect確定、response喪失、同じkeyのretry、結果観測を別状態として説明する。",
+      "notes": ["同じ配送や同じresponse byte列ではなく、保存済みの同じ操作結果を返す契約を示す。"],
+      "payload": {
+        "phases": [
+          {"id": "attempt-one", "label": "最初の試行", "detail": "request受理とside effect確定を分ける。"},
+          {"id": "uncertain-result", "label": "結果不明", "detail": "server側効果とclient側response観測を分ける。"},
+          {"id": "idempotent-recovery", "label": "冪等な回復", "detail": "同じkeyで保存済み結果を照会する。"}
+        ],
+        "events": [
+          {"id": "request-accepted-node", "label": "request accepted", "detail": "schema、認証、認可と冪等key scopeを検証する。", "phaseId": "attempt-one", "order": 0},
+          {"id": "side-effect-node", "label": "side effect committed", "detail": "keyと操作結果を同じ耐久境界で一度だけ記録する。", "phaseId": "attempt-one", "order": 1},
+          {"id": "response-lost-node", "label": "response lost", "detail": "効果は確定したがclientはresponseを観測できない。", "phaseId": "uncertain-result", "order": 2},
+          {"id": "retry-replayed-node", "label": "retry replayed", "detail": "同じkeyを受け、side effectを再適用せず保存済み結果を読む。", "phaseId": "idempotent-recovery", "order": 3},
+          {"id": "observed-success-node", "label": "response observed", "detail": "clientが操作結果を観測する。response固有metadataは試行ごとに違い得る。", "phaseId": "idempotent-recovery", "order": 4}
+        ]
+      },
+      "simulation": {
+        "kind": "retry-contract", "interactionMode": "playback", "parameters": [], "initialStateId": "request-accepted", "defaultIntervalMs": 1200,
+        "states": [
+          {"id": "request-accepted", "label": "request受理", "status": "serverが契約と冪等key scopeを検証する。まだside effect確定とは限らない。", "activeNodeIds": ["request-accepted-node"], "activeEdgeIds": []},
+          {"id": "side-effect-committed", "label": "side effect確定", "status": "keyと操作結果を同じ耐久境界で記録し、side effectを一度だけ適用する。", "activeNodeIds": ["side-effect-node"], "activeEdgeIds": []},
+          {"id": "response-lost", "label": "response喪失", "status": "side effectは確定済みだが、clientのobserved responseはない。この二事実を分離する。", "activeNodeIds": ["response-lost-node"], "activeEdgeIds": []},
+          {"id": "retry-replayed", "label": "同じkeyでretry", "status": "保存済み結果を返し、side effectは再適用しない。", "activeNodeIds": ["retry-replayed-node"], "activeEdgeIds": []},
+          {"id": "observed-success", "label": "結果を観測", "status": "clientは保存済み操作結果を観測する。同じresponse byte列を保証したとは主張しない。", "activeNodeIds": ["observed-success-node"], "activeEdgeIds": []}
+        ],
+        "transitions": [
+          {"id": "accepted-to-committed-next", "from": "request-accepted", "to": "side-effect-committed", "event": "next"}, {"id": "accepted-to-committed-timer", "from": "request-accepted", "to": "side-effect-committed", "event": "timer"},
+          {"id": "committed-to-lost-next", "from": "side-effect-committed", "to": "response-lost", "event": "next"}, {"id": "committed-to-lost-timer", "from": "side-effect-committed", "to": "response-lost", "event": "timer"},
+          {"id": "lost-to-replayed-next", "from": "response-lost", "to": "retry-replayed", "event": "next"}, {"id": "lost-to-replayed-timer", "from": "response-lost", "to": "retry-replayed", "event": "timer"},
+          {"id": "replayed-to-observed-next", "from": "retry-replayed", "to": "observed-success", "event": "next"}, {"id": "replayed-to-observed-timer", "from": "retry-replayed", "to": "observed-success", "event": "timer"},
+          {"id": "committed-to-accepted-previous", "from": "side-effect-committed", "to": "request-accepted", "event": "previous"}, {"id": "lost-to-committed-previous", "from": "response-lost", "to": "side-effect-committed", "event": "previous"}, {"id": "replayed-to-lost-previous", "from": "retry-replayed", "to": "response-lost", "event": "previous"}, {"id": "observed-to-replayed-previous", "from": "observed-success", "to": "retry-replayed", "event": "previous"},
+          {"id": "reset-side-effect", "from": "side-effect-committed", "to": "request-accepted", "event": "reset"}, {"id": "reset-response-lost", "from": "response-lost", "to": "request-accepted", "event": "reset"}, {"id": "reset-retry", "from": "retry-replayed", "to": "request-accepted", "event": "reset"}, {"id": "reset-observed", "from": "observed-success", "to": "request-accepted", "event": "reset"}
+        ],
+        "outcomes": [
+          {"id": "side-effect-once", "stateId": "retry-replayed", "label": "同じkeyのretryでside effectを再適用しない。"},
+          {"id": "response-observed", "stateId": "observed-success", "label": "保存済み操作結果をclientが観測する。"}
+        ]
+      }
     }
   ],
   "review": {

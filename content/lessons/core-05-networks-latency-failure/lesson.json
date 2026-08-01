@@ -287,6 +287,77 @@
           }
         ]
       }
+    },
+    {
+      "id": "request-path-static",
+      "type": "comparison",
+      "caption": "failure注入点ごとのrequest pathとretry判断",
+      "question": "DNS、TCP、TLS、request、response喪失を分けると、再試行前に何を観測すべきか。",
+      "afterSection": "workedExample",
+      "objectiveIds": ["obj-timeline", "obj-budget"],
+      "evidenceIds": ["trace-budget"],
+      "sourceIds": ["src-01", "src-02", "src-04", "src-05"],
+      "expectedObservation": "接続準備とHTTP交換を混同せず、failure点、観測結果、retry条件を有限scenarioごとに説明する。",
+      "notes": ["これは説明用request pathであり、実packet captureや普遍的latency配分ではない。"],
+      "payload": {
+        "alternatives": [
+          {"id": "healthy", "label": "failureなし", "detail": "DNS、TCP、TLS、request、responseを順に完了する。"},
+          {"id": "dns-point", "label": "DNS failure", "detail": "名前解決で停止し、transport接続は未開始。"},
+          {"id": "tcp-point", "label": "TCP failure", "detail": "address取得後、transport接続を確立できない。"},
+          {"id": "tls-point", "label": "TLS failure", "detail": "TCP後、暗号接続と相手identityの検証で停止する。"},
+          {"id": "request-point", "label": "request failure", "detail": "TLS後、request送信またはserver処理でdeadlineへ到達する。"},
+          {"id": "response-point", "label": "response lost", "detail": "side effectの有無が不明なままobserved responseを失う。"}
+        ],
+        "criteria": [
+          {"id": "completed-path", "label": "完了した段階", "detail": "failureまでに完了したDNS/TCP/TLS/request段階。"},
+          {"id": "observation", "label": "観測", "detail": "clientとserverのtraceで確認する事実。"},
+          {"id": "retry-decision", "label": "retry判断", "detail": "残りdeadlineと冪等性を確認してから再試行する。"}
+        ],
+        "cells": [
+          {"id": "healthy-path", "alternativeId": "healthy", "criterionId": "completed-path", "value": "DNS→TCP→TLS→request→response"},
+          {"id": "healthy-observation", "alternativeId": "healthy", "criterionId": "observation", "value": "statusとbodyまで観測"},
+          {"id": "healthy-retry", "alternativeId": "healthy", "criterionId": "retry-decision", "value": "retry不要"},
+          {"id": "dns-path", "alternativeId": "dns-point", "criterionId": "completed-path", "value": "DNSで停止"},
+          {"id": "dns-observation", "alternativeId": "dns-point", "criterionId": "observation", "value": "resolver結果とTTL"},
+          {"id": "dns-retry", "alternativeId": "dns-point", "criterionId": "retry-decision", "value": "残りdeadline内で再解決"},
+          {"id": "tcp-path", "alternativeId": "tcp-point", "criterionId": "completed-path", "value": "DNS完了、TCPで停止"},
+          {"id": "tcp-observation", "alternativeId": "tcp-point", "criterionId": "observation", "value": "connect timeoutとaddress"},
+          {"id": "tcp-retry", "alternativeId": "tcp-point", "criterionId": "retry-decision", "value": "別addressとbudgetを確認"},
+          {"id": "tls-path", "alternativeId": "tls-point", "criterionId": "completed-path", "value": "DNS/TCP完了、TLSで停止"},
+          {"id": "tls-observation", "alternativeId": "tls-point", "criterionId": "observation", "value": "version、証明書、identity"},
+          {"id": "tls-retry", "alternativeId": "tls-point", "criterionId": "retry-decision", "value": "設定不整合なら盲目的retry禁止"},
+          {"id": "request-path-cell", "alternativeId": "request-point", "criterionId": "completed-path", "value": "DNS/TCP/TLS完了、requestで停止"},
+          {"id": "request-observation", "alternativeId": "request-point", "criterionId": "observation", "value": "送信量とserver trace"},
+          {"id": "request-retry", "alternativeId": "request-point", "criterionId": "retry-decision", "value": "冪等性と残りdeadlineを確認"},
+          {"id": "response-path", "alternativeId": "response-point", "criterionId": "completed-path", "value": "request後、response未観測"},
+          {"id": "response-observation", "alternativeId": "response-point", "criterionId": "observation", "value": "side effectとresponseを別々に照会"},
+          {"id": "response-retry", "alternativeId": "response-point", "criterionId": "retry-decision", "value": "同じ冪等keyで結果照会またはretry"}
+        ]
+      },
+      "simulation": {
+        "kind": "request-path", "interactionMode": "hybrid", "initialStateId": "dns-lookup", "defaultIntervalMs": 1000,
+        "parameters": [{"id": "failure-point", "label": "failure注入点", "control": "select", "options": [{"id": "none", "label": "なし"}, {"id": "dns-fail", "label": "DNS"}, {"id": "tcp-fail", "label": "TCP"}, {"id": "tls-fail", "label": "TLS"}, {"id": "request-fail", "label": "request"}, {"id": "response-fail", "label": "response喪失"}], "defaultOptionId": "none"}],
+        "states": [
+          {"id": "dns-lookup", "label": "DNS lookup開始", "status": "名前解決を独立した段階として開始する。", "activeNodeIds": ["completed-path"], "activeEdgeIds": []},
+          {"id": "healthy-response", "label": "全段階完了", "status": "DNS、TCP、TLS、request、responseを順に完了し、業務結果を観測する。", "when": {"failure-point": "none"}, "activeNodeIds": ["healthy"], "activeEdgeIds": ["healthy-path", "healthy-observation"]},
+          {"id": "dns-failure", "label": "DNS failure", "status": "DNSで停止し、TCP/TLS/requestはまだ開始していない。", "when": {"failure-point": "dns-fail"}, "activeNodeIds": ["dns-point"], "activeEdgeIds": ["dns-path", "dns-retry"]},
+          {"id": "tcp-failure", "label": "TCP failure", "status": "DNS完了後、transport接続で停止する。TLS/requestとは分けて観測する。", "when": {"failure-point": "tcp-fail"}, "activeNodeIds": ["tcp-point"], "activeEdgeIds": ["tcp-path", "tcp-retry"]},
+          {"id": "tls-ready", "label": "TLS failure branch", "status": "TCP完了後、TLS version・証明書・identityを検証し、設定不整合なら盲目的retryをしない。", "when": {"failure-point": "tls-fail"}, "activeNodeIds": ["tls-point"], "activeEdgeIds": ["tls-path", "tls-retry"]},
+          {"id": "request-failure", "label": "request deadline", "status": "TLS完了後のrequest送信・server処理で停止し、冪等性と残りdeadlineを確認する。", "when": {"failure-point": "request-fail"}, "activeNodeIds": ["request-point"], "activeEdgeIds": ["request-path-cell", "request-retry"]},
+          {"id": "deadline-exceeded", "label": "response未観測", "status": "requestのside effectとclientが観測したresponseを分け、同じ冪等keyで照会またはretryする。", "when": {"failure-point": "response-fail"}, "activeNodeIds": ["response-point"], "activeEdgeIds": ["response-path", "response-retry"]}
+        ],
+        "transitions": [
+          {"id": "apply-healthy", "from": "dns-lookup", "to": "dns-lookup", "event": "parameter-change", "when": {"failure-point": "none"}}, {"id": "next-healthy", "from": "dns-lookup", "to": "healthy-response", "event": "next", "when": {"failure-point": "none"}}, {"id": "timer-healthy", "from": "dns-lookup", "to": "healthy-response", "event": "timer", "when": {"failure-point": "none"}}, {"id": "previous-healthy", "from": "healthy-response", "to": "dns-lookup", "event": "previous", "when": {"failure-point": "none"}}, {"id": "reset-healthy", "from": "healthy-response", "to": "dns-lookup", "event": "reset", "when": {"failure-point": "none"}},
+          {"id": "apply-dns", "from": "dns-lookup", "to": "dns-lookup", "event": "parameter-change", "when": {"failure-point": "dns-fail"}}, {"id": "next-dns", "from": "dns-lookup", "to": "dns-failure", "event": "next", "when": {"failure-point": "dns-fail"}}, {"id": "timer-dns", "from": "dns-lookup", "to": "dns-failure", "event": "timer", "when": {"failure-point": "dns-fail"}}, {"id": "previous-dns", "from": "dns-failure", "to": "dns-lookup", "event": "previous", "when": {"failure-point": "dns-fail"}}, {"id": "reset-dns", "from": "dns-failure", "to": "dns-lookup", "event": "reset", "when": {"failure-point": "dns-fail"}},
+          {"id": "apply-tcp", "from": "dns-lookup", "to": "dns-lookup", "event": "parameter-change", "when": {"failure-point": "tcp-fail"}}, {"id": "next-tcp", "from": "dns-lookup", "to": "tcp-failure", "event": "next", "when": {"failure-point": "tcp-fail"}}, {"id": "timer-tcp", "from": "dns-lookup", "to": "tcp-failure", "event": "timer", "when": {"failure-point": "tcp-fail"}}, {"id": "previous-tcp", "from": "tcp-failure", "to": "dns-lookup", "event": "previous", "when": {"failure-point": "tcp-fail"}}, {"id": "reset-tcp", "from": "tcp-failure", "to": "dns-lookup", "event": "reset", "when": {"failure-point": "tcp-fail"}},
+          {"id": "apply-tls", "from": "dns-lookup", "to": "dns-lookup", "event": "parameter-change", "when": {"failure-point": "tls-fail"}}, {"id": "next-tls", "from": "dns-lookup", "to": "tls-ready", "event": "next", "when": {"failure-point": "tls-fail"}}, {"id": "timer-tls", "from": "dns-lookup", "to": "tls-ready", "event": "timer", "when": {"failure-point": "tls-fail"}}, {"id": "previous-tls", "from": "tls-ready", "to": "dns-lookup", "event": "previous", "when": {"failure-point": "tls-fail"}}, {"id": "reset-tls", "from": "tls-ready", "to": "dns-lookup", "event": "reset", "when": {"failure-point": "tls-fail"}},
+          {"id": "apply-request", "from": "dns-lookup", "to": "dns-lookup", "event": "parameter-change", "when": {"failure-point": "request-fail"}}, {"id": "next-request", "from": "dns-lookup", "to": "request-failure", "event": "next", "when": {"failure-point": "request-fail"}}, {"id": "timer-request", "from": "dns-lookup", "to": "request-failure", "event": "timer", "when": {"failure-point": "request-fail"}}, {"id": "previous-request", "from": "request-failure", "to": "dns-lookup", "event": "previous", "when": {"failure-point": "request-fail"}}, {"id": "reset-request", "from": "request-failure", "to": "dns-lookup", "event": "reset", "when": {"failure-point": "request-fail"}},
+          {"id": "apply-response", "from": "dns-lookup", "to": "dns-lookup", "event": "parameter-change", "when": {"failure-point": "response-fail"}}, {"id": "next-response", "from": "dns-lookup", "to": "deadline-exceeded", "event": "next", "when": {"failure-point": "response-fail"}}, {"id": "timer-response", "from": "dns-lookup", "to": "deadline-exceeded", "event": "timer", "when": {"failure-point": "response-fail"}}, {"id": "previous-response", "from": "deadline-exceeded", "to": "dns-lookup", "event": "previous", "when": {"failure-point": "response-fail"}}, {"id": "reset-response", "from": "deadline-exceeded", "to": "dns-lookup", "event": "reset", "when": {"failure-point": "response-fail"}}
+        ],
+        "outcomes": [
+          {"id": "healthy-outcome", "stateId": "healthy-response", "label": "全段階と業務結果を観測する。"}, {"id": "dns-failure-outcome", "stateId": "dns-failure", "label": "DNSとtransport failureを混同しない。"}, {"id": "tcp-failure-outcome", "stateId": "tcp-failure", "label": "TCPとTLS failureを混同しない。"}, {"id": "tls-failure-outcome", "stateId": "tls-ready", "label": "TLS設定不整合を盲目的にretryしない。"}, {"id": "request-failure-outcome", "stateId": "request-failure", "label": "request deadlineと冪等性を確認する。"}, {"id": "response-unknown-outcome", "stateId": "deadline-exceeded", "label": "side effectとobserved responseを分けて照会する。"}
+        ]
+      }
     }
   ],
   "review": {

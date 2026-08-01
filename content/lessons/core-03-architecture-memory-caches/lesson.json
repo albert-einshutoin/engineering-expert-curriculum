@@ -201,6 +201,51 @@
           {"id": "memory-return", "from": "memory-controller", "to": "return", "label": "line転送完了後に値を返す", "kind": "memory-return"},
           {"id": "return-to-reuse", "from": "return", "to": "reuse", "label": "返却後のlineを後続accessで再利用", "kind": "reuse"}
         ]
+      },
+      "simulation": {
+        "kind": "memory-access",
+        "interactionMode": "hybrid",
+        "parameters": [
+          {"id": "working-set", "label": "作業集合", "control": "select", "options": [{"id": "small", "label": "cache内候補"}, {"id": "large", "label": "cache超過候補"}], "defaultOptionId": "small"},
+          {"id": "access-order", "label": "access順", "control": "radio", "options": [{"id": "sequential", "label": "連続"}, {"id": "random", "label": "固定seedランダム"}], "defaultOptionId": "sequential"}
+        ],
+        "initialStateId": "tlb-lookup",
+        "defaultIntervalMs": 1000,
+        "states": [
+          {"id": "tlb-lookup", "label": "address translationを開始", "status": "TLBを検索する。VIPTではL1 index lookupが並行し得るため、逐次latencyとはみなさない。", "activeNodeIds": ["instruction", "tlb", "l1-cache"], "activeEdgeIds": ["instruction-to-tlb", "instruction-to-l1"]},
+          {"id": "l1-hit", "label": "小作業集合・連続access", "status": "変換結果で物理tagを照合し、L1 hit候補から値を返す。変換とdata transferは別の観測である。", "when": {"working-set": "small", "access-order": "sequential"}, "activeNodeIds": ["address-ready", "l1-cache", "return", "reuse"], "activeEdgeIds": ["address-to-l1", "l1-hit-return", "return-to-reuse"]},
+          {"id": "small-random-return", "label": "小作業集合・ランダムaccess", "status": "同じ作業集合でも再利用順序によりhit候補が変わる。固定のlatency値は主張しない。", "when": {"working-set": "small", "access-order": "random"}, "activeNodeIds": ["address-ready", "l1-cache", "lower-cache", "return"], "activeEdgeIds": ["address-to-l1", "l1-miss-lower", "lower-hit-return"]},
+          {"id": "large-sequential-return", "label": "大作業集合・連続access", "status": "page変換とcache line転送を別々に追い、連続accessの空間的局所性を観測する。", "when": {"working-set": "large", "access-order": "sequential"}, "activeNodeIds": ["page-table", "address-ready", "lower-cache", "memory-controller", "return"], "activeEdgeIds": ["walk-complete", "lower-miss-memory", "memory-return"]},
+          {"id": "memory-return", "label": "大作業集合・ランダムaccess", "status": "TLB miss候補と全cache miss候補を分離し、主記憶からのline転送完了後に値を返す。", "when": {"working-set": "large", "access-order": "random"}, "activeNodeIds": ["tlb", "page-table", "lower-cache", "memory-controller", "return"], "activeEdgeIds": ["tlb-miss", "walk-complete", "lower-miss-memory", "memory-return"]}
+        ],
+        "transitions": [
+          {"id": "apply-small-sequential", "from": "tlb-lookup", "to": "tlb-lookup", "event": "parameter-change", "when": {"working-set": "small", "access-order": "sequential"}},
+          {"id": "next-small-sequential", "from": "tlb-lookup", "to": "l1-hit", "event": "next", "when": {"working-set": "small", "access-order": "sequential"}},
+          {"id": "timer-small-sequential", "from": "tlb-lookup", "to": "l1-hit", "event": "timer", "when": {"working-set": "small", "access-order": "sequential"}},
+          {"id": "previous-l1-hit", "from": "l1-hit", "to": "tlb-lookup", "event": "previous", "when": {"working-set": "small", "access-order": "sequential"}},
+          {"id": "reset-l1-hit", "from": "l1-hit", "to": "tlb-lookup", "event": "reset", "when": {"working-set": "small", "access-order": "sequential"}},
+          {"id": "apply-small-random", "from": "tlb-lookup", "to": "tlb-lookup", "event": "parameter-change", "when": {"working-set": "small", "access-order": "random"}},
+          {"id": "next-small-random", "from": "tlb-lookup", "to": "small-random-return", "event": "next", "when": {"working-set": "small", "access-order": "random"}},
+          {"id": "timer-small-random", "from": "tlb-lookup", "to": "small-random-return", "event": "timer", "when": {"working-set": "small", "access-order": "random"}},
+          {"id": "previous-small-random", "from": "small-random-return", "to": "tlb-lookup", "event": "previous", "when": {"working-set": "small", "access-order": "random"}},
+          {"id": "reset-small-random-return", "from": "small-random-return", "to": "tlb-lookup", "event": "reset", "when": {"working-set": "small", "access-order": "random"}},
+          {"id": "apply-large-sequential", "from": "tlb-lookup", "to": "tlb-lookup", "event": "parameter-change", "when": {"working-set": "large", "access-order": "sequential"}},
+          {"id": "next-large-sequential", "from": "tlb-lookup", "to": "large-sequential-return", "event": "next", "when": {"working-set": "large", "access-order": "sequential"}},
+          {"id": "timer-large-sequential", "from": "tlb-lookup", "to": "large-sequential-return", "event": "timer", "when": {"working-set": "large", "access-order": "sequential"}},
+          {"id": "previous-large-sequential", "from": "large-sequential-return", "to": "tlb-lookup", "event": "previous", "when": {"working-set": "large", "access-order": "sequential"}},
+          {"id": "reset-large-sequential-return", "from": "large-sequential-return", "to": "tlb-lookup", "event": "reset", "when": {"working-set": "large", "access-order": "sequential"}},
+          {"id": "apply-large-random", "from": "tlb-lookup", "to": "tlb-lookup", "event": "parameter-change", "when": {"working-set": "large", "access-order": "random"}},
+          {"id": "next-large-random", "from": "tlb-lookup", "to": "memory-return", "event": "next", "when": {"working-set": "large", "access-order": "random"}},
+          {"id": "timer-large-random", "from": "tlb-lookup", "to": "memory-return", "event": "timer", "when": {"working-set": "large", "access-order": "random"}},
+          {"id": "previous-memory-return", "from": "memory-return", "to": "tlb-lookup", "event": "previous", "when": {"working-set": "large", "access-order": "random"}},
+          {"id": "reset-memory-return", "from": "memory-return", "to": "tlb-lookup", "event": "reset", "when": {"working-set": "large", "access-order": "random"}}
+        ],
+        "outcomes": [
+          {"id": "small-sequential-outcome", "stateId": "l1-hit", "label": "変換と近いcacheからのdata transferを別々に記録する。"},
+          {"id": "small-random-outcome", "stateId": "small-random-return", "label": "作業集合だけでなくaccess順の影響を測る。"},
+          {"id": "large-sequential-outcome", "stateId": "large-sequential-return", "label": "連続accessでもtranslationとtransferを分離する。"},
+          {"id": "large-random-outcome", "stateId": "memory-return", "label": "機種依存の結果を普遍的latencyへ一般化しない。"}
+        ]
       }
     }
   ],

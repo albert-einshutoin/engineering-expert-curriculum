@@ -3,8 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 import json
 import subprocess
+from tempfile import TemporaryDirectory
 import unittest
 
+from curriculum_builder.build import build_site
 from curriculum_builder.javascript_safety import validate_javascript_bytes
 
 
@@ -12,6 +14,29 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class VisualizationRuntimeContractTests(unittest.TestCase):
+    def test_task9_build_has_exactly_five_simulation_script_pages(self) -> None:
+        expected = {
+            "core-02-algorithms-measurement",
+            "core-03-architecture-memory-caches",
+            "core-04-os-processes-concurrency",
+            "core-05-networks-latency-failure",
+            "core-07-api-contract-design",
+        }
+        with TemporaryDirectory(prefix=".task9-runtime-", dir=ROOT.parent) as temporary:
+            output = Path(temporary) / "site"
+            build_site(
+                ROOT / "content", ROOT / "templates", ROOT / "static", output,
+                require_complete_curriculum=True,
+            )
+            actual = {
+                path.parent.name
+                for path in (output / "lessons").glob("*/index.html")
+                if b'<script src="../../static/visualization.js" defer></script>'
+                in path.read_bytes()
+            }
+
+        self.assertEqual(actual, expected)
+
     def _run_harness(self, harness: Path, *, timeout: float = 5.0):
         try:
             return subprocess.run(

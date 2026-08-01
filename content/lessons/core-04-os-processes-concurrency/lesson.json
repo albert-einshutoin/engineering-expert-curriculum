@@ -388,6 +388,53 @@
           }
         ]
       }
+    },
+    {
+      "id": "scheduler-interleaving-static",
+      "type": "state-machine",
+      "caption": "lost updateとmutex回復の完全な状態遷移",
+      "question": "二つのthreadが同じ古い値を読んだ後、どこで不変条件を破り、mutexでどう回復するか。",
+      "afterSection": "workedExample",
+      "objectiveIds": ["obj-boundaries", "obj-race"],
+      "evidenceIds": ["race-record"],
+      "sourceIds": ["src-01", "src-04"],
+      "expectedObservation": "read-old-valueからlost-updateを経て、mutexで二回の減算を直列化したlocked-completeまでを再現する。",
+      "notes": ["x=10から二回減算する説明用fixtureであり、schedulerの普遍的な実行順を表さない。"],
+      "payload": {
+        "states": [
+          {"id": "read-old-value", "label": "同じ古い値をread", "detail": "Thread A/Bがともにx=10を読み、localに9を計算する。"},
+          {"id": "lost-update", "label": "lost update", "detail": "双方が9を書き、期待値8に対してactual 9となる。"},
+          {"id": "locked-complete", "label": "mutexで完了", "detail": "Aが10から9、Bが9から8へ更新し、不変条件を守る。"}
+        ],
+        "initialStateId": "read-old-value",
+        "transitions": [
+          {"id": "old-to-lost", "from": "read-old-value", "to": "lost-update", "event": "next", "status": "allowed"},
+          {"id": "lost-to-locked", "from": "lost-update", "to": "locked-complete", "event": "reset", "status": "allowed"},
+          {"id": "locked-to-lost-rejected", "from": "locked-complete", "to": "lost-update", "event": "next", "status": "rejected", "reason": "read/compute/write全体を同じmutex境界で保護する。"}
+        ]
+      },
+      "simulation": {
+        "kind": "scheduler-interleaving", "interactionMode": "playback", "parameters": [], "initialStateId": "read-old-value", "defaultIntervalMs": 1200,
+        "states": [
+          {"id": "read-old-value", "label": "両threadがx=10をread", "status": "Thread A/Bが同じ古い値を読み、各localで9を計算する。", "activeNodeIds": ["read-old-value"], "activeEdgeIds": []},
+          {"id": "lost-update", "label": "双方がx=9をwrite", "status": "期待値8に対してactual 9となり、不変条件違反を観測する。", "activeNodeIds": ["lost-update"], "activeEdgeIds": ["old-to-lost"]},
+          {"id": "locked-complete", "label": "mutex内で二回更新", "status": "Aのwrite後にBが9を読み、最終値8で不変条件を回復する。", "activeNodeIds": ["locked-complete"], "activeEdgeIds": ["lost-to-locked"]}
+        ],
+        "transitions": [
+          {"id": "read-to-lost-next", "from": "read-old-value", "to": "lost-update", "event": "next"},
+          {"id": "read-to-lost-timer", "from": "read-old-value", "to": "lost-update", "event": "timer"},
+          {"id": "lost-to-locked-next", "from": "lost-update", "to": "locked-complete", "event": "next"},
+          {"id": "lost-to-locked-timer", "from": "lost-update", "to": "locked-complete", "event": "timer"},
+          {"id": "lost-to-read-previous", "from": "lost-update", "to": "read-old-value", "event": "previous"},
+          {"id": "lost-to-read-reset", "from": "lost-update", "to": "read-old-value", "event": "reset"},
+          {"id": "locked-to-lost-previous", "from": "locked-complete", "to": "lost-update", "event": "previous"},
+          {"id": "locked-to-read-reset", "from": "locked-complete", "to": "read-old-value", "event": "reset"}
+        ],
+        "outcomes": [
+          {"id": "lost-update-outcome", "stateId": "lost-update", "label": "同期なしtraceでは期待値8とactual 9の差を示す。"},
+          {"id": "locked-outcome", "stateId": "locked-complete", "label": "mutex traceでは最終値8と停止性の両方を検証する。"}
+        ]
+      }
     }
   ],
   "review": {

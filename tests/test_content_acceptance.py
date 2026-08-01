@@ -103,6 +103,114 @@ TASK7_VISUAL_TYPES = {
     "core-25-engineering-economics-capacity": "matrix",
     "core-28-oss-governance-stewardship": "flow",
 }
+TASK9_SIMULATION_CONTRACTS = {
+    "core-02-algorithms-measurement": {
+        "visual": "complexity-growth-static",
+        "kind": "complexity-growth",
+        "mode": "scenario",
+        "parameters": ("input-size", "algorithm-family"),
+        "states": (
+            "small-input", "small-binary", "small-hash",
+            "crossover-linear", "crossover", "crossover-hash",
+            "large-linear", "large-binary", "large-input",
+        ),
+        "transitions": (),
+        "outcomes": (
+            "small-linear-result", "small-binary-result", "small-hash-result",
+            "crossover-linear-result", "crossover-binary-result",
+            "crossover-hash-result", "large-linear-result",
+            "large-binary-result", "large-hash-result",
+        ),
+        "interval": None,
+    },
+    "core-03-architecture-memory-caches": {
+        "visual": "memory-access-static",
+        "kind": "memory-access",
+        "mode": "hybrid",
+        "parameters": ("working-set", "access-order"),
+        "states": (
+            "tlb-lookup", "l1-hit", "small-random-return",
+            "large-sequential-return", "memory-return",
+        ),
+        "transitions": (
+            "apply-small-sequential", "next-small-sequential",
+            "timer-small-sequential", "previous-l1-hit", "reset-l1-hit",
+            "apply-small-random", "next-small-random", "timer-small-random",
+            "previous-small-random", "reset-small-random-return",
+            "apply-large-sequential", "next-large-sequential",
+            "timer-large-sequential", "previous-large-sequential",
+            "reset-large-sequential-return", "apply-large-random",
+            "next-large-random", "timer-large-random", "previous-memory-return",
+            "reset-memory-return",
+        ),
+        "outcomes": (
+            "small-sequential-outcome", "small-random-outcome",
+            "large-sequential-outcome", "large-random-outcome",
+        ),
+        "interval": 1000,
+    },
+    "core-04-os-processes-concurrency": {
+        "visual": "scheduler-interleaving-static",
+        "kind": "scheduler-interleaving",
+        "mode": "playback",
+        "parameters": (),
+        "states": ("read-old-value", "lost-update", "locked-complete"),
+        "transitions": (
+            "read-to-lost-next", "read-to-lost-timer",
+            "lost-to-locked-next", "lost-to-locked-timer",
+            "lost-to-read-previous", "lost-to-read-reset",
+            "locked-to-lost-previous", "locked-to-read-reset",
+        ),
+        "outcomes": ("lost-update-outcome", "locked-outcome"),
+        "interval": 1200,
+    },
+    "core-05-networks-latency-failure": {
+        "visual": "request-path-static",
+        "kind": "request-path",
+        "mode": "hybrid",
+        "parameters": ("failure-point",),
+        "states": (
+            "dns-lookup", "healthy-response", "dns-failure", "tcp-failure",
+            "tls-ready", "request-failure", "deadline-exceeded",
+        ),
+        "transitions": (
+            "apply-healthy", "next-healthy", "timer-healthy", "previous-healthy", "reset-healthy",
+            "apply-dns", "next-dns", "timer-dns", "previous-dns", "reset-dns",
+            "apply-tcp", "next-tcp", "timer-tcp", "previous-tcp", "reset-tcp",
+            "apply-tls", "next-tls", "timer-tls", "previous-tls", "reset-tls",
+            "apply-request", "next-request", "timer-request", "previous-request", "reset-request",
+            "apply-response", "next-response", "timer-response", "previous-response", "reset-response",
+        ),
+        "outcomes": (
+            "healthy-outcome", "dns-failure-outcome", "tcp-failure-outcome",
+            "tls-failure-outcome", "request-failure-outcome",
+            "response-unknown-outcome",
+        ),
+        "interval": 1000,
+    },
+    "core-07-api-contract-design": {
+        "visual": "retry-contract-static",
+        "kind": "retry-contract",
+        "mode": "playback",
+        "parameters": (),
+        "states": (
+            "request-accepted", "side-effect-committed", "response-lost",
+            "retry-replayed", "observed-success",
+        ),
+        "transitions": (
+            "accepted-to-committed-next", "accepted-to-committed-timer",
+            "committed-to-lost-next", "committed-to-lost-timer",
+            "lost-to-replayed-next", "lost-to-replayed-timer",
+            "replayed-to-observed-next", "replayed-to-observed-timer",
+            "committed-to-accepted-previous", "lost-to-committed-previous",
+            "replayed-to-lost-previous", "observed-to-replayed-previous",
+            "reset-side-effect", "reset-response-lost", "reset-retry",
+            "reset-observed",
+        ),
+        "outcomes": ("side-effect-once", "response-observed"),
+        "interval": 1200,
+    },
+}
 TASK7_COMMON_CONTRACTS = {
     "core-02-algorithms-measurement": ("complexity-growth-static", "comparison", "mentalModel", None, "アルゴリズム再選択の検証経路", "同じquery列への構築済みlookupで、入力特性・size・setup・space・query回数が選択をどう変えるか。", "best・average・worst caseを区別し、予測と反復実測の差から再選択条件を説明できる。", ("obj-predict", "obj-measure", "obj-reselect"), ("benchmark-report", "assessment"), ("src-01", "src-02", "src-03", "src-04"), ("操作モデル: 比較、hash計算、割り当てなど、支配的な操作を決める。", "成長率予測: 支配操作がΘ(n)ならnを2倍にしたとき約2倍、Θ(n²)なら約4倍と予測する。", "入力モデル: サイズだけでなく、順序、重複率、問い合わせ位置を固定する。", "測定設計: 準備と対象区間を分け、ウォームアップ後に複数回測る。", "統計要約: 全値、中央値、範囲を残し、除外規則を先に決める。", "差の診断: 定数項、キャッシュ、GC、処理系、外れ値を追加測定で反証する。", "再選択条件: 本番のn、分布、呼出回数の変化を監視する。")),
     "core-03-architecture-memory-caches": ("memory-access-static", "memory", "mentalModel", None, "一つのロードを診断する論理段階", "一つのloadでaddress translationとdata transferの待ちをどう切り分けるか。", "TLB・page tableの変換経路とcache・主記憶の転送経路を区別し、機種依存の階層を普遍的latencyとして扱わない。", ("obj-path", "obj-locality", "obj-transfer"), ("locality-report", "assessment"), ("src-01", "src-02", "src-03"), ("命令: 仮想アドレスAの値を要求する。", "TLB: Aのページ変換を検索する。missならページテーブルwalkが必要になる。", "L1 cache: Aを含むcache lineを検索する。hitなら近い階層で返る。", "L2と最終レベルcache: L1 miss後の候補を調べる。L2やLLCがcore-privateか複数coreでsharedかというprivate/shared範囲は機種依存である。", "memory controller: 全cacheでmissなら主記憶からline単位で転送する。", "再利用: 同じline内の次要素を使えば空間的局所性、短時間に同じ値を使えば時間的局所性を得る。", "このDAGはhit/missの診断依存を示し、VIPTではTLB変換とL1 index lookupが並行し得るため普遍的な逐次latencyではない。")),
@@ -3278,6 +3386,73 @@ def _assert_generated_map_contract(
 
 
 class ContentAcceptanceTests(unittest.TestCase):
+    def test_task9_foundational_simulations_have_exact_finite_contracts(self) -> None:
+        catalog = {
+            item["lessonId"]: item["simulation"]
+            for item in json.loads(
+                (REPOSITORY_ROOT / "content/visualization-catalog.json").read_bytes()
+            )["lessons"]
+            if item["lessonId"] in TASK9_SIMULATION_CONTRACTS
+        }
+        self.assertEqual(set(catalog), set(TASK9_SIMULATION_CONTRACTS))
+
+        for lesson_id, expected in TASK9_SIMULATION_CONTRACTS.items():
+            with self.subTest(lesson_id=lesson_id):
+                document = json.loads(
+                    (REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json")
+                    .read_bytes()
+                )
+                simulations = [
+                    visual for visual in document["visualizations"]
+                    if "simulation" in visual
+                ]
+                self.assertEqual(len(simulations), 1)
+                visual = simulations[0]
+                simulation = visual["simulation"]
+                approved = catalog[lesson_id]
+
+                self.assertEqual(visual["id"], expected["visual"])
+                self.assertEqual(simulation["kind"], expected["kind"])
+                self.assertEqual(simulation["interactionMode"], expected["mode"])
+                self.assertEqual(approved["staticEquivalentId"], visual["id"])
+                self.assertEqual(approved["kind"], simulation["kind"])
+                self.assertEqual(approved["interactionMode"], simulation["interactionMode"])
+                self.assertEqual(
+                    tuple(item["id"] for item in simulation["parameters"]),
+                    expected["parameters"],
+                )
+                self.assertEqual(
+                    tuple(item["id"] for item in simulation["states"]),
+                    expected["states"],
+                )
+                self.assertEqual(
+                    tuple(item["id"] for item in simulation["transitions"]),
+                    expected["transitions"],
+                )
+                self.assertEqual(
+                    tuple(item["id"] for item in simulation["outcomes"]),
+                    expected["outcomes"],
+                )
+                self.assertEqual(
+                    simulation.get("defaultIntervalMs"), expected["interval"]
+                )
+                if expected["mode"] in {"playback", "hybrid"}:
+                    interval = simulation["defaultIntervalMs"]
+                    self.assertTrue(250 <= interval <= 5000)
+                    self.assertEqual(interval % 50, 0)
+                else:
+                    self.assertNotIn("defaultIntervalMs", simulation)
+
+                state_ids = set(expected["states"])
+                self.assertIn(simulation["initialStateId"], state_ids)
+                self.assertTrue(
+                    set(approved["visualRegressionStateIds"]) <= state_ids
+                )
+                self.assertTrue(simulation["outcomes"])
+                self.assertTrue(
+                    all(item["stateId"] in state_ids for item in simulation["outcomes"])
+                )
+
     def test_catalog_bytes_and_identity_are_bound_to_the_preserved_release(
         self,
     ) -> None:
@@ -3563,7 +3738,8 @@ class ContentAcceptanceTests(unittest.TestCase):
                 visual = document["visualizations"][0]
                 self.assertEqual(visual["type"], expected_type)
                 self.assertEqual(visual["caption"], legacy[lesson_id]["caption"])
-                self.assertNotIn("simulation", visual)
+                if lesson_id not in TASK9_SIMULATION_CONTRACTS:
+                    self.assertNotIn("simulation", visual)
                 rendered = str(render_visualization(
                     lesson_id,
                     load_lesson_bytes((root / "lesson.json").read_bytes(), "lesson.json").visualizations[0],
@@ -3696,20 +3872,22 @@ class ContentAcceptanceTests(unittest.TestCase):
             with self.subTest(lesson_id=lesson_id):
                 path = REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json"
                 visual = json.loads(path.read_bytes())["visualizations"][0]
+                static_visual = dict(visual)
+                static_visual.pop("simulation", None)
                 self.assertEqual(
                     (
-                        visual["id"], visual["type"], visual["afterSection"],
-                        visual.get("simulation"), visual["caption"],
-                        visual["question"], visual["expectedObservation"],
-                        tuple(visual["objectiveIds"]), tuple(visual["evidenceIds"]),
-                        tuple(visual["sourceIds"]), tuple(visual.get("notes", ())),
+                        static_visual["id"], static_visual["type"], static_visual["afterSection"],
+                        static_visual.get("simulation"), static_visual["caption"],
+                        static_visual["question"], static_visual["expectedObservation"],
+                        tuple(static_visual["objectiveIds"]), tuple(static_visual["evidenceIds"]),
+                        tuple(static_visual["sourceIds"]), tuple(static_visual.get("notes", ())),
                     ),
                     TASK7_COMMON_CONTRACTS[lesson_id],
                 )
                 payload = visual["payload"]
                 self.assertEqual(payload, TASK7_PAYLOAD_CONTRACTS[lesson_id])
                 encoded = json.dumps(
-                    visual, ensure_ascii=False, separators=(",", ":")
+                    static_visual, ensure_ascii=False, separators=(",", ":")
                 ).encode("utf-8")
                 self.assertEqual(
                     hashlib.sha256(encoded).hexdigest(),
@@ -4020,7 +4198,8 @@ class ContentAcceptanceTests(unittest.TestCase):
                     / "lesson.json"
                 )
                 document = json.loads(path.read_bytes())
-                self.assertEqual(len(document.get("visualizations", [])), 1)
+                expected_count = 2 if lesson_id in TASK9_SIMULATION_CONTRACTS else 1
+                self.assertEqual(len(document.get("visualizations", [])), expected_count)
                 visual = document["visualizations"][0]
                 self.assertEqual(visual["type"], expected_type)
                 self.assertEqual(
@@ -5081,7 +5260,7 @@ class ContentAcceptanceTests(unittest.TestCase):
                 for path, source in first.items()
                 if path.suffix.casefold() == ".html"
             ),
-            0,
+            5,
         )
         legacy_by_lesson = {
             entry["lessonId"]: entry

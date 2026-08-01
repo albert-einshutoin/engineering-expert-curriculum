@@ -215,6 +215,38 @@
           {"id": "hash-space", "alternativeId": "hash-lookup", "criterionId": "space-cost", "value": "set tableの追加space Θ(n)"},
           {"id": "hash-crossover", "alternativeId": "hash-lookup", "criterionId": "query-crossover", "value": "set_build中央値 ÷ 1 query当たり短縮; query回数8と比較"}
         ]
+      },
+      "simulation": {
+        "kind": "complexity-growth",
+        "interactionMode": "scenario",
+        "parameters": [
+          {"id": "input-size", "label": "入力size", "control": "select", "options": [{"id": "small", "label": "小"}, {"id": "crossover-size", "label": "交差付近"}, {"id": "large", "label": "大"}], "defaultOptionId": "small"},
+          {"id": "algorithm-family", "label": "algorithm family", "control": "radio", "options": [{"id": "linear", "label": "線形走査"}, {"id": "binary", "label": "二分探索"}, {"id": "hash", "label": "hash lookup"}], "defaultOptionId": "linear"}
+        ],
+        "initialStateId": "small-input",
+        "states": [
+          {"id": "small-input", "label": "小入力・線形走査", "status": "setup不要の線形走査を比較基準にする。", "when": {"input-size": "small", "algorithm-family": "linear"}, "activeNodeIds": ["linear-scan"], "activeEdgeIds": []},
+          {"id": "small-binary", "label": "小入力・二分探索", "status": "整列済みならlog nだが、未整列ならsetupも分けて測る。", "when": {"input-size": "small", "algorithm-family": "binary"}, "activeNodeIds": ["binary-search"], "activeEdgeIds": []},
+          {"id": "small-hash", "label": "小入力・hash", "status": "期待O(1)だけでなくhash table構築と追加spaceを含める。", "when": {"input-size": "small", "algorithm-family": "hash"}, "activeNodeIds": ["hash-lookup"], "activeEdgeIds": []},
+          {"id": "crossover-linear", "label": "交差付近・線形走査", "status": "反復実測で線形走査の比較回数と分布を記録する。", "when": {"input-size": "crossover-size", "algorithm-family": "linear"}, "activeNodeIds": ["linear-scan"], "activeEdgeIds": []},
+          {"id": "crossover", "label": "交差付近・二分探索", "status": "sort費用をquery回数で償却できるかを測る。", "when": {"input-size": "crossover-size", "algorithm-family": "binary"}, "activeNodeIds": ["binary-search"], "activeEdgeIds": []},
+          {"id": "crossover-hash", "label": "交差付近・hash", "status": "build中央値を1 query当たり短縮で割り、交差条件を求める。", "when": {"input-size": "crossover-size", "algorithm-family": "hash"}, "activeNodeIds": ["hash-lookup"], "activeEdgeIds": []},
+          {"id": "large-linear", "label": "大入力・線形走査", "status": "worst caseのΘ(n)と実測値の差を追加測定で診断する。", "when": {"input-size": "large", "algorithm-family": "linear"}, "activeNodeIds": ["linear-scan"], "activeEdgeIds": []},
+          {"id": "large-binary", "label": "大入力・二分探索", "status": "整列済み条件とsetup費用を保ったままΘ(log n)を検証する。", "when": {"input-size": "large", "algorithm-family": "binary"}, "activeNodeIds": ["binary-search"], "activeEdgeIds": []},
+          {"id": "large-input", "label": "大入力・hash", "status": "期待Θ(1)の成立条件、衝突、memory使用量を同時に記録する。", "when": {"input-size": "large", "algorithm-family": "hash"}, "activeNodeIds": ["hash-lookup"], "activeEdgeIds": []}
+        ],
+        "transitions": [],
+        "outcomes": [
+          {"id": "small-linear-result", "stateId": "small-input", "label": "小入力ではsetup不要という候補を実測で確認する。"},
+          {"id": "small-binary-result", "stateId": "small-binary", "label": "小入力でも整列条件とsetupを分離する。"},
+          {"id": "small-hash-result", "stateId": "small-hash", "label": "小入力でもbuildと追加spaceを比較する。"},
+          {"id": "crossover-linear-result", "stateId": "crossover-linear", "label": "線形走査側の交差点測定を残す。"},
+          {"id": "crossover-binary-result", "stateId": "crossover", "label": "sort費用を含む二分探索の交差点を残す。"},
+          {"id": "crossover-hash-result", "stateId": "crossover-hash", "label": "hash buildを償却するquery回数を残す。"},
+          {"id": "large-linear-result", "stateId": "large-linear", "label": "線形成長と測定環境の差を診断する。"},
+          {"id": "large-binary-result", "stateId": "large-binary", "label": "対数成長と整列費用を別々に報告する。"},
+          {"id": "large-hash-result", "stateId": "large-input", "label": "期待計算量とworst caseを区別して報告する。"}
+        ]
       }
     }
   ],
