@@ -708,6 +708,26 @@ class VisualizationModelTests(unittest.TestCase):
                     )
                 ])
 
+    def test_parameter_change_edges_must_start_at_the_authored_initial_state(self) -> None:
+        for mode in ("hybrid", "explorer"):
+            simulation = _resettable_simulation(mode)
+            simulation["transitions"].append({  # type: ignore[union-attr]
+                "id": "late-parameter-change",
+                "from": "path-a",
+                "to": "path-a",
+                "event": "parameter-change",
+                "when": {"path": "a"},
+            })
+            with self.subTest(mode=mode), self.assertRaisesRegex(
+                CurriculumValidationError, "parameter-change.*initial"
+            ):
+                _parse([
+                    _visual(
+                        "flow", deepcopy(_payloads()["flow"]),
+                        simulation=simulation,
+                    )
+                ])
+
     def test_maximum_parameter_domain_is_validated_through_the_public_api(self) -> None:
         parameters = [
             {

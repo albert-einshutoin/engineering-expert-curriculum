@@ -1039,6 +1039,11 @@ def _validate_simulation_domain(
         InteractionMode.HYBRID,
         InteractionMode.EXPLORER,
     }
+    if conditional_path_mode and any(
+        edge.event == "parameter-change" and edge.from_id != initial_state_id
+        for edge in transitions
+    ):
+        _fail(path, "parameter-change transitions must start from initial state")
 
     # The Cartesian domain is rejected above 64. Within that closed domain each
     # state and transition is inspected once per selection, and each active
