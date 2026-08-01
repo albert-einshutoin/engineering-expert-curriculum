@@ -126,6 +126,12 @@ _FORBIDDEN_ELEMENTS: Final = frozenset(
 _RESOURCE_ELEMENTS: Final = frozenset(
     {"audio", "img", "source", "track", "video"}
 )
+_RESOURCE_BEARING_ATTRIBUTES: Final = frozenset(
+    {
+        "action", "background", "formaction", "manifest", "poster", "src",
+        "srcset", "xlink:href",
+    }
+)
 _START_TAG = re.compile(
     r"<\s*[A-Za-z][A-Za-z0-9:-]*"
     r"(?:\s+[A-Za-z_:][A-Za-z0-9_.:-]*"
@@ -354,13 +360,9 @@ class _PageParser(HTMLParser):
                 )
         if "ping" in values:
             self.issues.add(self.relative, "ping contains an unsafe URL")
-        resource_attributes = {
-            "action", "background", "formaction", "manifest", "poster", "src",
-            "srcset", "xlink:href",
-        }
         if (
             tag in _RESOURCE_ELEMENTS | {"link", "script"}
-            or resource_attributes & set(values)
+            or _RESOURCE_BEARING_ATTRIBUTES & set(values)
         ) and not self.csp_values:
             self.resource_before_csp = True
         if "background" in values:
