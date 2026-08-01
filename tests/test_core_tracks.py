@@ -4187,10 +4187,33 @@ class CoreTrackTests(unittest.TestCase):
                 point["accepted_rps"],
                 point["offered_rps"],
             )
-            self.assertLessEqual(
-                point["success_rps"],
-                point["accepted_rps"],
+            self.assertEqual(point["interval_seconds"], 1)
+            self.assertEqual(
+                point["arrivals_requests"],
+                point["offered_rps"] * point["interval_seconds"],
             )
+            self.assertEqual(
+                point["queue_end_requests"],
+                max(
+                    0,
+                    point["queue_start_requests"]
+                    + point["admitted_requests"]
+                    - point["completed_requests"],
+                ),
+            )
+            self.assertEqual(
+                point["completed_requests"],
+                point["immediate_work_requests"]
+                + point["backlog_completed_requests"],
+            )
+            self.assertEqual(
+                point["arrivals_requests"],
+                point["admitted_requests"] + point["rejected_requests"],
+            )
+            self.assertEqual(point["failed_requests"], point["rejected_requests"])
+            self.assertEqual(point["accepted_rps"], point["admitted_requests"])
+            self.assertEqual(point["success_rps"], point["completed_requests"])
+            self.assertLessEqual(point["queue_end_requests"], 30)
             self.assertLessEqual(point["p50_ms"], point["p95_ms"])
             self.assertLessEqual(point["p95_ms"], point["p99_ms"])
             self.assertGreaterEqual(point["cpu_percent"], 0)
@@ -4218,6 +4241,29 @@ class CoreTrackTests(unittest.TestCase):
         self.assertTrue(analysis["tail_growth"])
         self.assertTrue(analysis["error_growth"])
         self.assertTrue(analysis["recovery_hysteresis"])
+        expected_queue_records = [
+            (0, 40, 40, 40, 0, 40, 0, 0, 0),
+            (0, 100, 100, 100, 0, 100, 0, 0, 0),
+            (0, 150, 130, 100, 0, 100, 30, 20, 20),
+            (30, 50, 50, 50, 30, 80, 0, 0, 0),
+        ]
+        self.assertEqual(
+            [
+                (
+                    point["queue_start_requests"],
+                    point["arrivals_requests"],
+                    point["admitted_requests"],
+                    point["immediate_work_requests"],
+                    point["backlog_completed_requests"],
+                    point["completed_requests"],
+                    point["queue_end_requests"],
+                    point["rejected_requests"],
+                    point["failed_requests"],
+                )
+                for point in curve
+            ],
+            expected_queue_records,
+        )
         capacity = report["capacity"]
         self.assertLess(
             capacity["safe_capacity_rps"],
@@ -4319,8 +4365,7 @@ class CoreTrackTests(unittest.TestCase):
                     current["p99_ms"] > previous["p99_ms"]
                 )
                 error_growth = (
-                    current["success_rps"]
-                    < current["accepted_rps"]
+                    current["rejected_requests"] > 0
                 )
                 if plateau and tail_growth and error_growth:
                     return previous["offered_rps"]
@@ -4335,6 +4380,28 @@ class CoreTrackTests(unittest.TestCase):
             {point["offered_rps"] for point in curve},
         )
         transfer_curve = mutation["mutated_load_curve"]
+        self.assertEqual(
+            [
+                (
+                    point["queue_start_requests"],
+                    point["arrivals_requests"],
+                    point["admitted_requests"],
+                    point["immediate_work_requests"],
+                    point["backlog_completed_requests"],
+                    point["completed_requests"],
+                    point["queue_end_requests"],
+                    point["rejected_requests"],
+                    point["failed_requests"],
+                )
+                for point in transfer_curve
+            ],
+            [
+                (0, 40, 40, 40, 0, 40, 0, 0, 0),
+                (0, 80, 80, 80, 0, 80, 0, 0, 0),
+                (0, 120, 110, 80, 0, 80, 30, 10, 10),
+                (30, 50, 50, 50, 30, 80, 0, 0, 0),
+            ],
+        )
         self.assertEqual(
             mutation["mutated_observed_knee_rps"],
             inferred_knee(transfer_curve),
@@ -4351,14 +4418,14 @@ class CoreTrackTests(unittest.TestCase):
         self.assert_data_scale_mastery_evidence(report, lesson_id)
         self.assertFalse(report["external_network_used"])
 
-    def test_performance_harness_rejects_capacity_mutation(
+    def test_performance_harness_rejects_queue_capacity_mutation(
         self,
     ) -> None:
         self.assert_harness_source_mutation_fails(
             "core-14-performance-capacity",
             "performance_capacity_lab_v1",
-            "if offered_rps > capacity:",
-            "if False:",
+            "QUEUE_LIMIT_REQUESTS = 30",
+            "QUEUE_LIMIT_REQUESTS = 0",
         )
 
     def test_reliability_harness_derives_slo_alerts_and_runbook(

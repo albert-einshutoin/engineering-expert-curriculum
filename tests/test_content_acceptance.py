@@ -3955,10 +3955,11 @@ class ContentAcceptanceTests(unittest.TestCase):
                 "deadline 8", "state transitionは1回", "resultを1回再利用",
             ),
             "core-14-performance-capacity": (
-                "offered=150 RPS", "accepted=100 RPS", "success=90 RPS",
-                "queue=50", "p99=450 ms", "safe capacity=80 RPS",
-                "offered=120 RPS", "accepted=80 RPS", "success=72 RPS",
-                "safe capacity=64 RPS",
+                "arrivals=150req", "admitted=130req", "completed=100req",
+                "Qend=30req", "rejected=20req", "p99=450ms",
+                "safe capacityは20% headroom後の80 RPS",
+                "arrivals=120req", "admitted=110req", "rejected=10req",
+                "safe capacityは20% headroom後の64 RPS",
             ),
             "core-15-reliability-observability-slo": (
                 "28日", "target=90%", "error budget=10%", "5分",
@@ -3970,6 +3971,26 @@ class ContentAcceptanceTests(unittest.TestCase):
             for atom in atoms:
                 with self.subTest(lesson_id=lesson_id, atom=atom):
                     self.assertIn(atom, rendered[lesson_id])
+
+    def test_task10_core14_states_expose_exact_queue_conservation_records(self) -> None:
+        lesson_id = "core-14-performance-capacity"
+        path = REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json"
+        document = json.loads(path.read_bytes())
+        states = document["visualizations"][0]["simulation"]["states"]
+        expected_statuses = {
+            "stable-load": "Δt=1s;Qstart=0req;arrivals=40req;admitted=40req;immediate=40req;backlogDone=0req;completed=40req;Qend=0req;rejected=0req;failed=0req;p99=70ms.",
+            "near-capacity": "Δt=1s;Qstart=0req;arrivals=100req;admitted=100req;immediate=100req;backlogDone=0req;completed=100req;Qend=0req;rejected=0req;failed=0req;p99=100ms.",
+            "saturation": "Δt=1s;Qstart=0req;arrivals=150req;admitted=130req;immediate=100req;backlogDone=0req;completed=100req;Qend=30req;rejected=20req;failed=20req;p99=450ms.",
+            "capacity-recovered": "Δt=1s;Qstart=30req;arrivals=50req;admitted=50req;immediate=50req;backlogDone=30req;completed=80req;Qend=0req;rejected=0req;failed=0req;p99=180ms.",
+            "write-stable-load": "Δt=1s;Qstart=0req;arrivals=40req;admitted=40req;immediate=40req;backlogDone=0req;completed=40req;Qend=0req;rejected=0req;failed=0req;p99=90ms.",
+            "write-near-capacity": "Δt=1s;Qstart=0req;arrivals=80req;admitted=80req;immediate=80req;backlogDone=0req;completed=80req;Qend=0req;rejected=0req;failed=0req;p99=190ms.",
+            "write-saturation": "Δt=1s;Qstart=0req;arrivals=120req;admitted=110req;immediate=80req;backlogDone=0req;completed=80req;Qend=30req;rejected=10req;failed=10req;p99=900ms.",
+            "write-capacity-recovered": "Δt=1s;Qstart=30req;arrivals=50req;admitted=50req;immediate=50req;backlogDone=30req;completed=80req;Qend=0req;rejected=0req;failed=0req;p99=360ms.",
+        }
+        self.assertEqual(
+            {state["id"]: state["status"] for state in states},
+            expected_statuses,
+        )
 
     def test_task10_core13_static_equivalent_is_the_complete_six_event_log(self) -> None:
         lesson_id = "core-13-distributed-coordination-failure"

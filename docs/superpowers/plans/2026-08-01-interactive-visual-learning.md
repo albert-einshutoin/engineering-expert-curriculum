@@ -848,7 +848,10 @@ git commit -m "content: add foundational system simulations"
 
 **Files:**
 - Modify lesson JSON for core-12, 13, 14, 15
+- Modify lesson body for core-14
 - Modify: `tests/test_content_acceptance.py`
+- Modify: `tests/test_core_tracks.py`
+- Modify: `tests/fixtures/visualization-migration-v1.json` (core-14 body checksum only)
 - Modify: `tests/test_visualization_runtime.py`
 - Modify: `tests/test_accessibility_contract.py`
 - Modify: `tests/test_build.py`
@@ -880,7 +883,7 @@ window/error budget/burn/response. Static tables reproduce every result.
 ```bash
 python3.13 -m unittest tests.test_content_acceptance tests.test_visualization_runtime -v
 python3.13 -m unittest discover -s tests -v
-git add content/lessons/core-{12,13,14,15}-*/lesson.json tests/test_content_acceptance.py tests/test_visualization_runtime.py tests/test_accessibility_contract.py tests/test_build.py tests/test_roadmap_acceptance.py docs/superpowers/plans/2026-08-01-interactive-visual-learning.md
+git add content/lessons/core-{12,13,14,15}-*/lesson.json content/lessons/core-14-performance-capacity/body.html tests/test_content_acceptance.py tests/test_core_tracks.py tests/fixtures/visualization-migration-v1.json tests/test_visualization_runtime.py tests/test_accessibility_contract.py tests/test_build.py tests/test_roadmap_acceptance.py docs/superpowers/plans/2026-08-01-interactive-visual-learning.md
 git commit -m "content: add data and reliability simulations"
 ```
 
