@@ -126,6 +126,21 @@ class HtmlSafetyTests(unittest.TestCase):
                         + '</body></html>'
                     )
 
+    def test_generated_transition_event_uses_the_closed_data_grammar(self) -> None:
+        valid = (
+            '<table><tbody><tr class="visualization__simulation-transition" '
+            'data-transition-id="edge" data-transition-event="next" '
+            'data-from-state-id="ready" data-to-state-id="done">'
+            '<td>next</td></tr></tbody></table>'
+        )
+        self.assertEqual(validate_generated_fragment(valid).value, valid)
+        for mutation in (
+            valid.replace('data-transition-event="next"', 'data-transition-event="unknown"'),
+            valid.replace('data-to-state-id="done"', 'data-to-state-id="done" data-unexpected="x"'),
+        ):
+            with self.subTest(mutation=mutation), self.assertRaises(CurriculumValidationError):
+                validate_generated_fragment(mutation)
+
     def test_accepts_mixed_case_markup_and_safe_character_references(self) -> None:
         fragment = (
             "<SECTION CLASS='reading'><H2>A &amp; B</H2>"

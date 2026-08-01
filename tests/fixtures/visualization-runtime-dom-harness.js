@@ -135,6 +135,7 @@ class Element extends EventTarget {
   get textContent() { return this._text + this.children.map((child) => child.textContent).join(''); }
   set textContent(value) { this.tracker.mutation(); this._text = String(value); this.children = []; }
   getAttribute(name) { return this.attributes.has(name) ? this.attributes.get(name) : null; }
+  getAttributeNames() { return [...this.attributes.keys()]; }
   setAttribute(name, value) { this.tracker.mutation(); this.attributes.set(name, String(value)); }
   removeAttribute(name) { this.tracker.mutation(); this.attributes.delete(name); }
   contains(other) { for (let item = other; item; item = item.parent) { if (item === this) { return true; } } return false; }
@@ -172,7 +173,7 @@ const ACTIONS = {
   explorer: ['apply', 'previous', 'next', 'reset'],
 };
 
-function fixture(tracker, mode, suffix = '') {
+function fixture(tracker, mode, suffix = '', controlKind = 'select') {
   const rootId = `viz-${mode}${suffix}`;
   const root = element(tracker, 'figure', {
     id: rootId,
@@ -191,21 +192,37 @@ function fixture(tracker, mode, suffix = '') {
   const controls = element(tracker, 'div', { hidden: '' }, ['visualization__controls']);
   const parameterized = ['scenario', 'hybrid', 'explorer'].includes(mode);
   if (parameterized) {
-    const select = element(tracker, 'select', { 'data-parameter-id': 'choice', disabled: '', value: 'a' });
-    select.value = 'a';
-    const optionA = element(tracker, 'option', { value: 'a' }, [], 'A');
-    optionA.value = 'a';
-    const optionB = element(tracker, 'option', { value: 'b' }, [], 'B');
-    optionB.value = 'b';
-    select.append(optionA, optionB);
-    controls.append(select);
+    if (controlKind === 'radio') {
+      const radioA = element(tracker, 'input', { id: `${rootId}-a`, 'data-parameter-id': 'choice', disabled: '', type: 'radio', name: `${rootId}-choice`, value: 'a', checked: '' });
+      const radioB = element(tracker, 'input', { id: `${rootId}-b`, 'data-parameter-id': 'choice', disabled: '', type: 'radio', name: `${rootId}-choice`, value: 'b' });
+      radioA.value = 'a';
+      radioA.checked = true;
+      radioB.value = 'b';
+      controls.append(radioA, radioB);
+    } else {
+      const select = element(tracker, 'select', { id: `${rootId}-choice`, 'data-parameter-id': 'choice', disabled: '' });
+      select.value = 'a';
+      const optionA = element(tracker, 'option', { value: 'a', selected: '' }, [], 'A');
+      optionA.value = 'a';
+      const optionB = element(tracker, 'option', { value: 'b' }, [], 'B');
+      optionB.value = 'b';
+      select.append(optionA, optionB);
+      controls.append(select);
+    }
   }
   for (const action of ACTIONS[mode]) {
-    controls.append(element(tracker, 'button', { 'data-action': action, disabled: '', type: 'button' }, [], action === 'play' ? '再生' : action));
+    controls.append(element(tracker, 'button', { id: `${rootId}-${action}`, 'data-action': action, disabled: '', type: 'button' }, [], action === 'play' ? '再生' : action));
   }
   if (mode === 'playback' || mode === 'hybrid') {
-    const speed = element(tracker, 'select', { 'data-action': 'speed', disabled: '', value: '1' });
+    const speed = element(tracker, 'select', { id: `${rootId}-speed`, 'data-action': 'speed', disabled: '' });
     speed.value = '1';
+    const speedHalf = element(tracker, 'option', { value: '0.5' }, [], '0.5x');
+    speedHalf.value = '0.5';
+    const speedOne = element(tracker, 'option', { value: '1', selected: '' }, [], '1x');
+    speedOne.value = '1';
+    const speedTwo = element(tracker, 'option', { value: '2' }, [], '2x');
+    speedTwo.value = '2';
+    speed.append(speedHalf, speedOne, speedTwo);
     controls.append(speed);
   }
 
@@ -216,8 +233,8 @@ function fixture(tracker, mode, suffix = '') {
     if (edgeId) { state.append(element(tracker, 'code', { 'data-edge-id': edgeId }, ['visualization__state-edge'], edgeId)); }
     statesList.append(state);
   };
-  const addTransition = (id, from, to, parameter, option) => {
-    const transition = element(tracker, 'tr', { 'data-transition-id': id, 'data-from-state-id': from, 'data-to-state-id': to }, ['visualization__simulation-transition']);
+  const addTransition = (id, eventName, from, to, parameter, option) => {
+    const transition = element(tracker, 'tr', { 'data-transition-id': id, 'data-transition-event': eventName, 'data-from-state-id': from, 'data-to-state-id': to }, ['visualization__simulation-transition']);
     if (parameter) { transition.append(code(tracker, 'visualization__transition-condition', parameter, option)); }
     transitionsTable.append(transition);
   };
@@ -228,20 +245,49 @@ function fixture(tracker, mode, suffix = '') {
     addState('state-b', 1, 'choice', 'b', 'node-2', 'edge-1');
     addOutcome('outcome-a', 'state-a');
     addOutcome('outcome-b', 'state-b');
+    addTransition('a-to-b', 'parameter-change', 'state-a', 'state-b', 'choice', 'b');
+    addTransition('b-to-a', 'parameter-change', 'state-b', 'state-a', 'choice', 'a');
+    addTransition('reset-a', 'reset', 'state-a', 'state-a', 'choice', 'a');
+    addTransition('reset-b', 'reset', 'state-b', 'state-b', 'choice', 'b');
   } else if (mode === 'hybrid' || mode === 'explorer') {
     addState('state-0', 0, null, null, 'node-0', null);
     addState('state-a', 1, 'choice', 'a', 'node-1', 'edge-0');
     addState('state-b', 2, 'choice', 'b', 'node-2', 'edge-1');
-    addTransition('to-a', 'state-0', 'state-a', 'choice', 'a');
-    addTransition('to-b', 'state-0', 'state-b', 'choice', 'b');
+    addTransition('to-a', 'parameter-change', 'state-0', 'state-a', 'choice', 'a');
+    addTransition('to-b', 'parameter-change', 'state-0', 'state-b', 'choice', 'b');
+    addTransition('initial-reset', 'reset', 'state-0', 'state-0', null, null);
+    addTransition('a-reset', 'reset', 'state-a', 'state-0', null, null);
+    addTransition('b-reset', 'reset', 'state-b', 'state-0', null, null);
+    if (mode === 'hybrid') {
+      addState('state-a-done', 3, 'choice', 'a', 'node-2', 'edge-1');
+      addState('state-b-done', 4, 'choice', 'b', 'node-2', 'edge-1');
+      addTransition('a-next', 'next', 'state-a', 'state-a-done', 'choice', 'a');
+      addTransition('b-next', 'next', 'state-b', 'state-b-done', 'choice', 'b');
+      addTransition('a-timer', 'timer', 'state-a', 'state-a-done', 'choice', 'a');
+      addTransition('b-timer', 'timer', 'state-b', 'state-b-done', 'choice', 'b');
+      addTransition('a-done-previous', 'previous', 'state-a-done', 'state-a', 'choice', 'a');
+      addTransition('b-done-previous', 'previous', 'state-b-done', 'state-b', 'choice', 'b');
+      addTransition('a-done-reset', 'reset', 'state-a-done', 'state-0', null, null);
+      addTransition('b-done-reset', 'reset', 'state-b-done', 'state-0', null, null);
+    }
     addOutcome('outcome-a', 'state-a');
     addOutcome('outcome-b', 'state-b');
   } else {
     addState('state-0', 0, null, null, 'node-0', null);
     addState('state-1', 1, null, null, 'node-1', 'edge-0');
     addState('state-2', 2, null, null, 'node-2', 'edge-1');
-    addTransition('to-1', 'state-0', 'state-1', null, null);
-    addTransition('to-2', 'state-1', 'state-2', null, null);
+    const forwardEvent = mode === 'playback' ? 'timer' : 'next';
+    addTransition('to-1', forwardEvent, 'state-0', 'state-1', null, null);
+    addTransition('to-2', forwardEvent, 'state-1', 'state-2', null, null);
+    if (mode === 'playback') {
+      addTransition('next-1', 'next', 'state-0', 'state-1', null, null);
+      addTransition('next-2', 'next', 'state-1', 'state-2', null, null);
+    }
+    addTransition('back-1', 'previous', 'state-1', 'state-0', null, null);
+    addTransition('back-2', 'previous', 'state-2', 'state-1', null, null);
+    addTransition('reset-0', 'reset', 'state-0', 'state-0', null, null);
+    addTransition('reset-1', 'reset', 'state-1', 'state-0', null, null);
+    addTransition('reset-2', 'reset', 'state-2', 'state-0', null, null);
     addOutcome('done', 'state-2');
   }
   root.append(...nodes, ...edges, statesList, transitionsTable, outcomesTable, status, controls);
@@ -268,18 +314,41 @@ function activeState(fixtureValue) {
   assert(active.length === 1, 'expected one active state');
   return active[0].getAttribute('data-state-id');
 }
-function parameter(fixtureValue) { return fixtureValue.controls.querySelector('select[data-parameter-id]'); }
+function parameter(fixtureValue) { return fixtureValue.controls.querySelector('select[data-parameter-id]') || fixtureValue.controls.querySelector('input[data-parameter-id]'); }
+function setParameter(fixtureValue, selectedValue) {
+  const select = fixtureValue.controls.querySelector('select[data-parameter-id]');
+  if (select) { select.value = selectedValue; return select; }
+  const radios = fixtureValue.controls.querySelectorAll('input[data-parameter-id]');
+  radios.forEach((radio) => { radio.checked = radio.value === selectedValue; });
+  return radios.find((radio) => radio.checked);
+}
 function controlListenerCount(fixtureValue) { return fixtureValue.controls.listenerCount(); }
-function domSnapshot(root) {
-  return JSON.stringify({
+function snapshotObject(root, allowFallback = false) {
+  let classes = root.classList.toString();
+  let text = root._text;
+  if (allowFallback && root.classList.contains('has-runtime-error')) {
+    classes = classes.split(' ').filter((name) => name !== 'has-runtime-error').join(' ');
+  }
+  if (allowFallback && root.classList.contains('visualization__current-status') && text === '動的表示を利用できません。静的図を表示しています。') {
+    text = 'static status';
+  }
+  return {
     tag: root.tag,
     attributes: [...root.attributes].sort(),
-    classes: root.classList.toString(),
+    classes,
     hidden: root.hidden,
     disabled: root.disabled,
-    text: root._text,
-    children: root.children.map(domSnapshot),
-  });
+    value: root.value,
+    checked: root.checked,
+    text,
+    children: root.children.map((child) => snapshotObject(child, allowFallback)),
+  };
+}
+function domSnapshot(root, allowFallback = false) { return JSON.stringify(snapshotObject(root, allowFallback)); }
+function snapshotDifference(left, right) {
+  let index = 0;
+  while (index < left.length && left[index] === right[index]) { index += 1; }
+  return `${left.slice(index, index + 80)} != ${right.slice(index, index + 80)}`;
 }
 
 function runLoadAbsence() {
@@ -294,7 +363,6 @@ function runLoadAbsence() {
 function runModes() {
   const tracker = new Tracker();
   const fixtures = ['scenario', 'stepper', 'playback', 'hybrid', 'explorer'].map((mode) => fixture(tracker, mode));
-  const baselines = fixtures.map((item) => domSnapshot(item.root));
   const window = environment(tracker, fixtures);
   for (let fixtureIndex = 0; fixtureIndex < fixtures.length; fixtureIndex += 1) {
     const value = fixtures[fixtureIndex];
@@ -304,8 +372,8 @@ function runModes() {
   }
   const [scenario, stepper, playback, hybrid, explorer] = fixtures;
   const initialStatus = scenario.status.textContent;
-  parameter(scenario).value = 'b';
-  scenario.controls.dispatchEvent({ type: 'change', target: parameter(scenario) });
+  const changedScenario = setParameter(scenario, 'b');
+  scenario.controls.dispatchEvent({ type: 'change', target: changedScenario });
   assert(scenario.status.textContent === initialStatus, 'parameter change announced without action');
   click(scenario, 'apply');
   assert(activeState(scenario) === 'state-b', 'scenario did not resolve selection');
@@ -319,11 +387,11 @@ function runModes() {
   assert(activeState(playback) === 'state-1', 'playback did not advance');
   click(playback, 'pause');
   assert(tracker.timers.size === 0, 'pause leaked timer');
-  parameter(hybrid).value = 'b';
+  setParameter(hybrid, 'b');
   click(hybrid, 'apply');
   click(hybrid, 'next');
-  assert(activeState(hybrid) === 'state-b', 'hybrid did not select path');
-  parameter(explorer).value = 'b';
+  assert(activeState(hybrid) === 'state-b-done', 'hybrid did not select path');
+  setParameter(explorer, 'b');
   click(explorer, 'apply');
   assert(activeState(explorer) === 'state-b', 'explorer did not highlight selection');
   assert(explorer.nodes[2].classList.contains('is-active'), 'explorer node highlight missing');
@@ -333,7 +401,24 @@ function runModes() {
   assert(fixtures.every((item) => controlListenerCount(item) === 0), 'pagehide leaked listeners');
   assert(tracker.timers.size === 0, 'pagehide leaked timers');
   assert(window.listenerCount() === 0, 'pagehide listener did not self-remove');
-  fixtures.forEach((item, index) => assert(domSnapshot(item.root) === baselines[index], `pagehide did not restore exact DOM mode=${index}`));
+}
+
+function runExactTeardown() {
+  for (const controlKind of ['select', 'radio']) {
+    const tracker = new Tracker();
+    const modes = ['scenario', 'stepper', 'playback', 'hybrid', 'explorer'];
+    const fixtures = modes.map((mode) => fixture(tracker, mode, `-${controlKind}`, controlKind));
+    const baselines = fixtures.map((item) => domSnapshot(item.root));
+    const window = environment(tracker, fixtures);
+    fixtures.forEach((item, index) => {
+      const action = ['apply', 'next', 'next', 'apply', 'apply'][index];
+      click(item, action);
+    });
+    window.dispatchEvent({ type: 'pagehide', target: window });
+    fixtures.forEach((item, index) => assert(domSnapshot(item.root) === baselines[index], `pagehide did not restore exact DOM mode=${modes[index]} control=${controlKind}`));
+    assert(fixtures.every((item) => controlListenerCount(item) === 0), 'exact teardown leaked listeners');
+    assert(tracker.timers.size === 0, 'exact teardown leaked timer');
+  }
 }
 
 function runReducedMotion() {
@@ -345,22 +430,51 @@ function runReducedMotion() {
   assert(activeState(value) === 'state-0', 'reduced motion advanced state');
 }
 
+function runExactEventResolution() {
+  const cases = [
+    ['to-1', 'timer', 'next'],
+    ['back-1', 'timer', 'previous'],
+    ['reset-1', 'timer', 'reset'],
+  ];
+  for (const [transitionId, replacementEvent, action] of cases) {
+    const tracker = new Tracker();
+    const value = fixture(tracker, 'stepper', `-${action}`);
+    value.root.querySelectorAll('.visualization__simulation-transition').find((item) => item.getAttribute('data-transition-id') === transitionId).attributes.set('data-transition-event', replacementEvent);
+    environment(tracker, [value]);
+    if (action !== 'next') { click(value, 'next'); }
+    const before = activeState(value);
+    click(value, action);
+    assert(activeState(value) === before, `${action} fell back to array position without its authored edge`);
+  }
+}
+
 function runValidationMutations() {
   const mutations = [
-    (value) => value.root.attributes.set('data-simulation-kind', 'unknown'),
-    (value) => value.root.attributes.set('data-interaction-mode', 'unknown'),
-    (value) => value.root.attributes.set('data-default-interval-ms', '249'),
-    (value) => value.statesList.children[1].attributes.set('data-state-id', 'state-0'),
-    (value) => value.statesList.children[1].attributes.set('data-step-index', '9'),
-    (value) => value.statesList.children[1].children.find((item) => item.classList.contains('visualization__state-node')).attributes.set('data-node-id', 'missing'),
-    (value) => value.root.querySelector('.visualization__simulation-transition').attributes.set('data-to-state-id', 'missing'),
-    (value) => value.controls.children.find((item) => item.tag === 'button').attributes.set('data-action', 'play'),
+    ['stepper', (value) => value.root.attributes.set('data-simulation-kind', 'unknown')],
+    ['stepper', (value) => value.root.attributes.set('data-interaction-mode', 'unknown')],
+    ['stepper', (value) => value.root.attributes.set('data-default-interval-ms', '249')],
+    ['stepper', (value) => value.root.attributes.set('data-unexpected', 'x')],
+    ['stepper', (value) => value.statesList.children[1].attributes.set('data-state-id', 'state-0')],
+    ['stepper', (value) => value.statesList.children[1].attributes.set('data-step-index', '9')],
+    ['stepper', (value) => value.statesList.children[1].attributes.set('data-unexpected', 'x')],
+    ['stepper', (value) => value.statesList.children[1].children.find((item) => item.classList.contains('visualization__state-node')).attributes.set('data-node-id', 'missing')],
+    ['stepper', (value) => value.root.querySelector('.visualization__simulation-transition').attributes.set('data-to-state-id', 'missing')],
+    ['stepper', (value) => value.root.querySelector('.visualization__simulation-transition').attributes.delete('data-transition-event')],
+    ['stepper', (value) => value.root.querySelector('.visualization__simulation-transition').attributes.set('data-transition-event', 'unknown')],
+    ['scenario', (value) => value.root.querySelector('.visualization__state-condition').attributes.delete('data-option-id')],
+    ['scenario', (value) => value.root.querySelector('.visualization__transition-condition').attributes.delete('data-parameter-id')],
+    ['scenario', (value) => value.root.querySelector('.visualization__state-condition').attributes.set('data-unexpected', 'x')],
+    ['stepper', (value, tracker) => value.controls.append(element(tracker, 'button', { type: 'button', disabled: '' }, [], 'ignored'))],
+    ['stepper', (value, tracker) => value.controls.append(element(tracker, 'select', { 'data-action': 'unknown', disabled: '' }))],
+    ['stepper', (value) => value.controls.children.find((item) => item.tag === 'button').attributes.set('data-action', 'play')],
+    ['stepper', (value) => value.controls.children.find((item) => item.tag === 'button').attributes.set('type', 'submit')],
+    ['scenario', (value) => value.controls.querySelector('input[data-parameter-id]').attributes.set('type', 'text'), 'radio'],
   ];
   for (let mutationIndex = 0; mutationIndex < mutations.length; mutationIndex += 1) {
-    const mutate = mutations[mutationIndex];
+    const [mode, mutate, controlKind = 'select'] = mutations[mutationIndex];
     const tracker = new Tracker();
-    const value = fixture(tracker, 'stepper');
-    mutate(value);
+    const value = fixture(tracker, mode, '', controlKind);
+    mutate(value, tracker);
     environment(tracker, [value]);
     assert(tracker.mutations === 0, `invalid DOM ${mutationIndex} was visibly mutated count=${tracker.mutations}`);
     assert(value.controls.hidden, 'invalid DOM revealed controls');
@@ -368,33 +482,67 @@ function runValidationMutations() {
   }
 }
 
-function actionSequence(value, tracker) {
-  click(value, 'next');
-  click(value, 'previous');
-  click(value, 'play');
-  tracker.flushOne();
-  click(value, 'pause');
-  click(value, 'reset');
+function actionSequence(value, tracker, mode) {
+  if (mode === 'scenario') {
+    click(value, 'apply');
+    click(value, 'reset');
+  } else if (mode === 'stepper') {
+    click(value, 'next');
+    click(value, 'previous');
+    click(value, 'next');
+    click(value, 'reset');
+  } else if (mode === 'playback') {
+    click(value, 'next');
+    click(value, 'previous');
+    click(value, 'play');
+    tracker.flushOne();
+    click(value, 'pause');
+    click(value, 'reset');
+  } else if (mode === 'hybrid') {
+    click(value, 'apply');
+    click(value, 'play');
+    tracker.flushOne();
+    click(value, 'previous');
+    click(value, 'next');
+    click(value, 'reset');
+  } else {
+    click(value, 'apply');
+    click(value, 'next');
+    click(value, 'previous');
+    click(value, 'reset');
+  }
 }
 
 function runFaultMatrix() {
-  const countTracker = new Tracker();
-  const countFixture = fixture(countTracker, 'playback');
-  const countWindow = environment(countTracker, [countFixture]);
-  actionSequence(countFixture, countTracker);
-  const mutationCount = countTracker.mutations;
-  countWindow.dispatchEvent({ type: 'pagehide', target: countWindow });
-  assert(mutationCount > 20, 'fault matrix did not cover mutations');
-  for (let fault = 1; fault <= mutationCount; fault += 1) {
-    const tracker = new Tracker();
-    tracker.failAt = fault;
-    const value = fixture(tracker, 'playback', `-${fault}`);
-    const window = environment(tracker, [value]);
-    actionSequence(value, tracker);
-    window.dispatchEvent({ type: 'pagehide', target: window });
-    assert(controlListenerCount(value) === 0, `mutation ${fault} leaked listeners`);
-    assert(tracker.timers.size === 0, `mutation ${fault} leaked timer`);
-    assert(value.controls.hidden, `mutation ${fault} did not restore controls`);
+  const configurations = [];
+  for (const mode of ['scenario', 'stepper', 'playback', 'hybrid', 'explorer']) {
+    configurations.push([mode, 'select']);
+    if (['scenario', 'hybrid', 'explorer'].includes(mode)) { configurations.push([mode, 'radio']); }
+  }
+  for (const [mode, controlKind] of configurations) {
+    const countTracker = new Tracker();
+    const countFixture = fixture(countTracker, mode, '-count', controlKind);
+    if (['scenario', 'hybrid', 'explorer'].includes(mode)) { setParameter(countFixture, 'b'); }
+    const countWindow = environment(countTracker, [countFixture]);
+    actionSequence(countFixture, countTracker, mode);
+    const mutationCount = countTracker.mutations;
+    countWindow.dispatchEvent({ type: 'pagehide', target: countWindow });
+    assert(mutationCount > 10, `fault matrix did not cover ${mode}`);
+    for (let fault = 1; fault <= mutationCount; fault += 1) {
+      const tracker = new Tracker();
+      tracker.failAt = fault;
+      const value = fixture(tracker, mode, `-${controlKind}-${fault}`, controlKind);
+      if (['scenario', 'hybrid', 'explorer'].includes(mode)) { setParameter(value, 'b'); }
+      const baseline = domSnapshot(value.root);
+      const window = environment(tracker, [value]);
+      actionSequence(value, tracker, mode);
+      window.dispatchEvent({ type: 'pagehide', target: window });
+      assert(controlListenerCount(value) === 0, `${mode} mutation ${fault} leaked listeners`);
+      assert(tracker.timers.size === 0, `${mode} mutation ${fault} leaked timer`);
+      assert(value.controls.hidden, `${mode} mutation ${fault} did not restore controls`);
+      const restored = domSnapshot(value.root, true);
+      assert(restored === baseline, `${mode} mutation ${fault} did not restore exact DOM ${snapshotDifference(restored, baseline)}`);
+    }
   }
   const listenerTracker = new Tracker();
   listenerTracker.failListenerAt = 2;
@@ -416,22 +564,28 @@ function runFaultMatrix() {
 }
 
 function runResetCycles() {
-  const tracker = new Tracker();
-  const value = fixture(tracker, 'stepper');
-  const baseline = domSnapshot(value.root);
-  const window = environment(tracker, [value]);
-  const listeners = controlListenerCount(value);
-  for (let index = 0; index < 100; index += 1) { click(value, 'reset'); }
-  assert(controlListenerCount(value) === listeners, 'reset duplicated listeners');
-  assert(tracker.timers.size === 0, 'reset leaked timer');
-  window.dispatchEvent({ type: 'pagehide', target: window });
-  assert(controlListenerCount(value) === 0, 'reset fixture leaked listeners');
-  assert(domSnapshot(value.root) === baseline, 'reset fixture did not restore exact DOM');
+  for (const controlKind of ['select', 'radio']) {
+    for (const mode of ['scenario', 'stepper', 'playback', 'hybrid', 'explorer']) {
+      const tracker = new Tracker();
+      const value = fixture(tracker, mode, `-${controlKind}-reset`, controlKind);
+      const baseline = domSnapshot(value.root);
+      const window = environment(tracker, [value]);
+      const listeners = controlListenerCount(value);
+      for (let index = 0; index < 100; index += 1) { click(value, 'reset'); }
+      assert(controlListenerCount(value) === listeners, `${mode} reset duplicated listeners`);
+      assert(tracker.timers.size === 0, `${mode} reset leaked timer`);
+      window.dispatchEvent({ type: 'pagehide', target: window });
+      assert(controlListenerCount(value) === 0, `${mode} reset fixture leaked listeners`);
+      assert(domSnapshot(value.root) === baseline, `${mode} reset fixture did not restore exact DOM`);
+    }
+  }
 }
 
 runLoadAbsence();
 runModes();
+runExactTeardown();
 runReducedMotion();
+runExactEventResolution();
 runValidationMutations();
 const faultMatrix = runFaultMatrix();
 runResetCycles();

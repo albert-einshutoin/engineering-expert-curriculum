@@ -217,7 +217,7 @@ _GENERATED_ATTRIBUTES = MappingProxyType(
         "p": frozenset({"aria-live"}),
         "script": frozenset({"defer", "src"}),
         "select": frozenset({"data-action", "data-parameter-id", "disabled", "id"}),
-        "tr": frozenset({"data-from-state-id", "data-outcome-id", "data-state-id", "data-to-state-id", "data-transition-id"}),
+        "tr": frozenset({"data-from-state-id", "data-outcome-id", "data-state-id", "data-to-state-id", "data-transition-event", "data-transition-id"}),
     }
 )
 _BOOLEAN_ATTRIBUTES = frozenset({"checked", "defer", "disabled", "hidden", "selected"})
@@ -753,6 +753,9 @@ class _FragmentParser(HTMLParser):
             elif name == "data-interaction-mode":
                 if value not in {"scenario", "stepper", "playback", "hybrid", "explorer"}:
                     raise CurriculumValidationError("invalid generated interaction mode")
+            elif name == "data-transition-event":
+                if value not in {"next", "previous", "timer", "parameter-change", "reset"}:
+                    raise CurriculumValidationError("invalid generated transition event")
             elif _ID_PATTERN.fullmatch(value) is None:
                 raise CurriculumValidationError("invalid generated identifier data attribute")
 

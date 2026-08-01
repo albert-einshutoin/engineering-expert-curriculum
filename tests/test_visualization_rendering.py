@@ -558,6 +558,7 @@ class VisualizationRenderingTests(unittest.TestCase):
             'data-option-id="drop"',
             'class="visualization__simulation-transition"',
             'data-transition-id="retry"',
+            'data-transition-event="parameter-change"',
             'data-from-state-id="ready"',
             'data-to-state-id="dropped"',
             'class="visualization__transition-condition"',

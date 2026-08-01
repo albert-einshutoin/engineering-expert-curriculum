@@ -2404,6 +2404,7 @@ def _render_simulation_oracle(simulation: Simulation) -> str:
     transition_rows = "".join(
         f'<tr class="visualization__simulation-transition" '
         f'data-transition-id="{_e(edge.id, quote=True)}" '
+        f'data-transition-event="{_e(edge.event, quote=True)}" '
         f'data-from-state-id="{_e(edge.from_id, quote=True)}" '
         f'data-to-state-id="{_e(edge.to_id, quote=True)}">'
         f'<th scope="row">{_e(edge.event)}</th>'
