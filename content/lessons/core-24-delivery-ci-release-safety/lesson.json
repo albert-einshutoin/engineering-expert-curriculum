@@ -188,7 +188,7 @@
       "id": "release-evidence-state-machine",
       "type": "state-machine",
       "caption": "source変更からrollback outcomeまでを結ぶdelivery evidence chain",
-      "question": "required check不足でstopし、canary thresholdからpromoteとrollbackのどちらを選び、復旧をどう確認するか。",
+      "question": "required check不足でstopした後、原因解消から全gateを再実行し、canaryでpromoteとrollbackのどちらを選ぶか。",
       "afterSection": "mentalModel",
       "objectiveIds": [
         "obj-ci",
@@ -203,7 +203,7 @@
         "src-03",
         "src-04"
       ],
-      "expectedObservation": "CIのknown/passとmissing/unknownを分け、canaryからpromoteまたはrollbackを選び、復旧再観測へ結べる。",
+      "expectedObservation": "stopを未配信の安全な中断としてCIへ戻し、promoteまたはrollback復旧だけを完了outcomeへ結べる。",
       "notes": [
         "この注記は旧図の読み順を保持する補助です。",
         "CI: required check集合がすべて観測され成功したか検査する。",
@@ -248,7 +248,7 @@
         {
           "id": "stopped",
           "label": "required check不足でstop",
-          "detail": "required checkがmissing、unknown、failedなら配信を開始せず、現行serviceを維持する。"
+          "detail": "required checkがmissing、unknown、failedなら配信せず現行serviceを維持し、原因を解消してCIから全gateを再実行する。"
           },
           {
             "id": "rolling-back",
@@ -325,10 +325,10 @@
             "status": "allowed"
           },
           {
-            "id": "stop-outcome",
-            "from": "stopped",
-            "to": "outcome",
-            "event": "next",
+          "id": "stop-cause-resolved-rerun",
+          "from": "stopped",
+          "to": "ci",
+          "event": "reset",
             "status": "allowed"
           },
           {

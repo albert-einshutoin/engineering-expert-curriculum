@@ -98,7 +98,7 @@ TASK6_VISUAL_CONTRACT_SHA256 = {
     "core-15-reliability-observability-slo": "1963def9e97269e1ee86a6637b9311c13e9f442e4865800c90135b3716266e22",
     "core-22-evolution-safe-migrations": "aa04630c0005fb992238aca964bd09d0f95a11b8bacdaffeb79e13e2af868057",
     "core-23-incident-response-learning": "a8cf68469ee3358c5f6977e3cb58fd9d4648c0c2cf8194adb9c2022547368977",
-    "core-24-delivery-ci-release-safety": "2b5a8fb1e03e670f6a41ddc665fc47d40e75ad5c1d9af2bf1729fad80ee767df",
+    "core-24-delivery-ci-release-safety": "faec54fc1dec292dee9c46b0136471d8b753a753fa820860265169a2999c364b",
     "core-26-code-review-collaborative-quality": "5176963308b25a0c2be21e963d43c96274e2e5bfbaf12376dfefde7a5b39ae45",
     "core-29-cross-cultural-async-collaboration": "ad600a1d0755e79b755c6c0a6c08185cbf8ba349e415345a472d94b15519332e",
 }
@@ -140,8 +140,8 @@ TASK6_LESSON_JUDGMENT_TEXT = {
         "clockを揃えたtimeline、影響計算、当時の判断、system factor、検証可能なactionを追跡できる。",
     ),
     "core-24-delivery-ci-release-safety": (
-        "required check不足でstopし、canary thresholdからpromoteとrollbackのどちらを選び、復旧をどう確認するか。",
-        "CIのknown/passとmissing/unknownを分け、canaryからpromoteまたはrollbackを選び、復旧再観測へ結べる。",
+        "required check不足でstopした後、原因解消から全gateを再実行し、canaryでpromoteとrollbackのどちらを選ぶか。",
+        "stopを未配信の安全な中断としてCIへ戻し、promoteまたはrollback復旧だけを完了outcomeへ結べる。",
     ),
     "core-26-code-review-collaborative-quality": (
         "author fix後に別reviewerがどのprobeを再実行し、blocking findingの解消を判断するか。",
@@ -2176,7 +2176,7 @@ class ContentAcceptanceTests(unittest.TestCase):
                 ("threshold-within-promote", "decision", "promoted", "next", "allowed", None),
                 ("threshold-exceeded-rollback", "decision", "rolling-back", "previous", "allowed", None),
                 ("promote-outcome", "promoted", "outcome", "next", "allowed", None),
-                ("stop-outcome", "stopped", "outcome", "next", "allowed", None),
+                ("stop-cause-resolved-rerun", "stopped", "ci", "reset", "allowed", None),
                 ("rollback-restoration", "rolling-back", "restoration-verified", "next", "allowed", None),
                 ("restoration-outcome", "restoration-verified", "outcome", "next", "allowed", None),
                 ("checks-not-passed", "ci", "artifact", "timer", "rejected", "required checkがmissing、unknown、failedの時はartifact確定へ進まずstopする。"),
@@ -2191,9 +2191,17 @@ class ContentAcceptanceTests(unittest.TestCase):
                 for edge in release["transitions"]
             )
         )
+        self.assertFalse(
+            any(
+                edge["from"] == "stopped" and edge["to"] == "outcome"
+                for edge in release["transitions"]
+            )
+        )
         stopped = next(state for state in release["states"] if state["id"] == "stopped")
         self.assertIn("required check", stopped["label"])
         self.assertIn("missing、unknown", stopped["detail"])
+        self.assertIn("原因を解消", stopped["detail"])
+        self.assertIn("全gate", stopped["detail"])
         current_model_text = json.dumps(
             {
                 "states": release["states"],
