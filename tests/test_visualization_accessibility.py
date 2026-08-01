@@ -497,26 +497,31 @@ class VisualizationAccessibilityTests(unittest.TestCase):
                     expected_narrow,
                 )
                 self.assertNotIn("grid-auto-columns", container_rules[selector])
-        connector_rules = [
-            (selector, declarations)
-            for selector, declarations, _ in _rules(self.css[:mobile_position])
-            if "::after" in selector and declarations.get("content") == '""'
+        wrapping_selectors = {
+            f".visualization--{kind.value} .{container}"
+            for kind, container in _MULTI_COLUMN_CONTAINERS
+            if kind is not VisualizationType.CAUSAL
+        }
+        generated_connectors = [
+            selector
+            for selector, _, _ in _rules(self.css)
+            if any(selector.startswith(f"{base} >") for base in wrapping_selectors)
+            and re.search(r"::(?:before|after)\b", selector)
         ]
-        self.assertTrue(connector_rules)
-        for selector, _ in connector_rules:
-            with self.subTest(connector=selector):
-                self.assertIn(selector, mobile_rules)
-                declarations, _ = mobile_rules[selector]
-                self.assertEqual(declarations.get("content"), "none")
-                self.assertEqual(declarations.get("display"), "none")
-                self.assertEqual(
-                    container_rules[selector].get("content"),
-                    "none",
-                )
-                self.assertEqual(
-                    container_rules[selector].get("display"),
-                    "none",
-                )
+        self.assertEqual(generated_connectors, [])
+
+        # Narrow rules only change layout. All instructional information stays
+        # in the semantic DOM instead of width-dependent generated content.
+        for selector in wrapping_selectors:
+            narrow_declarations = (
+                mobile_rules[selector][0],
+                container_rules[selector],
+            )
+            for declarations in narrow_declarations:
+                with self.subTest(selector=selector):
+                    self.assertNotIn("display", declarations)
+                    self.assertNotIn("visibility", declarations)
+                    self.assertNotIn("content", declarations)
 
     def test_grid_contents_can_shrink_and_wrap_unbroken_text(self) -> None:
         desktop = {
@@ -557,7 +562,7 @@ class VisualizationAccessibilityTests(unittest.TestCase):
         )
         self.assertRegex(self.css, r"(?s)\.visualization\s*\{[^}]+\}")
 
-    def test_reflows_at_320px_and_removes_layout_connectors(self) -> None:
+    def test_reflows_at_320px_without_generated_layout_connectors(self) -> None:
         mobile = re.search(
             r"@media\s*\(max-width:\s*20rem\)\s*\{(?P<body>.*?)(?=\n@media|\Z)",
             self.css,
@@ -566,10 +571,7 @@ class VisualizationAccessibilityTests(unittest.TestCase):
         self.assertIsNotNone(mobile)
         assert mobile is not None
         self.assertIn("grid-template-columns: 1fr", mobile.group("body"))
-        self.assertRegex(
-            mobile.group("body"),
-            r"(?s)::(?:before|after).*?display:\s*none",
-        )
+        self.assertNotRegex(mobile.group("body"), r"::(?:before|after)")
 
     def test_supports_focus_state_and_logical_layout_without_color_only_state(self) -> None:
         self.assertIn(":focus-visible", self.css)

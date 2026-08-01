@@ -83,20 +83,6 @@
   border-radius: 0.5rem;
 }
 
-.visualization--flow .visualization__ordered-model > *:not(:last-child)::after,
-.visualization--state-loop .visualization__nodes > *:not(:last-child)::after,
-.visualization--timeline .visualization__timeline-phases > *:not(:last-child)::after,
-.visualization--network .visualization__nodes > *:not(:last-child)::after,
-.visualization--memory .visualization__nodes > *:not(:last-child)::after,
-.visualization--state-machine .visualization__states > *:not(:last-child)::after {
-  content: "";
-  position: absolute;
-  inset-block-start: 50%;
-  inset-inline-end: calc(var(--space-3, 1rem) * -1);
-  inline-size: var(--space-3, 1rem);
-  border-block-start: 2px solid currentColor;
-}
-
 .visualization--flow,
 .visualization--hierarchy,
 .visualization--comparison,
@@ -165,6 +151,8 @@
   grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr));
   grid-auto-flow: row;
   gap: var(--space-3, 1rem);
+  /* Auto-fit can wrap between any DOM siblings, so a pseudo connector can
+     point across a row boundary. Semantic markup already carries the meaning. */
 }
 
 @media (max-width: 20rem) {
@@ -194,15 +182,6 @@
     padding-inline-start: var(--space-2, 0.75rem);
   }
 
-  .visualization--flow .visualization__ordered-model > *:not(:last-child)::after,
-  .visualization--state-loop .visualization__nodes > *:not(:last-child)::after,
-  .visualization--timeline .visualization__timeline-phases > *:not(:last-child)::after,
-  .visualization--network .visualization__nodes > *:not(:last-child)::after,
-  .visualization--memory .visualization__nodes > *:not(:last-child)::after,
-  .visualization--state-machine .visualization__states > *:not(:last-child)::after {
-    content: none;
-    display: none;
-  }
 }
 
 @container (max-width: 20rem) {
@@ -232,15 +211,6 @@
     padding-inline-start: var(--space-2, 0.75rem);
   }
 
-  .visualization--flow .visualization__ordered-model > *:not(:last-child)::after,
-  .visualization--state-loop .visualization__nodes > *:not(:last-child)::after,
-  .visualization--timeline .visualization__timeline-phases > *:not(:last-child)::after,
-  .visualization--network .visualization__nodes > *:not(:last-child)::after,
-  .visualization--memory .visualization__nodes > *:not(:last-child)::after,
-  .visualization--state-machine .visualization__states > *:not(:last-child)::after {
-    content: none;
-    display: none;
-  }
 }
 
 @media (forced-colors: active) {

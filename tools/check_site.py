@@ -403,7 +403,11 @@ class _PageParser(HTMLParser):
                     "only a local stylesheet link is allowed",
                 )
             else:
-                if self.head_depth != 1:
+                if (
+                    self.head_depth != 1
+                    or not self.stack
+                    or self.stack[-1] != "head"
+                ):
                     self.issues.add(
                         self.relative,
                         "stylesheet must be a direct child of head",

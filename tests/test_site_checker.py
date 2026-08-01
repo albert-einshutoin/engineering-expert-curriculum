@@ -567,6 +567,10 @@ class SiteCheckerHtmlTests(unittest.TestCase):
             '  <link rel="stylesheet" href="static/visualizations.css">'
         )
         without_links = _page().replace(links, "")
+        nested_stylesheets = tuple(
+            _page().replace(links, f"  <{container}>\n{links}\n  </{container}>")
+            for container in ("noscript", "template")
+        )
         mutations = (
             _page().replace("styles.css", "https://example.com/styles.css", 1),
             _page(head='<link rel="stylesheet" href="styles.css">'),
@@ -579,12 +583,13 @@ class SiteCheckerHtmlTests(unittest.TestCase):
             ),
             without_links.replace("<body>", f"<body>\n{links}"),
             without_links.replace("</head>", f"</head>\n{links}"),
+            *nested_stylesheets,
         )
         for document in mutations:
             issues = self._issues_for(document)
             self.assertTrue(any("stylesheet" in issue for issue in issues))
 
-        for document in mutations[-2:]:
+        for document in (*mutations[-4:-2], *nested_stylesheets):
             self.assertTrue(
                 any(
                     "stylesheet must be a direct child of head" in issue
