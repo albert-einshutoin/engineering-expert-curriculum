@@ -174,7 +174,7 @@ def _has_forbidden_browser_authority(code: str) -> bool:
     return False
 
 
-def _has_forbidden_meta_member(code: str, members: str) -> bool:
+def _has_forbidden_meta_member(members: str) -> bool:
     if _FORBIDDEN_META_MEMBER.search(members):
         return True
     for opening in (index for index, char in enumerate(members) if char == "["):
@@ -231,7 +231,7 @@ def validate_javascript_bytes(source: object) -> str:
         _FORBIDDEN_NAVIGATION_CODE.search(code_view)
         or _FORBIDDEN_NAVIGATION_MEMBER.search(member_view)
         or _has_forbidden_browser_authority(code_view)
-        or _has_forbidden_meta_member(code_view, member_view)
+        or _has_forbidden_meta_member(member_view)
     ):
         raise _error("visualization.js contains a forbidden navigation capability")
 
