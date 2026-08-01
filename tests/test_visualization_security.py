@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
 import unittest
 
 from curriculum_builder.errors import CurriculumValidationError
 from curriculum_builder.javascript_safety import (
     MAX_JAVASCRIPT_BYTES,
+    validate_reviewed_visualization_runtime,
     validate_javascript_bytes,
 )
 
@@ -115,6 +117,24 @@ class JavaScriptSafetyTests(unittest.TestCase):
             with self.subTest(source=source):
                 with self.assertRaises(CurriculumValidationError):
                     validate_javascript_bytes(source)
+
+    def test_rejects_reflection_and_string_derived_meta_member_escapes(self) -> None:
+        payloads = (
+            b"Reflect.get([], 'con' + 'structor')('return 1')();",
+            b"[]['filter']['constructor'.slice(0)]('return 1')();",
+            b"Object.getOwnPropertyDescriptor([], 'filter').value['con' + 'structor']('return 1')();",
+        )
+        for source in payloads:
+            with self.subTest(source=source):
+                with self.assertRaises(CurriculumValidationError):
+                    validate_javascript_bytes(source)
+
+    def test_reviewed_runtime_requires_the_versioned_exact_digest(self) -> None:
+        source = (Path(__file__).resolve().parents[1] / "static/visualization.js").read_bytes()
+        self.assertIn("use strict", validate_reviewed_visualization_runtime(source))
+        mutation = source.replace(b"use strict", b"use  strict", 1)
+        with self.assertRaises(CurriculumValidationError):
+            validate_reviewed_visualization_runtime(mutation)
 
     def test_navigation_words_in_ordinary_text_do_not_create_false_positives(self) -> None:
         source = b"var explanation = 'open navigation sendBeacon'; // ordinary prose\n"

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import re
 import unicodedata
 from typing import Final
@@ -10,6 +12,13 @@ from .errors import CurriculumValidationError
 
 
 MAX_JAVASCRIPT_BYTES: Final = 40 * 1024
+# Version 1 pins the exact bytes reviewed in static/visualization.js. Updating
+# this value is a deliberate security review operation: review the runtime diff,
+# run the DOM/security suites, calculate SHA-256 independently, then update this
+# constant in its own reviewable commit. Tests must never derive or rewrite it.
+VISUALIZATION_RUNTIME_SHA256_V1: Final = (
+    "fd13c6b922ea4277b3249664fd73e8fb073d68b3fd2229f8019717c331ecce23"
+)
 _ALLOWED_CONTROLS: Final = frozenset("\t\n\r")
 _FORBIDDEN = tuple(
     re.compile(pattern, re.ASCII)
@@ -26,6 +35,7 @@ _FORBIDDEN = tuple(
         r"(?<![A-Za-z0-9_$])(?:innerHTML|outerHTML|DOMParser|insertAdjacentHTML)(?![A-Za-z0-9_$])",
         r"(?<![A-Za-z0-9_$])(?:requestAnimationFrame|MutationObserver)(?![A-Za-z0-9_$])",
         r"(?<![A-Za-z0-9_$])createElement(?![A-Za-z0-9_$])",
+        r"(?<![A-Za-z0-9_$])(?:Reflect|getOwnPropertyDescriptor|slice)(?![A-Za-z0-9_$])",
         r"(?<![A-Za-z0-9_$])style(?![A-Za-z0-9_$])",
         r"[A-Za-z][A-Za-z0-9+.-]*://[^\s'\"]+|['\"]//[^'\"]+",
         r"[#@]\s*source(?:Mapping)?URL\s*=",
@@ -165,7 +175,7 @@ def _has_forbidden_browser_authority(code: str) -> bool:
 
 
 def _has_forbidden_meta_member(code: str, members: str) -> bool:
-    if _FORBIDDEN_META_MEMBER.search(code):
+    if _FORBIDDEN_META_MEMBER.search(members):
         return True
     for opening in (index for index, char in enumerate(members) if char == "["):
         closing = members.find("]", opening + 1)
@@ -265,4 +275,19 @@ def validate_javascript_bytes(source: object) -> str:
         index += 1
     if state not in {"code", "line-comment"} or delimiters:
         raise _error("visualization.js contains malformed syntax")
+    return text
+
+
+def validate_reviewed_visualization_runtime(source: object) -> str:
+    """Validate and bind the runtime to the versioned reviewed byte digest.
+
+    The bounded lexer is defense in depth. This exact digest comparison is the
+    primary trust boundary used by both the builder and release-site checker.
+    """
+    text = validate_javascript_bytes(source)
+    if type(source) is not bytes:
+        raise _error("visualization.js must be exact bytes")
+    digest = hashlib.sha256(source).hexdigest()
+    if not hmac.compare_digest(digest, VISUALIZATION_RUNTIME_SHA256_V1):
+        raise _error("visualization.js does not match reviewed SHA-256 v1")
     return text
