@@ -141,6 +141,22 @@ class HtmlSafetyTests(unittest.TestCase):
             with self.subTest(mutation=mutation), self.assertRaises(CurriculumValidationError):
                 validate_generated_fragment(mutation)
 
+    def test_generated_document_requires_empty_direct_body_script(self) -> None:
+        script = '<script src="static/visualization.js" defer>{}</script>'
+        for body in (
+            script.format("alert(1)"),
+            script.format("&amp;"),
+            script.format("<!--hidden-->"),
+            f"<main>{script.format('')}</main>",
+        ):
+            with self.subTest(body=body):
+                with self.assertRaises(CurriculumValidationError):
+                    validate_generated_document(
+                        '<!doctype html><html lang="ja"><body>'
+                        + body
+                        + '</body></html>'
+                    )
+
     def test_accepts_mixed_case_markup_and_safe_character_references(self) -> None:
         fragment = (
             "<SECTION CLASS='reading'><H2>A &amp; B</H2>"

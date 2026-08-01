@@ -246,7 +246,7 @@ class _PageParser(HTMLParser):
         issues: _Issues,
         document: str,
     ) -> None:
-        super().__init__(convert_charrefs=True)
+        super().__init__(convert_charrefs=False)
         self.relative = relative
         self.issues = issues
         self.document = document
@@ -551,6 +551,23 @@ class _PageParser(HTMLParser):
             self.title_parts.append(data)
         if self.open_heading is not None:
             self.heading_parts[self.open_heading].append(data)
+
+    def handle_entityref(self, name: str) -> None:
+        if self.script_depth:
+            self.issues.add(self.relative, "inline script is forbidden")
+        value = f"&{name};"
+        if self.title_depth:
+            self.title_parts.append(value)
+        if self.open_heading is not None:
+            self.heading_parts[self.open_heading].append(value)
+
+    def handle_charref(self, name: str) -> None:
+        self.handle_entityref(f"#{name}")
+
+    def handle_comment(self, data: str) -> None:
+        del data
+        if self.script_depth:
+            self.issues.add(self.relative, "inline script is forbidden")
 
     def finish(self) -> _Page:
         if self.stack or self.doctype_count != 1:

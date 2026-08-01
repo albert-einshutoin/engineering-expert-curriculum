@@ -1567,13 +1567,15 @@ def _capstone_content(
 
 class _SiteDocumentParser(HTMLParser):
     def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
+        super().__init__(convert_charrefs=False)
         self.ids: set[str] = set()
         self.links: list[str] = []
         self.external_links: list[str] = []
         self.has_csp = False
         self.script_sources: list[str] = []
         self.simulation_roots = 0
+        self.open_elements: list[str] = []
+        self.script_depth = 0
 
     def handle_starttag(
         self,
@@ -1588,7 +1590,10 @@ class _SiteDocumentParser(HTMLParser):
         if lowered_tag == "script":
             if set(normalized) != {"src", "defer"} or normalized["defer"] is not None:
                 raise _validation("generated scripts must use the fixed deferred classic contract")
+            if not self.open_elements or self.open_elements[-1] != "body":
+                raise _validation("generated scripts must be direct children of body")
             self.script_sources.append(normalized["src"] or "")
+            self.script_depth += 1
         if lowered_tag == "figure" and {
             "data-visualization-id", "data-simulation-kind", "data-interaction-mode"
         } <= set(normalized):
@@ -1629,8 +1634,43 @@ class _SiteDocumentParser(HTMLParser):
             == "content-security-policy"
         ):
             self.has_csp = True
+        if lowered_tag not in {
+            "area", "base", "br", "col", "embed", "hr", "img", "input",
+            "link", "meta", "param", "source", "track", "wbr",
+        }:
+            self.open_elements.append(lowered_tag)
 
-    handle_startendtag = handle_starttag
+    def handle_startendtag(
+        self, tag: str, attrs: list[tuple[str, str | None]]
+    ) -> None:
+        self.handle_starttag(tag, attrs)
+        if self.open_elements and self.open_elements[-1] == tag.casefold():
+            self.handle_endtag(tag)
+
+    def handle_endtag(self, tag: str) -> None:
+        lowered = tag.casefold()
+        if not self.open_elements or self.open_elements[-1] != lowered:
+            raise _validation("generated HTML nesting is invalid")
+        self.open_elements.pop()
+        if lowered == "script":
+            self.script_depth -= 1
+
+    def _reject_script_content(self, value: str) -> None:
+        if self.script_depth and value.strip():
+            raise _validation("generated deferred scripts must be empty")
+
+    def handle_data(self, data: str) -> None:
+        self._reject_script_content(data)
+
+    def handle_entityref(self, name: str) -> None:
+        self._reject_script_content(name)
+
+    def handle_charref(self, name: str) -> None:
+        self._reject_script_content(name)
+
+    def handle_comment(self, data: str) -> None:
+        if self.script_depth:
+            raise _validation("generated deferred scripts must be empty")
 
 
 def _is_external_url(candidate: str) -> bool:

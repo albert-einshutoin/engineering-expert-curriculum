@@ -417,6 +417,20 @@ def _assert_static_site(
 
 
 class BuildAcceptanceTests(unittest.TestCase):
+    def test_generated_deferred_script_is_empty_and_a_direct_body_child(self) -> None:
+        script = '<script src="static/visualization.js" defer>{}</script>'
+        documents = (
+            f"<html><body>{script.format('alert(1)')}</body></html>",
+            f"<html><body>{script.format('&amp;')}</body></html>",
+            f"<html><body>{script.format('<!--hidden-->')}</body></html>",
+            f"<html><body><main>{script.format('')}</main></body></html>",
+        )
+        for document in documents:
+            with self.subTest(document=document):
+                parser = build_module._SiteDocumentParser()
+                with self.assertRaises(CurriculumValidationError):
+                    parser.feed(document)
+
     def test_complete_build_binds_all_lessons_to_visualization_catalog(self) -> None:
         with TemporaryDirectory() as directory, patch(
             "curriculum_builder.build.validate_visualization_assignments",

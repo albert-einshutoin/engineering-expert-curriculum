@@ -380,6 +380,19 @@ class SiteCheckerHtmlTests(unittest.TestCase):
                     )
                 )
 
+    def test_deferred_script_rejects_inline_data_entities_and_comments(self) -> None:
+        figure = '<figure data-visualization-id="v" data-simulation-kind="request-path" data-interaction-mode="stepper"></figure>'
+        for inline in ("alert(1)", "&amp;", "<!--hidden-->"):
+            document = _page(body=figure).replace(
+                "</body>",
+                f'<script src="static/visualization.js" defer>{inline}</script></body>',
+            )
+            with self.subTest(inline=inline):
+                self.assertTrue(any(
+                    "inline script" in issue
+                    for issue in self._issues_for(document)
+                ))
+
     def test_requires_ja_nonempty_title_exactly_one_main_h1_and_skip_link(self) -> None:
         mutations = {
             "lang": _page(lang="en"),

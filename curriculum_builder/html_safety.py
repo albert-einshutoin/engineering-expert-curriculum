@@ -214,7 +214,7 @@ _GENERATED_ATTRIBUTES = MappingProxyType(
         "meta": frozenset({"charset", "content", "http-equiv", "name"}),
         "nav": frozenset({"aria-label"}),
         "option": frozenset({"selected", "value"}),
-        "p": frozenset({"aria-live"}),
+        "p": frozenset({"aria-atomic", "aria-live"}),
         "script": frozenset({"defer", "src"}),
         "select": frozenset({"data-action", "data-parameter-id", "disabled", "id"}),
         "tr": frozenset({"data-from-state-id", "data-outcome-id", "data-state-id", "data-to-state-id", "data-transition-event", "data-transition-id"}),
@@ -393,6 +393,16 @@ class _FragmentParser(HTMLParser):
         if self._generated:
             self._validate_generated_control(tag, attrs)
 
+        if (
+            self._generated
+            and self._document
+            and tag == "script"
+            and (not self._open_tags or self._open_tags[-1].tag != "body")
+        ):
+            raise CurriculumValidationError(
+                "generated script must be a direct child of body"
+            )
+
         if len(self._open_tags) >= MAX_NESTING_DEPTH:
             raise CurriculumValidationError(
                 "fragment exceeds maximum nesting depth"
@@ -443,6 +453,8 @@ class _FragmentParser(HTMLParser):
         frame = self._open_tags[-1]
         if not data.strip(" \t\n\r"):
             return
+        if self._generated and frame.tag == "script":
+            raise CurriculumValidationError("inline generated script is forbidden")
         if frame.tag in _STRUCTURAL_CHILDREN:
             raise CurriculumValidationError(
                 f"invalid HTML content model: {frame.tag} cannot contain text"
@@ -736,6 +748,9 @@ class _FragmentParser(HTMLParser):
         elif name == "aria-live":
             if value != "polite":
                 raise CurriculumValidationError("invalid aria-live attribute")
+        elif name == "aria-atomic":
+            if value != "true":
+                raise CurriculumValidationError("invalid aria-atomic attribute")
         elif name in {"aria-label", "content"}:
             if len(value) > MAX_ATTRIBUTE_VALUE_CHARS:
                 raise CurriculumValidationError(
