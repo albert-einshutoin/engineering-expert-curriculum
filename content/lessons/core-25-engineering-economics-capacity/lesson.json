@@ -165,6 +165,21 @@
       "kind": "primary"
     }
   ],
+  "visualizations": [{
+    "id": "investment-capacity-matrix", "type": "matrix", "caption": "入力からcapacity制約とunit economicsを経て投資判断へ至るchain",
+    "question": "投資候補ごとにcost構成とcapacity制約を同じ軸で比較し、どの順で判断するか。", "afterSection": "mentalModel",
+    "objectiveIds": ["obj-economics", "obj-capacity", "obj-sensitivity"], "evidenceIds": ["investment-comparison", "assessment"], "sourceIds": ["src-01", "src-02", "src-03", "src-04"],
+    "expectedObservation": "制約違反候補を先に除き、direct・opportunity・operations・reliabilityを合算したtotal costとunit costを比較し、一変数の感度境界を説明できる。",
+    "notes": ["Direct: fixtureで与えた取得・実行費を置く。", "Opportunity: engineering hoursと一時間の代替価値を掛ける。", "Operations: operations hoursと運用単価を掛ける。", "Reliability: 障害確率、時間、時間当たり影響を掛ける。", "Capacity: 需要と供給からheadroomとbreachを導く。", "Decision: 制約違反を先に、unit costを次に比較する。"],
+    "payload": {
+      "rows": [{"id": "option-a", "label": "Option A", "detail": "低いdirect costだがengineeringとcapacityを要検証する候補。"}, {"id": "option-b", "label": "Option B", "detail": "高いdirect costと運用削減・headroomを交換する候補。"}],
+      "columns": [{"id": "total-cost", "label": "total cost", "detail": "direct + opportunity + operations + reliability loss。"}, {"id": "capacity", "label": "capacity constraint", "detail": "demand、supply、headroom、breachを確認する。"}, {"id": "decision", "label": "decision order", "detail": "constraint適合後にunit costと感度を比較する。"}],
+      "cells": [
+        {"id": "a-cost", "rowId": "option-a", "columnId": "total-cost", "value": "取得費 + engineering時間 + 運用費 + 期待損失", "status": "value"}, {"id": "a-capacity", "rowId": "option-a", "columnId": "capacity", "value": "需要増加時のheadroomとbreachを計算", "status": "value"}, {"id": "a-decision", "rowId": "option-a", "columnId": "decision", "value": "breachなしならunit costを比較", "status": "value"},
+        {"id": "b-cost", "rowId": "option-b", "columnId": "total-cost", "value": "取得費 + engineering時間 + 運用費 + 期待損失", "status": "value"}, {"id": "b-capacity", "rowId": "option-b", "columnId": "capacity", "value": "需要増加後も必要headroomを満たすか計算", "status": "value"}, {"id": "b-decision", "rowId": "option-b", "columnId": "decision", "value": "一つの仮定を変えてwinner境界を再計算", "status": "value"}
+      ]
+    }
+  }],
   "review": {
     "intervalDays": [1, 7, 30, 90],
     "prompts": [

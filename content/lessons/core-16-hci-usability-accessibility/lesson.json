@@ -163,6 +163,17 @@
       "kind": "primary"
     }
   ],
+  "visualizations": [{
+    "id": "accessible-ui-state-static", "type": "flow", "caption": "生成サイトの監査を適合主張と利用者タスクへ結ぶ証拠flow",
+    "question": "限定した監査scopeから、適合結果と利用者taskの結果を混同せずにどう報告するか。", "afterSection": "mentalModel",
+    "objectiveIds": ["obj-audit", "obj-usability", "obj-scope"], "evidenceIds": ["audit-record", "assessment"], "sourceIds": ["src-01", "src-02", "src-03", "src-04"],
+    "expectedObservation": "scope、規範target、観測、人手review、限定claimの順序と、WCAG 3.0 Working DraftをWCAG 2.2適合根拠にしない境界を説明できる。",
+    "notes": ["Scope:", "Target:", "Observe:", "Review:", "Claim:"],
+    "payload": {
+      "steps": [{"id": "scope", "label": "Scope", "detail": "ページfixture、利用者、入力方式、環境、除外を固定する。"}, {"id": "target", "label": "Target", "detail": "WCAG 2.2 Level AAの規範的targetと版を記録する。"}, {"id": "observe", "label": "Observe", "detail": "keyboard、200% zoom、reading order、usabilityを期待値と比較する。"}, {"id": "review", "label": "Review", "detail": "自動化で判定できない意味、順序、タスク成功を人が確認する。"}, {"id": "claim", "label": "Claim", "detail": "合否、未確認、残余リスクを分け、範囲を限定して報告する。"}],
+      "transitions": [{"id": "scope-to-target", "from": "scope", "to": "target", "label": "対象を固定"}, {"id": "target-to-observe", "from": "target", "to": "observe", "label": "規範期待値を適用"}, {"id": "observe-to-review", "from": "observe", "to": "review", "label": "自動結果と手動観測を渡す"}, {"id": "review-to-claim", "from": "review", "to": "claim", "label": "証拠の限界を含める"}]
+    }
+  }],
   "review": {
     "intervalDays": [1, 7, 30, 90],
     "prompts": [

@@ -1510,6 +1510,45 @@ def parse_visualization_catalog_bytes(
     return VisualizationCatalog(version=1, lessons=tuple(assignments))
 
 
+def validate_visualization_assignments(
+    catalog: VisualizationCatalog,
+    lesson_visualizations: Mapping[str, tuple[Visualization, ...]],
+) -> None:
+    """Bind every complete lesson to the reviewed release-wide catalog.
+
+    Comparing full lesson IDs and ordered types prevents a correct aggregate
+    count from hiding swapped diagrams. Simulation metadata remains optional
+    until runtime migration, but any authored simulation must already match the
+    sole catalog capability granted to that lesson.
+    """
+    expected = {assignment.lesson_id: assignment for assignment in catalog.lessons}
+    actual_ids = set(lesson_visualizations)
+    if actual_ids != set(expected):
+        _fail("visualization assignments", "must cover the exact catalog lesson IDs")
+    for lesson_id in sorted(expected):
+        assignment = expected[lesson_id]
+        visuals = lesson_visualizations[lesson_id]
+        if type(visuals) is not tuple or not 1 <= len(visuals) <= 2:
+            _fail(f"lesson[{lesson_id}].visualizations", "must contain one or two visuals")
+        if visuals[0].type is not assignment.primary_type:
+            _fail(f"lesson[{lesson_id}]", "has the wrong primary visualization type")
+        if len(visuals) == 2 and visuals[1].type is not assignment.optional_secondary_type:
+            _fail(f"lesson[{lesson_id}]", "has an unapproved secondary visualization type")
+        for visual in visuals:
+            simulation = visual.simulation
+            if simulation is None:
+                continue
+            approved = assignment.simulation
+            if (
+                not assignment.dynamic
+                or approved is None
+                or visual.id != approved.static_equivalent_id
+                or simulation.kind is not approved.kind
+                or simulation.interaction_mode is not approved.interaction_mode
+            ):
+                _fail(f"lesson[{lesson_id}]", "has an unapproved simulation")
+
+
 def parse_visualizations(
     value: object | None,
     *,

@@ -167,6 +167,28 @@
       "kind": "standard"
     }
   ],
+  "visualizations": [
+    {
+      "id": "decision-flow",
+      "type": "flow",
+      "caption": "判断の流れ",
+      "question": "証拠はどこで判断を変えるか",
+      "afterSection": "mentalModel",
+      "objectiveIds": ["obj-1"],
+      "evidenceIds": ["lab-map"],
+      "sourceIds": ["src-nasa-handbook"],
+      "expectedObservation": "制約から再評価までを説明する",
+      "payload": {
+        "steps": [
+          {"id": "observe", "label": "観測", "detail": "証拠を集める"},
+          {"id": "decide", "label": "判断", "detail": "制約で比較する"}
+        ],
+        "transitions": [
+          {"id": "observe-to-decide", "from": "observe", "to": "decide", "label": "証拠を渡す"}
+        ]
+      }
+    }
+  ],
   "review": {
     "intervalDays": [
       1,

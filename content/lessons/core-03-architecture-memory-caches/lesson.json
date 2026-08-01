@@ -155,6 +155,46 @@
       "kind": "primary"
     }
   ],
+  "visualizations": [
+    {
+      "id": "memory-access-static",
+      "type": "memory",
+      "caption": "一つのロードを診断する論理段階",
+      "question": "一つのloadでaddress translationとdata transferの待ちをどう切り分けるか。",
+      "afterSection": "mentalModel",
+      "objectiveIds": ["obj-path", "obj-locality", "obj-transfer"],
+      "evidenceIds": ["locality-report", "assessment"],
+      "sourceIds": ["src-01", "src-02", "src-03"],
+      "expectedObservation": "TLB・page tableの変換経路とcache・主記憶の転送経路を区別し、機種依存の階層を普遍的latencyとして扱わない。",
+      "notes": [
+        "命令: 仮想アドレスAの値を要求する。",
+        "TLB: Aのページ変換を検索する。missならページテーブルwalkが必要になる。",
+        "L1 cache: Aを含むcache lineを検索する。hitなら近い階層で返る。",
+        "L2と最終レベルcache: L1 miss後の候補を調べる。L2やLLCがcore-privateか複数coreでsharedかというprivate/shared範囲は機種依存である。",
+        "memory controller: 全cacheでmissなら主記憶からline単位で転送する。",
+        "再利用: 同じline内の次要素を使えば空間的局所性、短時間に同じ値を使えば時間的局所性を得る。"
+      ],
+      "payload": {
+        "layers": [
+          {"id": "instruction", "label": "命令", "detail": "仮想アドレスAの値を要求する。", "group": "request"},
+          {"id": "tlb", "label": "TLB", "detail": "Aのページ変換を検索し、missならpage table walkを開始する。", "group": "translation"},
+          {"id": "page-table", "label": "page table", "detail": "TLB miss時に仮想pageから物理pageへの変換情報を取得する。", "group": "translation"},
+          {"id": "l1-cache", "label": "L1 cache", "detail": "変換後の物理addressを含むcache lineを検索する。", "group": "transfer"},
+          {"id": "lower-cache", "label": "L2と最終レベルcache", "detail": "private/shared範囲と段数は機種依存で、固定latencyではない。", "group": "transfer"},
+          {"id": "memory-controller", "label": "memory controller", "detail": "全cache miss時に主記憶からline単位で転送する。", "group": "transfer"},
+          {"id": "reuse", "label": "再利用", "detail": "空間的局所性または時間的局所性で後続accessのhitを増やす。", "group": "reuse"}
+        ],
+        "transfers": [
+          {"id": "instruction-to-tlb", "from": "instruction", "to": "tlb", "label": "仮想アドレスA", "kind": "translation-request"},
+          {"id": "tlb-to-page-table", "from": "tlb", "to": "page-table", "label": "TLB miss時だけwalk", "kind": "translation"},
+          {"id": "page-table-to-l1", "from": "page-table", "to": "l1-cache", "label": "物理アドレスを得てdata検索", "kind": "translation-result"},
+          {"id": "l1-to-lower", "from": "l1-cache", "to": "lower-cache", "label": "L1 miss時だけ下位cacheへ", "kind": "data-request"},
+          {"id": "lower-to-memory", "from": "lower-cache", "to": "memory-controller", "label": "全cache miss時だけ主記憶へ", "kind": "data-request"},
+          {"id": "memory-to-reuse", "from": "memory-controller", "to": "reuse", "label": "cache line転送後に再利用", "kind": "data-transfer"}
+        ]
+      }
+    }
+  ],
   "review": {
     "intervalDays": [1, 7, 30, 90],
     "prompts": [

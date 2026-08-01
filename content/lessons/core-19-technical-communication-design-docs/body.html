@@ -9,17 +9,6 @@
 <section id="mental-model">
   <h2>メンタルモデル</h2>
   <p>先に「誰が、何を判断し、読後に何をするか」を置く。次に、全読者で共有するdecision evidenceを一つだけ作り、読者ごとに順序と詳細度を変える。要約は結果と承認事項から始め、付録は再現手順と境界を、ADRはcontext、decision、alternatives、consequences、risks、validationの履歴を保持する。</p>
-  <figure>
-    <figcaption>一つの決定証拠から読者別viewを導く構造</figcaption>
-    <ol>
-      <li><strong>Audience:</strong> 責務、判断、既知の用語、時間制約を定義する。</li>
-      <li><strong>Evidence:</strong> 評価基準、入力、代替案、risk、検証結果を固定する。</li>
-      <li><strong>Decision:</strong> 選定結果、負うconsequence、再評価条件を明示する。</li>
-      <li><strong>Executive view:</strong> 結論、価値、主要risk、承認依頼を一頁へ収める。</li>
-      <li><strong>Implementation view:</strong> interface、migration、rollback、validationを付録へ置く。</li>
-      <li><strong>Drift check:</strong> 要約、付録、ADRが同じdecisionを指すか検査する。</li>
-    </ol>
-  </figure>
   <p>情報量を減らす時も根拠との接続は切らない。「詳しくは付録」だけでは弱い。どのrisk、どの代替案、どのvalidationへ進むかを見出しと識別子で追えるようにする。未知は削除せず、仮定、owner、期限を付ける。</p>
 </section>
 <section id="worked-example">

@@ -161,6 +161,51 @@
       "kind": "primary"
     }
   ],
+  "visualizations": [
+    {
+      "id": "complexity-growth-static",
+      "type": "comparison",
+      "caption": "アルゴリズム再選択の検証経路",
+      "question": "入力特性と入力サイズが変わると候補の成長率と実測上の選択はどう変わるか。",
+      "afterSection": "mentalModel",
+      "objectiveIds": ["obj-predict", "obj-measure", "obj-reselect"],
+      "evidenceIds": ["benchmark-report", "assessment"],
+      "sourceIds": ["src-01", "src-02", "src-03", "src-04"],
+      "expectedObservation": "best・average・worst caseを区別し、予測と反復実測の差から再選択条件を説明できる。",
+      "notes": [
+        "操作モデル: 比較、hash計算、割り当てなど、支配的な操作を決める。",
+        "成長率予測: 支配操作がΘ(n)ならnを2倍にしたとき約2倍、Θ(n²)なら約4倍と予測する。",
+        "入力モデル: サイズだけでなく、順序、重複率、問い合わせ位置を固定する。",
+        "測定設計: 準備と対象区間を分け、ウォームアップ後に複数回測る。",
+        "統計要約: 全値、中央値、範囲を残し、除外規則を先に決める。",
+        "差の診断: 定数項、キャッシュ、GC、処理系、外れ値を追加測定で反証する。",
+        "再選択条件: 本番のn、分布、呼出回数の変化を監視する。"
+      ],
+      "payload": {
+        "alternatives": [
+          {"id": "linear-scan", "label": "線形走査", "detail": "順序なし配列を先頭から探索する候補。"},
+          {"id": "binary-search", "label": "二分探索", "detail": "整列済み配列を半分ずつ絞る候補。"},
+          {"id": "hash-lookup", "label": "hash lookup", "detail": "hash tableを構築してkeyを探索する候補。"}
+        ],
+        "criteria": [
+          {"id": "best-case", "label": "best case", "detail": "最も有利な入力配置での支配操作。"},
+          {"id": "average-case", "label": "average case", "detail": "明示した入力分布の期待操作回数。"},
+          {"id": "worst-case", "label": "worst case", "detail": "最も不利な入力と衝突条件の上界。"}
+        ],
+        "cells": [
+          {"id": "linear-best", "alternativeId": "linear-scan", "criterionId": "best-case", "value": "Θ(1): 先頭で一致"},
+          {"id": "linear-average", "alternativeId": "linear-scan", "criterionId": "average-case", "value": "Θ(n): 平均で約n/2比較"},
+          {"id": "linear-worst", "alternativeId": "linear-scan", "criterionId": "worst-case", "value": "Θ(n): 末尾または不在"},
+          {"id": "binary-best", "alternativeId": "binary-search", "criterionId": "best-case", "value": "Θ(1): 中央で一致"},
+          {"id": "binary-average", "alternativeId": "binary-search", "criterionId": "average-case", "value": "Θ(log n): 整列済み入力"},
+          {"id": "binary-worst", "alternativeId": "binary-search", "criterionId": "worst-case", "value": "Θ(log n): 不在でも半減"},
+          {"id": "hash-best", "alternativeId": "hash-lookup", "criterionId": "best-case", "value": "Θ(1): 衝突なし"},
+          {"id": "hash-average", "alternativeId": "hash-lookup", "criterionId": "average-case", "value": "期待Θ(1): hash分布を仮定"},
+          {"id": "hash-worst", "alternativeId": "hash-lookup", "criterionId": "worst-case", "value": "Θ(n): 全keyが衝突"}
+        ]
+      }
+    }
+  ],
   "review": {
     "intervalDays": [1, 7, 30, 90],
     "prompts": [

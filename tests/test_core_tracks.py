@@ -2534,6 +2534,15 @@ class CoreTrackTests(unittest.TestCase):
         memory = self.body_path(
             "core-03-architecture-memory-caches"
         ).read_text(encoding="utf-8")
+        lesson = json.dumps(
+            json.loads(
+                self.body_path("core-03-architecture-memory-caches")
+                .with_name("lesson.json")
+                .read_text(encoding="utf-8")
+            ),
+            ensure_ascii=False,
+        )
+        memory += lesson
 
         for marker in (
             "診断用の論理段階",

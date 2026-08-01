@@ -57,6 +57,7 @@ from .visualizations import (
     MAX_VISUALIZATION_CATALOG_BYTES,
     VisualizationCatalog,
     parse_visualization_catalog_bytes,
+    validate_visualization_assignments,
 )
 
 
@@ -2921,9 +2922,6 @@ def build_site(
         visualization_catalog, visualization_catalog_snapshot = (
             _load_visualization_catalog_from_root(content)
         )
-        # Task 7 binds lesson-authored visuals to these assignments. Reading it
-        # now still closes publication over the reviewed catalog bytes.
-        del visualization_catalog
         roadmap = _load_roadmap(
             content,
             require_complete=require_complete_curriculum,
@@ -2937,6 +2935,10 @@ def build_site(
             validate_release_curriculum(
                 roadmap,
                 tuple(item.lesson for item in lessons),
+            )
+            validate_visualization_assignments(
+                visualization_catalog,
+                {item.lesson.id: item.lesson.visualizations for item in lessons},
             )
             competencies, competency_snapshot = _load_competencies_from_root(
                 content,

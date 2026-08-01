@@ -337,9 +337,7 @@ def _parse_lesson(raw: dict[str, object]) -> Lesson:
     visualizations = parse_visualizations(
         raw.get("visualizations"),
         lesson_id=lesson_id,
-        # The release-wide requirement is deliberately enabled in Task 7.
-        # Until then, legacy complete lessons remain valid without visuals.
-        complete=False,
+        complete=status == "complete",
         objective_evidence=objective_evidence,
         evidence_ids=frozenset(item.id for item in evidence),
         source_ids=frozenset(

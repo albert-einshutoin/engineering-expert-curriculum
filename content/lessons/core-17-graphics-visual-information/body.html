@@ -9,16 +9,6 @@
 <section id="mental-model">
   <h2>メンタルモデル</h2>
   <p>dataを唯一の情報源とし、視覚表現、semantic HTML、同等textを別々のviewとして導出する。roadmapではnodeとdirected edge、quantitative chartではlabel、value、unit、比較結果を情報契約にする。CSSは配置と装飾を担当し、関係や値そのものを生成しない。</p>
-  <figure>
-    <figcaption>一つのdata modelから視覚と同等textへ分岐するrendering pipeline</figcaption>
-    <ol>
-      <li><strong>Data:</strong> roadmapのnodeとedge、chartのlabelとvalueをID付きで定義する。</li>
-      <li><strong>Transform:</strong> 並び、scale、minimum、maximumを決定的に計算する。</li>
-      <li><strong>Visual:</strong> semantic HTMLとCSSでroadmapとquantitative chartを配置する。</li>
-      <li><strong>Equivalent:</strong> node関係list、caption付きtable、summaryを同じdataから導出する。</li>
-      <li><strong>Verify:</strong> ID、edge、row、値、集約、display modeの不変条件を照合する。</li>
-    </ol>
-  </figure>
   <p>Clevelandが示した知覚taskを踏まえ、量の比較では共通尺度上のpositionを優先する。colorは群や強調の補助にできるが、colorだけで状態や順位を符号化しない。Munznerのwhat、why、howを使い、data、読者task、encodingを混同しない。</p>
 </section>
 <section id="worked-example">

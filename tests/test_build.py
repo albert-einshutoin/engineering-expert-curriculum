@@ -409,6 +409,24 @@ def _assert_static_site(
 
 
 class BuildAcceptanceTests(unittest.TestCase):
+    def test_complete_build_binds_all_lessons_to_visualization_catalog(self) -> None:
+        with TemporaryDirectory() as directory, patch(
+            "curriculum_builder.build.validate_visualization_assignments",
+            wraps=build_module.validate_visualization_assignments,
+        ) as validate:
+            build_site(
+                content_root=REPOSITORY_ROOT / "content",
+                template_root=REPOSITORY_ROOT / "templates",
+                static_root=REPOSITORY_ROOT / "static",
+                output_root=Path(directory).resolve(strict=True) / "site",
+                require_complete_curriculum=True,
+            )
+
+        validate.assert_called_once()
+        catalog, assignments = validate.call_args.args
+        self.assertEqual(len(catalog.lessons), 30)
+        self.assertEqual(set(assignments), set(_repository_lesson_source_counts()))
+
     def test_repository_lesson_oracle_is_independent_of_production_loader(
         self,
     ) -> None:

@@ -170,6 +170,17 @@
       "kind": "primary"
     }
   ],
+  "visualizations": [{
+    "id": "semantic-rendering-flow", "type": "flow", "caption": "一つのdata modelから視覚と同等textへ分岐するrendering pipeline",
+    "question": "一つのdata modelから視覚表現と同等textを作り、どの不変条件を照合するか。", "afterSection": "mentalModel",
+    "objectiveIds": ["obj-pipeline", "obj-equivalence", "obj-encoding"], "evidenceIds": ["semantic-visual", "assessment"], "sourceIds": ["src-01", "src-02", "src-03", "src-04", "src-05"],
+    "expectedObservation": "Data、Transform、Visual、Equivalent、Verifyの順序を説明し、別目的の0–100% worked-example chartを二重計上しない。",
+    "notes": ["Data:", "Transform:", "Visual:", "Equivalent:", "Verify:"],
+    "payload": {
+      "steps": [{"id": "data", "label": "Data", "detail": "roadmapのnodeとedge、chartのlabelとvalueをID付きで定義する。"}, {"id": "transform", "label": "Transform", "detail": "並び、scale、minimum、maximumを決定的に計算する。"}, {"id": "visual", "label": "Visual", "detail": "semantic HTMLとCSSでroadmapとquantitative chartを配置する。"}, {"id": "equivalent", "label": "Equivalent", "detail": "node関係list、caption付きtable、summaryを同じdataから導出する。"}, {"id": "verify", "label": "Verify", "detail": "ID、edge、row、値、集約、display modeの不変条件を照合する。"}],
+      "transitions": [{"id": "data-to-transform", "from": "data", "to": "transform", "label": "typed values"}, {"id": "transform-to-visual", "from": "transform", "to": "visual", "label": "決定的layout"}, {"id": "visual-to-equivalent", "from": "visual", "to": "equivalent", "label": "同じdataから導出"}, {"id": "equivalent-to-verify", "from": "equivalent", "to": "verify", "label": "意味の同等性を照合"}]
+    }
+  }],
   "review": {
     "intervalDays": [1, 7, 30, 90],
     "prompts": [

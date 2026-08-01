@@ -19,7 +19,11 @@ from curriculum_builder.capstones import parse_capstone_documents
 from curriculum_builder.competencies import parse_competencies_bytes
 from curriculum_builder.errors import CurriculumValidationError
 from curriculum_builder.lessons import load_lesson_bytes
-from curriculum_builder.visualizations import render_visualization
+from curriculum_builder.visualizations import (
+    parse_visualization_catalog_bytes,
+    render_visualization,
+    validate_visualization_assignments,
+)
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -87,6 +91,52 @@ TASK6_VISUAL_TYPES = {
     "core-24-delivery-ci-release-safety": "state-machine",
     "core-26-code-review-collaborative-quality": "state-loop",
     "core-29-cross-cultural-async-collaboration": "timeline",
+}
+TASK7_VISUAL_TYPES = {
+    "core-02-algorithms-measurement": "comparison",
+    "core-03-architecture-memory-caches": "memory",
+    "core-11-data-modeling-storage": "matrix",
+    "core-16-hci-usability-accessibility": "flow",
+    "core-17-graphics-visual-information": "flow",
+    "core-19-technical-communication-design-docs": "hierarchy",
+    "core-25-engineering-economics-capacity": "matrix",
+    "core-28-oss-governance-stewardship": "flow",
+}
+TASK7_STRUCTURE_IDS = {
+    "core-02-algorithms-measurement": {
+        "alternatives": ("linear-scan", "binary-search", "hash-lookup"),
+        "criteria": ("best-case", "average-case", "worst-case"),
+        "cells": ("linear-best", "linear-average", "linear-worst", "binary-best", "binary-average", "binary-worst", "hash-best", "hash-average", "hash-worst"),
+    },
+    "core-03-architecture-memory-caches": {
+        "layers": ("instruction", "tlb", "page-table", "l1-cache", "lower-cache", "memory-controller", "reuse"),
+        "transfers": ("instruction-to-tlb", "tlb-to-page-table", "page-table-to-l1", "l1-to-lower", "lower-to-memory", "memory-to-reuse"),
+    },
+    "core-11-data-modeling-storage": {
+        "rows": ("relational", "document", "key-value"),
+        "columns": ("access-fit", "constraint", "operations-recovery"),
+        "cells": ("relational-access", "relational-constraint", "relational-ops", "document-access", "document-constraint", "document-ops", "key-value-access", "key-value-constraint", "key-value-ops"),
+    },
+    "core-16-hci-usability-accessibility": {
+        "steps": ("scope", "target", "observe", "review", "claim"),
+        "transitions": ("scope-to-target", "target-to-observe", "observe-to-review", "review-to-claim"),
+    },
+    "core-17-graphics-visual-information": {
+        "steps": ("data", "transform", "visual", "equivalent", "verify"),
+        "transitions": ("data-to-transform", "transform-to-visual", "visual-to-equivalent", "equivalent-to-verify"),
+    },
+    "core-19-technical-communication-design-docs": {
+        "nodes": ("decision-record", "audience", "evidence", "executive-view", "implementation-view", "alternatives", "validation"),
+    },
+    "core-25-engineering-economics-capacity": {
+        "rows": ("option-a", "option-b"),
+        "columns": ("total-cost", "capacity", "decision"),
+        "cells": ("a-cost", "a-capacity", "a-decision", "b-cost", "b-capacity", "b-decision"),
+    },
+    "core-28-oss-governance-stewardship": {
+        "steps": ("discover", "prepare", "submit", "review", "maintainer-merge", "release-evidence"),
+        "transitions": ("discover-to-prepare", "prepare-to-submit", "submit-to-review", "review-to-merge", "merge-to-release"),
+    },
 }
 TASK6_VISUAL_CONTRACT_SHA256 = {
     "core-04-os-processes-concurrency": "01e944d4d1847cc76b638183bdf58f4613eb55fb2da38d2d491ba30d8df6ae13",
@@ -2882,8 +2932,11 @@ class ContentAcceptanceTests(unittest.TestCase):
         for lesson_id in LESSON_IDS:
             lesson_root = REPOSITORY_ROOT / "content/lessons" / lesson_id
             body = (lesson_root / "body.html").read_text(encoding="utf-8")
-            if lesson_id in TASK5_VISUAL_TYPES or lesson_id in TASK6_VISUAL_TYPES:
-                self.assertNotIn("<figure", body)
+            if lesson_id in TASK5_VISUAL_TYPES or lesson_id in TASK6_VISUAL_TYPES or lesson_id in TASK7_VISUAL_TYPES:
+                if lesson_id == "core-17-graphics-visual-information":
+                    self.assertEqual(body.count("<figure"), 1)
+                else:
+                    self.assertNotIn("<figure", body)
                 residual_sha256 = hashlib.sha256(body.encode("utf-8")).hexdigest()
             else:
                 figures, residual_sha256 = _legacy_figure_projection(
@@ -2922,21 +2975,16 @@ class ContentAcceptanceTests(unittest.TestCase):
             for item in oracle["figures"]
             if item["lessonId"] not in TASK5_VISUAL_TYPES
             and item["lessonId"] not in TASK6_VISUAL_TYPES
+            and item["lessonId"] not in TASK7_VISUAL_TYPES
         ]
-        self.assertEqual(len(actual_figures), 9)
+        self.assertEqual(len(actual_figures), 0)
         self.assertEqual(
             [
                 (item["lessonId"], item["sectionRole"], item["caption"])
                 for item in actual_figures
                 if item["disposition"] == "retain"
             ],
-            [
-                (
-                    "core-17-graphics-visual-information",
-                    "workedExample",
-                    "同じ0–100%尺度で比較する学習活動の時間",
-                )
-            ],
+            [],
         )
         self.assertEqual(actual_figures, expected_remaining_figures)
         self.assertEqual(actual_residuals, oracle["residualBodies"])
@@ -2944,6 +2992,105 @@ class ContentAcceptanceTests(unittest.TestCase):
         self.assertEqual(
             sum(len(item["sources"]) for item in actual_sources),
             126,
+        )
+
+    def test_task7_remaining_lessons_have_exact_primary_types_and_preserve_legacy_facts(self) -> None:
+        oracle = json.loads(MIGRATION_ORACLE.read_bytes())
+        legacy = {
+            item["lessonId"]: item
+            for item in oracle["figures"]
+            if item["lessonId"] in TASK7_VISUAL_TYPES and item["disposition"] == "migrate"
+        }
+        for lesson_id, expected_type in TASK7_VISUAL_TYPES.items():
+            with self.subTest(lesson_id=lesson_id):
+                root = REPOSITORY_ROOT / "content/lessons" / lesson_id
+                document = json.loads((root / "lesson.json").read_bytes())
+                visual = document["visualizations"][0]
+                self.assertEqual(visual["type"], expected_type)
+                self.assertEqual(visual["caption"], legacy[lesson_id]["caption"])
+                self.assertNotIn("simulation", visual)
+                rendered = str(render_visualization(
+                    lesson_id,
+                    load_lesson_bytes((root / "lesson.json").read_bytes(), "lesson.json").visualizations[0],
+                ))
+                for atom in legacy[lesson_id]["visibleAtoms"]:
+                    self.assertIn(escape(atom), rendered)
+
+    def test_complete_lesson_set_matches_every_catalog_assignment_exactly(self) -> None:
+        catalog_path = REPOSITORY_ROOT / "content/visualization-catalog.json"
+        catalog = parse_visualization_catalog_bytes(catalog_path.read_bytes(), catalog_path.name)
+        visuals = {}
+        for lesson_id in LESSON_IDS:
+            path = REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json"
+            visuals[lesson_id] = load_lesson_bytes(path.read_bytes(), path.name).visualizations
+
+        validate_visualization_assignments(catalog, visuals)
+
+        swapped = json.loads(catalog_path.read_bytes())
+        swapped["lessons"][0]["primaryType"], swapped["lessons"][1]["primaryType"] = (
+            swapped["lessons"][1]["primaryType"], swapped["lessons"][0]["primaryType"]
+        )
+        mutated = parse_visualization_catalog_bytes(_json_bytes(swapped), "swapped.json")
+        with self.assertRaisesRegex(CurriculumValidationError, "primary visualization type"):
+            validate_visualization_assignments(mutated, visuals)
+
+    def test_task7_readable_contracts_freeze_every_structured_row_and_relation(self) -> None:
+        for lesson_id, expected in TASK7_STRUCTURE_IDS.items():
+            with self.subTest(lesson_id=lesson_id):
+                path = REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json"
+                visual = json.loads(path.read_bytes())["visualizations"][0]
+                self.assertEqual(visual["afterSection"], "mentalModel")
+                self.assertNotIn("simulation", visual)
+                for field in ("id", "caption", "question", "expectedObservation"):
+                    self.assertTrue(visual[field].strip())
+                for field in ("objectiveIds", "evidenceIds", "sourceIds"):
+                    self.assertTrue(visual[field])
+                payload = visual["payload"]
+                for group, expected_ids in expected.items():
+                    items = payload[group]
+                    self.assertEqual(tuple(item["id"] for item in items), expected_ids)
+                    for item in items:
+                        if group in {"transitions", "transfers"}:
+                            self.assertTrue(item["from"])
+                            self.assertTrue(item["to"])
+                            self.assertTrue(item["label"])
+                        elif group == "cells":
+                            self.assertTrue(item["value"])
+                        else:
+                            self.assertTrue(item["label"])
+                            self.assertTrue(item["detail"])
+
+        memory = json.loads((REPOSITORY_ROOT / "content/lessons/core-03-architecture-memory-caches/lesson.json").read_bytes())["visualizations"][0]
+        self.assertIn("translation", memory["question"])
+        self.assertIn("固定latencyではない", memory["payload"]["layers"][4]["detail"])
+        complexity = json.loads((REPOSITORY_ROOT / "content/lessons/core-02-algorithms-measurement/lesson.json").read_bytes())["visualizations"][0]
+        self.assertEqual(tuple(item["label"] for item in complexity["payload"]["criteria"]), ("best case", "average case", "worst case"))
+        hierarchy = json.loads((REPOSITORY_ROOT / "content/lessons/core-19-technical-communication-design-docs/lesson.json").read_bytes())["visualizations"][0]
+        self.assertEqual(tuple(item["parentId"] for item in hierarchy["payload"]["nodes"]), (None, "decision-record", "decision-record", "audience", "audience", "evidence", "evidence"))
+
+    def test_task7_readable_contract_detects_structure_and_detail_mutations(self) -> None:
+        path = REPOSITORY_ROOT / "content/lessons/core-03-architecture-memory-caches/lesson.json"
+        original = json.loads(path.read_bytes())["visualizations"][0]["payload"]
+        expected_layers = TASK7_STRUCTURE_IDS["core-03-architecture-memory-caches"]["layers"]
+        mutated = deepcopy(original)
+        mutated["layers"][1]["detail"] = "translationとdata transferは常に同じlatency"
+        self.assertNotEqual(mutated, original)
+        swapped = deepcopy(original)
+        swapped["layers"][0], swapped["layers"][1] = swapped["layers"][1], swapped["layers"][0]
+        self.assertNotEqual(tuple(item["id"] for item in swapped["layers"]), expected_layers)
+
+    def test_core17_retains_distinct_worked_example_chart_byte_exact(self) -> None:
+        lesson_id = "core-17-graphics-visual-information"
+        body = (REPOSITORY_ROOT / "content/lessons" / lesson_id / "body.html").read_text(encoding="utf-8")
+        retained = re.search(
+            r'^  <figure class="quantitative-chart-artifact">.*?^  </figure>\n',
+            body,
+            re.MULTILINE | re.DOTALL,
+        )
+        self.assertIsNotNone(retained)
+        self.assertEqual(
+            hashlib.sha256(retained.group(0).encode("utf-8")).hexdigest(),
+            "a25cdd9fd76cdc729127062d50373851a39a0b14000aa6d3640bcd93f6fa13da",
         )
 
     def test_task5_causal_and_network_visuals_preserve_ordered_legacy_facts(self) -> None:

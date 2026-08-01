@@ -9,17 +9,6 @@
 <section id="oss-mental-model">
   <h2>メンタルモデル</h2>
   <p>governanceを「誰でも変更できる」ことではなく、「誰でも提案経路を理解でき、decision rightsとevidenceが追跡できる」こととして捉える。第三者にはread-onlyから始まる最小権限のcontribution pathを開き、review、maintainer merge、release evidenceには明示的な責任境界を置く。</p>
-  <figure>
-    <figcaption>第三者contributionをmaintainerのreview・merge・release evidenceへ安全に接続するgovernance chain</figcaption>
-    <ol>
-      <li><strong>discover:</strong> 第三者がlicense、community rule、security窓口、contribution手順を見つける。</li>
-      <li><strong>prepare:</strong> forkまたは同等のread-only境界で変更と検証証拠を作る。</li>
-      <li><strong>submit:</strong> 変更理由、scope、test結果をreview可能な単位で提示する。</li>
-      <li><strong>review:</strong> maintainerが品質、security、policy、互換性を証拠で判断する。</li>
-      <li><strong>maintainer-merge:</strong> write権限を第三者へ移さず、承認済み変更だけを統合する。</li>
-      <li><strong>release-evidence:</strong> CI結果、provenance、承認、公開artifactを対応付ける。</li>
-    </ol>
-  </figure>
   <p>command successは一つの処理がexit code 0で終わったという局所的な観測である。system outcomeは、利用者が検証できるartifactが正しいsource、review、provenance、governanceから公開されたかという結果であり、両者を同一視しない。</p>
 </section>
 <section id="worked-example">

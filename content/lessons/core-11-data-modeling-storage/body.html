@@ -9,17 +9,6 @@
 <section id="mental-model">
   <h2>メンタルモデル</h2>
   <p>最初にdomainのentity、value、relationship、不変条件を記述し、次にquery shapeへ「頻度」と「同時に読むdata」を付ける。さらに更新競合と成長予測を加えれば、access pathの局所最適化が整合性や復旧を壊さないかを比較できる。</p>
-  <figure>
-    <figcaption>workload証拠からstorage ADRを再計算するmechanism</figcaption>
-    <ol>
-      <li><strong>domain:</strong> 注文番号の一意性、合計額と明細合計の一致、注文状態遷移を不変条件にする。</li>
-      <li><strong>workload:</strong> 顧客履歴、注文detail、商品・期間検索、状態更新を一意なquery IDと時間当たり頻度で表す。</li>
-      <li><strong>growth:</strong> 現在件数と月間増加から12か月後を計算し、synthetic projectionである限界を残す。</li>
-      <li><strong>comparison:</strong> relational、document、key-valueをaccess fit、constraint、capacity、operations、recoveryの同じweightで採点する。</li>
-      <li><strong>ADR:</strong> winnerだけでなく、負の帰結、移行境界、confirmationを記録する。</li>
-      <li><strong>mutation:</strong> 商品・期間検索が主要queryになったらfrequencyとratingを変え、scoreとwinnerを再計算する。</li>
-    </ol>
-  </figure>
   <table>
     <caption>注文履歴workloadを比較するdecision table</caption>
     <thead>
