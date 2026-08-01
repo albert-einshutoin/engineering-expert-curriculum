@@ -4,12 +4,12 @@ from dataclasses import FrozenInstanceError
 from copy import deepcopy
 from types import MappingProxyType
 import unittest
-from unittest.mock import patch
 
-import curriculum_builder.visualizations as visualization_models
 from curriculum_builder.errors import CurriculumValidationError
 from curriculum_builder.visualizations import (
     LessonSectionRole,
+    SimulationState,
+    SimulationTransition,
     VisualizationType,
     parse_visualizations,
 )
@@ -155,6 +155,28 @@ def _scenario_simulation() -> dict[str, object]:
 
 
 class VisualizationModelTests(unittest.TestCase):
+    def test_direct_simulation_constructors_detach_when_mappings(self) -> None:
+        state_when = {"size": "small"}
+        transition_when = {"size": "small"}
+
+        state = SimulationState(
+            "ready", "準備", "待機", state_when, ("start",), ()
+        )
+        transition = SimulationTransition(
+            "advance", "ready", "done", "next", transition_when
+        )
+        state_when["size"] = "large"
+        transition_when["size"] = "large"
+
+        self.assertEqual(dict(state.when), {"size": "small"})
+        self.assertEqual(dict(transition.when), {"size": "small"})
+        self.assertIsInstance(state.when, MappingProxyType)
+        self.assertIsInstance(transition.when, MappingProxyType)
+        with self.assertRaises(TypeError):
+            state.when["size"] = "large"  # type: ignore[index]
+        with self.assertRaises(TypeError):
+            transition.when["size"] = "large"  # type: ignore[index]
+
     def test_after_section_uses_the_closed_section_role_enum(self) -> None:
         visual = _parse([_visual("flow", deepcopy(_payloads()["flow"]))])[0]
 
@@ -345,41 +367,101 @@ class VisualizationModelTests(unittest.TestCase):
                             )
                         ])
 
-    def test_simulation_validation_indexes_each_state_and_edge_once_per_selection(self) -> None:
-        self.assertTrue(
-            hasattr(visualization_models, "_index_simulation_transitions"),
-            "simulation validation must build a transition index",
-        )
-        simulation = _scenario_simulation()
-        simulation["interactionMode"] = "hybrid"
-        simulation["defaultIntervalMs"] = 250
-        simulation["states"][0]["when"] = {}  # type: ignore[index]
-        simulation["transitions"] = [
+    def test_maximum_parameter_domain_is_validated_through_the_public_api(self) -> None:
+        parameters = [
             {
-                "id": "large-edge",
-                "from": "small-state",
-                "to": "large-state",
-                "event": "next",
-                "when": {"size": "large"},
+                "id": f"parameter-{index}",
+                "label": f"条件{index}",
+                "control": "select",
+                "options": [
+                    {"id": "zero", "label": "0"},
+                    {"id": "one", "label": "1"},
+                ],
+                "defaultOptionId": "zero",
+            }
+            for index in range(6)
+        ]
+        states: list[dict[str, object]] = [
+            {
+                "id": "initial",
+                "label": "初期",
+                "status": "開始",
+                "activeNodeIds": ["start"],
+                "activeEdgeIds": [],
             }
         ]
+        transitions: list[dict[str, object]] = []
+        for number in range(1, 64):
+            bits = f"{number:06b}"
+            suffix = bits.replace("0", "z").replace("1", "o")
+            conditions = {
+                f"parameter-{index}": "one" if bit == "1" else "zero"
+                for index, bit in enumerate(bits)
+            }
+            state_id = f"state-{suffix}"
+            states.append(
+                {
+                    "id": state_id,
+                    "label": suffix,
+                    "status": "分岐",
+                    "when": conditions,
+                    "activeNodeIds": ["finish"],
+                    "activeEdgeIds": ["advance"],
+                }
+            )
+            transitions.append(
+                {
+                    "id": f"edge-{suffix}",
+                    "from": "initial",
+                    "to": state_id,
+                    "event": "next",
+                    "when": conditions,
+                }
+            )
+        simulation = {
+            "kind": "complexity-growth",
+            "interactionMode": "hybrid",
+            "parameters": parameters,
+            "initialStateId": "initial",
+            "defaultIntervalMs": 250,
+            "states": states,
+            "transitions": transitions,
+            "outcomes": [
+                {"id": "observed", "stateId": "initial", "label": "観測"}
+            ],
+        }
 
-        original_matches = visualization_models._matches
-        with patch.object(
-            visualization_models,
-            "_matches",
-            wraps=original_matches,
-        ) as matches:
+        parsed = _parse([
+            _visual(
+                "flow",
+                deepcopy(_payloads()["flow"]),
+                simulation=simulation,
+            )
+        ])
+
+        self.assertEqual(len(parsed[0].simulation.states), 64)  # type: ignore[union-attr]
+        self.assertEqual(len(parsed[0].simulation.transitions), 63)  # type: ignore[union-attr]
+        overflow = deepcopy(simulation)
+        overflow["parameters"].append(  # type: ignore[union-attr]
+            {
+                "id": "parameter-6",
+                "label": "条件6",
+                "control": "select",
+                "options": [
+                    {"id": "zero", "label": "0"},
+                    {"id": "one", "label": "1"},
+                ],
+                "defaultOptionId": "zero",
+            }
+        )
+        with self.assertRaises(CurriculumValidationError):
             _parse([
                 _visual(
                     "flow",
                     deepcopy(_payloads()["flow"]),
-                    simulation=simulation,
+                    simulation=overflow,
                 )
             ])
-
-        # Two selections inspect two states and one edge exactly once each.
-        self.assertEqual(matches.call_count, 2 * (2 + 1))
 
     def test_interval_closed_bounds_and_multiple_of_fifty(self) -> None:
         for interval, accepted in ((249, False), (250, True), (251, False), (5000, True), (5001, False)):
@@ -487,6 +569,30 @@ class VisualizationModelTests(unittest.TestCase):
             _parse([_visual("flow", deepcopy(_payloads()["flow"]), simulation=simulation)])
         with self.assertRaises(CurriculumValidationError):
             _parse([], complete=False)
+
+    def test_rejects_more_than_one_simulation_per_lesson_without_echoing_content(self) -> None:
+        secret = "private-second-caption"
+        first = _visual(
+            "flow",
+            deepcopy(_payloads()["flow"]),
+            id="first-visual",
+            simulation=_scenario_simulation(),
+        )
+        second = _visual(
+            "flow",
+            deepcopy(_payloads()["flow"]),
+            id="second-visual",
+            caption=secret,
+            simulation=_scenario_simulation(),
+        )
+
+        with self.assertRaises(CurriculumValidationError) as raised:
+            _parse([first, second])
+
+        diagnostic = str(raised.exception)
+        self.assertIn("core-01-example", diagnostic)
+        self.assertIn("at most one simulation", diagnostic)
+        self.assertNotIn(secret, diagnostic)
 
     def test_diagnostics_do_not_echo_unknown_author_values(self) -> None:
         secret_marker = "attacker-secret-marker"
