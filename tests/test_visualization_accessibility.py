@@ -82,6 +82,30 @@ def _selector_list(source: str) -> tuple[str, ...]:
     return tuple(selectors)
 
 
+def _css_value_tokens(source: str) -> tuple[str, ...]:
+    tokens: list[str] = []
+    start = 0
+    depth = 0
+    for index, character in enumerate(source):
+        if character == "(":
+            depth += 1
+        elif character == ")":
+            depth -= 1
+            if depth < 0:
+                raise AssertionError(
+                    "CSS value has an unmatched closing parenthesis"
+                )
+        elif character.isspace() and depth == 0:
+            if source[start:index].strip():
+                tokens.append(source[start:index].strip())
+            start = index + 1
+    if source[start:].strip():
+        tokens.append(source[start:].strip())
+    if depth:
+        raise AssertionError("CSS value has an unmatched opening parenthesis")
+    return tuple(tokens)
+
+
 def _rules(source: str) -> tuple[tuple[str, dict[str, str], int], ...]:
     rules: list[tuple[str, dict[str, str], int]] = []
     for prelude, body, position in _css_blocks(source):
@@ -181,6 +205,32 @@ class _HierarchyStructureParser(HTMLParser):
     def handle_endtag(self, tag: str) -> None:
         if not self.stack or self.stack[-1][0] != tag:
             raise AssertionError("rendered hierarchy has malformed nesting")
+        self.stack.pop()
+
+
+class _CausalStructureParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.stack: list[tuple[str, frozenset[str]]] = []
+        self.direct_children: list[str] = []
+
+    def handle_starttag(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+    ) -> None:
+        values = dict(attrs)
+        classes = frozenset((values.get("class") or "").split())
+        if (
+            self.stack
+            and "visualization__causal-model" in self.stack[-1][1]
+        ):
+            self.direct_children.append(tag)
+        self.stack.append((tag, classes))
+
+    def handle_endtag(self, tag: str) -> None:
+        if not self.stack or self.stack[-1][0] != tag:
+            raise AssertionError("rendered causal model has malformed nesting")
         self.stack.pop()
 
 
@@ -295,6 +345,44 @@ class VisualizationAccessibilityTests(unittest.TestCase):
                 print_rules[selector].get("break-inside"),
                 "avoid",
             )
+
+    def test_causal_pairs_fill_two_columns_by_row(self) -> None:
+        html = render_visualization(
+            "core-01-systems-tradeoffs",
+            visualization_rendering_tests._visual(
+                VisualizationType.CAUSAL,
+                self.payloads[VisualizationType.CAUSAL],
+            ),
+        ).value
+        parser = _CausalStructureParser()
+        parser.feed(html)
+        parser.close()
+        self.assertEqual(parser.stack, [])
+        self.assertEqual(parser.direct_children, ["dt", "dd"] * 4)
+
+        first_media = min(
+            position
+            for prelude, _, position in _css_blocks(self.css)
+            if prelude.startswith("@media")
+        )
+        desktop_rules = {
+            selector: declarations
+            for selector, declarations, _ in _rules(self.css[:first_media])
+        }
+        selector = ".visualization--causal .visualization__causal-model"
+        self.assertIn(selector, desktop_rules)
+        declarations = desktop_rules[selector]
+        self.assertEqual(declarations.get("display"), "grid")
+        self.assertEqual(
+            _css_value_tokens(declarations.get("grid-template-columns", "")),
+            ("max-content", "minmax(0, 1fr)"),
+        )
+        self.assertIn(declarations.get("grid-auto-flow"), {None, "row"})
+        self.assertNotIn("grid-auto-columns", declarations)
+
+        mobile = _media_rules(self.css, "@media (max-width: 20rem)")
+        self.assertEqual(mobile[selector].get("grid-template-columns"), "1fr")
+        self.assertEqual(mobile[selector].get("grid-auto-flow"), "row")
 
     def test_mobile_overrides_win_the_cascade_for_real_multicolumn_containers(self) -> None:
         top_level = _css_blocks(self.css)
