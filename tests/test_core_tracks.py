@@ -4241,6 +4241,23 @@ class CoreTrackTests(unittest.TestCase):
         self.assertTrue(analysis["tail_growth"])
         self.assertTrue(analysis["error_growth"])
         self.assertTrue(analysis["recovery_hysteresis"])
+        self.assertEqual(
+            report["fifo_backlog_first_boundary"],
+            {
+                "interval_seconds": 1,
+                "queue_start_requests": 30,
+                "arrivals_requests": 90,
+                "service_capacity_requests": 100,
+                "queue_limit_requests": 30,
+                "backlog_completed_requests": 30,
+                "immediate_work_requests": 70,
+                "admitted_requests": 90,
+                "completed_requests": 100,
+                "queue_end_requests": 20,
+                "rejected_requests": 0,
+                "failed_requests": 0,
+            },
+        )
         expected_queue_records = [
             (0, 40, 40, 40, 0, 40, 0, 0, 0),
             (0, 100, 100, 100, 0, 100, 0, 0, 0),
@@ -4426,6 +4443,16 @@ class CoreTrackTests(unittest.TestCase):
             "performance_capacity_lab_v1",
             "QUEUE_LIMIT_REQUESTS = 30",
             "QUEUE_LIMIT_REQUESTS = 0",
+        )
+
+    def test_performance_harness_rejects_arrival_first_service_mutation(
+        self,
+    ) -> None:
+        self.assert_harness_source_mutation_fails(
+            "core-14-performance-capacity",
+            "performance_capacity_lab_v1",
+            "backlog_completed_requests = min(\n        queue_start_requests,\n        service_budget_requests,\n    )",
+            "backlog_completed_requests = min(\n        queue_start_requests,\n        max(0, service_budget_requests - arrivals_requests),\n    )",
         )
 
     def test_reliability_harness_derives_slo_alerts_and_runbook(

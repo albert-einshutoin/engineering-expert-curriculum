@@ -262,6 +262,51 @@ def main():
         transfer_write_fraction,
     )
 
+    # This boundary is separate from the authored eight scenario states. With
+    # total work above capacity, it proves FIFO backlog receives service before
+    # current arrivals; aggregate Qend alone cannot distinguish arrival-first.
+    fifo_boundary_point = simulate(
+        "fifo-backlog-first-boundary",
+        90,
+        CAPACITY_RPS,
+        30,
+        baseline_write_fraction,
+        10.0,
+        [40, 45, 50, 55, 60, 75, 100],
+    )
+    fifo_backlog_first_boundary = {
+        "interval_seconds": fifo_boundary_point["interval_seconds"],
+        "queue_start_requests": fifo_boundary_point["queue_start_requests"],
+        "arrivals_requests": fifo_boundary_point["arrivals_requests"],
+        "service_capacity_requests": CAPACITY_RPS * INTERVAL_SECONDS,
+        "queue_limit_requests": QUEUE_LIMIT_REQUESTS,
+        "backlog_completed_requests": fifo_boundary_point[
+            "backlog_completed_requests"
+        ],
+        "immediate_work_requests": fifo_boundary_point[
+            "immediate_work_requests"
+        ],
+        "admitted_requests": fifo_boundary_point["admitted_requests"],
+        "completed_requests": fifo_boundary_point["completed_requests"],
+        "queue_end_requests": fifo_boundary_point["queue_end_requests"],
+        "rejected_requests": fifo_boundary_point["rejected_requests"],
+        "failed_requests": fifo_boundary_point["failed_requests"],
+    }
+    assert fifo_backlog_first_boundary == {
+        "interval_seconds": 1,
+        "queue_start_requests": 30,
+        "arrivals_requests": 90,
+        "service_capacity_requests": 100,
+        "queue_limit_requests": 30,
+        "backlog_completed_requests": 30,
+        "immediate_work_requests": 70,
+        "admitted_requests": 90,
+        "completed_requests": 100,
+        "queue_end_requests": 20,
+        "rejected_requests": 0,
+        "failed_requests": 0,
+    }
+
     by_stage = {point["stage"]: point for point in curve}
     assert by_stage["overload"]["immediate_work_requests"] == CAPACITY_RPS
     assert by_stage["overload"]["queue_depth"] > 0
@@ -354,6 +399,7 @@ def main():
             ),
         },
         "load_curve": curve,
+        "fifo_backlog_first_boundary": fifo_backlog_first_boundary,
         "curve_analysis": {
             "throughput_plateau": (
                 by_stage["near-limit"]["success_rps"]
