@@ -335,17 +335,17 @@
         "defaultIntervalMs": 1000,
         "states": [
           {"id": "event-log-start", "label": "e1 deliver・apply・commit", "status": "e1-confirmをimmediate処理し、pending→confirmedを1回applyしてresult=confirmed-onceをatomic commitする。", "activeNodeIds": ["e1-confirm"], "activeEdgeIds": []},
-          {"id": "partition-detected", "label": "e2 partition start", "status": "e2でpartitionをactiveにし、e1の永続commitを保持したまま後続messageをbufferする。", "activeNodeIds": ["e2-partition-start"], "activeEdgeIds": []},
+          {"id": "partition-detected", "label": "partition lens: e2〜e5", "status": "partition lens: e2〜e5でpartition active。e3・e4・e5の3 messageをbufferしbuffer=3、e1 commitを保持する。", "activeNodeIds": ["e2-partition-start", "e3-status-read", "e4-confirm-retry", "e5-reconcile-read"], "activeEdgeIds": []},
           {"id": "partition-buffered", "label": "e3 status readをbuffer", "status": "e3はsequence=4・priority=1。partition中なのでapplyせず、利用者結果を未確定のままbufferする。", "activeNodeIds": ["e3-status-read"], "activeEdgeIds": []},
-          {"id": "duplicate-received", "label": "e4 duplicateをbuffer", "status": "e4はsequence=2・priority=2。同じkey/fingerprintをbufferし、回復時もeffectを再applyしない。", "activeNodeIds": ["e4-confirm-retry"], "activeEdgeIds": []},
-          {"id": "reorder-gap-filled", "label": "e5がsequence gapを埋める", "status": "e5はsequence=3・priority=0。回復時にe3より先にread-only処理し、delivery順とlogical順の差を可視化する。", "activeNodeIds": ["e5-reconcile-read"], "activeEdgeIds": []},
-          {"id": "recovery-converged", "label": "e6 recovery・reevaluate", "status": "e6 tick=6でe5→e3→e4を解放し、confirmed・apply=1・result reuse=1・deadline=8以内を再評価する。", "activeNodeIds": ["e6-partition-end"], "activeEdgeIds": []}
+          {"id": "duplicate-received", "label": "duplicate lens: e4", "status": "duplicate lens: e4 retryは保存済みresultを再利用してresult reuse=1、effect=1のまま再applyしない。", "activeNodeIds": ["e4-confirm-retry"], "activeEdgeIds": []},
+          {"id": "reorder-gap-filled", "label": "reorder lens: e5", "status": "reorder lens: e5がsequence gapを埋め、recovery release=e5→e3→e4としてdelivery順との差を示す。", "activeNodeIds": ["e5-reconcile-read"], "activeEdgeIds": []},
+          {"id": "recovery-converged", "label": "recovery lens: e6", "status": "recovery lens: e6はtick=6、deadline=8以内にe5→e3→e4を解放し、final=confirmed、apply=1へ収束する。", "activeNodeIds": ["e6-partition-end"], "activeEdgeIds": []}
         ],
         "transitions": [
-          {"id": "apply-duplicate", "from": "event-log-start", "to": "event-log-start", "event": "parameter-change", "when": {"event-case": "duplicate"}},
-          {"id": "apply-reorder", "from": "event-log-start", "to": "event-log-start", "event": "parameter-change", "when": {"event-case": "reorder"}},
-          {"id": "apply-partition", "from": "event-log-start", "to": "event-log-start", "event": "parameter-change", "when": {"event-case": "partition"}},
-          {"id": "apply-recovery", "from": "event-log-start", "to": "event-log-start", "event": "parameter-change", "when": {"event-case": "recovery"}},
+          {"id": "apply-duplicate", "from": "event-log-start", "to": "duplicate-received", "event": "parameter-change", "when": {"event-case": "duplicate"}},
+          {"id": "apply-reorder", "from": "event-log-start", "to": "reorder-gap-filled", "event": "parameter-change", "when": {"event-case": "reorder"}},
+          {"id": "apply-partition", "from": "event-log-start", "to": "partition-detected", "event": "parameter-change", "when": {"event-case": "partition"}},
+          {"id": "apply-recovery", "from": "event-log-start", "to": "recovery-converged", "event": "parameter-change", "when": {"event-case": "recovery"}},
           {"id": "partition-next", "from": "event-log-start", "to": "partition-detected", "event": "next"},
           {"id": "partition-timer", "from": "event-log-start", "to": "partition-detected", "event": "timer"},
           {"id": "partition-previous", "from": "partition-detected", "to": "event-log-start", "event": "previous"},
@@ -368,9 +368,9 @@
           {"id": "recovery-reset", "from": "recovery-converged", "to": "event-log-start", "event": "reset"}
         ],
         "outcomes": [
-          {"id": "duplicate-effect-once", "stateId": "recovery-converged", "label": "duplicateは届くがstate transitionは1回、保存済みresultを1回再利用する。"},
+          {"id": "duplicate-effect-once", "stateId": "duplicate-received", "label": "duplicateは届くがstate transitionは1回、保存済みresultを1回再利用する。"},
           {"id": "reorder-detected", "stateId": "reorder-gap-filled", "label": "logical sequenceとdelivery orderの差を検出し、gapを埋めてから再評価する。"},
-          {"id": "partition-buffers-three", "stateId": "partition-buffered", "label": "partition中の3 messageをbufferし、未確定結果を成功へ広げない。"},
+          {"id": "partition-buffers-three", "stateId": "partition-detected", "label": "partition中の3 messageをbufferし、未確定結果を成功へ広げない。"},
           {"id": "recovery-before-deadline", "stateId": "recovery-converged", "label": "tick 6はdeadline 8以内。confirmedへ収束し、tick 11ならdeadline超過へ分岐する。"}
         ]
       }

@@ -8,7 +8,7 @@
 </section>
 <section id="mental-model">
   <h2>メンタルモデル</h2>
-  <p>性能判断を、需要、受理、完了、待機、resource、依存、利用者結果のflowとして扱う。このfixtureは固定区間Δt=1 sと有限queue 30 requestを使い、Qnext = max(0, Qprev + admitted × Δt − completed × Δt)を各点で検査する。acceptedはその区間に到着して即時処理または有限queueへadmittedされた仕事、successはその区間に既存backlogを含めてcompletedした仕事を表すため、回復区間ではsuccessがacceptedを上回り得る。</p>
+  <p>性能判断を、需要、受理、完了、待機、resource、依存、利用者結果のflowとして扱う。このfixtureは有限queue 30 requestを使い、request countの保存則Qnext=max(0,Qprev+admitted-completed)を各点で検査する。Δt=1 sでRPSをrequest countへ変換してから保存則へ入れる。acceptedはその区間に到着して即時処理または有限queueへadmittedされた仕事、successはその区間に既存backlogを含めてcompletedした仕事を表すため、回復区間ではsuccessがacceptedを上回り得る。</p>
   <p>平均同時実行数L、平均到着または完了率λ、平均滞在時間Wの関係L = λWは、単位と観測窓を揃えた定常区間の整合確認に使う。式が合うことは、個別requestのtailや将来の容量を保証しない。</p>
 </section>
 <section id="worked-example">

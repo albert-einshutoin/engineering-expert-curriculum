@@ -3992,6 +3992,17 @@ class ContentAcceptanceTests(unittest.TestCase):
             expected_statuses,
         )
 
+        body = (
+            REPOSITORY_ROOT / "content/lessons" / lesson_id / "body.html"
+        ).read_text(encoding="utf-8")
+        self.assertIn("Qnext=max(0,Qprev+admitted-completed)", body)
+        self.assertIn(
+            "Δt=1 sでRPSをrequest countへ変換してから保存則へ入れる",
+            body,
+        )
+        self.assertNotIn("admitted × Δt", body)
+        self.assertNotIn("completed × Δt", body)
+
     def test_task10_core13_static_equivalent_is_the_complete_six_event_log(self) -> None:
         lesson_id = "core-13-distributed-coordination-failure"
         path = REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json"
@@ -4039,13 +4050,97 @@ class ContentAcceptanceTests(unittest.TestCase):
         simulation = visual["simulation"]
         self.assertEqual(
             tuple(item["activeNodeIds"] for item in simulation["states"]),
-            tuple([event_id] for event_id, _detail in expected_events),
+            (
+                ["e1-confirm"],
+                [
+                    "e2-partition-start", "e3-status-read",
+                    "e4-confirm-retry", "e5-reconcile-read",
+                ],
+                ["e3-status-read"],
+                ["e4-confirm-retry"],
+                ["e5-reconcile-read"],
+                ["e6-partition-end"],
+            ),
         )
         model = load_lesson_bytes(path.read_bytes(), path.name).visualizations[0]
         no_js = str(render_visualization(lesson_id, model))
         for event_id, detail in expected_events:
             self.assertIn(event_id, no_js)
             self.assertIn(detail, no_js)
+
+    def test_task10_core13_event_case_applies_distinct_active_lenses(self) -> None:
+        lesson_id = "core-13-distributed-coordination-failure"
+        path = REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json"
+        simulation = json.loads(path.read_bytes())["visualizations"][0]["simulation"]
+        expected = {
+            "duplicate": (
+                "duplicate-received",
+                ("e4-confirm-retry",),
+                ("result reuse=1", "effect=1"),
+                "duplicate-effect-once",
+            ),
+            "reorder": (
+                "reorder-gap-filled",
+                ("e5-reconcile-read",),
+                ("e5→e3→e4",),
+                "reorder-detected",
+            ),
+            "partition": (
+                "partition-detected",
+                (
+                    "e2-partition-start", "e3-status-read",
+                    "e4-confirm-retry", "e5-reconcile-read",
+                ),
+                ("e2〜e5", "buffer=3"),
+                "partition-buffers-three",
+            ),
+            "recovery": (
+                "recovery-converged",
+                ("e6-partition-end",),
+                ("tick=6", "deadline=8", "final=confirmed"),
+                "recovery-before-deadline",
+            ),
+        }
+        initial = simulation["initialStateId"]
+        states = {state["id"]: state for state in simulation["states"]}
+        outcomes = {outcome["id"]: outcome for outcome in simulation["outcomes"]}
+        parameter_changes = {
+            edge["when"]["event-case"]: edge
+            for edge in simulation["transitions"]
+            if edge["event"] == "parameter-change"
+        }
+        self.assertEqual(set(parameter_changes), set(expected))
+        for option, (target, nodes, status_atoms, outcome_id) in expected.items():
+            with self.subTest(option=option):
+                edge = parameter_changes[option]
+                self.assertEqual(edge["from"], initial)
+                self.assertEqual(edge["to"], target)
+                self.assertNotEqual(target, initial)
+                self.assertEqual(tuple(states[target]["activeNodeIds"]), nodes)
+                for atom in status_atoms:
+                    self.assertIn(atom, states[target]["status"])
+                self.assertEqual(outcomes[outcome_id]["stateId"], target)
+                self.assertIn(
+                    (target, initial, "reset"),
+                    {
+                        (item["from"], item["to"], item["event"])
+                        for item in simulation["transitions"]
+                    },
+                )
+
+        full_path = (
+            "event-log-start", "partition-detected", "partition-buffered",
+            "duplicate-received", "reorder-gap-filled", "recovery-converged",
+        )
+        for event in ("next", "timer"):
+            self.assertEqual(
+                {
+                    (item["from"], item["to"])
+                    for item in simulation["transitions"]
+                    if item["event"] == event
+                },
+                set(zip(full_path, full_path[1:])),
+            )
 
     def test_task10_hybrid_paths_have_complete_manual_timer_and_reset_edges(self) -> None:
         expected_paths = {
@@ -4110,9 +4205,17 @@ class ContentAcceptanceTests(unittest.TestCase):
                         if edge["event"] == "parameter-change"
                     ]
                     self.assertEqual(len(parameter_changes), 1)
+                    expected_target = initial
+                    if lesson_id == "core-13-distributed-coordination-failure":
+                        expected_target = {
+                            "duplicate": "duplicate-received",
+                            "reorder": "reorder-gap-filled",
+                            "partition": "partition-detected",
+                            "recovery": "recovery-converged",
+                        }[option["id"]]
                     self.assertEqual(
                         (parameter_changes[0]["from"], parameter_changes[0]["to"]),
-                        (initial, initial),
+                        (initial, expected_target),
                     )
                     forward = {
                         (edge["from"], edge["to"])
