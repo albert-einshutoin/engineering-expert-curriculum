@@ -33,6 +33,7 @@ class VisualizationRuntimeContractTests(unittest.TestCase):
         self.assertEqual(report["listenerLeaks"], 0)
         self.assertEqual(report["timerLeaks"], 0)
         self.assertEqual(report["resetCycles"], 100)
+        self.assertTrue(report["loadAbsence"])
 
     def test_runtime_is_one_safe_dependency_free_strict_classic_iife(self) -> None:
         source = (ROOT / "static" / "visualization.js").read_bytes()

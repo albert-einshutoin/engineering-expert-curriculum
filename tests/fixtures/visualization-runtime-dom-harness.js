@@ -270,10 +270,31 @@ function activeState(fixtureValue) {
 }
 function parameter(fixtureValue) { return fixtureValue.controls.querySelector('select[data-parameter-id]'); }
 function controlListenerCount(fixtureValue) { return fixtureValue.controls.listenerCount(); }
+function domSnapshot(root) {
+  return JSON.stringify({
+    tag: root.tag,
+    attributes: [...root.attributes].sort(),
+    classes: root.classList.toString(),
+    hidden: root.hidden,
+    disabled: root.disabled,
+    text: root._text,
+    children: root.children.map(domSnapshot),
+  });
+}
+
+function runLoadAbsence() {
+  const tracker = new Tracker();
+  const value = fixture(tracker, 'stepper');
+  assert(value.controls.hidden, 'no-script fallback revealed controls');
+  assert(value.controls.querySelectorAll('button, select, input, fieldset').every((control) => control.disabled), 'no-script fallback enabled controls');
+  assert(value.status.textContent === 'static status', 'no-script fallback changed status');
+  assert(value.statesList.children.every((state) => !state.classList.contains('is-active')), 'no-script fallback selected state');
+}
 
 function runModes() {
   const tracker = new Tracker();
   const fixtures = ['scenario', 'stepper', 'playback', 'hybrid', 'explorer'].map((mode) => fixture(tracker, mode));
+  const baselines = fixtures.map((item) => domSnapshot(item.root));
   const window = environment(tracker, fixtures);
   for (let fixtureIndex = 0; fixtureIndex < fixtures.length; fixtureIndex += 1) {
     const value = fixtures[fixtureIndex];
@@ -311,6 +332,8 @@ function runModes() {
   window.dispatchEvent({ type: 'pagehide', target: window });
   assert(fixtures.every((item) => controlListenerCount(item) === 0), 'pagehide leaked listeners');
   assert(tracker.timers.size === 0, 'pagehide leaked timers');
+  assert(window.listenerCount() === 0, 'pagehide listener did not self-remove');
+  fixtures.forEach((item, index) => assert(domSnapshot(item.root) === baselines[index], `pagehide did not restore exact DOM mode=${index}`));
 }
 
 function runReducedMotion() {
@@ -395,6 +418,7 @@ function runFaultMatrix() {
 function runResetCycles() {
   const tracker = new Tracker();
   const value = fixture(tracker, 'stepper');
+  const baseline = domSnapshot(value.root);
   const window = environment(tracker, [value]);
   const listeners = controlListenerCount(value);
   for (let index = 0; index < 100; index += 1) { click(value, 'reset'); }
@@ -402,8 +426,10 @@ function runResetCycles() {
   assert(tracker.timers.size === 0, 'reset leaked timer');
   window.dispatchEvent({ type: 'pagehide', target: window });
   assert(controlListenerCount(value) === 0, 'reset fixture leaked listeners');
+  assert(domSnapshot(value.root) === baseline, 'reset fixture did not restore exact DOM');
 }
 
+runLoadAbsence();
 runModes();
 runReducedMotion();
 runValidationMutations();
@@ -415,4 +441,5 @@ process.stdout.write(JSON.stringify({
   listenerLeaks: 0,
   timerLeaks: 0,
   resetCycles: 100,
+  loadAbsence: true,
 }));
