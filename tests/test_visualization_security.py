@@ -102,6 +102,20 @@ class JavaScriptSafetyTests(unittest.TestCase):
                 with self.assertRaises(CurriculumValidationError):
                     validate_javascript_bytes(source)
 
+    def test_rejects_constructor_and_prototype_escape_members(self) -> None:
+        payloads = (
+            b"[].filter.constructor('return 1')();",
+            b"[]['filter']['con' + 'structor']('return 1')();",
+            b"value.prototype;",
+            b"value['proto' + 'type'];",
+            b"value.__proto__;",
+            b"value['__pro' + 'to__'];",
+        )
+        for source in payloads:
+            with self.subTest(source=source):
+                with self.assertRaises(CurriculumValidationError):
+                    validate_javascript_bytes(source)
+
     def test_navigation_words_in_ordinary_text_do_not_create_false_positives(self) -> None:
         source = b"var explanation = 'open navigation sendBeacon'; // ordinary prose\n"
         self.assertEqual(validate_javascript_bytes(source), source.decode())

@@ -571,6 +571,10 @@ handwritten first-party runtime may use only complete direct calls to
 `window.addEventListener` measured from the reviewed artifact. Extracting those
 members or continuing the rooted expression through another property,
 computed member, or constructor is invalid.
+The closed source grammar also rejects `constructor`, `prototype`, and
+`__proto__` in executable code and in concatenated computed member names.
+`document` is limited to the complete direct `querySelectorAll` call used by
+the fixed asset; it is never accepted as a value.
 
 There is no continuous `requestAnimationFrame`, polling loop, document-wide
 MutationObserver, or browser graph-layout algorithm. Runtime complexity for one
@@ -585,6 +589,20 @@ Initialization is per figure and transactional:
    bounds from the DOM.
 3. Build the in-memory state without changing the visible fallback.
 4. Apply the initial state.
+
+Timer transitions always synchronize the visible current-state text, while a
+separate visually hidden polite live region is updated only for explicit user
+actions. This avoids repeated playback announcements. With reduced motion,
+play, pause, and speed are disabled and the visible/live status explains why.
+Scenario Reset restores every parameter control to its authored default before
+restoring the matching initial state. A persisted `pageshow` after `pagehide`
+repeats transactional initialization from the exact fallback snapshot; global
+and per-control listeners remain singletons and failure stays in fallback.
+
+Generated deferred script elements are direct children of `body` and have no
+non-whitespace data, character/entity reference, or comment content. The model
+validator, generated-document validator, build parser, and release checker all
+enforce the same empty external-script contract.
 5. Reveal controls and mark the root as enhanced.
 
 Any exception before step 5 leaves the complete static figure visible. Any

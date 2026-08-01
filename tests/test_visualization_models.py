@@ -490,6 +490,14 @@ class VisualizationModelTests(unittest.TestCase):
                 _visual("flow", deepcopy(_payloads()["flow"]), simulation=invalid)
             ])
 
+        mismatched_default = deepcopy(valid)
+        mismatched_default["parameters"][0]["defaultOptionId"] = "large"  # type: ignore[index]
+        with self.assertRaises(CurriculumValidationError):
+            _parse([_visual(
+                "flow", deepcopy(_payloads()["flow"]),
+                simulation=mismatched_default,
+            )])
+
     def test_non_scenario_reachable_states_require_unique_reset_to_initial(self) -> None:
         for mode in ("stepper", "playback", "hybrid", "explorer"):
             with self.subTest(mode=mode, mutation="valid"):

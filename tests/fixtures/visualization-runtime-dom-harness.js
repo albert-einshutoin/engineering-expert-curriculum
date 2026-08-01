@@ -188,7 +188,8 @@ function fixture(tracker, mode, suffix = '', controlKind = 'select') {
   const statesList = element(tracker, 'ol', {}, ['visualization__simulation-states']);
   const transitionsTable = element(tracker, 'tbody');
   const outcomesTable = element(tracker, 'tbody');
-  const status = element(tracker, 'p', { 'aria-live': 'polite' }, ['visualization__current-status'], 'static status');
+  const status = element(tracker, 'p', {}, ['visualization__current-status'], 'static status');
+  const announcement = element(tracker, 'p', { 'aria-live': 'polite', 'aria-atomic': 'true' }, ['visualization__announcement']);
   const controls = element(tracker, 'div', { hidden: '' }, ['visualization__controls']);
   const parameterized = ['scenario', 'hybrid', 'explorer'].includes(mode);
   if (parameterized) {
@@ -286,8 +287,8 @@ function fixture(tracker, mode, suffix = '', controlKind = 'select') {
     addTransition('reset-2', 'reset', 'state-2', 'state-0', null, null);
     addOutcome('done', 'state-2');
   }
-  root.append(...nodes, ...edges, statesList, transitionsTable, outcomesTable, status, controls);
-  return { root, controls, status, statesList, nodes, edges };
+  root.append(...nodes, ...edges, statesList, transitionsTable, outcomesTable, status, announcement, controls);
+  return { root, controls, status, announcement, statesList, nodes, edges };
 }
 
 function environment(tracker, fixtures, reduced = false) {
@@ -327,6 +328,9 @@ function snapshotObject(root, allowFallback = false) {
   }
   if (allowFallback && root.classList.contains('visualization__current-status') && text === '動的表示を利用できません。静的図を表示しています。') {
     text = 'static status';
+  }
+  if (allowFallback && root.classList.contains('visualization__announcement') && text === '動的表示を利用できません。静的図を表示しています。') {
+    text = '';
   }
   return {
     tag: root.tag,
@@ -381,6 +385,8 @@ function runModes() {
   assert(tracker.timers.size === 1, 'playback timer missing');
   tracker.flushOne();
   assert(activeState(playback) === 'state-1', 'playback did not advance');
+  assert(playback.status.textContent.startsWith('state-1'), 'timer did not synchronize visible status');
+  assert(playback.announcement.textContent === '', 'timer produced a live announcement');
   click(playback, 'pause');
   assert(tracker.timers.size === 0, 'pause leaked timer');
   setParameter(hybrid, 'b');
@@ -396,7 +402,7 @@ function runModes() {
   window.dispatchEvent({ type: 'pagehide', target: window });
   assert(fixtures.every((item) => controlListenerCount(item) === 0), 'pagehide leaked listeners');
   assert(tracker.timers.size === 0, 'pagehide leaked timers');
-  assert(window.listenerCount() === 0, 'pagehide listener did not self-remove');
+  assert(window.listenerCount() === 2, 'BFCache lifecycle listeners changed');
 }
 
 function runExactTeardown() {
@@ -424,6 +430,51 @@ function runReducedMotion() {
   click(value, 'play');
   assert(tracker.timers.size === 0, 'reduced motion started timer');
   assert(activeState(value) === 'state-0', 'reduced motion advanced state');
+  for (const action of ['play', 'pause', 'speed']) {
+    assert(value.controls.querySelector(`[data-action="${action}"]`).disabled, `reduced motion left ${action} enabled`);
+  }
+  assert(value.status.textContent.includes('視差低減'), 'reduced motion reason was not visible');
+  assert(value.announcement.textContent.includes('視差低減'), 'reduced motion reason was not accessible');
+}
+
+function runScenarioResetDefaults() {
+  for (const controlKind of ['select', 'radio']) {
+    const tracker = new Tracker();
+    const value = fixture(tracker, 'scenario', `-${controlKind}-defaults`, controlKind);
+    environment(tracker, [value]);
+    setParameter(value, 'b');
+    click(value, 'apply');
+    assert(activeState(value) === 'state-b', 'scenario setup did not select b');
+    click(value, 'reset');
+    const selected = value.controls.querySelector('select[data-parameter-id]');
+    const radios = value.controls.querySelectorAll('input[data-parameter-id]');
+    assert(selected ? selected.value === 'a' : radios.find((radio) => radio.value === 'a').checked && !radios.find((radio) => radio.value === 'b').checked, 'scenario reset did not restore default parameter');
+    assert(activeState(value) === 'state-a', 'scenario reset did not restore initial state');
+  }
+}
+
+function runBfcacheLifecycle() {
+  const tracker = new Tracker();
+  const value = fixture(tracker, 'stepper', '-bfcache');
+  const baseline = domSnapshot(value.root);
+  const window = environment(tracker, [value]);
+  for (let cycle = 0; cycle < 3; cycle += 1) {
+    click(value, 'next');
+    window.dispatchEvent({ type: 'pagehide', persisted: true, target: window });
+    assert(domSnapshot(value.root) === baseline, 'BFCache pagehide did not restore exact DOM');
+    assert(controlListenerCount(value) === 0, 'BFCache pagehide leaked control listeners');
+    window.dispatchEvent({ type: 'pageshow', persisted: true, target: window });
+    assert(value.root.classList.contains('is-enhanced'), 'BFCache pageshow did not reinitialize');
+    assert(controlListenerCount(value) === 2, 'BFCache pageshow duplicated listeners');
+    assert(tracker.timers.size === 0, 'BFCache lifecycle leaked timer');
+  }
+  window.dispatchEvent({ type: 'pagehide', persisted: true, target: window });
+  tracker.failAt = tracker.mutations + 1;
+  window.dispatchEvent({ type: 'pageshow', persisted: true, target: window });
+  assert(value.root.classList.contains('has-runtime-error'), 'BFCache reinitialization failure did not expose fallback');
+  assert(value.controls.hidden, 'BFCache reinitialization failure exposed controls');
+  assert(controlListenerCount(value) === 0, 'BFCache reinitialization failure leaked listeners');
+  assert(tracker.timers.size === 0, 'BFCache reinitialization failure leaked timer');
 }
 
 function runTerminalPlayback() {
@@ -555,8 +606,8 @@ function runFaultMatrix() {
   for (const [mode, controlKind] of configurations) {
     const countTracker = new Tracker();
     const countFixture = fixture(countTracker, mode, '-count', controlKind);
-    if (['scenario', 'hybrid', 'explorer'].includes(mode)) { setParameter(countFixture, 'b'); }
     const countWindow = environment(countTracker, [countFixture]);
+    if (['scenario', 'hybrid', 'explorer'].includes(mode)) { setParameter(countFixture, 'b'); }
     actionSequence(countFixture, countTracker, mode);
     const mutationCount = countTracker.mutations;
     countWindow.dispatchEvent({ type: 'pagehide', target: countWindow });
@@ -565,9 +616,9 @@ function runFaultMatrix() {
       const tracker = new Tracker();
       tracker.failAt = fault;
       const value = fixture(tracker, mode, `-${controlKind}-${fault}`, controlKind);
-      if (['scenario', 'hybrid', 'explorer'].includes(mode)) { setParameter(value, 'b'); }
       const baseline = domSnapshot(value.root);
       const window = environment(tracker, [value]);
+      if (value.root.classList.contains('is-enhanced') && ['scenario', 'hybrid', 'explorer'].includes(mode)) { setParameter(value, 'b'); }
       actionSequence(value, tracker, mode);
       assert(controlListenerCount(value) === 0, `${mode} mutation ${fault} leaked listeners`);
       assert(tracker.timers.size === 0, `${mode} mutation ${fault} leaked timer`);
@@ -627,6 +678,8 @@ runLoadAbsence();
 runModes();
 runExactTeardown();
 runReducedMotion();
+runScenarioResetDefaults();
+runBfcacheLifecycle();
 runTerminalPlayback();
 runExactEventResolution();
 runValidationMutations();

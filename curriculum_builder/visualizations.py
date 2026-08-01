@@ -1024,11 +1024,16 @@ def _validate_simulation_domain(
     states: tuple[SimulationState, ...],
     initial_state_id: str,
     transitions: tuple[SimulationTransition, ...],
+    default_selection: Mapping[str, str],
 ) -> None:
     # Scenario selection is a total partition lookup, not an event graph. An
     # empty edge set keeps Apply and Reset independent of synthetic transitions.
     if mode is InteractionMode.SCENARIO and transitions:
         _fail(path, "scenario transitions must be empty")
+    if mode is InteractionMode.SCENARIO:
+        initial = next(state for state in states if state.id == initial_state_id)
+        if not _matches(initial.when, default_selection):
+            _fail(path, "scenario initial state must match parameter defaults")
     transition_index = _index_simulation_transitions(transitions)
     conditional_path_mode = mode in {
         InteractionMode.HYBRID,
@@ -1351,6 +1356,10 @@ def _parse_simulation(
         states=states,
         initial_state_id=initial,
         transitions=transitions,
+        default_selection={
+            parameter.id: parameter.default_option_id
+            for parameter in parameters
+        },
     )
     _validate_unconditional_reachability(path, mode, state_ids, initial, transitions)
     return Simulation(
@@ -2462,9 +2471,11 @@ def _render_simulation_oracle(simulation: Simulation) -> str:
         if state.id == simulation.initial_state_id
     )
     status = (
-        '<p class="visualization__current-status" aria-live="polite">'
+        '<p class="visualization__current-status">'
         f"現在の状態: {_e(initial.label)} — {_e(initial.status)}"
         "</p>"
+        '<p class="visualization__announcement" aria-live="polite" '
+        'aria-atomic="true"></p>'
     )
     model_note = (
         '<p class="visualization__simulation-note">'

@@ -717,6 +717,17 @@ members: `window.matchMedia`, `window.setTimeout`, `window.clearTimeout`, and
 and aliases hidden in expressions or containers instead of extending regex
 data-flow inference.
 
+Reject `constructor`, `prototype`, and `__proto__` in executable or split
+computed-member form. Limit `document` to the fixed complete direct
+`querySelectorAll` call. Validate deferred scripts as empty direct `body`
+children in generated-document validation, the build parser, and the checker.
+
+Keep timer-driven visible status synchronized without writing to the polite
+live region; reserve announcements for explicit actions. Scenario Reset first
+restores select/radio defaults, reduced motion disables playback controls with
+an accessible reason, and persisted BFCache `pageshow` transactionally
+reinitializes exactly once after `pagehide` teardown.
+
 Add non-color visual rules for the runtime's fixed enhanced, active, complete,
 and error classes, including forced-colors, reduced-motion, focus, and print
 behavior. CSS generated content never supplies state text; the semantic DOM

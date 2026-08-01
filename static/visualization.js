@@ -9,6 +9,7 @@
   var OUTCOME = '.visualization__simulation-outcome[data-outcome-id]';
   var CONTROLS = '.visualization__controls';
   var STATUS = '.visualization__current-status';
+  var ANNOUNCEMENT = '.visualization__announcement';
   var CLASSES = ['is-enhanced', 'is-active', 'is-complete', 'has-runtime-error'];
   var EVENTS = ['next', 'previous', 'timer', 'parameter-change', 'reset'];
   var KINDS = ['complexity-growth', 'memory-access', 'scheduler-interleaving', 'request-path', 'retry-contract', 'isolation-schedule', 'distributed-failure', 'queue-capacity', 'slo-burn', 'accessible-ui-state', 'migration-phase', 'release-safety'];
@@ -21,7 +22,7 @@
   };
   var controllers = new Map();
 
-  function values(list) { return Array.prototype.slice.call(list); }
+  function values(list) { return Array.from(list); }
   function attribute(element, name) { return element.getAttribute(name); }
   function exactData(element, expected) {
     // Reject unknown renderer data instead of letting malformed markup silently
@@ -51,7 +52,9 @@
       disabled: 'disabled' in element ? element.disabled : null,
       current: controller.states.indexOf(element) >= 0 ? attribute(element, 'aria-current') : undefined,
       pressed: element === controller.playButton ? attribute(element, 'aria-pressed') : undefined,
-      text: element === controller.status || element === controller.playButton ? element.textContent : undefined
+      text: element === controller.status || element === controller.announcement || element === controller.playButton ? element.textContent : undefined,
+      value: 'value' in element ? element.value : undefined,
+      checked: 'checked' in element ? element.checked : undefined
     };
   }
   function conditionMap(element, selector) {
@@ -71,10 +74,30 @@
     });
     return result;
   }
+  var ControllerMethods = {};
   function Controller(root) {
+    this.validate = ControllerMethods.validate;
+    this.selection = ControllerMethods.selection;
+    this.validateTransitionDomain = ControllerMethods.validateTransitionDomain;
+    this.transition = ControllerMethods.transition;
+    this.scenarioState = ControllerMethods.scenarioState;
+    this.hasTransition = ControllerMethods.hasTransition;
+    this.setPlaying = ControllerMethods.setPlaying;
+    this.stop = ControllerMethods.stop;
+    this.unbind = ControllerMethods.unbind;
+    this.restore = ControllerMethods.restore;
+    this.fail = ControllerMethods.fail;
+    this.applyState = ControllerMethods.applyState;
+    this.schedule = ControllerMethods.schedule;
+    this.restoreParameters = ControllerMethods.restoreParameters;
+    this.action = ControllerMethods.action;
+    this.bind = ControllerMethods.bind;
+    this.initialize = ControllerMethods.initialize;
+    this.dispose = ControllerMethods.dispose;
     this.root = root;
     this.controls = root.querySelector(CONTROLS);
     this.status = root.querySelector(STATUS);
+    this.announcement = root.querySelector(ANNOUNCEMENT);
     this.states = values(root.querySelectorAll(STATE));
     this.nodes = values(root.querySelectorAll(NODE));
     this.edges = values(root.querySelectorAll(EDGE));
@@ -82,7 +105,7 @@
     this.outcomeElements = values(root.querySelectorAll(OUTCOME));
     this.playButton = this.controls ? this.controls.querySelector('[data-action="play"]') : null;
     this.speed = this.controls ? this.controls.querySelector('select[data-action="speed"]') : null;
-    this.mutable = [root, this.controls, this.status]
+    this.mutable = [root, this.controls, this.status, this.announcement]
       .concat(this.states, this.nodes, this.edges)
       .concat(values(this.controls ? this.controls.querySelectorAll('button, select, input, fieldset') : []))
       .filter(Boolean);
@@ -95,7 +118,7 @@
     this.reduced = motionPreference.matches;
     this.mutable.forEach(function (element) { this.snapshot.set(element, capture(element, this)); }, this);
   }
-  Controller.prototype.validate = function () {
+  ControllerMethods.validate = function () {
     var mode = attribute(this.root, 'data-interaction-mode');
     var kind = attribute(this.root, 'data-simulation-kind');
     var intervalSource = attribute(this.root, 'data-default-interval-ms');
@@ -106,7 +129,7 @@
     var domIds = [this.root].concat(values(this.root.querySelectorAll('[id]')));
     var actions = values(this.controls ? this.controls.querySelectorAll('button[data-action]') : [])
       .map(function (button) { return attribute(button, 'data-action'); }).sort();
-    if (!this.controls || !this.status || !this.states.length || this.states.length > 64 ||
+    if (!this.controls || !this.status || !this.announcement || !this.states.length || this.states.length > 64 ||
         !rootId || rootId !== visualizationId ||
         !exactData(this.root, ['data-visualization-id', 'data-simulation-kind', 'data-interaction-mode', 'data-initial-state-id', 'data-default-interval-ms']) ||
         !unique(domIds, 'id') || KINDS.indexOf(kind) < 0 || !expected ||
@@ -210,9 +233,10 @@
     if ((mode === 'scenario' || mode === 'hybrid' || mode === 'explorer') !== Boolean(this.parameters.size)) { throw new Error('invalid parameter set'); }
     this.selection();
     this.validateTransitionDomain();
+    if (mode === 'scenario' && this.scenarioState() !== this.initialId) { throw new Error('scenario defaults do not select initial state'); }
     this.currentId = this.initialId;
   };
-  Controller.prototype.selection = function () {
+  ControllerMethods.selection = function () {
     var result = new Map();
     this.parameters.forEach(function (options, parameter) {
       var controls = values(this.controls.querySelectorAll('[data-parameter-id]')).filter(function (control) { return attribute(control, 'data-parameter-id') === parameter; });
@@ -222,7 +246,7 @@
     }, this);
     return result;
   };
-  Controller.prototype.validateTransitionDomain = function () {
+  ControllerMethods.validateTransitionDomain = function () {
     // The schema caps the Cartesian selection domain at 64. Enumerating that
     // finite domain makes ambiguity a pre-mutation validation error.
     var selections = [new Map()];
@@ -284,7 +308,7 @@
       }, this);
     }, this);
   };
-  Controller.prototype.transition = function (eventName, announce) {
+  ControllerMethods.transition = function (eventName, announce) {
     // Authored event identity is part of the edge key; ordinal state position
     // is deliberately absent so a missing edge cannot become an implicit move.
     var selection = this.selection();
@@ -300,7 +324,7 @@
     this.applyState(this.currentId, announce);
     return true;
   };
-  Controller.prototype.scenarioState = function () {
+  ControllerMethods.scenarioState = function () {
     var selection = this.selection();
     var states = [];
     this.stateById.forEach(function (state, stateId) {
@@ -309,28 +333,28 @@
     if (states.length !== 1) { throw new Error('invalid scenario partition'); }
     return states[0];
   };
-  Controller.prototype.hasTransition = function (eventName) {
+  ControllerMethods.hasTransition = function (eventName) {
     var selection = this.selection();
     return this.transitions.some(function (transition) {
       return transition.from === this.currentId && transition.eventName === eventName && matches(transition.conditions, selection);
     }, this);
   };
-  Controller.prototype.setPlaying = function (playing) {
+  ControllerMethods.setPlaying = function (playing) {
     this.playing = playing;
     if (this.playButton) {
       this.playButton.setAttribute('aria-pressed', playing ? 'true' : 'false');
       this.playButton.textContent = playing ? '再生中' : '再生';
     }
   };
-  Controller.prototype.stop = function () {
+  ControllerMethods.stop = function () {
     if (this.timer !== null) { window.clearTimeout(this.timer); this.timer = null; }
     this.setPlaying(false);
   };
-  Controller.prototype.unbind = function () {
+  ControllerMethods.unbind = function () {
     this.listeners.forEach(function (binding) { binding[0].removeEventListener(binding[1], binding[2]); });
     this.listeners = [];
   };
-  Controller.prototype.restore = function () {
+  ControllerMethods.restore = function () {
     if (this.timer !== null) { window.clearTimeout(this.timer); this.timer = null; }
     this.playing = false;
     this.snapshot.forEach(function (saved, element) {
@@ -344,9 +368,11 @@
         if (saved.pressed === null) { element.removeAttribute('aria-pressed'); } else { element.setAttribute('aria-pressed', saved.pressed); }
       }
       if (saved.text !== undefined) { element.textContent = saved.text; }
+      if (saved.value !== undefined) { element.value = saved.value; }
+      if (saved.checked !== undefined) { element.checked = saved.checked; }
     });
   };
-  Controller.prototype.fail = function () {
+  ControllerMethods.fail = function () {
     var showFallback = this.mutated;
     this.unbind();
     if (showFallback) { this.restore(); }
@@ -354,10 +380,11 @@
     if (showFallback && this.root && this.status && this.controls) {
       this.root.classList.add('has-runtime-error');
       this.controls.hidden = true;
-      this.status.textContent = '動的表示を利用できません。静的図を表示しています。';
+    this.status.textContent = '動的表示を利用できません。静的図を表示しています。';
+    if (this.announcement) { this.announcement.textContent = this.status.textContent; }
     }
   };
-  Controller.prototype.applyState = function (stateId, announce) {
+  ControllerMethods.applyState = function (stateId, announce) {
     var selected = this.stateById.get(stateId);
     if (!selected) { throw new Error('unknown state'); }
     this.states.forEach(function (state) {
@@ -369,10 +396,11 @@
     this.edges.forEach(function (edge) { edge.classList.toggle('is-active', selected.edges.has(attribute(edge, 'data-edge-id'))); });
     var forwardEvent = this.mode === 'playback' || this.mode === 'hybrid' ? 'timer' : 'next';
     this.root.classList.toggle('is-complete', !this.hasTransition(forwardEvent));
-    if (announce) { this.status.textContent = selected.element.textContent.trim(); }
+    this.status.textContent = selected.element.textContent.trim();
+    if (announce) { this.announcement.textContent = this.status.textContent; }
     if (!this.hasTransition('timer') && this.playing) { this.stop(); }
   };
-  Controller.prototype.schedule = function () {
+  ControllerMethods.schedule = function () {
     var controller = this;
     if (!this.playing || this.reduced || this.timer !== null || !this.hasTransition('timer')) { return; }
     this.timer = window.setTimeout(function () {
@@ -383,7 +411,14 @@
       } catch (error) { controller.fail(); }
     }, this.interval * (this.speed ? { '0.5': 2, '1': 1, '2': 0.5 }[this.speed.value] : 1));
   };
-  Controller.prototype.action = function (name) {
+  ControllerMethods.restoreParameters = function () {
+    values(this.controls.querySelectorAll('[data-parameter-id]')).forEach(function (control) {
+      var saved = this.snapshot.get(control);
+      if (saved.value !== undefined) { control.value = saved.value; }
+      if (saved.checked !== undefined) { control.checked = saved.checked; }
+    }, this);
+  };
+  ControllerMethods.action = function (name) {
     if (name === 'next') {
       this.stop();
       this.transition('next', true);
@@ -399,6 +434,7 @@
     } else if (name === 'reset') {
       this.stop();
       if (this.mode === 'scenario') {
+        this.restoreParameters();
         this.currentId = this.initialId;
         this.applyState(this.currentId, true);
       } else { this.transition('reset', true); }
@@ -409,7 +445,7 @@
       this.schedule();
     }
   };
-  Controller.prototype.bind = function () {
+  ControllerMethods.bind = function () {
     var controller = this;
     function add(target, type, handler) {
       target.addEventListener(type, handler);
@@ -426,25 +462,34 @@
       }
     });
   };
-  Controller.prototype.initialize = function () {
+  ControllerMethods.initialize = function () {
     this.validate();
     this.bind();
     this.mutated = true;
     this.applyState(this.currentId, false);
     values(this.controls.querySelectorAll('button, select, input, fieldset')).forEach(function (control) { control.disabled = false; });
+    if (this.reduced) {
+      [this.playButton, this.controls.querySelector('[data-action="pause"]'), this.speed].filter(Boolean).forEach(function (control) { control.disabled = true; });
+      this.status.textContent += '（視差低減設定のため自動再生は利用できません）';
+      this.announcement.textContent = '視差低減設定のため自動再生は利用できません';
+    }
     this.controls.hidden = false;
     this.root.classList.add('is-enhanced');
   };
-  Controller.prototype.dispose = function () { this.unbind(); this.restore(); };
+  ControllerMethods.dispose = function () { this.unbind(); this.restore(); };
 
   function initialize(root) {
     var controller = new Controller(root);
     try { controller.initialize(); controllers.set(root, controller); }
     catch (error) { controller.fail(); }
   }
-  values(document.querySelectorAll(ROOT)).forEach(initialize);
+  var simulationRoots = document.querySelectorAll(ROOT);
+  values(simulationRoots).forEach(initialize);
   window.addEventListener('pagehide', function () {
     controllers.forEach(function (controller) { controller.dispose(); });
     controllers.clear();
-  }, { once: true });
+  });
+  window.addEventListener('pageshow', function (event) {
+    if (event.persisted && controllers.size === 0) { values(simulationRoots).forEach(initialize); }
+  });
 }());

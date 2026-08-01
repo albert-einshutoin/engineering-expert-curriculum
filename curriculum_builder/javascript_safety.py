@@ -43,7 +43,7 @@ _FORBIDDEN_NAVIGATION_MEMBER: Final = re.compile(
 )
 _BROWSER_AUTHORITY: Final = re.compile(
     r"(?<![A-Za-z0-9_$])"
-    r"(window|globalThis|navigator|self|top|parent)"
+    r"(window|document|globalThis|navigator|self|top|parent)"
     r"(?![A-Za-z0-9_$])",
     re.ASCII,
 )
@@ -55,8 +55,19 @@ _DIRECT_WINDOW_CALL: Final = re.compile(
     r"\s*\.\s*([A-Za-z_$][A-Za-z0-9_$]*)(?![A-Za-z0-9_$])\s*\(",
     re.ASCII,
 )
-_ALLOWED_WINDOW_MEMBERS: Final = frozenset(
-    {"addEventListener", "clearTimeout", "matchMedia", "setTimeout"}
+_ALLOWED_AUTHORITY_CALLS: Final = {
+    "window": frozenset(
+        {"addEventListener", "clearTimeout", "matchMedia", "setTimeout"}
+    ),
+    "document": frozenset({"querySelectorAll"}),
+}
+_FORBIDDEN_META_MEMBER: Final = re.compile(
+    r"(?<![A-Za-z0-9_$])(?:constructor|prototype|__proto__)(?![A-Za-z0-9_$])",
+    re.ASCII,
+)
+_QUOTED_IDENTIFIER: Final = re.compile(
+    r"(['\"])([A-Za-z_$][A-Za-z0-9_$]*)\1",
+    re.ASCII,
 )
 
 
@@ -134,10 +145,12 @@ def _has_forbidden_browser_authority(code: str) -> bool:
     if _DOCUMENT_DEFAULT_VIEW.search(code):
         return True
     for authority in _BROWSER_AUTHORITY.finditer(code):
-        if authority.group(1) != "window":
+        root = authority.group(1)
+        allowed = _ALLOWED_AUTHORITY_CALLS.get(root)
+        if allowed is None:
             return True
         call = _DIRECT_WINDOW_CALL.match(code, authority.end())
-        if call is None or call.group(1) not in _ALLOWED_WINDOW_MEMBERS:
+        if call is None or call.group(1) not in allowed:
             return True
         opening = call.end() - 1
         closing = _direct_call_end(code, opening)
@@ -147,6 +160,25 @@ def _has_forbidden_browser_authority(code: str) -> bool:
         while following < len(code) and code[following].isspace():
             following += 1
         if following >= len(code) or code[following] != ";":
+            return True
+    return False
+
+
+def _has_forbidden_meta_member(code: str, members: str) -> bool:
+    if _FORBIDDEN_META_MEMBER.search(code):
+        return True
+    for opening in (index for index, char in enumerate(members) if char == "["):
+        closing = members.find("]", opening + 1)
+        if closing < 0:
+            continue
+        expression = members[opening + 1:closing]
+        parts = [match.group(2) for match in _QUOTED_IDENTIFIER.finditer(expression)]
+        if not parts:
+            continue
+        residual = _QUOTED_IDENTIFIER.sub("", expression)
+        if re.fullmatch(r"\s*(?:\+\s*)*", residual) and "".join(parts) in {
+            "constructor", "prototype", "__proto__",
+        }:
             return True
     return False
 
@@ -189,6 +221,7 @@ def validate_javascript_bytes(source: object) -> str:
         _FORBIDDEN_NAVIGATION_CODE.search(code_view)
         or _FORBIDDEN_NAVIGATION_MEMBER.search(member_view)
         or _has_forbidden_browser_authority(code_view)
+        or _has_forbidden_meta_member(code_view, member_view)
     ):
         raise _error("visualization.js contains a forbidden navigation capability")
 
