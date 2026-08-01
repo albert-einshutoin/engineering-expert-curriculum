@@ -208,9 +208,13 @@ Expected: focused tests and all existing tests PASS.
 - Modify: `curriculum_builder/lesson_rendering.py`
 - Modify: `curriculum_builder/lessons.py`
 - Modify: `curriculum_builder/visualizations.py`
+- Modify: `curriculum_builder/html_safety.py`
+- Modify: `curriculum_builder/render.py`
 - Create: `tests/test_visualization_rendering.py`
 - Modify: `tests/test_lesson_quality.py`
 - Modify: `tests/test_lesson_rendering.py`
+- Modify: `tests/test_html_safety.py`
+- Modify: `tests/test_render.py`
 - Modify: `tests/fixtures/complete-lesson.json`
 - Modify: `tests/fixtures/incomplete-lesson.json`
 
@@ -260,6 +264,13 @@ Emit each visual immediately after the complete selected logical section. Keep
 `templates/lesson.html`'s single `$body` placeholder. Render the complete static
 parameter/state/transition/outcome oracle before any enhancement controls.
 
+Preserve the strict authored-fragment grammar. Add a separate closed generated
+HTML grammar and provenance-aware `SafeHtml` revalidation for renderer-owned
+native controls; revalidate each capability immediately before substitution and
+the final generated document. This is an explicit safety-boundary expansion of
+Task 2's file scope, required so valid simulation markup is both publishable and
+unable to widen what lesson authors may submit.
+
 - [ ] **Step 5: Integrate optional source IDs and optional visualizations**
 
 Add `Source.id: str | None` and `Lesson.visualizations`. During Tasks 2–6,
@@ -272,7 +283,7 @@ is mandatory and validated. The enforcement switch happens only in Task 7.
 ```bash
 python3.13 -m unittest tests.test_visualization_rendering tests.test_lesson_quality tests.test_lesson_rendering -v
 python3.13 -m unittest discover -s tests -v
-git add curriculum_builder/lesson_rendering.py curriculum_builder/lessons.py curriculum_builder/visualizations.py tests/test_visualization_rendering.py tests/test_lesson_quality.py tests/test_lesson_rendering.py tests/fixtures/complete-lesson.json tests/fixtures/incomplete-lesson.json
+git add curriculum_builder/lesson_rendering.py curriculum_builder/lessons.py curriculum_builder/visualizations.py curriculum_builder/html_safety.py curriculum_builder/render.py tests/test_visualization_rendering.py tests/test_lesson_quality.py tests/test_lesson_rendering.py tests/test_html_safety.py tests/test_render.py tests/fixtures/complete-lesson.json tests/fixtures/incomplete-lesson.json
 git commit -m "feat: render semantic lesson visualizations"
 ```
 
