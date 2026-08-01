@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass, replace
+from fractions import Fraction
 import hashlib
 from html import escape
 from html.parser import HTMLParser
@@ -4013,35 +4014,69 @@ class ContentAcceptanceTests(unittest.TestCase):
         )
         visual = document["visualizations"][0]
         self.assertEqual(visual["type"], "timeline")
+        expected_phase = (
+            "fixture-log",
+            "固定6 event log",
+            "seed 20260731の同じ完全logをduplicate、reorder、partition、recoveryの各観点で読む。",
+        )
+        self.assertEqual(
+            tuple(
+                (item["id"], item["label"], item["detail"])
+                for item in visual["payload"]["phases"]
+                if item["id"] == "fixture-log"
+            ),
+            (expected_phase,),
+        )
         expected_events = (
             (
                 "e1-confirm",
+                "e1 confirm",
                 "tick=1、kind=deliver、logical_sequence=2、delivery_priority=0。immediateにpending→confirmedを1回applyし、state・fingerprint・result=confirmed-onceをatomic commitする。",
+                "fixture-log",
+                6,
             ),
             (
                 "e2-partition-start",
+                "e2 partition start",
                 "tick=2、kind=partition_start。partitionをactiveにし、e1の永続commitを保持したまま以後のmessageをbufferする。",
+                "fixture-log",
+                7,
             ),
             (
                 "e3-status-read",
+                "e3 status read",
                 "tick=3、kind=deliver、logical_sequence=4、delivery_priority=1。partition中なのでstatus readはapplyせずbufferし、利用者結果を未確定のまま保つ。",
+                "fixture-log",
+                8,
             ),
             (
                 "e4-confirm-retry",
+                "e4 confirm retry",
                 "tick=4、kind=duplicate、logical_sequence=2、delivery_priority=2。同じkeyとfingerprintのretryをbufferし、回復時もeffectを再applyせず保存済みresultを再利用する。",
+                "fixture-log",
+                9,
             ),
             (
                 "e5-reconcile-read",
+                "e5 reconcile read",
                 "tick=5、kind=deliver、logical_sequence=3、delivery_priority=0。partition中にbufferし、回復時はe3のsequence=4より先にgapを埋めるread-only resultを得る。",
+                "fixture-log",
+                10,
             ),
             (
                 "e6-partition-end",
+                "e6 partition end",
                 "tick=6、kind=partition_end。deadline=8以内にrecoveryし、priority順e5→e3→e4で解放する。最終state=confirmed、apply=1、result reuse=1として順序差と残留messageを再評価する。",
+                "fixture-log",
+                11,
             ),
         )
         self.assertEqual(
             tuple(
-                (item["id"], item["detail"])
+                (
+                    item["id"], item["label"], item["detail"],
+                    item["phaseId"], item["order"],
+                )
                 for item in visual["payload"]["events"]
                 if item["id"].startswith("e")
             ),
@@ -4064,9 +4099,100 @@ class ContentAcceptanceTests(unittest.TestCase):
         )
         model = load_lesson_bytes(path.read_bytes(), path.name).visualizations[0]
         no_js = str(render_visualization(lesson_id, model))
-        for event_id, detail in expected_events:
+        for event_id, _label, detail, _phase_id, _order in expected_events:
             self.assertIn(event_id, no_js)
             self.assertIn(detail, no_js)
+
+        def additive_projection(candidate: dict[str, object]) -> tuple[object, object]:
+            payload = candidate["visualizations"][0]["payload"]
+            phase = next(item for item in payload["phases"] if item["id"] == "fixture-log")
+            events = tuple(
+                (
+                    item["id"], item["label"], item["detail"],
+                    item["phaseId"], item["order"],
+                )
+                for item in payload["events"]
+                if item["id"].startswith("e")
+            )
+            return (phase["id"], phase["label"], phase["detail"]), events
+
+        expected_projection = (expected_phase, expected_events)
+        self.assertEqual(additive_projection(document), expected_projection)
+        for field, replacement in (
+            ("event-label", "mutated e1"),
+            ("phase-label", "mutated fixture log"),
+            ("phase-detail", "mutated seed detail"),
+        ):
+            mutated = deepcopy(document)
+            if field == "event-label":
+                next(
+                    item for item in mutated["visualizations"][0]["payload"]["events"]
+                    if item["id"] == "e1-confirm"
+                )["label"] = replacement
+            else:
+                phase = next(
+                    item for item in mutated["visualizations"][0]["payload"]["phases"]
+                    if item["id"] == "fixture-log"
+                )
+                phase["label" if field == "phase-label" else "detail"] = replacement
+            with self.subTest(mutation=field):
+                self.assertNotEqual(additive_projection(mutated), expected_projection)
+
+    def test_task10_core15_recomputes_burn_rates_from_authored_event_counts(self) -> None:
+        lesson_id = "core-15-reliability-observability-slo"
+        path = REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json"
+        document = json.loads(path.read_bytes())
+
+        def arithmetic(candidate: dict[str, object]) -> dict[str, tuple[Fraction, Fraction, bool]]:
+            states = {
+                item["id"]: item["status"]
+                for item in candidate["visualizations"][0]["simulation"]["states"]
+            }
+            result = {}
+            pattern = re.compile(
+                r"error budget=(?P<budget>\d+)%.*"
+                r"5分は(?P<short_bad>\d+)/(?P<short_valid>\d+) badでshort burn=(?P<short_burn>[0-9.]+)、"
+                r"60分は(?P<long_bad>\d+)/(?P<long_valid>\d+) badでlong burn=(?P<long_burn>[0-9.]+)、page=(?P<page>true|false)"
+            )
+            for state_id in ("fast-burn", "page-triggered"):
+                match = pattern.search(states[state_id])
+                self.assertIsNotNone(match, state_id)
+                values = match.groupdict()
+                budget = Fraction(int(values["budget"]), 100)
+                short = Fraction(
+                    int(values["short_bad"]), int(values["short_valid"])
+                ) / budget
+                long = Fraction(
+                    int(values["long_bad"]), int(values["long_valid"])
+                ) / budget
+                displayed_short = Fraction(values["short_burn"])
+                displayed_long = Fraction(values["long_burn"])
+                self.assertEqual(displayed_short, short)
+                if long.denominator == 1:
+                    self.assertEqual(displayed_long, long)
+                else:
+                    self.assertEqual(f"{float(long):.4f}", values["long_burn"])
+                page = short >= 2 and long >= 2
+                self.assertEqual(values["page"] == "true", page)
+                result[state_id] = short, long, page
+            return result
+
+        self.assertEqual(
+            arithmetic(document),
+            {
+                "fast-burn": (Fraction(2), Fraction(1, 6), False),
+                "page-triggered": (Fraction(10), Fraction(2), True),
+            },
+        )
+        mutated = deepcopy(document)
+        fast_burn = next(
+            item
+            for item in mutated["visualizations"][0]["simulation"]["states"]
+            if item["id"] == "fast-burn"
+        )
+        fast_burn["status"] = fast_burn["status"].replace("1/5 bad", "2/5 bad")
+        with self.assertRaises(AssertionError):
+            arithmetic(mutated)
 
     def test_task10_core13_event_case_applies_distinct_active_lenses(self) -> None:
         lesson_id = "core-13-distributed-coordination-failure"
