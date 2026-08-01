@@ -176,6 +176,7 @@
     "objectiveIds": ["obj-model", "obj-control"], "evidenceIds": ["threat-model"], "sourceIds": ["src-01", "src-04"],
     "expectedObservation": "assetと境界から観測可能なthreatをたどり、予防・検知・回復、test結果、残余riskの所有者まで説明できる。",
     "notes": [
+      "この注記は旧図の読み順を保持する補助です。",
       "asset: customer data、deployment credential、audit logの価値と安全性目標を定義する。",
       "actorとboundary: external customer、operations contractor、platform adminをID・type・scopeを持つentityとして定義し、flowの起点と越境点へ参照させる。",
       "threat: 意図ではなく、credential再利用、誤ったbulk export、audit停止など観測可能な行為で表す。",

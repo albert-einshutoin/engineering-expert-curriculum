@@ -173,6 +173,7 @@
     "objectiveIds": ["obj-strategy-evidence", "obj-reversible-leadership"], "evidenceIds": ["technical-strategy"], "sourceIds": ["src-01", "src-02", "src-03", "src-04"],
     "expectedObservation": "system outcome、複数metric、反証条件、投資順、可逆なfirst step、withdrawal conditionを一つの判断経路として説明できる。",
     "notes": [
+      "この注記は旧図の読み順を保持する補助です。",
       "Frame: system outcome、非目標、decision rightsを合意する。",
       "Measure: five metrics、risk、cost、利用者影響を別々に観測する。",
       "Challenge: uncertaintyとdissentから反証条件を作る。",

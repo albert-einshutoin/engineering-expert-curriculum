@@ -168,6 +168,7 @@
     "objectiveIds": ["obj-comprehension", "obj-characterization"], "evidenceIds": ["system-map"], "sourceIds": ["src-01", "src-02"],
     "expectedObservation": "change requestから実行経路、component、side effect、未知領域、characterization test、停止判断までを指し示せる。",
     "notes": [
+      "この注記は旧図の読み順を保持する補助です。",
       "Reason: 誰のどの結果を変える要求かを一文で固定する。",
       "Trace: entry pointから実際のexecution pathを入力付きで追う。",
       "Map: component、data、side effect、ownerを経路へ結ぶ。",

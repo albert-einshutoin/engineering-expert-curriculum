@@ -230,7 +230,7 @@ class VisualizationRenderingTests(unittest.TestCase):
                     if "connector" in (attrs.get("class") or ""):
                         self.assertNotEqual(tag, "span")
 
-    def test_notes_render_as_an_ordered_companion_before_the_typed_model(self) -> None:
+    def test_generic_notes_render_before_model_without_legacy_claims(self) -> None:
         html = render_visualization(
             "core-01-systems-tradeoffs",
             _visual(
@@ -239,8 +239,8 @@ class VisualizationRenderingTests(unittest.TestCase):
             ),
         ).value
 
-        heading = html.index("旧図の読み順（補助）")
-        explanation = html.index("後続の構造化モデルとは別の補助読順です。")
+        heading = html.index("注記")
+        explanation = html.index("図を読む際の補足情報です。")
         notes = html.index('class="visualization__companion-notes"')
         first_note = html.index("note &lt;escaped&gt;")
         model = html.index("a detail")
@@ -248,6 +248,7 @@ class VisualizationRenderingTests(unittest.TestCase):
         self.assertLess(explanation, notes)
         self.assertLess(notes, first_note)
         self.assertLess(first_note, model)
+        self.assertNotIn("旧図", html)
         self.assertIn(
             '<ol class="visualization__companion-notes">',
             html,

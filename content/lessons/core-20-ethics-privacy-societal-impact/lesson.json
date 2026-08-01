@@ -177,6 +177,7 @@
     "objectiveIds": ["obj-impact", "obj-residual"], "evidenceIds": ["assessment"], "sourceIds": ["src-01", "src-02", "src-04"],
     "expectedObservation": "affected peopleとdata lifecycleから害を具体化し、軽減前risk、軽減策、unevenな残余riskまで追跡できる。",
     "notes": [
+      "この注記は旧図の読み順を保持する補助です。",
       "People: 利益、害、権力、退出可能性が異なる集団を列挙する。",
       "Lifecycle: collect、use、share、retain、deleteの目的とownerを追う。",
       "Harm: privacy、security、accessibility、人権、労働への害を具体化する。",

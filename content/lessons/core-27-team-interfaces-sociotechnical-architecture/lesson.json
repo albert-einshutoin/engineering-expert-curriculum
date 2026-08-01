@@ -171,6 +171,7 @@
     "objectiveIds": ["obj-team-interface", "obj-cognitive-load"], "evidenceIds": ["team-interface"], "sourceIds": ["src-01", "src-02", "src-03"],
     "expectedObservation": "checkoutとplatformの依存を、decision right、認知負荷、dependency latency、enablement判断まで結んで説明できる。",
     "notes": [
+      "この注記は旧図の読み順を保持する補助です。",
       "Ownership: checkout teamがcheckout capabilityのdecision rightを持つ。",
       "Dependency: checkoutはplatform capabilityへ依存する。",
       "Cognitive load: assigned領域をcapacityと比較し、過負荷を個人努力へ隠さない。",

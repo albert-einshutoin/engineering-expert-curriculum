@@ -74,6 +74,19 @@ TASK5_VISUAL_TYPES = {
     "core-27-team-interfaces-sociotechnical-architecture": "network",
     "core-30-evidence-based-technical-leadership": "causal",
 }
+TASK5_READING_ORDER_MARKER = "この注記は旧図の読み順を保持する補助です。"
+TASK5_VISUAL_IDENTITIES = {
+    "core-01-systems-tradeoffs": "decision-causal-loop",
+    "core-06-requirements-domain-modeling": "domain-model-network",
+    "core-08-modularity-evolutionary-architecture": "module-dependency-network",
+    "core-10-threat-modeling-secure-design": "threat-trace-network",
+    "core-14-performance-capacity": "capacity-causal-cycle",
+    "core-18-product-discovery-experiments": "experiment-decision-causal",
+    "core-20-ethics-privacy-societal-impact": "impact-causal-chain",
+    "core-21-maintenance-legacy-comprehension": "legacy-comprehension-network",
+    "core-27-team-interfaces-sociotechnical-architecture": "team-interface-network",
+    "core-30-evidence-based-technical-leadership": "leadership-decision-causal",
+}
 TASK5_COMPANION_NOTES = {
     "core-01-systems-tradeoffs": (
         "目的: 利用者が二秒以内に受付結果を知る。",
@@ -404,11 +417,15 @@ def _complete_task5_contracts() -> None:
     for lesson_id, contract in TASK5_VISUAL_CONTRACTS.items():
         objective_ids, evidence_ids, source_ids = contract["trace"]
         contract["common"] = (
+            TASK5_VISUAL_IDENTITIES[lesson_id],
+            TASK5_VISUAL_TYPES[lesson_id],
+            "mentalModel",
             *TASK5_COMMON_TEXT[lesson_id],
             objective_ids,
             evidence_ids,
             source_ids,
-            TASK5_COMPANION_NOTES[lesson_id],
+            (TASK5_READING_ORDER_MARKER, *TASK5_COMPANION_NOTES[lesson_id]),
+            None,
         )
         details = TASK5_ITEM_DETAILS[lesson_id]
         if "structure" in contract:
@@ -995,6 +1012,9 @@ def _task5_visual_projection(document: dict[str, object]) -> dict[str, object]:
     payload = visual["payload"]  # type: ignore[index]
     projection: dict[str, object] = {
         "common": (
+            visual["id"],  # type: ignore[index]
+            visual["type"],  # type: ignore[index]
+            visual["afterSection"],  # type: ignore[index]
             visual["caption"],  # type: ignore[index]
             visual["question"],  # type: ignore[index]
             visual["expectedObservation"],  # type: ignore[index]
@@ -1002,6 +1022,7 @@ def _task5_visual_projection(document: dict[str, object]) -> dict[str, object]:
             tuple(visual["evidenceIds"]),  # type: ignore[index]
             tuple(visual["sourceIds"]),  # type: ignore[index]
             tuple(visual.get("notes", ())),  # type: ignore[union-attr]
+            visual.get("simulation"),  # type: ignore[union-attr]
         ),
         "trace": (
             tuple(visual["objectiveIds"]),  # type: ignore[index]
@@ -2014,7 +2035,15 @@ class ContentAcceptanceTests(unittest.TestCase):
                 )
                 document = json.loads(path.read_bytes())
                 visual_document = document["visualizations"][0]
-                self.assertEqual(tuple(visual_document["notes"]), expected_notes)
+                self.assertEqual(
+                    tuple(visual_document["notes"]),
+                    (TASK5_READING_ORDER_MARKER, *expected_notes),
+                )
+                self.assertLessEqual(len(visual_document["notes"]), 8)
+                self.assertEqual(
+                    visual_document["afterSection"],
+                    legacy_by_lesson[lesson_id]["sectionRole"],
+                )
                 lesson = load_lesson_bytes(path.read_bytes(), "lesson.json")
                 rendered = render_visualization(
                     lesson_id, lesson.visualizations[0]
@@ -2025,13 +2054,13 @@ class ContentAcceptanceTests(unittest.TestCase):
                 ]
                 self.assertEqual(offsets, sorted(offsets))
                 self.assertEqual(len(offsets), len(set(offsets)))
-                companion = rendered.index("旧図の読み順（補助）")
+                marker = rendered.index(TASK5_READING_ORDER_MARKER)
                 model_class = (
                     "visualization__causal-model"
                     if TASK5_VISUAL_TYPES[lesson_id] == "causal"
                     else "visualization__components"
                 )
-                self.assertLess(companion, offsets[0])
+                self.assertLess(marker, offsets[0])
                 self.assertLess(offsets[-1], rendered.index(model_class))
 
     def test_task5_exact_contract_rejects_semantic_relationship_and_source_mutations(
@@ -2143,6 +2172,62 @@ class ContentAcceptanceTests(unittest.TestCase):
                 "core-08-modularity-evolutionary-architecture"
             ],
         )
+
+    def test_task5_exact_contract_rejects_identity_placement_and_simulation_mutations(
+        self,
+    ) -> None:
+        path = (
+            REPOSITORY_ROOT
+            / "content/lessons/core-01-systems-tradeoffs/lesson.json"
+        )
+        document = json.loads(path.read_bytes())
+        expected = TASK5_VISUAL_CONTRACTS["core-01-systems-tradeoffs"]
+
+        renamed = deepcopy(document)
+        renamed["visualizations"][0]["id"] = "renamed-causal-loop"
+        load_lesson_bytes(
+            json.dumps(renamed, ensure_ascii=False).encode("utf-8"),
+            "lesson.json",
+        )
+        self.assertNotEqual(_task5_visual_projection(renamed), expected)
+
+        relocated = deepcopy(document)
+        relocated["visualizations"][0]["afterSection"] = "workedExample"
+        load_lesson_bytes(
+            json.dumps(relocated, ensure_ascii=False).encode("utf-8"),
+            "lesson.json",
+        )
+        self.assertNotEqual(_task5_visual_projection(relocated), expected)
+
+        with_simulation = deepcopy(document)
+        with_simulation["visualizations"][0]["simulation"] = {
+            "kind": "request-path",
+            "interactionMode": "scenario",
+            "parameters": [],
+            "initialStateId": "inserted-state",
+            "states": [
+                {
+                    "id": "inserted-state",
+                    "label": "挿入状態",
+                    "status": "観測可能",
+                    "activeNodeIds": ["constraints"],
+                    "activeEdgeIds": [],
+                }
+            ],
+            "transitions": [],
+            "outcomes": [
+                {
+                    "id": "inserted-outcome",
+                    "stateId": "inserted-state",
+                    "label": "挿入結果",
+                }
+            ],
+        }
+        load_lesson_bytes(
+            json.dumps(with_simulation, ensure_ascii=False).encode("utf-8"),
+            "lesson.json",
+        )
+        self.assertNotEqual(_task5_visual_projection(with_simulation), expected)
 
     def test_causal_no_js_oracles_place_items_under_semantic_headings(self) -> None:
         heading_by_group = {
@@ -2577,6 +2662,10 @@ class ContentAcceptanceTests(unittest.TestCase):
                 if visual_type == "causal"
                 else "visualization__components"
             )
+            marker = generated.index(TASK5_READING_ORDER_MARKER)
+            self.assertLess(generated.index("注記"), marker)
+            self.assertNotIn("旧図の読み順（補助）", generated)
+            self.assertLess(marker, offsets[0])
             self.assertEqual(offsets, sorted(offsets))
             self.assertLess(offsets[-1], generated.index(model_class))
 

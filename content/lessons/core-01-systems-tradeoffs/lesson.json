@@ -161,6 +161,7 @@
     "objectiveIds": ["obj-boundary", "obj-falsification"], "evidenceIds": ["assessment"], "sourceIds": ["src-01", "src-03"],
     "expectedObservation": "境界と制約を起点に、代替案、観測、反証条件までの因果経路を指し示せる。",
     "notes": [
+      "この注記は旧図の読み順を保持する補助です。",
       "目的: 利用者が二秒以内に受付結果を知る。",
       "境界: Web、受付API、永続ストア、worker、通知を含め、決済事業者は外部契約とする。",
       "制約: 重複確定は0件、受付データ損失は0件、運用当番は一名。",

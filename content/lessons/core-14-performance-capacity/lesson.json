@@ -177,6 +177,7 @@
     "objectiveIds": ["obj-load-curve", "obj-profile"], "evidenceIds": ["performance-report"], "sourceIds": ["src-01", "src-02", "src-03"],
     "expectedObservation": "負荷曲線のknee、tail、queue、局所profileを結び、headroomを引いた容量と再測定条件を示せる。",
     "notes": [
+      "この注記は旧図の読み順を保持する補助です。",
       "Fixture: request mix、payload、依存、処理上限、環境を固定する。",
       "Curve: 低負荷、限界付近、超過、回復を同じ列で記録する。",
       "Diagnose: plateau、tail、error、queue、resource、downstreamを結ぶ。",

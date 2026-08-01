@@ -170,6 +170,7 @@
     "objectiveIds": ["obj-boundary", "obj-direction"], "evidenceIds": ["module-adr"], "sourceIds": ["src-01", "src-02"],
     "expectedObservation": "source dependencyはadapterからdomainへ、runtime request flowはdomain portからadapter実装へ進む逆向きのviewとして区別し、独立したreporting境界も指し示せる。",
     "notes": [
+      "この注記は旧図の読み順を保持する補助です。",
       "pricing-domain: 料金規則と不変条件。UIやDB形式を知らない。",
       "pricing-application: use caseを順序付け、domainのportを使う。",
       "pricing-adapters: HTTP、DB、batch形式をdomainの語彙へ変換する。",

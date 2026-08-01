@@ -2515,8 +2515,8 @@ def _render_validated_visualization(
     notes = "".join(f"<li>{_e(note)}</li>" for note in visual.notes)
     companion_notes = (
         '<div class="visualization__companion">'
-        "<h3>旧図の読み順（補助）</h3>"
-        "<p>後続の構造化モデルとは別の補助読順です。</p>"
+        "<h3>注記</h3>"
+        "<p>図を読む際の補足情報です。</p>"
         f'<ol class="visualization__companion-notes">{notes}</ol>'
         "</div>"
         if notes
