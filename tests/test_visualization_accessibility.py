@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from html.parser import HTMLParser
 from pathlib import Path
 import re
 import unittest
@@ -33,7 +34,11 @@ _SEMANTIC_CONTAINERS = {
 _MULTI_COLUMN_CONTAINERS = frozenset(
     (kind, container)
     for kind, containers in _SEMANTIC_CONTAINERS.items()
-    if kind not in {VisualizationType.COMPARISON, VisualizationType.MATRIX}
+    if kind not in {
+        VisualizationType.COMPARISON,
+        VisualizationType.HIERARCHY,
+        VisualizationType.MATRIX,
+    }
     for container in containers
 )
 
@@ -125,6 +130,60 @@ def _selector_classes(selector: str) -> frozenset[str]:
     return frozenset(re.findall(r"\.([a-zA-Z0-9_-]+)", selector))
 
 
+def _media_rules(
+    source: str,
+    media_prelude: str,
+) -> dict[str, dict[str, str]]:
+    blocks = tuple(
+        body
+        for prelude, body, _ in _css_blocks(source)
+        if " ".join(prelude.split()) == media_prelude
+    )
+    if len(blocks) != 1:
+        raise AssertionError(f"expected one {media_prelude} block")
+    return {
+        selector: declarations
+        for selector, declarations, _ in _rules(
+            f"{media_prelude} {{{blocks[0]}}}"
+        )
+    }
+
+
+class _HierarchyStructureParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.stack: list[tuple[str, frozenset[str]]] = []
+        self.list_depths: list[int] = []
+        self.item_depths: list[int] = []
+
+    def handle_starttag(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+    ) -> None:
+        values = dict(attrs)
+        classes = frozenset((values.get("class") or "").split())
+        in_hierarchy = any(
+            "visualization__hierarchy" in ancestor_classes
+            for _, ancestor_classes in self.stack
+        )
+        if in_hierarchy and tag in {"ul", "li"}:
+            list_depth = sum(
+                ancestor_tag == "ul"
+                for ancestor_tag, _ in self.stack
+            )
+            if tag == "ul":
+                self.list_depths.append(list_depth + 1)
+            else:
+                self.item_depths.append(list_depth)
+        self.stack.append((tag, classes))
+
+    def handle_endtag(self, tag: str) -> None:
+        if not self.stack or self.stack[-1][0] != tag:
+            raise AssertionError("rendered hierarchy has malformed nesting")
+        self.stack.pop()
+
+
 class VisualizationAccessibilityTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -150,6 +209,92 @@ class VisualizationAccessibilityTests(unittest.TestCase):
                         f".visualization--{kind.value} .{container}",
                         selectors,
                     )
+
+    def test_hierarchy_groups_real_nested_lists_with_non_color_boundaries(self) -> None:
+        html = render_visualization(
+            "core-01-systems-tradeoffs",
+            visualization_rendering_tests._visual(
+                VisualizationType.HIERARCHY,
+                self.payloads[VisualizationType.HIERARCHY],
+            ),
+        ).value
+        parser = _HierarchyStructureParser()
+        parser.feed(html)
+        parser.close()
+        self.assertEqual(parser.stack, [])
+        self.assertEqual(parser.list_depths, [1, 2])
+        self.assertEqual(parser.item_depths, [1, 2])
+
+        first_media = min(
+            position
+            for prelude, _, position in _css_blocks(self.css)
+            if prelude.startswith("@media")
+        )
+        rules = {
+            selector: declarations
+            for selector, declarations, _ in _rules(self.css[:first_media])
+        }
+        container = ".visualization--hierarchy .visualization__hierarchy"
+        root_list = f"{container} > ul"
+        direct_item = f"{container} > ul > li"
+        nested_list = f"{container} li > ul"
+        nested_item = f"{container} li > ul > li"
+        hierarchy_selectors = (
+            container,
+            root_list,
+            direct_item,
+            nested_list,
+            nested_item,
+        )
+        for selector in hierarchy_selectors:
+            self.assertIn(selector, rules)
+
+        self.assertFalse(
+            {
+                "grid-template-columns",
+                "grid-auto-flow",
+                "grid-auto-columns",
+            }
+            & rules[container].keys()
+        )
+        self.assertEqual(rules[root_list].get("list-style-type"), "disc")
+        self.assertEqual(rules[nested_list].get("list-style-type"), "circle")
+        for selector in (root_list, direct_item, nested_list, nested_item):
+            with self.subTest(selector=selector):
+                declarations = rules[selector]
+                border = declarations.get("border-inline-start", "")
+                self.assertRegex(border, r"^[1-9][0-9]*px\s+solid\s+currentColor$")
+                self.assertIn("padding-inline-start", declarations)
+                self.assertTrue(
+                    {"margin-block", "margin-block-start"}
+                    & declarations.keys()
+                )
+
+        mobile = _media_rules(self.css, "@media (max-width: 20rem)")
+        self.assertEqual(
+            mobile[nested_list].get("margin-inline-start"),
+            "0",
+        )
+        self.assertIn("padding-inline-start", mobile[nested_list])
+        for selector in (direct_item, nested_item):
+            self.assertIn("padding-inline-start", mobile[selector])
+
+        forced_colors = _media_rules(
+            self.css,
+            "@media (forced-colors: active)",
+        )
+        for selector in (root_list, direct_item, nested_list, nested_item):
+            self.assertEqual(
+                forced_colors[selector].get("border-color"),
+                "currentColor",
+            )
+
+        print_rules = _media_rules(self.css, "@media print")
+        for selector in (direct_item, nested_item):
+            self.assertEqual(
+                print_rules[selector].get("break-inside"),
+                "avoid",
+            )
 
     def test_mobile_overrides_win_the_cascade_for_real_multicolumn_containers(self) -> None:
         top_level = _css_blocks(self.css)
