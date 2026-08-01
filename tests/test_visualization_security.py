@@ -57,6 +57,9 @@ class JavaScriptSafetyTests(unittest.TestCase):
             b"document['defaultView']['open']('x');",
             b"document.defaultView['o' + 'pen']('x');",
             b"var opener = globalThis.open; opener('x');",
+            b"var w = window; w['op' + 'en']('x');",
+            b"var g = globalThis; g['open']('x');",
+            b"var n = navigator; n['send' + 'Beacon']('x');",
         )
         for payload in payloads:
             with self.subTest(payload=payload), self.assertRaises(CurriculumValidationError):
@@ -67,8 +70,13 @@ class JavaScriptSafetyTests(unittest.TestCase):
         self.assertEqual(validate_javascript_bytes(source), source.decode())
 
     def test_open_as_non_call_identifier_is_not_a_false_positive(self) -> None:
-        source = b"var openState = 'open'; // open is ordinary prose\n"
-        self.assertEqual(validate_javascript_bytes(source), source.decode())
+        payloads = (
+            b"var openState = 'open'; // open is ordinary prose\n",
+            b"var w = model; w['open']; // non-browser object\n",
+        )
+        for source in payloads:
+            with self.subTest(source=source):
+                self.assertEqual(validate_javascript_bytes(source), source.decode())
 
 
 if __name__ == "__main__":

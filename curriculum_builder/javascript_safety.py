@@ -41,6 +41,12 @@ _FORBIDDEN_NAVIGATION_MEMBER: Final = re.compile(
     r"(?<![A-Za-z0-9_$])(?:window|globalThis|self|top|parent|navigator|document|defaultView)\s*\[",
     re.ASCII,
 )
+_ALIAS_ASSIGNMENT: Final = re.compile(
+    r"(?<![A-Za-z0-9_$])(?:var|let|const)?\s*"
+    r"([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*"
+    r"([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:;|,|\n)",
+    re.ASCII,
+)
 
 
 def _error(message: str) -> CurriculumValidationError:
@@ -94,6 +100,32 @@ def _navigation_views(text: str) -> tuple[str, str]:
     return "".join(code), "".join(without_comments)
 
 
+def _has_forbidden_navigation_alias(code: str, members: str) -> bool:
+    """Track simple global aliases, then reject every computed member access.
+
+    The handwritten runtime does not need aliases for browser authority. This
+    closed rule intentionally rejects all bracket access through such aliases,
+    including concatenated property names that a token blacklist could miss.
+    """
+    aliases = {"window", "globalThis", "navigator"}
+    assignments = tuple(_ALIAS_ASSIGNMENT.findall(code))
+    changed = True
+    while changed:
+        changed = False
+        for target, source in assignments:
+            if source in aliases and target not in aliases:
+                aliases.add(target)
+                changed = True
+    return any(
+        re.search(
+            rf"(?<![A-Za-z0-9_$]){re.escape(alias)}\s*\[",
+            members,
+            re.ASCII,
+        )
+        for alias in aliases
+    )
+
+
 def validate_javascript_bytes(source: object) -> str:
     """Return a pinned UTF-8 snapshot after enforcing the closed source policy.
 
@@ -131,6 +163,7 @@ def validate_javascript_bytes(source: object) -> str:
     if (
         _FORBIDDEN_NAVIGATION_CODE.search(code_view)
         or _FORBIDDEN_NAVIGATION_MEMBER.search(member_view)
+        or _has_forbidden_navigation_alias(code_view, member_view)
     ):
         raise _error("visualization.js contains a forbidden navigation capability")
 
