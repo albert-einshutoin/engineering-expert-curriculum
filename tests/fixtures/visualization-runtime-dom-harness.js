@@ -548,6 +548,8 @@ function runValidationMutations() {
     }],
     ['hybrid', (value) => value.root.querySelector('.visualization__transition-condition').attributes.delete('data-parameter-id')],
     ['scenario', (value) => value.root.querySelector('.visualization__state-condition').attributes.set('data-unexpected', 'x')],
+    ['scenario', (value) => value.controls.querySelector('option[selected]').attributes.delete('selected')],
+    ['scenario', (value) => value.controls.querySelectorAll('input[data-parameter-id]').find((item) => item.value === 'b').attributes.set('checked', ''), 'radio'],
     ['stepper', (value, tracker) => value.controls.append(element(tracker, 'button', { type: 'button', disabled: '' }, [], 'ignored'))],
     ['stepper', (value, tracker) => value.controls.append(element(tracker, 'select', { 'data-action': 'unknown', disabled: '' }))],
     ['stepper', (value) => value.controls.children.find((item) => item.tag === 'button').attributes.set('data-action', 'play')],

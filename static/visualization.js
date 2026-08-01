@@ -105,6 +105,7 @@
     this.outcomeElements = values(root.querySelectorAll(OUTCOME));
     this.playButton = this.controls ? this.controls.querySelector('[data-action="play"]') : null;
     this.speed = this.controls ? this.controls.querySelector('select[data-action="speed"]') : null;
+    this.parameterDefaults = new Map();
     this.mutable = [root, this.controls, this.status, this.announcement]
       .concat(this.states, this.nodes, this.edges)
       .concat(values(this.controls ? this.controls.querySelectorAll('button, select, input, fieldset') : []))
@@ -180,6 +181,17 @@
         this.parameters.get(parameter).add(option);
       }, this);
     }, this);
+    this.parameters.forEach(function (options, parameter) {
+      var controls = parameterControls.filter(function (control) { return attribute(control, 'data-parameter-id') === parameter; });
+      var defaults;
+      if (controls.length === 1 && controls[0].tagName === 'SELECT') {
+        defaults = values(controls[0].querySelectorAll('option')).filter(function (option) { return attribute(option, 'selected') !== null; }).map(function (option) { return option.value; });
+      } else {
+        defaults = controls.filter(function (control) { return attribute(control, 'checked') !== null; }).map(function (control) { return control.value; });
+      }
+      if (defaults.length !== 1 || !options.has(defaults[0])) { throw new Error('invalid parameter default'); }
+      this.parameterDefaults.set(parameter, defaults[0]);
+    }, this);
     this.states.forEach(function (state, ordinal) {
       var source = attribute(state, 'data-step-index');
       var id = attribute(state, 'data-state-id');
@@ -233,7 +245,13 @@
     if ((mode === 'scenario' || mode === 'hybrid' || mode === 'explorer') !== Boolean(this.parameters.size)) { throw new Error('invalid parameter set'); }
     this.selection();
     this.validateTransitionDomain();
-    if (mode === 'scenario' && this.scenarioState() !== this.initialId) { throw new Error('scenario defaults do not select initial state'); }
+    if (mode === 'scenario') {
+      var defaultStates = [];
+      this.stateById.forEach(function (state, stateId) {
+        if (matches(state.conditions, this.parameterDefaults)) { defaultStates.push(stateId); }
+      }, this);
+      if (defaultStates.length !== 1 || defaultStates[0] !== this.initialId) { throw new Error('scenario defaults do not select initial state'); }
+    }
     this.currentId = this.initialId;
   };
   ControllerMethods.selection = function () {
@@ -413,9 +431,9 @@
   };
   ControllerMethods.restoreParameters = function () {
     values(this.controls.querySelectorAll('[data-parameter-id]')).forEach(function (control) {
-      var saved = this.snapshot.get(control);
-      if (saved.value !== undefined) { control.value = saved.value; }
-      if (saved.checked !== undefined) { control.checked = saved.checked; }
+      var defaultValue = this.parameterDefaults.get(attribute(control, 'data-parameter-id'));
+      if (control.tagName === 'SELECT') { control.value = defaultValue; }
+      else { control.checked = control.value === defaultValue; }
     }, this);
   };
   ControllerMethods.action = function (name) {
