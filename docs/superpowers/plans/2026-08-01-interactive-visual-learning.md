@@ -572,6 +572,8 @@ git commit -m "content: add timeline and state lesson diagrams"
 - Modify: `tests/test_content_acceptance.py`
 - Modify: `tests/test_lesson_quality.py`
 - Modify: `tests/test_build.py`
+- Modify: `tests/fixtures/complete-lesson.json`
+- Modify: `tests/test_core_tracks.py`
 
 - [ ] **Step 1: Add RED migration tests for remaining primary types**
 
@@ -599,6 +601,11 @@ the whole lesson set against `visualization-catalog.json`: exact primary type,
 allowed optional secondary, dynamic flag, and no unapproved simulation. Correct
 counts with swapped assignments must fail.
 
+Migrate the shared complete-lesson fixture to a minimal valid structured visual
+and update the core-track contract to preserve retained authored figures plus
+structured visuals. These contract fixtures change in the same commit as the
+complete-release switch so they cannot mask a missing production visual.
+
 - [ ] **Step 4: Verify build and commit**
 
 ```bash
@@ -606,7 +613,7 @@ python3.13 -m unittest tests.test_content_acceptance tests.test_lesson_quality t
 python3.13 tools/build.py --output site
 python3.13 tools/check_site.py --root site --require-current-release
 python3.13 -m unittest discover -s tests -v
-git add content/lessons/core-{02,03,11,16,17,19,25,28}-*/{lesson.json,body.html} curriculum_builder/lessons.py curriculum_builder/visualizations.py curriculum_builder/build.py tests/test_content_acceptance.py tests/test_lesson_quality.py tests/test_build.py
+git add content/lessons/core-{02,03,11,16,17,19,25,28}-*/{lesson.json,body.html} curriculum_builder/lessons.py curriculum_builder/visualizations.py curriculum_builder/build.py tests/test_content_acceptance.py tests/test_lesson_quality.py tests/test_build.py tests/fixtures/complete-lesson.json tests/test_core_tracks.py
 git commit -m "content: complete semantic diagrams for all lessons"
 ```
 
