@@ -684,6 +684,14 @@ mode, interval, and action attributes consumed by the runtime. Keep authored
 HTML grammar unchanged. Static oracle content remains complete and controls are
 initially hidden/disabled until transactional enhancement succeeds.
 
+Serialize and validate the authored closed transition event on every runtime
+edge. Runtime resolution uses the exact tuple `(current state, finite parameter
+selection, event)`; `previous`, `next`, `timer`, `parameter-change`, and `reset`
+never fall back to raw array position when an authored transition is required.
+Condition and control class inventories must equal the corresponding complete
+attribute inventories, so a missing attribute cannot silently become an
+unconditional node or an ignored enabled control.
+
 - [ ] **Step 4: Implement one dependency-free classic script**
 
 Use a strict IIFE, fixed selectors, `Map`/`Set`, per-figure controller, one owned

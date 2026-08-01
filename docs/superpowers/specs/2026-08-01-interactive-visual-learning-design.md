@@ -531,8 +531,18 @@ state machine. Its permitted operations are:
 
 The DOM serialization and mutation allowlist is exact. The runtime may read
 `id`, `data-visualization-id`, `data-simulation-kind`,
-`data-interaction-mode`, `data-state-id`, `data-node-id`, `data-edge-id`,
-`data-step-index`, and `data-default-interval-ms`. It may change only the native
+`data-interaction-mode`, `data-initial-state-id`, `data-state-id`,
+`data-node-id`, `data-edge-id`, `data-step-index`,
+`data-default-interval-ms`, `data-parameter-id`, `data-option-id`,
+`data-transition-id`, `data-transition-event`, `data-from-state-id`,
+`data-to-state-id`, `data-outcome-id`, and `data-action`. Parameter and option
+attributes encode only the validated finite selection; transition attributes
+encode the authored closed event enum (`next`, `previous`, `timer`,
+`parameter-change`, or `reset`) and validated endpoints; action values are the
+fixed renderer-owned control enum. A condition-bearing element must carry both
+parameter and option attributes, and an element carrying either one without the
+other is invalid. No other `data-*` attribute is read by the runtime. It may
+change only the native
 `hidden` and `disabled` properties, `aria-current` with the fixed value `step`,
 `aria-pressed` with `true`/`false`, `textContent` on renderer-owned status and
 play-label nodes, and the fixed classes `is-enhanced`, `is-active`,
