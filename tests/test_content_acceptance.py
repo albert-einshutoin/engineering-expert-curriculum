@@ -283,10 +283,8 @@ TASK10_SIMULATION_CONTRACTS = {
         "mode": "hybrid",
         "parameters": ("event-case",),
         "states": (
-            "event-received", "duplicate-received", "result-reused",
-            "reordered-delivery", "sequence-checked", "partition-detected",
-            "messages-buffered", "recovery-partition-detected",
-            "recovery-buffered", "recovery-converged",
+            "event-log-start", "partition-detected", "partition-buffered",
+            "duplicate-received", "reorder-gap-filled", "recovery-converged",
         ),
         "outcomes": (
             "duplicate-effect-once", "reorder-detected",
@@ -2812,6 +2810,16 @@ def _prior_task_static_visual(
     normalized = deepcopy(visual)
     normalized["id"] = _TASK10_PRIOR_VISUAL_IDS[lesson_id]
     normalized.pop("simulation", None)
+    if lesson_id == "core-13-distributed-coordination-failure":
+        payload = normalized["payload"]
+        payload["phases"] = [
+            item for item in payload["phases"]
+            if item["id"] != "fixture-log"
+        ]
+        payload["events"] = [
+            item for item in payload["events"]
+            if not item["id"].startswith("e")
+        ]
     return normalized
 
 
@@ -3920,12 +3928,12 @@ class ContentAcceptanceTests(unittest.TestCase):
             ]
             self.assertEqual(len(matching_visuals), 1)
             visual = matching_visuals[0]
-            rendered[lesson_id] = str(
-                render_visualization(lesson_id, load_lesson_bytes(
-                    (REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json")
-                    .read_bytes(), lesson_id,
-                ).visualizations[0])
+            lesson = load_lesson_bytes(
+                (REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json")
+                .read_bytes(), lesson_id,
             )
+            model = next(item for item in lesson.visualizations if item.id == expected["visual"])
+            rendered[lesson_id] = str(render_visualization(lesson_id, model))
             self.assertIn("パラメータと選択肢", rendered[lesson_id])
             self.assertIn("完全な遷移", rendered[lesson_id])
             self.assertIn("観測結果", rendered[lesson_id])
@@ -3963,6 +3971,61 @@ class ContentAcceptanceTests(unittest.TestCase):
                 with self.subTest(lesson_id=lesson_id, atom=atom):
                     self.assertIn(atom, rendered[lesson_id])
 
+    def test_task10_core13_static_equivalent_is_the_complete_six_event_log(self) -> None:
+        lesson_id = "core-13-distributed-coordination-failure"
+        path = REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json"
+        document = json.loads(path.read_bytes())
+        self.assertEqual(
+            tuple(item["id"] for item in document["visualizations"]),
+            ("distributed-failure-static",),
+        )
+        visual = document["visualizations"][0]
+        self.assertEqual(visual["type"], "timeline")
+        expected_events = (
+            (
+                "e1-confirm",
+                "tick=1、kind=deliver、logical_sequence=2、delivery_priority=0。immediateにpending→confirmedを1回applyし、state・fingerprint・result=confirmed-onceをatomic commitする。",
+            ),
+            (
+                "e2-partition-start",
+                "tick=2、kind=partition_start。partitionをactiveにし、e1の永続commitを保持したまま以後のmessageをbufferする。",
+            ),
+            (
+                "e3-status-read",
+                "tick=3、kind=deliver、logical_sequence=4、delivery_priority=1。partition中なのでstatus readはapplyせずbufferし、利用者結果を未確定のまま保つ。",
+            ),
+            (
+                "e4-confirm-retry",
+                "tick=4、kind=duplicate、logical_sequence=2、delivery_priority=2。同じkeyとfingerprintのretryをbufferし、回復時もeffectを再applyせず保存済みresultを再利用する。",
+            ),
+            (
+                "e5-reconcile-read",
+                "tick=5、kind=deliver、logical_sequence=3、delivery_priority=0。partition中にbufferし、回復時はe3のsequence=4より先にgapを埋めるread-only resultを得る。",
+            ),
+            (
+                "e6-partition-end",
+                "tick=6、kind=partition_end。deadline=8以内にrecoveryし、priority順e5→e3→e4で解放する。最終state=confirmed、apply=1、result reuse=1として順序差と残留messageを再評価する。",
+            ),
+        )
+        self.assertEqual(
+            tuple(
+                (item["id"], item["detail"])
+                for item in visual["payload"]["events"]
+                if item["id"].startswith("e")
+            ),
+            expected_events,
+        )
+        simulation = visual["simulation"]
+        self.assertEqual(
+            tuple(item["activeNodeIds"] for item in simulation["states"]),
+            tuple([event_id] for event_id, _detail in expected_events),
+        )
+        model = load_lesson_bytes(path.read_bytes(), path.name).visualizations[0]
+        no_js = str(render_visualization(lesson_id, model))
+        for event_id, detail in expected_events:
+            self.assertIn(event_id, no_js)
+            self.assertIn(detail, no_js)
+
     def test_task10_hybrid_paths_have_complete_manual_timer_and_reset_edges(self) -> None:
         expected_paths = {
             "core-12-transactions-isolation-consistency": {
@@ -3976,17 +4039,20 @@ class ContentAcceptanceTests(unittest.TestCase):
             },
             "core-13-distributed-coordination-failure": {
                 "duplicate": (
-                    "event-received", "duplicate-received", "result-reused",
+                    "event-log-start", "partition-detected", "partition-buffered",
+                    "duplicate-received", "reorder-gap-filled", "recovery-converged",
                 ),
                 "reorder": (
-                    "event-received", "reordered-delivery", "sequence-checked",
+                    "event-log-start", "partition-detected", "partition-buffered",
+                    "duplicate-received", "reorder-gap-filled", "recovery-converged",
                 ),
                 "partition": (
-                    "event-received", "partition-detected", "messages-buffered",
+                    "event-log-start", "partition-detected", "partition-buffered",
+                    "duplicate-received", "reorder-gap-filled", "recovery-converged",
                 ),
                 "recovery": (
-                    "event-received", "recovery-partition-detected",
-                    "recovery-buffered", "recovery-converged",
+                    "event-log-start", "partition-detected", "partition-buffered",
+                    "duplicate-received", "reorder-gap-filled", "recovery-converged",
                 ),
             },
         }

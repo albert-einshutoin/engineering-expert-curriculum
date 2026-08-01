@@ -220,6 +220,11 @@
             "id": "recovery",
             "label": "回復",
             "detail": "partition後の順序差と期限超過を再評価する。"
+          },
+          {
+            "id": "fixture-log",
+            "label": "固定6 event log",
+            "detail": "seed 20260731の同じ完全logをduplicate、reorder、partition、recoveryの各観点で読む。"
           }
         ],
         "events": [
@@ -264,6 +269,48 @@
             "detail": "partitionがdeadlineを越えたら、queue、retention、stale command、reconciliation、利用者結果を更新する。",
             "phaseId": "recovery",
             "order": 5
+          },
+          {
+            "id": "e1-confirm",
+            "label": "e1 confirm",
+            "detail": "tick=1、kind=deliver、logical_sequence=2、delivery_priority=0。immediateにpending→confirmedを1回applyし、state・fingerprint・result=confirmed-onceをatomic commitする。",
+            "phaseId": "fixture-log",
+            "order": 6
+          },
+          {
+            "id": "e2-partition-start",
+            "label": "e2 partition start",
+            "detail": "tick=2、kind=partition_start。partitionをactiveにし、e1の永続commitを保持したまま以後のmessageをbufferする。",
+            "phaseId": "fixture-log",
+            "order": 7
+          },
+          {
+            "id": "e3-status-read",
+            "label": "e3 status read",
+            "detail": "tick=3、kind=deliver、logical_sequence=4、delivery_priority=1。partition中なのでstatus readはapplyせずbufferし、利用者結果を未確定のまま保つ。",
+            "phaseId": "fixture-log",
+            "order": 8
+          },
+          {
+            "id": "e4-confirm-retry",
+            "label": "e4 confirm retry",
+            "detail": "tick=4、kind=duplicate、logical_sequence=2、delivery_priority=2。同じkeyとfingerprintのretryをbufferし、回復時もeffectを再applyせず保存済みresultを再利用する。",
+            "phaseId": "fixture-log",
+            "order": 9
+          },
+          {
+            "id": "e5-reconcile-read",
+            "label": "e5 reconcile read",
+            "detail": "tick=5、kind=deliver、logical_sequence=3、delivery_priority=0。partition中にbufferし、回復時はe3のsequence=4より先にgapを埋めるread-only resultを得る。",
+            "phaseId": "fixture-log",
+            "order": 10
+          },
+          {
+            "id": "e6-partition-end",
+            "label": "e6 partition end",
+            "detail": "tick=6、kind=partition_end。deadline=8以内にrecoveryし、priority順e5→e3→e4で解放する。最終state=confirmed、apply=1、result reuse=1として順序差と残留messageを再評価する。",
+            "phaseId": "fixture-log",
+            "order": 11
           }
         ]
       },
@@ -284,66 +331,46 @@
             "defaultOptionId": "duplicate"
           }
         ],
-        "initialStateId": "event-received",
+        "initialStateId": "event-log-start",
         "defaultIntervalMs": 1000,
         "states": [
-          {"id": "event-received", "label": "固定trace開始", "status": "seed 20260731、order-42、deadline 8、at-least-onceの6 eventを同じ順で再生する。", "activeNodeIds": ["receive"], "activeEdgeIds": []},
-          {"id": "duplicate-received", "label": "duplicateを受信", "status": "同じdedupe keyとfingerprintのconfirm retryが実際に再配送される。", "when": {"event-case": "duplicate"}, "activeNodeIds": ["lookup"], "activeEdgeIds": []},
-          {"id": "result-reused", "label": "保存済みresultを再利用", "status": "state transitionは1回のまま、最初に永続化したresultを1回再利用する。exactly-once deliveryとは呼ばない。", "when": {"event-case": "duplicate"}, "activeNodeIds": ["commit"], "activeEdgeIds": []},
-          {"id": "reordered-delivery", "label": "delivery順が入れ替わる", "status": "partition後、3 messageを固定priorityで解放し、logical sequenceとdelivery orderが異なる。", "when": {"event-case": "reorder"}, "activeNodeIds": ["recover"], "activeEdgeIds": []},
-          {"id": "sequence-checked", "label": "順序差を検査", "status": "stable key、state machine、不変条件を照合し、順序入替を成功の証拠へ一般化しない。", "when": {"event-case": "reorder"}, "activeNodeIds": ["reevaluate"], "activeEdgeIds": []},
-          {"id": "partition-detected", "label": "partition start", "status": "tick 2でpartitionを検出し、分断中のbusiness commandを適用せずbufferへ移す。", "when": {"event-case": "partition"}, "activeNodeIds": ["recover"], "activeEdgeIds": []},
-          {"id": "messages-buffered", "label": "3 messageをbuffer", "status": "status read、duplicate、reconcile readの3 messageを回復まで保持し、未確定結果を成功扱いしない。", "when": {"event-case": "partition"}, "activeNodeIds": ["recover"], "activeEdgeIds": []},
-          {"id": "recovery-partition-detected", "label": "回復対象を確定", "status": "partition中にbufferされた3 messageと永続dedupe entryを回復境界へ渡す。", "when": {"event-case": "recovery"}, "activeNodeIds": ["recover"], "activeEdgeIds": []},
-          {"id": "recovery-buffered", "label": "tick 6で解放", "status": "partition endはtick 6でdeadline 8以内。3 messageを固定priorityで解放して再評価する。", "when": {"event-case": "recovery"}, "activeNodeIds": ["recover"], "activeEdgeIds": []},
-          {"id": "recovery-converged", "label": "confirmedへ収束", "status": "注文はconfirmed、state transitionは1回、duplicate result再利用は1回で回復する。tick 11ならdeadline超過となる。", "when": {"event-case": "recovery"}, "activeNodeIds": ["reevaluate"], "activeEdgeIds": []}
+          {"id": "event-log-start", "label": "e1 deliver・apply・commit", "status": "e1-confirmをimmediate処理し、pending→confirmedを1回applyしてresult=confirmed-onceをatomic commitする。", "activeNodeIds": ["e1-confirm"], "activeEdgeIds": []},
+          {"id": "partition-detected", "label": "e2 partition start", "status": "e2でpartitionをactiveにし、e1の永続commitを保持したまま後続messageをbufferする。", "activeNodeIds": ["e2-partition-start"], "activeEdgeIds": []},
+          {"id": "partition-buffered", "label": "e3 status readをbuffer", "status": "e3はsequence=4・priority=1。partition中なのでapplyせず、利用者結果を未確定のままbufferする。", "activeNodeIds": ["e3-status-read"], "activeEdgeIds": []},
+          {"id": "duplicate-received", "label": "e4 duplicateをbuffer", "status": "e4はsequence=2・priority=2。同じkey/fingerprintをbufferし、回復時もeffectを再applyしない。", "activeNodeIds": ["e4-confirm-retry"], "activeEdgeIds": []},
+          {"id": "reorder-gap-filled", "label": "e5がsequence gapを埋める", "status": "e5はsequence=3・priority=0。回復時にe3より先にread-only処理し、delivery順とlogical順の差を可視化する。", "activeNodeIds": ["e5-reconcile-read"], "activeEdgeIds": []},
+          {"id": "recovery-converged", "label": "e6 recovery・reevaluate", "status": "e6 tick=6でe5→e3→e4を解放し、confirmed・apply=1・result reuse=1・deadline=8以内を再評価する。", "activeNodeIds": ["e6-partition-end"], "activeEdgeIds": []}
         ],
         "transitions": [
-          {"id": "apply-duplicate", "from": "event-received", "to": "event-received", "event": "parameter-change", "when": {"event-case": "duplicate"}},
-          {"id": "duplicate-next", "from": "event-received", "to": "duplicate-received", "event": "next", "when": {"event-case": "duplicate"}},
-          {"id": "duplicate-timer", "from": "event-received", "to": "duplicate-received", "event": "timer", "when": {"event-case": "duplicate"}},
-          {"id": "duplicate-previous", "from": "duplicate-received", "to": "event-received", "event": "previous", "when": {"event-case": "duplicate"}},
-          {"id": "duplicate-reset", "from": "duplicate-received", "to": "event-received", "event": "reset", "when": {"event-case": "duplicate"}},
-          {"id": "result-reused-next", "from": "duplicate-received", "to": "result-reused", "event": "next", "when": {"event-case": "duplicate"}},
-          {"id": "result-reused-timer", "from": "duplicate-received", "to": "result-reused", "event": "timer", "when": {"event-case": "duplicate"}},
-          {"id": "result-reused-previous", "from": "result-reused", "to": "duplicate-received", "event": "previous", "when": {"event-case": "duplicate"}},
-          {"id": "result-reused-reset", "from": "result-reused", "to": "event-received", "event": "reset", "when": {"event-case": "duplicate"}},
-          {"id": "apply-reorder", "from": "event-received", "to": "event-received", "event": "parameter-change", "when": {"event-case": "reorder"}},
-          {"id": "reorder-next", "from": "event-received", "to": "reordered-delivery", "event": "next", "when": {"event-case": "reorder"}},
-          {"id": "reorder-timer", "from": "event-received", "to": "reordered-delivery", "event": "timer", "when": {"event-case": "reorder"}},
-          {"id": "reorder-previous", "from": "reordered-delivery", "to": "event-received", "event": "previous", "when": {"event-case": "reorder"}},
-          {"id": "reorder-reset", "from": "reordered-delivery", "to": "event-received", "event": "reset", "when": {"event-case": "reorder"}},
-          {"id": "sequence-next", "from": "reordered-delivery", "to": "sequence-checked", "event": "next", "when": {"event-case": "reorder"}},
-          {"id": "sequence-timer", "from": "reordered-delivery", "to": "sequence-checked", "event": "timer", "when": {"event-case": "reorder"}},
-          {"id": "sequence-previous", "from": "sequence-checked", "to": "reordered-delivery", "event": "previous", "when": {"event-case": "reorder"}},
-          {"id": "sequence-reset", "from": "sequence-checked", "to": "event-received", "event": "reset", "when": {"event-case": "reorder"}},
-          {"id": "apply-partition", "from": "event-received", "to": "event-received", "event": "parameter-change", "when": {"event-case": "partition"}},
-          {"id": "partition-next", "from": "event-received", "to": "partition-detected", "event": "next", "when": {"event-case": "partition"}},
-          {"id": "partition-timer", "from": "event-received", "to": "partition-detected", "event": "timer", "when": {"event-case": "partition"}},
-          {"id": "partition-previous", "from": "partition-detected", "to": "event-received", "event": "previous", "when": {"event-case": "partition"}},
-          {"id": "partition-reset", "from": "partition-detected", "to": "event-received", "event": "reset", "when": {"event-case": "partition"}},
-          {"id": "buffer-next", "from": "partition-detected", "to": "messages-buffered", "event": "next", "when": {"event-case": "partition"}},
-          {"id": "buffer-timer", "from": "partition-detected", "to": "messages-buffered", "event": "timer", "when": {"event-case": "partition"}},
-          {"id": "buffer-previous", "from": "messages-buffered", "to": "partition-detected", "event": "previous", "when": {"event-case": "partition"}},
-          {"id": "buffer-reset", "from": "messages-buffered", "to": "event-received", "event": "reset", "when": {"event-case": "partition"}},
-          {"id": "apply-recovery", "from": "event-received", "to": "event-received", "event": "parameter-change", "when": {"event-case": "recovery"}},
-          {"id": "recovery-detected-next", "from": "event-received", "to": "recovery-partition-detected", "event": "next", "when": {"event-case": "recovery"}},
-          {"id": "recovery-detected-timer", "from": "event-received", "to": "recovery-partition-detected", "event": "timer", "when": {"event-case": "recovery"}},
-          {"id": "recovery-detected-previous", "from": "recovery-partition-detected", "to": "event-received", "event": "previous", "when": {"event-case": "recovery"}},
-          {"id": "recovery-detected-reset", "from": "recovery-partition-detected", "to": "event-received", "event": "reset", "when": {"event-case": "recovery"}},
-          {"id": "recovery-buffer-next", "from": "recovery-partition-detected", "to": "recovery-buffered", "event": "next", "when": {"event-case": "recovery"}},
-          {"id": "recovery-buffer-timer", "from": "recovery-partition-detected", "to": "recovery-buffered", "event": "timer", "when": {"event-case": "recovery"}},
-          {"id": "recovery-buffer-previous", "from": "recovery-buffered", "to": "recovery-partition-detected", "event": "previous", "when": {"event-case": "recovery"}},
-          {"id": "recovery-buffer-reset", "from": "recovery-buffered", "to": "event-received", "event": "reset", "when": {"event-case": "recovery"}},
-          {"id": "recovery-converged-next", "from": "recovery-buffered", "to": "recovery-converged", "event": "next", "when": {"event-case": "recovery"}},
-          {"id": "recovery-converged-timer", "from": "recovery-buffered", "to": "recovery-converged", "event": "timer", "when": {"event-case": "recovery"}},
-          {"id": "recovery-converged-previous", "from": "recovery-converged", "to": "recovery-buffered", "event": "previous", "when": {"event-case": "recovery"}},
-          {"id": "recovery-converged-reset", "from": "recovery-converged", "to": "event-received", "event": "reset", "when": {"event-case": "recovery"}}
+          {"id": "apply-duplicate", "from": "event-log-start", "to": "event-log-start", "event": "parameter-change", "when": {"event-case": "duplicate"}},
+          {"id": "apply-reorder", "from": "event-log-start", "to": "event-log-start", "event": "parameter-change", "when": {"event-case": "reorder"}},
+          {"id": "apply-partition", "from": "event-log-start", "to": "event-log-start", "event": "parameter-change", "when": {"event-case": "partition"}},
+          {"id": "apply-recovery", "from": "event-log-start", "to": "event-log-start", "event": "parameter-change", "when": {"event-case": "recovery"}},
+          {"id": "partition-next", "from": "event-log-start", "to": "partition-detected", "event": "next"},
+          {"id": "partition-timer", "from": "event-log-start", "to": "partition-detected", "event": "timer"},
+          {"id": "partition-previous", "from": "partition-detected", "to": "event-log-start", "event": "previous"},
+          {"id": "partition-reset", "from": "partition-detected", "to": "event-log-start", "event": "reset"},
+          {"id": "buffer-next", "from": "partition-detected", "to": "partition-buffered", "event": "next"},
+          {"id": "buffer-timer", "from": "partition-detected", "to": "partition-buffered", "event": "timer"},
+          {"id": "buffer-previous", "from": "partition-buffered", "to": "partition-detected", "event": "previous"},
+          {"id": "buffer-reset", "from": "partition-buffered", "to": "event-log-start", "event": "reset"},
+          {"id": "duplicate-next", "from": "partition-buffered", "to": "duplicate-received", "event": "next"},
+          {"id": "duplicate-timer", "from": "partition-buffered", "to": "duplicate-received", "event": "timer"},
+          {"id": "duplicate-previous", "from": "duplicate-received", "to": "partition-buffered", "event": "previous"},
+          {"id": "duplicate-reset", "from": "duplicate-received", "to": "event-log-start", "event": "reset"},
+          {"id": "reorder-next", "from": "duplicate-received", "to": "reorder-gap-filled", "event": "next"},
+          {"id": "reorder-timer", "from": "duplicate-received", "to": "reorder-gap-filled", "event": "timer"},
+          {"id": "reorder-previous", "from": "reorder-gap-filled", "to": "duplicate-received", "event": "previous"},
+          {"id": "reorder-reset", "from": "reorder-gap-filled", "to": "event-log-start", "event": "reset"},
+          {"id": "recovery-next", "from": "reorder-gap-filled", "to": "recovery-converged", "event": "next"},
+          {"id": "recovery-timer", "from": "reorder-gap-filled", "to": "recovery-converged", "event": "timer"},
+          {"id": "recovery-previous", "from": "recovery-converged", "to": "reorder-gap-filled", "event": "previous"},
+          {"id": "recovery-reset", "from": "recovery-converged", "to": "event-log-start", "event": "reset"}
         ],
         "outcomes": [
-          {"id": "duplicate-effect-once", "stateId": "result-reused", "label": "duplicateは届くがstate transitionは1回、保存済みresultを1回再利用する。"},
-          {"id": "reorder-detected", "stateId": "sequence-checked", "label": "logical sequenceとdelivery orderの差を検出し、state machineで許可を再評価する。"},
-          {"id": "partition-buffers-three", "stateId": "messages-buffered", "label": "partition中の3 messageをbufferし、未確定結果を成功へ広げない。"},
+          {"id": "duplicate-effect-once", "stateId": "recovery-converged", "label": "duplicateは届くがstate transitionは1回、保存済みresultを1回再利用する。"},
+          {"id": "reorder-detected", "stateId": "reorder-gap-filled", "label": "logical sequenceとdelivery orderの差を検出し、gapを埋めてから再評価する。"},
+          {"id": "partition-buffers-three", "stateId": "partition-buffered", "label": "partition中の3 messageをbufferし、未確定結果を成功へ広げない。"},
           {"id": "recovery-before-deadline", "stateId": "recovery-converged", "label": "tick 6はdeadline 8以内。confirmedへ収束し、tick 11ならdeadline超過へ分岐する。"}
         ]
       }
