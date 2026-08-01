@@ -65,6 +65,35 @@ class JavaScriptSafetyTests(unittest.TestCase):
             with self.subTest(payload=payload), self.assertRaises(CurriculumValidationError):
                 validate_javascript_bytes(payload)
 
+    def test_browser_authority_is_limited_to_direct_first_party_members(self) -> None:
+        allowed = (
+            b"window.matchMedia('print');",
+            b"window.setTimeout(callback, 250);",
+            b"window.clearTimeout(timer);",
+            b"window.addEventListener('pagehide', callback);",
+        )
+        for source in allowed:
+            with self.subTest(source=source):
+                self.assertEqual(validate_javascript_bytes(source), source.decode())
+
+        forbidden = (
+            b"var w = (window);",
+            b"var w = [window][0];",
+            b"var w = { value: window }.value;",
+            b"var w = ready ? window : model;",
+            b"function authority() { return window; }",
+            b"var w = (model, window);",
+            b"var w = model; w = window;",
+            b"window['setTimeout'](callback, 250);",
+            b"window.document;",
+            b"globalThis.setTimeout(callback, 250);",
+            b"navigator.language;",
+        )
+        for source in forbidden:
+            with self.subTest(source=source):
+                with self.assertRaises(CurriculumValidationError):
+                    validate_javascript_bytes(source)
+
     def test_navigation_words_in_ordinary_text_do_not_create_false_positives(self) -> None:
         source = b"var explanation = 'open navigation sendBeacon'; // ordinary prose\n"
         self.assertEqual(validate_javascript_bytes(source), source.decode())
