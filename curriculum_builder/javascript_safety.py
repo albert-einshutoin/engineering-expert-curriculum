@@ -33,12 +33,12 @@ _FORBIDDEN = tuple(
 )
 _FORBIDDEN_NAVIGATION_CODE: Final = re.compile(
     r"(?<![A-Za-z0-9_$])(?:navigation|sendBeacon)(?![A-Za-z0-9_$])"
-    r"|(?<![A-Za-z0-9_$])window\s*\.\s*open(?![A-Za-z0-9_$])"
+    r"|(?<![A-Za-z0-9_$])open(?![A-Za-z0-9_$])"
     r"|(?<![A-Za-z0-9_$])navigator\s*\.\s*sendBeacon(?![A-Za-z0-9_$])",
     re.ASCII,
 )
 _FORBIDDEN_NAVIGATION_MEMBER: Final = re.compile(
-    r"(?<![A-Za-z0-9_$])(?:window|globalThis|navigator)\s*\[",
+    r"(?<![A-Za-z0-9_$])(?:window|globalThis|self|top|parent|navigator|document|defaultView)\s*\[",
     re.ASCII,
 )
 

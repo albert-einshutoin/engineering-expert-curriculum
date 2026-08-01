@@ -48,6 +48,15 @@ class JavaScriptSafetyTests(unittest.TestCase):
             b"navigator [ 'send' + 'Beacon' ] ('x');",
             b"globalThis.navigation.navigate('x');",
             b"var x = navigation['currentEntry'];",
+            b"open('x');",
+            b"globalThis.open('x');",
+            b"self.open('x');",
+            b"top.open('x');",
+            b"parent.open('x');",
+            b"document.defaultView.open('x');",
+            b"document['defaultView']['open']('x');",
+            b"document.defaultView['o' + 'pen']('x');",
+            b"var opener = globalThis.open; opener('x');",
         )
         for payload in payloads:
             with self.subTest(payload=payload), self.assertRaises(CurriculumValidationError):
@@ -55,6 +64,10 @@ class JavaScriptSafetyTests(unittest.TestCase):
 
     def test_navigation_words_in_ordinary_text_do_not_create_false_positives(self) -> None:
         source = b"var explanation = 'open navigation sendBeacon'; // ordinary prose\n"
+        self.assertEqual(validate_javascript_bytes(source), source.decode())
+
+    def test_open_as_non_call_identifier_is_not_a_false_positive(self) -> None:
+        source = b"var openState = 'open'; // open is ordinary prose\n"
         self.assertEqual(validate_javascript_bytes(source), source.decode())
 
 
