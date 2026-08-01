@@ -643,6 +643,7 @@ git commit -m "content: complete semantic diagrams for all lessons"
 - Modify: `tests/test_content_standard_contract.py`
 - Modify: `tests/test_visualization_rendering.py`
 - Modify: `tests/test_html_safety.py`
+- Modify: `tests/test_competencies.py`
 
 - [ ] **Step 1: Write RED JS source-safety tests**
 
@@ -696,6 +697,10 @@ actual simulation-bearing lesson set and the script-bearing page set. Task 11
 then enables the final rule that this set exactly equals the catalog's 12
 dynamic assignments.
 
+Update the competency artifact inventory from zero JavaScript files to exactly
+`static/visualization.js`, while independently requiring zero script-bearing
+lesson pages at the Task 8 boundary because no lesson simulation exists yet.
+
 In the same step, replace the current-release “no JavaScript” claim with the
 versioned truth: v0.1.0 remains HTML/CSS-only; v0.2.0 remains completely
 understandable without JavaScript and may load the one first-party enhancement
@@ -709,7 +714,7 @@ asset exists.
 ```bash
 python3.13 -m unittest tests.test_visualization_security tests.test_visualization_runtime tests.test_render tests.test_build tests.test_site_checker tests.test_accessibility_contract -v
 python3.13 -m unittest discover -s tests -v
-git add curriculum_builder/javascript_safety.py curriculum_builder/render.py curriculum_builder/build.py curriculum_builder/visualizations.py curriculum_builder/html_safety.py static/visualization.js templates/base.html tools/check_site.py tests/test_visualization_security.py tests/test_visualization_runtime.py tests/test_render.py tests/test_build.py tests/test_site_checker.py tests/test_accessibility_contract.py tests/test_repository_contract.py tests/test_content_standard_contract.py tests/test_visualization_rendering.py tests/test_html_safety.py README.md README.en.md docs/content-standard.md SECURITY.md CHANGELOG.md
+git add curriculum_builder/javascript_safety.py curriculum_builder/render.py curriculum_builder/build.py curriculum_builder/visualizations.py curriculum_builder/html_safety.py static/visualization.js templates/base.html tools/check_site.py tests/test_visualization_security.py tests/test_visualization_runtime.py tests/test_render.py tests/test_build.py tests/test_site_checker.py tests/test_accessibility_contract.py tests/test_repository_contract.py tests/test_content_standard_contract.py tests/test_visualization_rendering.py tests/test_html_safety.py tests/test_competencies.py README.md README.en.md docs/content-standard.md SECURITY.md CHANGELOG.md
 git commit -m "feat: add safe progressive visualization runtime"
 ```
 
