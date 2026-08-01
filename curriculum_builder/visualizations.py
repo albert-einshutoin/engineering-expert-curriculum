@@ -13,7 +13,7 @@ from types import MappingProxyType
 import unicodedata
 
 from .errors import CurriculumValidationError
-from .html_safety import SafeHtml, validate_fragment
+from .html_safety import SafeHtml, _issue_safe_html, validate_fragment
 
 
 _ID = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
@@ -1579,18 +1579,32 @@ def _render_causal(payload: CausalPayload) -> str:
 
 
 def _render_timeline(payload: TimelinePayload) -> str:
-    phases = {phase.id: phase for phase in payload.phases}
-    entries = "".join(
+    events_by_phase = {phase.id: [] for phase in payload.phases}
+    for event in payload.events:
+        events_by_phase[event.phase_id].append(event)
+    phases = "".join(
         "<li>"
-        f"<strong>{_e(phases[event.phase_id].label)}: {_e(event.label)}</strong>"
-        f"<p>{_e(phases[event.phase_id].detail)}</p>"
-        f"<p>{_e(event.detail)}</p>"
-        f"<p>順序: {event.order}</p>"
-        + (f"<p>lane: {_e(event.lane)}</p>" if event.lane else "")
+        f"<strong>{_e(phase.label)}</strong>"
+        f"<p>{_e(phase.detail)}</p>"
+        + (
+            '<ol class="visualization__timeline-events">'
+            + "".join(
+                "<li>"
+                f"<strong>{_e(event.label)}</strong>"
+                f"<p>{_e(event.detail)}</p>"
+                f"<p>順序: {event.order}</p>"
+                + (f"<p>lane: {_e(event.lane)}</p>" if event.lane else "")
+                + "</li>"
+                for event in events_by_phase[phase.id]
+            )
+            + "</ol>"
+            if events_by_phase[phase.id]
+            else "<p>このフェーズにはイベントがありません。</p>"
+        )
         + "</li>"
-        for event in payload.events
+        for phase in payload.phases
     )
-    return f'<ol class="visualization__timeline">{entries}</ol>'
+    return f'<ol class="visualization__timeline-phases">{phases}</ol>'
 
 
 def _render_nodes_and_edges(
@@ -1715,7 +1729,7 @@ def _render_payload(payload: VisualizationPayload) -> str:
     return _render_state_machine(payload)
 
 
-def _render_simulation(simulation: Simulation) -> str:
+def _render_simulation_oracle(simulation: Simulation) -> str:
     def mapping_text(values: Mapping[str, str]) -> str:
         return "、".join(
             f"{_e(key)}={_e(value)}" for key, value in sorted(values.items())
@@ -1767,15 +1781,125 @@ def _render_simulation(simulation: Simulation) -> str:
         f"<tbody>{outcome_rows}</tbody></table>"
         "</div>"
     )
-    return static_oracle
+    initial = next(
+        state for state in simulation.states
+        if state.id == simulation.initial_state_id
+    )
+    status = (
+        '<p class="visualization__current-status">'
+        f"<strong>現在の状態:</strong> {_e(initial.label)} — {_e(initial.status)}"
+        "</p>"
+    )
+    model_note = (
+        '<p class="visualization__simulation-note">'
+        "このモデルは例示的かつ決定的であり、実システムの完全な再現ではありません。"
+        "</p>"
+    )
+    return static_oracle + status + model_note
+
+
+def _render_simulation_controls(
+    simulation: Simulation,
+    figure_id: str,
+) -> str:
+    mode = simulation.interaction_mode
+    scenario = mode in {
+        InteractionMode.SCENARIO,
+        InteractionMode.HYBRID,
+        InteractionMode.EXPLORER,
+    }
+    stepping = mode in {
+        InteractionMode.STEPPER,
+        InteractionMode.PLAYBACK,
+        InteractionMode.HYBRID,
+        InteractionMode.EXPLORER,
+    }
+    playback = mode in {InteractionMode.PLAYBACK, InteractionMode.HYBRID}
+
+    parameter_controls = ""
+    if scenario:
+        fields: list[str] = []
+        for parameter in simulation.parameters:
+            control_id = f"{figure_id}-parameter-{parameter.id}"
+            if parameter.control == "select":
+                options = "".join(
+                    f'<option value="{_e(option.id, quote=True)}"'
+                    + (
+                        " selected"
+                        if option.id == parameter.default_option_id
+                        else ""
+                    )
+                    + f">{_e(option.label)}</option>"
+                    for option in parameter.options
+                )
+                fields.append(
+                    f'<label for="{_e(control_id, quote=True)}">'
+                    f"{_e(parameter.label)}</label>"
+                    f'<select id="{_e(control_id, quote=True)}" disabled>'
+                    f"{options}</select>"
+                )
+            else:
+                radios = "".join(
+                    "<label>"
+                    f'<input type="radio" name="{_e(control_id, quote=True)}" '
+                    f'value="{_e(option.id, quote=True)}" disabled'
+                    + (
+                        " checked"
+                        if option.id == parameter.default_option_id
+                        else ""
+                    )
+                    + f">{_e(option.label)}</label>"
+                    for option in parameter.options
+                )
+                fields.append(
+                    f"<fieldset disabled><legend>{_e(parameter.label)}</legend>"
+                    f"{radios}</fieldset>"
+                )
+        parameter_controls = "".join(fields)
+
+    actions: list[str] = []
+    if scenario:
+        actions.append('<button type="button" disabled>適用</button>')
+    if playback:
+        actions.extend(
+            (
+                '<button type="button" disabled>再生</button>',
+                '<button type="button" disabled>一時停止</button>',
+            )
+        )
+    if stepping:
+        actions.extend(
+            (
+                '<button type="button" disabled>前へ</button>',
+                '<button type="button" disabled>次へ</button>',
+            )
+        )
+    if playback:
+        speed_id = f"{figure_id}-speed"
+        actions.append(
+            f'<label for="{_e(speed_id, quote=True)}">速度</label>'
+            f'<select id="{_e(speed_id, quote=True)}" disabled>'
+            '<option value="0.5">0.5x</option>'
+            '<option value="1" selected>1x</option>'
+            '<option value="2">2x</option></select>'
+        )
+    actions.append('<button type="button" disabled>リセット</button>')
+    return (
+        '<div class="visualization__controls" hidden>'
+        f"{parameter_controls}{''.join(actions)}</div>"
+    )
 
 
 def render_visualization(lesson_id: str, visual: Visualization) -> SafeHtml:
     """Render a complete semantic model before optional enhancement controls."""
     figure_id = f"{lesson_id}-{visual.id}"
     notes = "".join(f"<li>{_e(note)}</li>" for note in visual.notes)
-    simulation = "" if visual.simulation is None else _render_simulation(visual.simulation)
-    return validate_fragment(
+    simulation_oracle = (
+        ""
+        if visual.simulation is None
+        else _render_simulation_oracle(visual.simulation)
+    )
+    safe_figure = validate_fragment(
         f'<figure id="{_e(figure_id, quote=True)}" '
         f'class="visualization visualization--{_e(visual.type.value, quote=True)}">'
         f"<figcaption>{_e(visual.caption)}</figcaption>"
@@ -1783,6 +1907,18 @@ def render_visualization(lesson_id: str, visual: Visualization) -> SafeHtml:
         + _render_payload(visual.payload)
         + f'<p class="visualization__observation">{_e(visual.expected_observation)}</p>'
         + (f'<ul class="visualization__notes">{notes}</ul>' if notes else "")
-        + simulation
+        + simulation_oracle
+        + "</figure>"
+    )
+    if visual.simulation is None:
+        return safe_figure
+    controls = _render_simulation_controls(visual.simulation, figure_id)
+    # Author-controlled values were escaped and the semantic figure was
+    # validated above. Controls are a closed renderer-owned grammar containing
+    # only fixed native elements and escaped schema-bounded IDs/labels, so the
+    # authored-fragment allowlist does not need to admit interactive elements.
+    return _issue_safe_html(
+        safe_figure.value[:-len("</figure>")]
+        + controls
         + "</figure>"
     )

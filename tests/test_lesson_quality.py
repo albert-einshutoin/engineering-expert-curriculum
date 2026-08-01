@@ -139,8 +139,17 @@ class LessonQualityTests(unittest.TestCase):
             lesson = load_lesson(self.write_document(directory, visualized))
         self.assertEqual(lesson.visualizations[0].id, "decision-flow")
 
+        visualized["sources"][1].pop("id")
+        self.assert_invalid(
+            visualized,
+            "every source requires an id when visualizations exist",
+        )
+        visualized["sources"][1]["id"] = "src-iso-42010"
         visualized["sources"][0].pop("id")
-        self.assert_invalid(visualized, "dangling source reference")
+        self.assert_invalid(
+            visualized,
+            "every source requires an id when visualizations exist",
+        )
 
     def test_load_lesson_bytes_parses_the_callers_pinned_snapshot(self) -> None:
         raw = COMPLETE.read_bytes()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from html.parser import HTMLParser
 import unittest
 
@@ -184,20 +185,78 @@ class VisualizationRenderingTests(unittest.TestCase):
             (SimulationOutcome("delivered", "ready", "到達を観測"),),
             1000,
         )
-        object.__setattr__(visual, "simulation", simulation)
+        visual = replace(visual, simulation=simulation)
 
         html = render_visualization("core-01-systems-tradeoffs", visual).value
 
         for expected in (
             "障害なし", "破棄", "fault=none", "a-to-b",
             "fault=drop", "parameter-change", "到達を観測",
+            "現在の状態", "送信可能", "例示的", "決定的",
+            "visualization__controls", "hidden", "disabled",
+            "適用", "再生", "一時停止", "前へ", "次へ", "リセット",
         ):
             self.assertIn(expected, html)
-        if "visualization__controls" in html:
-            self.assertLess(
-                html.index("visualization__simulation-oracle"),
-                html.index("visualization__controls"),
-            )
+        self.assertLess(
+            html.index("visualization__simulation-oracle"),
+            html.index("visualization__controls"),
+        )
+
+    def test_timeline_groups_ordered_events_under_each_phase(self) -> None:
+        payload = TimelinePayload(
+            (_item("plan", "計画"), _item("release", "公開")),
+            (
+                TimelineEvent("draft", "下書き", "詳細1", "plan", 0, None),
+                TimelineEvent("review", "レビュー", "詳細2", "plan", 1, None),
+                TimelineEvent("ship", "公開", "詳細3", "release", 2, None),
+            ),
+        )
+        html = render_visualization(
+            "core-01-systems-tradeoffs",
+            _visual(VisualizationType.TIMELINE, payload),
+        ).value
+
+        self.assertIn('class="visualization__timeline-phases"', html)
+        self.assertEqual(html.count('class="visualization__timeline-events"'), 2)
+        self.assertEqual(html.count("計画</strong>"), 1)
+        self.assertLess(html.index("下書き"), html.index("レビュー"))
+        self.assertLess(html.index("レビュー"), html.index("公開</strong>"))
+
+    def test_simulation_controls_match_each_interaction_mode(self) -> None:
+        base = Simulation(
+            SimulationKind.REQUEST_PATH,
+            InteractionMode.SCENARIO,
+            (SimulationParameter(
+                "fault", "障害", "select",
+                (ParameterOption("none", "なし"), ParameterOption("drop", "破棄")),
+                "none",
+            ),),
+            "ready",
+            (SimulationState("ready", "準備", "待機", {}, (), ()),),
+            (),
+            (SimulationOutcome("ready-outcome", "ready", "準備完了"),),
+            None,
+        )
+        expected = {
+            InteractionMode.SCENARIO: (("適用", "リセット"), ("再生", "前へ")),
+            InteractionMode.STEPPER: (("前へ", "次へ", "リセット"), ("適用", "再生")),
+            InteractionMode.PLAYBACK: (("再生", "一時停止", "前へ", "次へ", "速度", "リセット"), ("適用",)),
+            InteractionMode.HYBRID: (("適用", "再生", "一時停止", "前へ", "次へ", "速度", "リセット"), ()),
+            InteractionMode.EXPLORER: (("適用", "前へ", "次へ", "リセット"), ("再生", "速度")),
+        }
+        payload = self.payloads()[VisualizationType.FLOW]
+        for mode, (present, absent) in expected.items():
+            with self.subTest(mode=mode):
+                visual = replace(
+                    _visual(VisualizationType.FLOW, payload),
+                    simulation=replace(base, interaction_mode=mode),
+                )
+                html = render_visualization("core-01-systems-tradeoffs", visual).value
+                controls = html[html.index("visualization__controls"):]
+                for label in present:
+                    self.assertIn(label, controls)
+                for label in absent:
+                    self.assertNotIn(label, controls)
 
 
 if __name__ == "__main__":

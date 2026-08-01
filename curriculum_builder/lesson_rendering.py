@@ -15,7 +15,12 @@ from urllib.parse import urlsplit
 
 from .errors import CurriculumValidationError, IncompleteLessonReleaseError
 from .graph import topological_stages
-from .html_safety import MAX_FRAGMENT_BYTES, SafeHtml, validate_fragment
+from .html_safety import (
+    MAX_FRAGMENT_BYTES,
+    SafeHtml,
+    _issue_safe_html,
+    validate_fragment,
+)
 from .lessons import Lesson, MAX_LESSON_BYTES, load_lesson_bytes
 from .render import Renderer
 from .visualizations import LessonSectionRole, Visualization, render_visualization
@@ -720,7 +725,10 @@ def render_lesson_body(
         )
         for section in body.sections
     )
-    return validate_fragment(rendered)
+    # Each component is already an exact SafeHtml instance. Re-issuing the
+    # concatenation preserves renderer-owned native controls without widening
+    # the stricter repository-authored fragment grammar.
+    return _issue_safe_html(rendered)
 
 
 def render_lesson_artifacts(

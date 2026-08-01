@@ -323,6 +323,17 @@ def _parse_lesson(raw: dict[str, object]) -> Lesson:
         objective.id: frozenset(objective.evidence_ids)
         for objective in objectives
     }
+    authored_visualizations = raw.get("visualizations")
+    if (
+        type(authored_visualizations) is list
+        and authored_visualizations
+        and any(
+            source.id is None for source in sources
+        )
+    ):
+        raise CurriculumValidationError(
+            "every source requires an id when visualizations exist"
+        )
     visualizations = parse_visualizations(
         raw.get("visualizations"),
         lesson_id=lesson_id,
