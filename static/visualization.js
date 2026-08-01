@@ -238,23 +238,48 @@
     });
     if (!selections.length || selections.length > 64) { throw new Error('invalid parameter domain'); }
     selections.forEach(function (selection) {
+      var applicable = new Set();
+      this.stateById.forEach(function (state, stateId) {
+        if (matches(state.conditions, selection)) { applicable.add(stateId); }
+      });
       if (this.mode === 'scenario') {
-        var scenarioStates = [];
-        this.stateById.forEach(function (state, stateId) {
-          if (matches(state.conditions, selection)) { scenarioStates.push(stateId); }
-        });
-        if (scenarioStates.length !== 1) { throw new Error('invalid scenario partition'); }
+        if (applicable.size !== 1) { throw new Error('invalid scenario partition'); }
+        return;
       }
-      this.transitions.forEach(function (transition) {
-        if (matches(transition.conditions, selection) && !matches(this.stateById.get(transition.to).conditions, selection)) { throw new Error('transition target condition mismatch'); }
-      }, this);
+      if (!applicable.has(this.initialId)) { throw new Error('initial state condition mismatch'); }
+      var active = this.transitions.filter(function (transition) {
+        return matches(transition.conditions, selection);
+      });
+      active.forEach(function (transition) {
+        if (!applicable.has(transition.from) || !applicable.has(transition.to)) { throw new Error('transition endpoint condition mismatch'); }
+      });
       this.stateById.forEach(function (state, stateId) {
         EVENTS.forEach(function (eventName) {
-          var matchesForEvent = this.transitions.filter(function (transition) {
-            return transition.from === stateId && transition.eventName === eventName && matches(transition.conditions, selection);
+          var matchesForEvent = active.filter(function (transition) {
+            return transition.from === stateId && transition.eventName === eventName;
           });
           if (matchesForEvent.length > 1) { throw new Error('ambiguous transition event'); }
         }, this);
+      }, this);
+      // Reset is validated over the selected reachable graph so every state a
+      // learner can enter has one deterministic recovery edge to the initial.
+      var reachable = new Set([this.initialId]);
+      var changed = true;
+      while (changed) {
+        changed = false;
+        active.forEach(function (transition) {
+          if (reachable.has(transition.from) && !reachable.has(transition.to)) {
+            reachable.add(transition.to);
+            changed = true;
+          }
+        });
+      }
+      reachable.forEach(function (stateId) {
+        if (stateId === this.initialId) { return; }
+        var resets = active.filter(function (transition) {
+          return transition.from === stateId && transition.eventName === 'reset';
+        });
+        if (resets.length !== 1 || resets[0].to !== this.initialId) { throw new Error('invalid reset invariant'); }
       }, this);
     }, this);
   };

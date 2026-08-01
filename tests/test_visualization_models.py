@@ -192,6 +192,59 @@ def _scenario_simulation() -> dict[str, object]:
     }
 
 
+def _resettable_simulation(mode: str) -> dict[str, object]:
+    if mode in {"stepper", "playback"}:
+        simulation: dict[str, object] = {
+            "kind": "complexity-growth",
+            "interactionMode": mode,
+            "parameters": [],
+            "initialStateId": "initial",
+            "states": [
+                {"id": "initial", "label": "初期", "status": "開始", "activeNodeIds": ["start"], "activeEdgeIds": []},
+                {"id": "complete", "label": "完了", "status": "終了", "activeNodeIds": ["finish"], "activeEdgeIds": ["advance"]},
+            ],
+            "transitions": [
+                {"id": "advance-state", "from": "initial", "to": "complete", "event": "timer" if mode == "playback" else "next"},
+                {"id": "reset-complete", "from": "complete", "to": "initial", "event": "reset"},
+            ],
+            "outcomes": [
+                {"id": "complete-result", "stateId": "complete", "label": "完了"}
+            ],
+        }
+        if mode == "playback":
+            simulation["defaultIntervalMs"] = 250
+        return simulation
+
+    simulation = {
+        "kind": "complexity-growth",
+        "interactionMode": mode,
+        "parameters": [{
+            "id": "path", "label": "経路", "control": "select",
+            "options": [{"id": "a", "label": "A"}, {"id": "b", "label": "B"}],
+            "defaultOptionId": "a",
+        }],
+        "initialStateId": "initial",
+        "states": [
+            {"id": "initial", "label": "初期", "status": "開始", "activeNodeIds": ["start"], "activeEdgeIds": []},
+            {"id": "path-a", "label": "A", "status": "完了", "when": {"path": "a"}, "activeNodeIds": ["finish"], "activeEdgeIds": ["advance"]},
+            {"id": "path-b", "label": "B", "status": "完了", "when": {"path": "b"}, "activeNodeIds": ["finish"], "activeEdgeIds": ["advance"]},
+        ],
+        "transitions": [
+            {"id": "advance-a", "from": "initial", "to": "path-a", "event": "parameter-change", "when": {"path": "a"}},
+            {"id": "advance-b", "from": "initial", "to": "path-b", "event": "parameter-change", "when": {"path": "b"}},
+            {"id": "reset-a", "from": "path-a", "to": "initial", "event": "reset", "when": {"path": "a"}},
+            {"id": "reset-b", "from": "path-b", "to": "initial", "event": "reset", "when": {"path": "b"}},
+        ],
+        "outcomes": [
+            {"id": "a-result", "stateId": "path-a", "label": "A"},
+            {"id": "b-result", "stateId": "path-b", "label": "B"},
+        ],
+    }
+    if mode == "hybrid":
+        simulation["defaultIntervalMs"] = 250
+    return simulation
+
+
 class VisualizationCatalogTests(unittest.TestCase):
     def _catalog_bytes(self) -> bytes:
         return (REPOSITORY_ROOT / "content/visualization-catalog.json").read_bytes()
@@ -437,6 +490,49 @@ class VisualizationModelTests(unittest.TestCase):
                 _visual("flow", deepcopy(_payloads()["flow"]), simulation=invalid)
             ])
 
+    def test_non_scenario_reachable_states_require_unique_reset_to_initial(self) -> None:
+        for mode in ("stepper", "playback", "hybrid", "explorer"):
+            with self.subTest(mode=mode, mutation="valid"):
+                parsed = _parse([_visual(
+                    "flow",
+                    deepcopy(_payloads()["flow"]),
+                    simulation=_resettable_simulation(mode),
+                )])
+                self.assertIsNotNone(parsed[0].simulation)
+
+        mutations = []
+        for mutation in ("missing", "wrong-target", "duplicate"):
+            simulation = _resettable_simulation("stepper")
+            transitions = simulation["transitions"]
+            assert isinstance(transitions, list)
+            if mutation == "missing":
+                transitions.pop()
+            elif mutation == "wrong-target":
+                transitions[-1]["to"] = "complete"
+            else:
+                duplicate = deepcopy(transitions[-1])
+                duplicate["id"] = "second-reset"
+                transitions.append(duplicate)
+            mutations.append((mutation, simulation))
+
+        selection_missing = _resettable_simulation("hybrid")
+        selection_transitions = selection_missing["transitions"]
+        assert isinstance(selection_transitions, list)
+        selection_transitions[:] = [
+            edge for edge in selection_transitions
+            if edge["id"] != "reset-b"
+        ]
+        mutations.append(("selection-missing", selection_missing))
+
+        for mutation, simulation in mutations:
+            with self.subTest(mutation=mutation):
+                with self.assertRaises(CurriculumValidationError):
+                    _parse([_visual(
+                        "flow",
+                        deepcopy(_payloads()["flow"]),
+                        simulation=simulation,
+                    )])
+
     def test_complete_lessons_require_one_or_two_visuals(self) -> None:
         for value in (None, [], [_visual("flow", _payloads()["flow"])] * 3):
             with self.subTest(value=value):
@@ -637,6 +733,15 @@ class VisualizationModelTests(unittest.TestCase):
                     "when": conditions,
                 }
             )
+            transitions.append(
+                {
+                    "id": f"reset-{suffix}",
+                    "from": state_id,
+                    "to": "initial",
+                    "event": "reset",
+                    "when": conditions,
+                }
+            )
         simulation = {
             "kind": "complexity-growth",
             "interactionMode": "hybrid",
@@ -659,7 +764,7 @@ class VisualizationModelTests(unittest.TestCase):
         ])
 
         self.assertEqual(len(parsed[0].simulation.states), 64)  # type: ignore[union-attr]
-        self.assertEqual(len(parsed[0].simulation.transitions), 63)  # type: ignore[union-attr]
+        self.assertEqual(len(parsed[0].simulation.transitions), 126)  # type: ignore[union-attr]
         overflow = deepcopy(simulation)
         overflow["parameters"].append(  # type: ignore[union-attr]
             {
@@ -685,12 +790,8 @@ class VisualizationModelTests(unittest.TestCase):
     def test_interval_closed_bounds_and_multiple_of_fifty(self) -> None:
         for interval, accepted in ((249, False), (250, True), (251, False), (5000, True), (5001, False)):
             with self.subTest(interval=interval):
-                simulation = _scenario_simulation()
-                simulation["interactionMode"] = "playback"
+                simulation = _resettable_simulation("playback")
                 simulation["defaultIntervalMs"] = interval
-                simulation["transitions"] = [
-                    {"id": "advance-state", "from": "small-state", "to": "large-state", "event": "next"}
-                ]
                 if accepted:
                     self.assertIsNotNone(_parse([_visual("flow", deepcopy(_payloads()["flow"]), simulation=simulation)])[0].simulation)
                 else:

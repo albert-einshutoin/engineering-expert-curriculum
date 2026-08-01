@@ -697,12 +697,23 @@ Apply resolves exactly one state from the bounded parameter partition, and
 Reset restores the authored initial state. The event-edge requirement applies
 to state movement in the other four modes.
 
+For each finite parameter selection in every non-scenario mode, require one
+applicable `reset` edge from every reachable non-initial state to the authored
+initial state. Reject missing, duplicate, wrong-target, and per-selection gaps
+in both the Python model and the pre-mutation runtime DOM validator.
+
 - [ ] **Step 4: Implement one dependency-free classic script**
 
 Use a strict IIFE, fixed selectors, `Map`/`Set`, per-figure controller, one owned
 timer, fixed state classes, `textContent`, native `hidden`/`disabled`, and the
 approved ARIA mutations. Do not use build tooling, modules, network, storage,
 runtime layout, or arbitrary selector construction.
+
+Keep browser authority use allowlisted to the measured direct first-party
+members: `window.matchMedia`, `window.setTimeout`, `window.clearTimeout`, and
+`window.addEventListener`. Reject `globalThis`, `navigator`, bare `window`
+values, computed authority members, and aliases hidden in expressions or
+containers instead of extending regex data-flow inference.
 
 Add non-color visual rules for the runtime's fixed enhanced, active, complete,
 and error classes, including forced-colors, reduced-motion, focus, and print

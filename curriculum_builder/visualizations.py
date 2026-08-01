@@ -1056,7 +1056,7 @@ def _validate_simulation_domain(
                 _fail(path, "simulation transitions are ambiguous")
             active_transitions.extend(matches)
 
-        if not conditional_path_mode:
+        if mode is InteractionMode.SCENARIO:
             continue
         if initial_state_id not in applicable_state_ids:
             _fail(path, "initial state is unavailable for a parameter selection")
@@ -1070,8 +1070,19 @@ def _validate_simulation_domain(
         adjacency = {state_id: [] for state_id in applicable_state_ids}
         for edge in active_transitions:
             adjacency[edge.from_id].append(edge.to_id)
-        if _reachable(initial_state_id, adjacency) != applicable_state_ids:
+        reachable = _reachable(initial_state_id, adjacency)
+        if conditional_path_mode and reachable != applicable_state_ids:
             _fail(path, "parameter selection has an unreachable step path")
+        # Reset is a recovery invariant rather than an optional navigation
+        # hint: every state the selected graph can reach has exactly one
+        # deterministic edge back to the authored initial state.
+        for state_id in reachable - {initial_state_id}:
+            resets = [
+                edge for edge in active_transitions
+                if edge.from_id == state_id and edge.event == "reset"
+            ]
+            if len(resets) != 1 or resets[0].to_id != initial_state_id:
+                _fail(path, "reachable states require one reset to initial state")
 
 
 def _parse_parameter_option(value: object, path: str) -> ParameterOption:

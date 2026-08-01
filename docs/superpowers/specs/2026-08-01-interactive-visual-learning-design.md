@@ -555,10 +555,19 @@ partition, and Reset restores `data-initial-state-id`. Missing or overlapping
 partition entries fail before enhancement. Event-keyed transitions remain
 mandatory for state movement in every non-scenario mode.
 
+For every finite parameter selection in a non-scenario mode, each reachable
+non-initial state has exactly one applicable `reset` edge whose target is the
+authored initial state. Missing, duplicate, misdirected, or selection-specific
+reset gaps fail in both schema and runtime DOM validation.
+
 The runtime must not use `fetch`, XMLHttpRequest, WebSocket, EventSource,
 dynamic `import()`, Worker, Service Worker, storage APIs, query/hash state,
 clipboard, navigation, `eval`, `Function`, `innerHTML`, `outerHTML`, DOMParser,
 `insertAdjacentHTML`, runtime style injection, or remote resources.
+Browser authority is also closed: `globalThis`, `navigator`, and bare `window`
+values are forbidden. The handwritten first-party runtime may use only direct
+`window.matchMedia`, `window.setTimeout`, `window.clearTimeout`, and
+`window.addEventListener` members measured from the reviewed artifact.
 
 There is no continuous `requestAnimationFrame`, polling loop, document-wide
 MutationObserver, or browser graph-layout algorithm. Runtime complexity for one

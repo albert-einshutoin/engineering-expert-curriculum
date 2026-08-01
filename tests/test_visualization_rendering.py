@@ -407,16 +407,26 @@ class VisualizationRenderingTests(unittest.TestCase):
             raw = _maximum_id_visual()
             simulation = raw["simulation"]
             assert isinstance(simulation, dict)
-            simulation["interactionMode"] = "stepper"
+            simulation["interactionMode"] = "explorer"
             parameter_id = "p" * 64
             second_option = "b" * 64
-            simulation["transitions"] = [{
-                "id": "advance-state",
-                "from": "first-state",
-                "to": "second-state",
-                "event": "parameter-change",
-                "when": {parameter_id: second_option},
-            }]
+            simulation["states"][0]["when"] = {}  # type: ignore[index]
+            simulation["transitions"] = [
+                {
+                    "id": "advance-state",
+                    "from": "first-state",
+                    "to": "second-state",
+                    "event": "parameter-change",
+                    "when": {parameter_id: second_option},
+                },
+                {
+                    "id": "reset-state",
+                    "from": "second-state",
+                    "to": "first-state",
+                    "event": "reset",
+                    "when": {parameter_id: second_option},
+                },
+            ]
             return parse_visualizations(
                 [raw],
                 lesson_id="core-01-systems-tradeoffs",
@@ -534,9 +544,14 @@ class VisualizationRenderingTests(unittest.TestCase):
                     ("b",), (),
                 ),
             ),
-            (SimulationTransition(
-                "retry", "ready", "dropped", "parameter-change", {"fault": "drop"}
-            ),),
+            (
+                SimulationTransition(
+                    "retry", "ready", "dropped", "parameter-change", {"fault": "drop"}
+                ),
+                SimulationTransition(
+                    "reset-dropped", "dropped", "ready", "reset", {"fault": "drop"}
+                ),
+            ),
             (SimulationOutcome("delivered", "ready", "到達を観測"),),
             1000,
         )

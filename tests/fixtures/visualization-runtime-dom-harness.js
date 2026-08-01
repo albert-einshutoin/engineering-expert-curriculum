@@ -252,8 +252,8 @@ function fixture(tracker, mode, suffix = '', controlKind = 'select') {
     addTransition('to-a', 'parameter-change', 'state-0', 'state-a', 'choice', 'a');
     addTransition('to-b', 'parameter-change', 'state-0', 'state-b', 'choice', 'b');
     addTransition('initial-reset', 'reset', 'state-0', 'state-0', null, null);
-    addTransition('a-reset', 'reset', 'state-a', 'state-0', null, null);
-    addTransition('b-reset', 'reset', 'state-b', 'state-0', null, null);
+    addTransition('a-reset', 'reset', 'state-a', 'state-0', 'choice', 'a');
+    addTransition('b-reset', 'reset', 'state-b', 'state-0', 'choice', 'b');
     if (mode === 'hybrid') {
       addState('state-a-done', 3, 'choice', 'a', 'node-2', 'edge-1');
       addState('state-b-done', 4, 'choice', 'b', 'node-2', 'edge-1');
@@ -263,8 +263,8 @@ function fixture(tracker, mode, suffix = '', controlKind = 'select') {
       addTransition('b-timer', 'timer', 'state-b', 'state-b-done', 'choice', 'b');
       addTransition('a-done-previous', 'previous', 'state-a-done', 'state-a', 'choice', 'a');
       addTransition('b-done-previous', 'previous', 'state-b-done', 'state-b', 'choice', 'b');
-      addTransition('a-done-reset', 'reset', 'state-a-done', 'state-0', null, null);
-      addTransition('b-done-reset', 'reset', 'state-b-done', 'state-0', null, null);
+      addTransition('a-done-reset', 'reset', 'state-a-done', 'state-0', 'choice', 'a');
+      addTransition('b-done-reset', 'reset', 'state-b-done', 'state-0', 'choice', 'b');
     }
     addOutcome('outcome-a', 'state-a');
     addOutcome('outcome-b', 'state-b');
@@ -445,7 +445,6 @@ function runExactEventResolution() {
   const cases = [
     ['to-1', 'timer', 'next'],
     ['back-1', 'timer', 'previous'],
-    ['reset-1', 'timer', 'reset'],
   ];
   for (const [transitionId, replacementEvent, action] of cases) {
     const tracker = new Tracker();
@@ -482,6 +481,19 @@ function runValidationMutations() {
     ['scenario', (value, tracker) => {
       const transition = element(tracker, 'tr', { 'data-transition-id': 'forbidden', 'data-transition-event': 'parameter-change', 'data-from-state-id': 'state-a', 'data-to-state-id': 'state-b' }, ['visualization__simulation-transition']);
       value.root.children.filter((item) => item.tag === 'tbody')[0].append(transition);
+    }],
+    ['stepper', (value) => {
+      const transition = value.root.querySelectorAll('.visualization__simulation-transition').find((item) => item.getAttribute('data-transition-id') === 'reset-2');
+      transition.parent.children = transition.parent.children.filter((item) => item !== transition);
+    }],
+    ['stepper', (value) => value.root.querySelectorAll('.visualization__simulation-transition').find((item) => item.getAttribute('data-transition-id') === 'reset-2').attributes.set('data-to-state-id', 'state-1')],
+    ['stepper', (value, tracker) => {
+      const transition = element(tracker, 'tr', { 'data-transition-id': 'duplicate-reset', 'data-transition-event': 'reset', 'data-from-state-id': 'state-2', 'data-to-state-id': 'state-0' }, ['visualization__simulation-transition']);
+      value.root.children.filter((item) => item.tag === 'tbody')[0].append(transition);
+    }],
+    ['hybrid', (value) => {
+      const transition = value.root.querySelectorAll('.visualization__simulation-transition').find((item) => item.getAttribute('data-transition-id') === 'b-done-reset');
+      transition.parent.children = transition.parent.children.filter((item) => item !== transition);
     }],
     ['hybrid', (value) => value.root.querySelector('.visualization__transition-condition').attributes.delete('data-parameter-id')],
     ['scenario', (value) => value.root.querySelector('.visualization__state-condition').attributes.set('data-unexpected', 'x')],
