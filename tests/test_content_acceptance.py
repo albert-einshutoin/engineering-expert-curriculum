@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, replace
 import hashlib
 from html.parser import HTMLParser
@@ -17,6 +18,7 @@ from curriculum_builder.capstones import parse_capstone_documents
 from curriculum_builder.competencies import parse_competencies_bytes
 from curriculum_builder.errors import CurriculumValidationError
 from curriculum_builder.lessons import load_lesson_bytes
+from curriculum_builder.visualizations import render_visualization
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -70,6 +72,226 @@ TASK5_VISUAL_TYPES = {
     "core-21-maintenance-legacy-comprehension": "network",
     "core-27-team-interfaces-sociotechnical-architecture": "network",
     "core-30-evidence-based-technical-leadership": "causal",
+}
+TASK5_VISUAL_CONTRACTS = {
+    "core-01-systems-tradeoffs": {
+        "trace": (
+            ("obj-boundary", "obj-falsification"),
+            ("assessment",),
+            ("src-01", "src-03"),
+        ),
+        "structure": {
+            "causes": (("constraints", "制約"),),
+            "mechanisms": (("boundary", "境界"), ("alternatives", "代替案")),
+            "outcomes": (("purpose", "目的"), ("observations", "観測")),
+            "mitigations": (("falsification", "反証"),),
+        },
+        "relations": (
+            ("constraints-bound-boundary", "constraints", "boundary", "制約を守る評価境界を定める"),
+            ("boundary-shapes-options", "boundary", "alternatives", "境界内で成立する選択肢を比較する"),
+            ("options-seek-purpose", "alternatives", "purpose", "選択肢を利用者目的に照合する"),
+            ("options-produce-signals", "alternatives", "observations", "選択の結果を測定する"),
+            ("signals-trigger-review", "observations", "falsification", "閾値超過で境界または選択案を見直す"),
+        ),
+    },
+    "core-06-requirements-domain-modeling": {
+        "trace": (
+            ("obj-language", "obj-boundary"),
+            ("domain-model",),
+            ("src-01", "src-03"),
+        ),
+        "components": (("requirements-model", "要求とドメインモデル"),),
+        "nodes": (
+            ("statement", "発言", "requirements-model"),
+            ("language", "用語", "requirements-model"),
+            ("boundary", "境界", "requirements-model"),
+            ("behavior", "振る舞い", "requirements-model"),
+            ("exceptions", "例外", "requirements-model"),
+            ("verification", "検証", "requirements-model"),
+        ),
+        "relations": (
+            ("statement-defines-language", "statement", "language", "例と反例で語を定義する"),
+            ("language-locates-boundary", "language", "boundary", "用語の一貫する範囲を決める"),
+            ("boundary-owns-behavior", "boundary", "behavior", "状態変化の責任を置く"),
+            ("behavior-exposes-exceptions", "behavior", "exceptions", "通常経路と失敗経路を揃える"),
+            ("exceptions-drive-verification", "exceptions", "verification", "観測と確認質問へ接続する"),
+        ),
+    },
+    "core-08-modularity-evolutionary-architecture": {
+        "trace": (
+            ("obj-boundary", "obj-direction"),
+            ("module-adr",),
+            ("src-01", "src-02"),
+        ),
+        "components": (
+            ("source-dependency-view", "source dependency view"),
+            ("runtime-request-flow-view", "runtime request flow view"),
+            ("independent-reporting", "変更対象外のreporting境界"),
+        ),
+        "nodes": (
+            ("source-domain", "pricing-domain", "source-dependency-view"),
+            ("source-application", "pricing-application", "source-dependency-view"),
+            ("source-adapters", "pricing-adapters", "source-dependency-view"),
+            ("runtime-domain", "pricing-domain", "runtime-request-flow-view"),
+            ("runtime-application", "pricing-application", "runtime-request-flow-view"),
+            ("runtime-adapters", "pricing-adapters", "runtime-request-flow-view"),
+            ("reporting", "reporting", "independent-reporting"),
+        ),
+        "relations": (
+            ("source-adapters-to-application", "source-adapters", "source-application", "source dependency: adaptersからapplicationへ向ける"),
+            ("source-application-to-domain", "source-application", "source-domain", "source dependency: applicationからdomain portへ向ける"),
+            ("runtime-domain-to-application", "runtime-domain", "runtime-application", "runtime request flow: domain portからapplicationへ戻る"),
+            ("runtime-application-to-adapters", "runtime-application", "runtime-adapters", "runtime request flow: applicationからadapter実装を呼ぶ"),
+        ),
+    },
+    "core-10-threat-modeling-secure-design": {
+        "trace": (
+            ("obj-model", "obj-control"),
+            ("threat-model",),
+            ("src-01", "src-04"),
+        ),
+        "components": (("threat-trace", "threat trace"),),
+        "nodes": (
+            ("asset", "asset", "threat-trace"),
+            ("actor-boundary", "actorとboundary", "threat-trace"),
+            ("threat", "threat", "threat-trace"),
+            ("control", "control", "threat-trace"),
+            ("verification", "verification", "threat-trace"),
+            ("residual-risk", "residual risk", "threat-trace"),
+        ),
+        "relations": (
+            ("asset-crosses-boundary", "asset", "actor-boundary", "価値ある対象と越境点を対応付ける"),
+            ("boundary-exposes-threat", "actor-boundary", "threat", "actorの行為として脅威を具体化する"),
+            ("threat-covered-by-control", "threat", "control", "予防・検知・回復を重ねる"),
+            ("control-tested-by-verification", "control", "verification", "test結果で有効性を確かめる"),
+            ("verification-informs-risk", "verification", "residual-risk", "未解決riskの判断根拠にする"),
+        ),
+    },
+    "core-14-performance-capacity": {
+        "trace": (
+            ("obj-load-curve", "obj-profile"),
+            ("performance-report",),
+            ("src-01", "src-02", "src-03"),
+        ),
+        "structure": {
+            "causes": (("fixture", "Fixture（負荷条件）"),),
+            "mechanisms": (("bottleneck-mechanism", "Bottleneck mechanism"),),
+            "outcomes": (("curve", "Curve"), ("profile", "Profile")),
+            "mitigations": (("capacity", "Capacity"),),
+        },
+        "relations": (
+            ("fixture-exposes-mechanism", "fixture", "bottleneck-mechanism", "固定条件でresource、queue、downstreamの飽和を起こす"),
+            ("mechanism-shapes-curve", "bottleneck-mechanism", "curve", "plateau、tail、error、queueとして現れる"),
+            ("mechanism-guides-profile", "bottleneck-mechanism", "profile", "仮説に合う局所証拠を採る"),
+            ("curve-bounds-capacity", "curve", "capacity", "observed kneeからheadroomを引く"),
+            ("profile-bounds-capacity", "profile", "capacity", "局所証拠を再測定条件へ反映する"),
+        ),
+    },
+    "core-18-product-discovery-experiments": {
+        "trace": (
+            ("obj-falsifiable-hypothesis", "obj-analysis-plan"),
+            ("experiment-plan",),
+            ("src-02", "src-04"),
+        ),
+        "structure": {
+            "causes": (("problem", "Problem"),),
+            "mechanisms": (("hypothesis", "Hypothesis"), ("plan", "Plan"), ("simulate", "Simulate")),
+            "outcomes": (("decide", "Decide"),),
+            "mitigations": (("guardrail-response", "Guardrail response"),),
+        },
+        "relations": (
+            ("problem-forms-hypothesis", "problem", "hypothesis", "問題から反証可能な介入を定める"),
+            ("hypothesis-fixes-plan", "hypothesis", "plan", "観測前に評価契約を固定する"),
+            ("plan-governs-simulation", "plan", "simulate", "固定集計からrateと差分を計算する"),
+            ("simulation-informs-decision", "simulate", "decide", "successとguardrailを同時評価する"),
+            ("decision-triggers-response", "decide", "guardrail-response", "stopまたはlearnで追加被害を抑える"),
+        ),
+    },
+    "core-20-ethics-privacy-societal-impact": {
+        "trace": (
+            ("obj-impact", "obj-residual"),
+            ("assessment",),
+            ("src-01", "src-02", "src-04"),
+        ),
+        "structure": {
+            "causes": (("lifecycle", "Lifecycle"),),
+            "mechanisms": (("exposure-mechanism", "Exposure mechanism"),),
+            "outcomes": (("harm", "Harm"), ("residual-risk", "Residual risk")),
+            "mitigations": (("mitigation", "Mitigation"),),
+        },
+        "relations": (
+            ("lifecycle-creates-exposure", "lifecycle", "exposure-mechanism", "collect、use、share、retainが人とdataを害へ曝露する"),
+            ("exposure-produces-harm", "exposure-mechanism", "harm", "権力差と退出困難を通じ具体的な害として現れる"),
+            ("harm-leaves-residual", "harm", "residual-risk", "軽減後も残る害を明示する"),
+            ("mitigation-reduces-residual", "mitigation", "residual-risk", "回避、最小化、検知、救済、退出で低減する"),
+        ),
+    },
+    "core-21-maintenance-legacy-comprehension": {
+        "trace": (
+            ("obj-comprehension", "obj-characterization"),
+            ("system-map",),
+            ("src-01", "src-02"),
+        ),
+        "components": (("change-evidence", "変更前証拠"),),
+        "nodes": (
+            ("reason", "Reason", "change-evidence"),
+            ("trace", "Trace", "change-evidence"),
+            ("map", "Map", "change-evidence"),
+            ("unknown", "Unknown", "change-evidence"),
+            ("characterize", "Characterize", "change-evidence"),
+            ("decide", "Decide", "change-evidence"),
+        ),
+        "relations": (
+            ("reason-selects-trace", "reason", "trace", "変更対象の実行経路を選ぶ"),
+            ("trace-builds-map", "trace", "map", "観測したcomponentと副作用を結ぶ"),
+            ("map-exposes-unknown", "map", "unknown", "未観測と仮説を分離する"),
+            ("unknown-bounds-characterization", "unknown", "characterize", "現行挙動をtestへ固定する"),
+            ("characterization-gates-decision", "characterize", "decide", "証拠量で編集開始を判断する"),
+        ),
+    },
+    "core-27-team-interfaces-sociotechnical-architecture": {
+        "trace": (
+            ("obj-team-interface", "obj-cognitive-load"),
+            ("team-interface",),
+            ("src-01", "src-02", "src-03"),
+        ),
+        "components": (("delivery-interface", "delivery interface"),),
+        "nodes": (
+            ("ownership", "Ownership", "delivery-interface"),
+            ("dependency", "Dependency", "delivery-interface"),
+            ("cognitive-load", "Cognitive load", "delivery-interface"),
+            ("slo", "SLO", "delivery-interface"),
+            ("enablement", "Enablement", "delivery-interface"),
+        ),
+        "relations": (
+            ("ownership-declares-dependency", "ownership", "dependency", "checkout capabilityのdecision rightとplatform依存を分ける"),
+            ("ownership-bounds-cognitive-load", "ownership", "cognitive-load", "assigned領域をcapacityと比較する"),
+            ("dependency-defines-slo", "dependency", "slo", "dependency latencyのtargetとobservedを比較する"),
+            ("cognitive-load-guides-enablement", "cognitive-load", "enablement", "capacity内かをenablement判断へ渡す"),
+            ("slo-guides-enablement", "slo", "enablement", "dependency SLO statusをenablement判断へ渡す"),
+        ),
+    },
+    "core-30-evidence-based-technical-leadership": {
+        "trace": (
+            ("obj-strategy-evidence", "obj-reversible-leadership"),
+            ("technical-strategy",),
+            ("src-01", "src-02", "src-03", "src-04"),
+        ),
+        "structure": {
+            "causes": (("frame", "Frame"),),
+            "mechanisms": (("measure", "Measure"), ("challenge", "Challenge"), ("order", "Order"), ("act", "Act")),
+            "outcomes": (("review", "Review"),),
+            "mitigations": (("withdrawal-conditions", "Withdrawal conditions"),),
+        },
+        "relations": (
+            ("frame-selects-measures", "frame", "measure", "outcomeに必要な証拠を分ける"),
+            ("measures-enable-challenge", "measure", "challenge", "不確実性とdissentで反証する"),
+            ("challenge-orders-options", "challenge", "order", "制約を守る投資順を作る"),
+            ("order-bounds-action", "order", "act", "可逆なfirst stepだけを実行する"),
+            ("action-enters-review", "act", "review", "観測結果からstop、adapt、expandを判断する"),
+            ("withdrawal-guides-review", "withdrawal-conditions", "review", "撤退条件で害と埋没費用を抑える"),
+        ),
+    },
 }
 CAPSTONE_IDS = ("global-service", "legacy-evolution", "oss-launch")
 CATALOG_SHA256 = (
@@ -631,6 +853,42 @@ def _expected_artifacts() -> frozenset[PurePosixPath]:
         for capstone_id in CAPSTONE_IDS
     )
     return frozenset(paths)
+
+
+def _task5_visual_projection(document: dict[str, object]) -> dict[str, object]:
+    visual = document["visualizations"][0]  # type: ignore[index]
+    payload = visual["payload"]  # type: ignore[index]
+    projection: dict[str, object] = {
+        "trace": (
+            tuple(visual["objectiveIds"]),  # type: ignore[index]
+            tuple(visual["evidenceIds"]),  # type: ignore[index]
+            tuple(visual["sourceIds"]),  # type: ignore[index]
+        ),
+    }
+    if visual["type"] == "causal":  # type: ignore[index]
+        projection["structure"] = {
+            group: tuple(
+                (item["id"], item["label"])
+                for item in payload[group]  # type: ignore[index]
+            )
+            for group in ("causes", "mechanisms", "outcomes", "mitigations")
+        }
+        relations = payload["relations"]  # type: ignore[index]
+    else:
+        projection["components"] = tuple(
+            (item["id"], item["label"])
+            for item in payload["components"]  # type: ignore[index]
+        )
+        projection["nodes"] = tuple(
+            (item["id"], item["label"], item["componentId"])
+            for item in payload["nodes"]  # type: ignore[index]
+        )
+        relations = payload["connections"]  # type: ignore[index]
+    projection["relations"] = tuple(
+        (item["id"], item["from"], item["to"], item["label"])
+        for item in relations
+    )
+    return projection
 
 
 def _snapshot(root: Path) -> dict[PurePosixPath, bytes]:
@@ -1534,36 +1792,157 @@ class ContentAcceptanceTests(unittest.TestCase):
                 else:
                     items = payload["nodes"]
                     relations = payload["connections"]
-                actual_fact_values = [
-                    value
-                    for item in items
-                    for value in (item["label"], item["detail"])
+                semantic_values = [
+                    visual["caption"],
+                    visual["question"],
+                    visual["expectedObservation"],
+                    *visual.get("notes", []),
+                    *(
+                        value
+                        for component in payload.get("components", [])
+                        for value in (component["label"], component["detail"])
+                    ),
+                    *(
+                        value
+                        for relation in relations
+                        for value in (relation["label"],)
+                    ),
+                    *(
+                        value
+                        for item in items
+                        for value in (item["label"], item["detail"])
+                    ),
                 ]
-                if lesson_id == "core-08-modularity-evolutionary-architecture":
-                    dependency_view = payload["components"][0]
-                    remaining_atoms = [
-                        atom[:-1] if atom.endswith(":") else atom
-                        for atom in legacy_by_lesson[lesson_id]["visibleAtoms"][8:]
-                    ]
-                    positions = [
-                        dependency_view["detail"].index(atom)
-                        for atom in remaining_atoms
-                    ]
-                    self.assertEqual(positions, sorted(positions))
-                    actual_fact_values.extend(remaining_atoms)
-                self.assertEqual(
-                    actual_fact_values,
-                    [
-                        atom[:-1] if atom.endswith(":") else atom
-                        for atom in legacy_by_lesson[lesson_id]["visibleAtoms"]
-                    ],
-                )
+                expected_atoms = [
+                    atom[:-1] if atom.endswith(":") else atom
+                    for atom in legacy_by_lesson[lesson_id]["visibleAtoms"]
+                ]
+                for atom in expected_atoms:
+                    self.assertTrue(
+                        any(atom in value for value in semantic_values),
+                        f"{lesson_id}: missing legacy fact atom {atom!r}",
+                    )
                 self.assertTrue(relations)
                 self.assertTrue(
                     all(relation["label"].strip() for relation in relations)
                 )
 
-    def test_core08_network_keeps_reporting_outside_the_pricing_dependency_graph(self) -> None:
+    def test_task5_visual_contracts_are_independently_exact(self) -> None:
+        self.assertEqual(
+            set(TASK5_VISUAL_CONTRACTS),
+            set(TASK5_VISUAL_TYPES),
+        )
+        for lesson_id, expected in TASK5_VISUAL_CONTRACTS.items():
+            with self.subTest(lesson_id=lesson_id):
+                path = (
+                    REPOSITORY_ROOT
+                    / "content/lessons"
+                    / lesson_id
+                    / "lesson.json"
+                )
+                document = json.loads(path.read_bytes())
+                self.assertEqual(
+                    _task5_visual_projection(document),
+                    expected,
+                )
+
+    def test_task5_exact_contract_rejects_semantic_relationship_and_source_mutations(
+        self,
+    ) -> None:
+        documents = {
+            lesson_id: json.loads(
+                (
+                    REPOSITORY_ROOT
+                    / "content/lessons"
+                    / lesson_id
+                    / "lesson.json"
+                ).read_bytes()
+            )
+            for lesson_id in TASK5_VISUAL_CONTRACTS
+        }
+
+        reversed_edge = deepcopy(
+            documents["core-06-requirements-domain-modeling"]
+        )
+        edge = reversed_edge["visualizations"][0]["payload"]["connections"][0]
+        edge["from"], edge["to"] = edge["to"], edge["from"]
+        load_lesson_bytes(
+            json.dumps(reversed_edge, ensure_ascii=False).encode("utf-8"),
+            "lesson.json",
+        )
+        self.assertNotEqual(
+            _task5_visual_projection(reversed_edge),
+            TASK5_VISUAL_CONTRACTS["core-06-requirements-domain-modeling"],
+        )
+
+        swapped_labels = deepcopy(
+            documents["core-10-threat-modeling-secure-design"]
+        )
+        relations = swapped_labels["visualizations"][0]["payload"]["connections"]
+        relations[0]["label"], relations[1]["label"] = (
+            relations[1]["label"],
+            relations[0]["label"],
+        )
+        load_lesson_bytes(
+            json.dumps(swapped_labels, ensure_ascii=False).encode("utf-8"),
+            "lesson.json",
+        )
+        self.assertNotEqual(
+            _task5_visual_projection(swapped_labels),
+            TASK5_VISUAL_CONTRACTS["core-10-threat-modeling-secure-design"],
+        )
+
+        unsuitable_source = deepcopy(
+            documents["core-08-modularity-evolutionary-architecture"]
+        )
+        unsuitable_source["visualizations"][0]["sourceIds"] = [
+            "src-03",
+            "src-04",
+        ]
+        load_lesson_bytes(
+            json.dumps(unsuitable_source, ensure_ascii=False).encode("utf-8"),
+            "lesson.json",
+        )
+        self.assertNotEqual(
+            _task5_visual_projection(unsuitable_source),
+            TASK5_VISUAL_CONTRACTS[
+                "core-08-modularity-evolutionary-architecture"
+            ],
+        )
+
+    def test_causal_no_js_oracles_place_items_under_semantic_headings(self) -> None:
+        heading_by_group = {
+            "causes": "原因",
+            "mechanisms": "機構",
+            "outcomes": "結果",
+            "mitigations": "対策",
+        }
+        for lesson_id, expected in TASK5_VISUAL_CONTRACTS.items():
+            if TASK5_VISUAL_TYPES[lesson_id] != "causal":
+                continue
+            with self.subTest(lesson_id=lesson_id):
+                path = (
+                    REPOSITORY_ROOT
+                    / "content/lessons"
+                    / lesson_id
+                    / "lesson.json"
+                )
+                lesson = load_lesson_bytes(path.read_bytes(), "lesson.json")
+                html = render_visualization(
+                    lesson_id, lesson.visualizations[0]
+                ).value
+                for group, items in expected["structure"].items():
+                    start = html.index(
+                        f"<dt>{heading_by_group[group]}</dt><dd><dl>"
+                    )
+                    end = html.index("</dl></dd>", start)
+                    section = html[start:end]
+                    for _, label in items:
+                        self.assertIn(f"<dt>{label}</dt>", section)
+
+    def test_core08_network_compares_source_and_runtime_views_without_linking_reporting(
+        self,
+    ) -> None:
         lesson_root = (
             REPOSITORY_ROOT
             / "content/lessons/core-08-modularity-evolutionary-architecture"
@@ -1571,54 +1950,25 @@ class ContentAcceptanceTests(unittest.TestCase):
         document = json.loads((lesson_root / "lesson.json").read_bytes())
         payload = document["visualizations"][0]["payload"]
 
+        component_ids = {
+            component["id"] for component in payload["components"]
+        }
         self.assertEqual(
-            tuple(node["label"] for node in payload["nodes"]),
-            (
-                "pricing-domain",
-                "pricing-application",
-                "pricing-adapters",
-                "reporting",
-            ),
-        )
-        self.assertEqual(
+            component_ids,
             {
-                node["id"]: node["componentId"]
-                for node in payload["nodes"]
-            },
-            {
-                "pricing-domain": "pricing-layers",
-                "pricing-application": "pricing-layers",
-                "pricing-adapters": "pricing-layers",
-                "reporting": "independent-reporting",
+                "source-dependency-view",
+                "runtime-request-flow-view",
+                "independent-reporting",
             },
         )
+        labels = tuple(edge["label"] for edge in payload["connections"])
         self.assertEqual(
-            tuple(
-                (component["id"], component["label"])
-                for component in payload["components"]
-            ),
-            (
-                ("pricing-layers", "pricing三層のsource dependency view"),
-                ("independent-reporting", "変更対象外のreporting境界"),
-            ),
+            sum(label.startswith("source dependency:") for label in labels),
+            2,
         )
         self.assertEqual(
-            tuple(
-                (edge["from"], edge["to"], edge["label"])
-                for edge in payload["connections"]
-            ),
-            (
-                (
-                    "pricing-adapters",
-                    "pricing-application",
-                    "adapter形式をapplicationのuse caseへ変換する",
-                ),
-                (
-                    "pricing-application",
-                    "pricing-domain",
-                    "applicationはdomain portへ依存する",
-                ),
-            ),
+            sum(label.startswith("runtime request flow:") for label in labels),
+            2,
         )
         self.assertFalse(
             any(

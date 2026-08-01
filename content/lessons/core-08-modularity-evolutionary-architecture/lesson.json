@@ -168,21 +168,27 @@
     "id": "module-dependency-network", "type": "network", "caption": "変更理由を内側へ隠蔽する三層の依存graph",
     "question": "変更理由を守る source dependency と運用時の request flow をどう区別するか。", "afterSection": "mentalModel",
     "objectiveIds": ["obj-boundary", "obj-direction"], "evidenceIds": ["module-adr"], "sourceIds": ["src-01", "src-02"],
-    "expectedObservation": "adapterからapplication、domainへの依存方向と、独立したreporting境界を指し示せる。",
+    "expectedObservation": "source dependencyはadapterからdomainへ、runtime request flowはdomain portからadapter実装へ進む逆向きのviewとして区別し、独立したreporting境界も指し示せる。",
     "payload": {
       "components": [
-        {"id": "pricing-layers", "label": "pricing三層のsource dependency view", "detail": "source dependencyはadaptersからapplication、applicationからdomainへ向ける。運用viewでは逆向きのrequest flowを別の矢印として記述し、意味を混ぜない。"},
+        {"id": "source-dependency-view", "label": "source dependency view", "detail": "source dependencyはadaptersからapplication、applicationからdomainへ向ける。"},
+        {"id": "runtime-request-flow-view", "label": "runtime request flow view", "detail": "運用viewでは逆向きのrequest flowを別の矢印として記述し、意味を混ぜない。"},
         {"id": "independent-reporting", "label": "変更対象外のreporting境界", "detail": "pricingの依存graphから隔離し、impact計算のfalse positiveを検出する基準にする。"}
       ],
       "nodes": [
-        {"id": "pricing-domain", "label": "pricing-domain", "detail": "料金規則と不変条件。UIやDB形式を知らない。", "componentId": "pricing-layers"},
-        {"id": "pricing-application", "label": "pricing-application", "detail": "use caseを順序付け、domainのportを使う。", "componentId": "pricing-layers"},
-        {"id": "pricing-adapters", "label": "pricing-adapters", "detail": "HTTP、DB、batch形式をdomainの語彙へ変換する。", "componentId": "pricing-layers"},
+        {"id": "source-domain", "label": "pricing-domain", "detail": "料金規則と不変条件。UIやDB形式を知らない。", "componentId": "source-dependency-view"},
+        {"id": "source-application", "label": "pricing-application", "detail": "use caseを順序付け、domainのportを使う。", "componentId": "source-dependency-view"},
+        {"id": "source-adapters", "label": "pricing-adapters", "detail": "HTTP、DB、batch形式をdomainの語彙へ変換する。", "componentId": "source-dependency-view"},
+        {"id": "runtime-domain", "label": "pricing-domain", "detail": "runtime viewでdomain portから外側の実装を呼び出す起点。", "componentId": "runtime-request-flow-view"},
+        {"id": "runtime-application", "label": "pricing-application", "detail": "runtime viewでuse caseとdomain portの呼出しを中継する。", "componentId": "runtime-request-flow-view"},
+        {"id": "runtime-adapters", "label": "pricing-adapters", "detail": "runtime viewでHTTP、DB、batchのadapter実装を実行する。", "componentId": "runtime-request-flow-view"},
         {"id": "reporting", "label": "reporting", "detail": "料金計算の変更対象外となる独立module。impact計算のfalse positiveを検出する基準にする。", "componentId": "independent-reporting"}
       ],
       "connections": [
-        {"id": "adapters-depend-on-application", "from": "pricing-adapters", "to": "pricing-application", "label": "adapter形式をapplicationのuse caseへ変換する"},
-        {"id": "application-depends-on-domain", "from": "pricing-application", "to": "pricing-domain", "label": "applicationはdomain portへ依存する"}
+        {"id": "source-adapters-to-application", "from": "source-adapters", "to": "source-application", "label": "source dependency: adaptersからapplicationへ向ける"},
+        {"id": "source-application-to-domain", "from": "source-application", "to": "source-domain", "label": "source dependency: applicationからdomain portへ向ける"},
+        {"id": "runtime-domain-to-application", "from": "runtime-domain", "to": "runtime-application", "label": "runtime request flow: domain portからapplicationへ戻る"},
+        {"id": "runtime-application-to-adapters", "from": "runtime-application", "to": "runtime-adapters", "label": "runtime request flow: applicationからadapter実装を呼ぶ"}
       ]
     }
   }],

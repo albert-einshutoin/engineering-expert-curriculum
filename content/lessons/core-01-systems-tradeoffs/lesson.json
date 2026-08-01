@@ -161,20 +161,22 @@
     "objectiveIds": ["obj-boundary", "obj-falsification"], "evidenceIds": ["assessment"], "sourceIds": ["src-01", "src-03"],
     "expectedObservation": "境界と制約を起点に、代替案、観測、反証条件までの因果経路を指し示せる。",
     "payload": {
-      "causes": [{"id": "purpose", "label": "目的", "detail": "利用者が二秒以内に受付結果を知る。"}],
+      "causes": [{"id": "constraints", "label": "制約", "detail": "重複確定は0件、受付データ損失は0件、運用当番は一名。"}],
       "mechanisms": [
         {"id": "boundary", "label": "境界", "detail": "Web、受付API、永続ストア、worker、通知を含め、決済事業者は外部契約とする。"},
-        {"id": "constraints", "label": "制約", "detail": "重複確定は0件、受付データ損失は0件、運用当番は一名。"},
         {"id": "alternatives", "label": "代替案", "detail": "同期完了、永続化後に非同期実行、負荷時だけ非同期化を比較する。"}
       ],
-      "outcomes": [{"id": "observations", "label": "観測", "detail": "p95受付時間、成果完了時間、重複率、最古滞留時間、復旧時間を測る。"}],
+      "outcomes": [
+        {"id": "purpose", "label": "目的", "detail": "利用者が二秒以内に受付結果を知る。"},
+        {"id": "observations", "label": "観測", "detail": "p95受付時間、成果完了時間、重複率、最古滞留時間、復旧時間を測る。"}
+      ],
       "mitigations": [{"id": "falsification", "label": "反証", "detail": "観測が閾値を越えたら、境界または選択案を見直す。"}],
       "relations": [
-        {"id": "purpose-bounds", "from": "purpose", "to": "boundary", "label": "目的の達成範囲を定める"},
-        {"id": "boundary-constrains", "from": "boundary", "to": "constraints", "label": "境界内で守る条件を固定する"},
-        {"id": "constraints-shape-options", "from": "constraints", "to": "alternatives", "label": "成立する選択肢を絞る"},
+        {"id": "constraints-bound-boundary", "from": "constraints", "to": "boundary", "label": "制約を守る評価境界を定める"},
+        {"id": "boundary-shapes-options", "from": "boundary", "to": "alternatives", "label": "境界内で成立する選択肢を比較する"},
+        {"id": "options-seek-purpose", "from": "alternatives", "to": "purpose", "label": "選択肢を利用者目的に照合する"},
         {"id": "options-produce-signals", "from": "alternatives", "to": "observations", "label": "選択の結果を測定する"},
-        {"id": "signals-trigger-review", "from": "observations", "to": "falsification", "label": "閾値超過で再評価する"}
+        {"id": "signals-trigger-review", "from": "observations", "to": "falsification", "label": "閾値超過で境界または選択案を見直す"}
       ]
     }
   }],

@@ -176,19 +176,23 @@
     "question": "固定した負荷条件から、どの証拠を経て安全容量を決めるか。", "afterSection": "mentalModel",
     "objectiveIds": ["obj-load-curve", "obj-profile"], "evidenceIds": ["performance-report"], "sourceIds": ["src-01", "src-02", "src-03"],
     "expectedObservation": "負荷曲線のknee、tail、queue、局所profileを結び、headroomを引いた容量と再測定条件を示せる。",
+    "notes": ["Diagnose: plateau、tail、error、queue、resource、downstreamを結ぶ。"],
     "payload": {
-      "causes": [{"id": "fixture", "label": "Fixture", "detail": "request mix、payload、依存、処理上限、環境を固定する。"}],
+      "causes": [{"id": "fixture", "label": "Fixture（負荷条件）", "detail": "request mix、payload、依存、処理上限、環境を固定する。"}],
       "mechanisms": [
-        {"id": "curve", "label": "Curve", "detail": "低負荷、限界付近、超過、回復を同じ列で記録する。"},
-        {"id": "diagnose", "label": "Diagnose", "detail": "plateau、tail、error、queue、resource、downstreamを結ぶ。"}
+        {"id": "bottleneck-mechanism", "label": "Bottleneck mechanism", "detail": "resource上限、queue蓄積、downstream待機が処理率を制限し、tail latencyとerrorを増幅する。"}
       ],
-      "outcomes": [{"id": "profile", "label": "Profile", "detail": "仮説に合う実processの局所証拠を別に採取する。"}],
+      "outcomes": [
+        {"id": "curve", "label": "Curve", "detail": "低負荷、限界付近、超過、回復を同じ列で記録する。"},
+        {"id": "profile", "label": "Profile", "detail": "仮説に合う実processの局所証拠を別に採取する。"}
+      ],
       "mitigations": [{"id": "capacity", "label": "Capacity", "detail": "observed kneeからheadroomを引き、再測定条件を残す。"}],
       "relations": [
-        {"id": "fixture-produces-curve", "from": "fixture", "to": "curve", "label": "同じ条件で負荷曲線を得る"},
-        {"id": "curve-guides-diagnosis", "from": "curve", "to": "diagnose", "label": "飽和の兆候を層別する"},
-        {"id": "diagnosis-guides-profile", "from": "diagnose", "to": "profile", "label": "仮説に合う局所証拠を採る"},
-        {"id": "profile-bounds-capacity", "from": "profile", "to": "capacity", "label": "headroomと再測定条件を決める"}
+        {"id": "fixture-exposes-mechanism", "from": "fixture", "to": "bottleneck-mechanism", "label": "固定条件でresource、queue、downstreamの飽和を起こす"},
+        {"id": "mechanism-shapes-curve", "from": "bottleneck-mechanism", "to": "curve", "label": "plateau、tail、error、queueとして現れる"},
+        {"id": "mechanism-guides-profile", "from": "bottleneck-mechanism", "to": "profile", "label": "仮説に合う局所証拠を採る"},
+        {"id": "curve-bounds-capacity", "from": "curve", "to": "capacity", "label": "observed kneeからheadroomを引く"},
+        {"id": "profile-bounds-capacity", "from": "profile", "to": "capacity", "label": "局所証拠を再測定条件へ反映する"}
       ]
     }
   }],
