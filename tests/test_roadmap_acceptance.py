@@ -672,7 +672,17 @@ class RoadmapAcceptanceTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue((output / "roadmap/index.html").is_file())
-            self.assertEqual(tuple(output.rglob("*.js")), ())
+            self.assertEqual(
+                tuple(path.relative_to(output) for path in output.rglob("*.js")),
+                (Path("static/visualization.js"),),
+            )
+            self.assertEqual(
+                sum(
+                    "<script " in path.read_text(encoding="utf-8")
+                    for path in output.rglob("*.html")
+                ),
+                0,
+            )
             self.assertEqual(tuple(project.glob(".site.staging-*")), ())
 
     def test_release_build_links_every_lesson_and_renders_six_gates(self) -> None:
@@ -780,7 +790,17 @@ class RoadmapAcceptanceTests(unittest.TestCase):
                 html.rindex('<section class="roadmap-stage">'),
             )
             self.assertNotIn("<script", html.casefold())
-            self.assertEqual(tuple(output.rglob("*.js")), ())
+            self.assertEqual(
+                tuple(path.relative_to(output) for path in output.rglob("*.js")),
+                (Path("static/visualization.js"),),
+            )
+            self.assertEqual(
+                sum(
+                    "<script " in path.read_text(encoding="utf-8")
+                    for path in output.rglob("*.html")
+                ),
+                0,
+            )
             stylesheet = (output / "styles.css").read_text(encoding="utf-8")
             self.assertIn(".mastery-gate h3", stylesheet)
             self.assertNotIn(".mastery-gate h2", stylesheet)

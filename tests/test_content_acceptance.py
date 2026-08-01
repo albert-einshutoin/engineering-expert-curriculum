@@ -2555,6 +2555,7 @@ def _expected_artifacts() -> frozenset[PurePosixPath]:
         PurePosixPath("index.html"),
         PurePosixPath("styles.css"),
         PurePosixPath("static/visualizations.css"),
+        PurePosixPath("static/visualization.js"),
         PurePosixPath("catalog/index.html"),
         PurePosixPath("roadmap/index.html"),
         PurePosixPath("competencies/index.html"),
@@ -5070,10 +5071,18 @@ class ContentAcceptanceTests(unittest.TestCase):
 
         self.assertEqual(first, second)
         self.assertEqual(frozenset(first), _expected_artifacts())
-        self.assertEqual(len(first), 41)
+        self.assertEqual(len(first), 42)
         self.assertEqual(sum(path.suffix.casefold() == ".html" for path in first), 39)
         self.assertEqual(sum(path.suffix.casefold() == ".css" for path in first), 2)
-        self.assertEqual(sum(path.suffix.casefold() == ".js" for path in first), 0)
+        self.assertEqual(sum(path.suffix.casefold() == ".js" for path in first), 1)
+        self.assertEqual(
+            sum(
+                b"<script " in source
+                for path, source in first.items()
+                if path.suffix.casefold() == ".html"
+            ),
+            0,
+        )
         legacy_by_lesson = {
             entry["lessonId"]: entry
             for entry in json.loads(MIGRATION_ORACLE.read_bytes())["figures"]
