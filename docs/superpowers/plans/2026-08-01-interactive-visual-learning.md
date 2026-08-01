@@ -796,6 +796,7 @@ git commit -m "feat: add safe progressive visualization runtime"
 - Modify: `tests/test_accessibility_contract.py`
 - Modify: `tests/test_build.py`
 - Modify: `tests/test_roadmap_acceptance.py`
+- Modify: `tests/test_roadmap_acceptance.py`
 
 Scope amendment: Task 8 intentionally froze zero scripted lesson pages. Once
 Task 9 authors the first five simulations, those independent accessibility and
@@ -879,7 +880,7 @@ window/error budget/burn/response. Static tables reproduce every result.
 ```bash
 python3.13 -m unittest tests.test_content_acceptance tests.test_visualization_runtime -v
 python3.13 -m unittest discover -s tests -v
-git add content/lessons/core-{12,13,14,15}-*/lesson.json tests/test_content_acceptance.py tests/test_visualization_runtime.py tests/test_accessibility_contract.py tests/test_build.py docs/superpowers/plans/2026-08-01-interactive-visual-learning.md
+git add content/lessons/core-{12,13,14,15}-*/lesson.json tests/test_content_acceptance.py tests/test_visualization_runtime.py tests/test_accessibility_contract.py tests/test_build.py tests/test_roadmap_acceptance.py docs/superpowers/plans/2026-08-01-interactive-visual-learning.md
 git commit -m "content: add data and reliability simulations"
 ```
 
