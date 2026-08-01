@@ -422,7 +422,7 @@
           {"id": "step-03", "from": "a-compute", "to": "b-compute", "event": "next", "status": "allowed"},
           {"id": "step-04", "from": "b-compute", "to": "a-write", "event": "next", "status": "allowed"},
           {"id": "step-05", "from": "a-write", "to": "lost-update", "event": "next", "status": "allowed"},
-          {"id": "step-06", "from": "lost-update", "to": "lock-acquired", "event": "reset", "status": "allowed"},
+          {"id": "step-06", "from": "lost-update", "to": "lock-acquired", "event": "next", "status": "allowed"},
           {"id": "step-07", "from": "lock-acquired", "to": "a-locked-write", "event": "next", "status": "allowed"},
           {"id": "step-08", "from": "a-locked-write", "to": "unlock", "event": "next", "status": "allowed"},
           {"id": "step-09", "from": "unlock", "to": "b-lock-acquired", "event": "next", "status": "allowed"},

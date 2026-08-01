@@ -44,11 +44,6 @@ class VisualizationRuntimeContractTests(unittest.TestCase):
                 ("next-large-random", "next", "tlb-lookup", "memory-return"),
                 ("reset-memory-return", "reset", "memory-return", "tlb-lookup"),
             ),
-            "core-05-networks-latency-failure": (
-                ("apply-response", "parameter-change", "dns-lookup", "dns-lookup"),
-                ("next-response", "next", "dns-lookup", "deadline-exceeded"),
-                ("reset-response", "reset", "deadline-exceeded", "dns-lookup"),
-            ),
         }
         with TemporaryDirectory(prefix=".task9-real-dom-", dir=ROOT.parent) as temporary:
             output = Path(temporary) / "site"
@@ -71,6 +66,34 @@ class VisualizationRuntimeContractTests(unittest.TestCase):
                 self.assertIn('data-action="apply"', generated)
                 self.assertIn('data-action="next"', generated)
                 self.assertIn('data-action="reset"', generated)
+
+            core05_document = json.loads(
+                (ROOT / "content/lessons/core-05-networks-latency-failure/lesson.json")
+                .read_bytes()
+            )
+            core05_simulation = next(
+                visual["simulation"] for visual in core05_document["visualizations"]
+                if visual["id"] == "request-path-static"
+            )
+            core05_generated = (
+                output / "lessons/core-05-networks-latency-failure/index.html"
+            ).read_text(encoding="utf-8")
+            for transition in core05_simulation["transitions"]:
+                self.assertIn(
+                    f'data-transition-id="{transition["id"]}" '
+                    f'data-transition-event="{transition["event"]}" '
+                    f'data-from-state-id="{transition["from"]}" '
+                    f'data-to-state-id="{transition["to"]}"',
+                    core05_generated,
+                )
+            for event in ("next", "timer", "previous", "reset"):
+                self.assertEqual(
+                    core05_generated.count(f'data-transition-event="{event}"'),
+                    sum(
+                        transition["event"] == event
+                        for transition in core05_simulation["transitions"]
+                    ),
+                )
 
             core02 = (
                 output / "lessons/core-02-algorithms-measurement/index.html"

@@ -184,39 +184,28 @@ TASK9_SIMULATION_CONTRACTS = {
         "parameters": ("failure-point", "latency-profile"),
         "states": (
             "dns-lookup", "tcp-ready", "tls-ready", "request-sent",
-            "healthy-response", "healthy-tight-deadline", "dns-failure",
-            "dns-failure-tight", "tcp-failure", "tcp-failure-tight",
-            "tls-failure", "tls-failure-tight", "request-failure",
-            "request-failure-tight", "deadline-exceeded",
-            "deadline-exceeded-tight",
+            "healthy-response", "healthy-tight-no-deadline",
+            "dns-failure-observed", "dns-retry-decision-recovery",
+            "dns-tight-no-deadline", "tcp-failure-observed",
+            "tcp-retry-decision-recovery", "tcp-tight-no-deadline",
+            "tls-tcp-ready", "tls-failure-observed",
+            "tls-retry-blocked-config-repair", "tls-tight-no-deadline",
+            "request-tcp-ready", "request-tls-ready",
+            "request-timeout-observed", "request-retry-decision-recovery",
+            "request-tight-no-deadline", "response-tcp-ready",
+            "response-tls-ready", "response-request-sent",
+            "deadline-exceeded", "response-side-effect-inquiry",
+            "response-retry-decision", "response-tight-no-deadline",
         ),
-        "transitions": (
-            "apply-healthy", "next-healthy", "timer-healthy", "tcp-next",
-            "tcp-timer", "tcp-previous", "tcp-reset", "tls-next", "tls-timer",
-            "tls-previous", "tls-reset", "request-next", "request-timer",
-            "request-tight-next", "request-tight-timer", "request-previous",
-            "request-reset", "previous-healthy", "reset-healthy",
-            "previous-healthy-tight", "reset-healthy-tight", "apply-dns",
-            "next-dns", "timer-dns", "next-dns-tight", "timer-dns-tight",
-            "previous-dns", "reset-dns", "previous-dns-tight", "reset-dns-tight",
-            "apply-tcp", "next-tcp", "timer-tcp", "next-tcp-tight",
-            "timer-tcp-tight", "previous-tcp", "reset-tcp",
-            "previous-tcp-tight", "reset-tcp-tight", "apply-tls", "next-tls",
-            "timer-tls", "next-tls-tight", "timer-tls-tight", "previous-tls",
-            "reset-tls", "previous-tls-tight", "reset-tls-tight", "apply-request",
-            "next-request", "timer-request", "next-request-tight",
-            "timer-request-tight", "previous-request", "reset-request",
-            "previous-request-tight", "reset-request-tight", "apply-response",
-            "next-response", "timer-response", "next-response-tight",
-            "timer-response-tight", "previous-response", "reset-response",
-            "previous-response-tight", "reset-response-tight",
-        ),
+        "transitions": (),
         "outcomes": (
-            "healthy-outcome", "healthy-tight-outcome", "dns-failure-outcome",
-            "dns-tight-outcome", "tcp-failure-outcome", "tcp-tight-outcome",
-            "tls-failure-outcome", "tls-tight-outcome",
-            "request-failure-outcome", "request-tight-outcome",
-            "response-unknown-outcome", "response-tight-outcome",
+            "healthy-response-outcome", "healthy-tight-no-deadline-outcome",
+            "dns-retry-decision-recovery-outcome", "dns-tight-no-deadline-outcome",
+            "tcp-retry-decision-recovery-outcome", "tcp-tight-no-deadline-outcome",
+            "tls-retry-blocked-config-repair-outcome", "tls-tight-no-deadline-outcome",
+            "request-retry-decision-recovery-outcome",
+            "request-tight-no-deadline-outcome", "response-retry-decision-outcome",
+            "response-tight-no-deadline-outcome",
         ),
         "interval": 1000,
     },
@@ -243,6 +232,50 @@ TASK9_SIMULATION_CONTRACTS = {
         "interval": 1200,
     },
 }
+_CORE05_FAILURE_BRANCHES = (
+    "healthy", "dns", "tcp", "tls", "request", "response",
+)
+_CORE05_NON_INITIAL_STATES = TASK9_SIMULATION_CONTRACTS[
+    "core-05-networks-latency-failure"
+]["states"][1:]
+_CORE05_TERMINAL_STATES = frozenset(
+    outcome_id.removesuffix("-outcome")
+    for outcome_id in TASK9_SIMULATION_CONTRACTS[
+        "core-05-networks-latency-failure"
+    ]["outcomes"]
+)
+_CORE05_TERMINAL_TOKENS = {
+    "healthy-response": "healthy-end",
+    "healthy-tight-no-deadline": "healthy-retry-blocked",
+    "dns-retry-decision-recovery": "dns-retry",
+    "dns-tight-no-deadline": "dns-retry-blocked",
+    "tcp-retry-decision-recovery": "tcp-retry",
+    "tcp-tight-no-deadline": "tcp-retry-blocked",
+    "tls-retry-blocked-config-repair": "tls-retry-blocked",
+    "tls-tight-no-deadline": "tls-retry-blocked-tight",
+    "request-retry-decision-recovery": "request-retry",
+    "request-tight-no-deadline": "request-retry-blocked",
+    "response-retry-decision": "response-retry",
+    "response-tight-no-deadline": "response-retry-blocked",
+}
+_CORE05_TRANSITION_TOKENS = {
+    state_id: _CORE05_TERMINAL_TOKENS.get(state_id, f"s{index:02d}")
+    for index, state_id in enumerate(_CORE05_NON_INITIAL_STATES, start=1)
+}
+TASK9_SIMULATION_CONTRACTS["core-05-networks-latency-failure"]["transitions"] = (
+    *(f"apply-{branch}" for branch in _CORE05_FAILURE_BRANCHES),
+    *(
+        transition_id
+        for state_id in _CORE05_NON_INITIAL_STATES
+        for transition_id in (
+            f"n-{_CORE05_TRANSITION_TOKENS[state_id]}",
+            f"t-{_CORE05_TRANSITION_TOKENS[state_id]}",
+            *((f"p-{_CORE05_TRANSITION_TOKENS[state_id]}",)
+              if state_id in _CORE05_TERMINAL_STATES else ()),
+            f"r-{_CORE05_TRANSITION_TOKENS[state_id]}",
+        )
+    ),
+)
 TASK7_COMMON_CONTRACTS = {
     "core-02-algorithms-measurement": ("complexity-growth-static", "comparison", "mentalModel", None, "アルゴリズム再選択の検証経路", "同じquery列への構築済みlookupで、入力特性・size・setup・space・query回数が選択をどう変えるか。", "best・average・worst caseを区別し、予測と反復実測の差から再選択条件を説明できる。", ("obj-predict", "obj-measure", "obj-reselect"), ("benchmark-report", "assessment"), ("src-01", "src-02", "src-03", "src-04"), ("操作モデル: 比較、hash計算、割り当てなど、支配的な操作を決める。", "成長率予測: 支配操作がΘ(n)ならnを2倍にしたとき約2倍、Θ(n²)なら約4倍と予測する。", "入力モデル: サイズだけでなく、順序、重複率、問い合わせ位置を固定する。", "測定設計: 準備と対象区間を分け、ウォームアップ後に複数回測る。", "統計要約: 全値、中央値、範囲を残し、除外規則を先に決める。", "差の診断: 定数項、キャッシュ、GC、処理系、外れ値を追加測定で反証する。", "再選択条件: 本番のn、分布、呼出回数の変化を監視する。")),
     "core-03-architecture-memory-caches": ("memory-access-static", "memory", "mentalModel", None, "一つのロードを診断する論理段階", "一つのloadでaddress translationとdata transferの待ちをどう切り分けるか。", "TLB・page tableの変換経路とcache・主記憶の転送経路を区別し、機種依存の階層を普遍的latencyとして扱わない。", ("obj-path", "obj-locality", "obj-transfer"), ("locality-report", "assessment"), ("src-01", "src-02", "src-03"), ("命令: 仮想アドレスAの値を要求する。", "TLB: Aのページ変換を検索する。missならページテーブルwalkが必要になる。", "L1 cache: Aを含むcache lineを検索する。hitなら近い階層で返る。", "L2と最終レベルcache: L1 miss後の候補を調べる。L2やLLCがcore-privateか複数coreでsharedかというprivate/shared範囲は機種依存である。", "memory controller: 全cacheでmissなら主記憶からline単位で転送する。", "再利用: 同じline内の次要素を使えば空間的局所性、短時間に同じ値を使えば時間的局所性を得る。", "このDAGはhit/missの診断依存を示し、VIPTではTLB変換とL1 index lookupが並行し得るため普遍的な逐次latencyではない。")),
@@ -3528,6 +3561,34 @@ class ContentAcceptanceTests(unittest.TestCase):
         core04 = json.dumps(simulations["core-04-os-processes-concurrency"], ensure_ascii=False)
         for atom in ("期待値x=8", "actual x=9", "read/compute/write", "lock/unlock"):
             self.assertIn(atom, core04)
+        core04_visual = next(
+            visual for visual in documents["core-04-os-processes-concurrency"]["visualizations"]
+            if visual["id"] == "scheduler-interleaving-static"
+        )
+        static_step = next(
+            edge for edge in core04_visual["payload"]["transitions"]
+            if edge["id"] == "step-06"
+        )
+        simulation_step = next(
+            edge for edge in core04_visual["simulation"]["transitions"]
+            if edge["id"] == "lost-next"
+        )
+        self.assertEqual(
+            (static_step["from"], static_step["to"], static_step["event"]),
+            ("lost-update", "lock-acquired", "next"),
+        )
+        self.assertEqual(
+            (simulation_step["from"], simulation_step["to"], simulation_step["event"]),
+            (static_step["from"], static_step["to"], static_step["event"]),
+        )
+        reset_step = next(
+            edge for edge in core04_visual["simulation"]["transitions"]
+            if edge["id"] == "lost-reset"
+        )
+        self.assertEqual(
+            (reset_step["from"], reset_step["to"], reset_step["event"]),
+            ("lost-update", "read-old-value", "reset"),
+        )
 
         core05_simulation = simulations["core-05-networks-latency-failure"]
         self.assertEqual(
@@ -3540,6 +3601,130 @@ class ContentAcceptanceTests(unittest.TestCase):
             "side effectは不明", "normal-budget", "tight-budget",
         ):
             self.assertIn(atom, core05)
+
+        core05_visual = next(
+            visual for visual in documents["core-05-networks-latency-failure"]["visualizations"]
+            if visual["id"] == "request-path-static"
+        )
+        completed_paths = {
+            cell["alternativeId"]: cell["value"]
+            for cell in core05_visual["payload"]["cells"]
+            if cell["criterionId"] == "completed-path"
+        }
+        self.assertEqual(completed_paths, {
+            "healthy": "DNS→TCP→TLS→request→response",
+            "dns-point": "DNS→failure observation→retry decision/recovery",
+            "tcp-point": "DNS→TCP→failure observation→retry decision/recovery",
+            "tls-point": "DNS→TCP→TLS failure→retry blocked/config repair",
+            "request-point": "DNS→TCP→TLS→request timeout→retry decision/recovery",
+            "response-point": (
+                "DNS→TCP→TLS→request sent→response unobserved→"
+                "side-effect inquiry→retry decision"
+            ),
+        })
+
+    def test_task9_core05_each_selection_has_an_exact_causal_navigation_path(self) -> None:
+        document = json.loads(
+            (REPOSITORY_ROOT / "content/lessons/core-05-networks-latency-failure/lesson.json")
+            .read_bytes()
+        )
+        simulation = next(
+            visual["simulation"] for visual in document["visualizations"]
+            if visual["id"] == "request-path-static"
+        )
+        paths = {
+            ("none", "normal-budget"): (
+                "dns-lookup", "tcp-ready", "tls-ready", "request-sent",
+                "healthy-response",
+            ),
+            ("none", "tight-budget"): (
+                "dns-lookup", "tcp-ready", "tls-ready", "request-sent",
+                "healthy-tight-no-deadline",
+            ),
+            ("dns-fail", "normal-budget"): (
+                "dns-lookup", "dns-failure-observed",
+                "dns-retry-decision-recovery",
+            ),
+            ("dns-fail", "tight-budget"): (
+                "dns-lookup", "dns-failure-observed", "dns-tight-no-deadline",
+            ),
+            ("tcp-fail", "normal-budget"): (
+                "dns-lookup", "tcp-failure-observed",
+                "tcp-retry-decision-recovery",
+            ),
+            ("tcp-fail", "tight-budget"): (
+                "dns-lookup", "tcp-failure-observed", "tcp-tight-no-deadline",
+            ),
+            ("tls-fail", "normal-budget"): (
+                "dns-lookup", "tls-tcp-ready", "tls-failure-observed",
+                "tls-retry-blocked-config-repair",
+            ),
+            ("tls-fail", "tight-budget"): (
+                "dns-lookup", "tls-tcp-ready", "tls-failure-observed",
+                "tls-tight-no-deadline",
+            ),
+            ("request-fail", "normal-budget"): (
+                "dns-lookup", "request-tcp-ready", "request-tls-ready",
+                "request-timeout-observed", "request-retry-decision-recovery",
+            ),
+            ("request-fail", "tight-budget"): (
+                "dns-lookup", "request-tcp-ready", "request-tls-ready",
+                "request-timeout-observed", "request-tight-no-deadline",
+            ),
+            ("response-fail", "normal-budget"): (
+                "dns-lookup", "response-tcp-ready", "response-tls-ready",
+                "response-request-sent", "deadline-exceeded",
+                "response-side-effect-inquiry", "response-retry-decision",
+            ),
+            ("response-fail", "tight-budget"): (
+                "dns-lookup", "response-tcp-ready", "response-tls-ready",
+                "response-request-sent", "deadline-exceeded",
+                "response-side-effect-inquiry", "response-tight-no-deadline",
+            ),
+        }
+        states = {state["id"]: state for state in simulation["states"]}
+        transitions = simulation["transitions"]
+
+        for selection_values, path in paths.items():
+            selection = dict(zip(("failure-point", "latency-profile"), selection_values))
+            active_states = {
+                state_id for state_id, state in states.items()
+                if all(selection[key] == value for key, value in state.get("when", {}).items())
+            }
+            active_edges = [
+                edge for edge in transitions
+                if all(selection[key] == value for key, value in edge.get("when", {}).items())
+            ]
+            with self.subTest(selection=selection_values):
+                self.assertEqual(active_states, set(path))
+                self.assertEqual(
+                    [
+                        (edge["from"], edge["to"])
+                        for edge in active_edges if edge["event"] == "next"
+                    ],
+                    list(zip(path, path[1:])),
+                )
+                self.assertEqual(
+                    [
+                        (edge["from"], edge["to"])
+                        for edge in active_edges if edge["event"] == "timer"
+                    ],
+                    list(zip(path, path[1:])),
+                )
+                self.assertEqual(
+                    {
+                        (edge["from"], edge["to"])
+                        for edge in active_edges if edge["event"] == "previous"
+                    },
+                    {(path[-1], path[-2])},
+                )
+                self.assertEqual(
+                    {
+                        (edge["from"], edge["to"])
+                        for edge in active_edges if edge["event"] == "reset"
+                    },
+                    {(state_id, "dns-lookup") for state_id in path[1:]},
+                )
 
     def test_catalog_bytes_and_identity_are_bound_to_the_preserved_release(
         self,
