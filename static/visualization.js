@@ -398,8 +398,8 @@
     if (showFallback && this.root && this.status && this.controls) {
       this.root.classList.add('has-runtime-error');
       this.controls.hidden = true;
-    this.status.textContent = '動的表示を利用できません。静的図を表示しています。';
-    if (this.announcement) { this.announcement.textContent = this.status.textContent; }
+      this.status.textContent = '動的表示を利用できません。静的図を表示しています。';
+      if (this.announcement) { this.announcement.textContent = this.status.textContent; }
     }
   };
   ControllerMethods.applyState = function (stateId, announce) {
