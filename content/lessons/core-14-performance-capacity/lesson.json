@@ -172,7 +172,7 @@
     }
   ],
   "visualizations": [{
-    "id": "capacity-causal-cycle", "type": "causal", "caption": "負荷を証拠へ変えて安全容量を更新する循環",
+    "id": "queue-capacity-static", "type": "causal", "caption": "負荷を証拠へ変えて安全容量を更新する循環",
     "question": "固定した負荷条件から、どの証拠を経て安全容量を決めるか。", "afterSection": "mentalModel",
     "objectiveIds": ["obj-load-curve", "obj-profile"], "evidenceIds": ["performance-report"], "sourceIds": ["src-01", "src-02", "src-03"],
     "expectedObservation": "負荷曲線のknee、tail、queue、局所profileを結び、headroomを引いた容量と再測定条件を示せる。",
@@ -200,6 +200,52 @@
         {"id": "mechanism-guides-profile", "from": "bottleneck-mechanism", "to": "profile", "label": "仮説に合う局所証拠を採る"},
         {"id": "curve-bounds-capacity", "from": "curve", "to": "capacity", "label": "observed kneeからheadroomを引く"},
         {"id": "profile-bounds-capacity", "from": "profile", "to": "capacity", "label": "局所証拠を再測定条件へ反映する"}
+      ]
+    },
+    "simulation": {
+      "kind": "queue-capacity",
+      "interactionMode": "scenario",
+      "parameters": [
+        {
+          "id": "load-band", "label": "負荷帯", "control": "select",
+          "options": [
+            {"id": "low", "label": "低負荷"},
+            {"id": "near", "label": "限界付近"},
+            {"id": "overload", "label": "超過"},
+            {"id": "recovery", "label": "負荷を戻した回復区間"}
+          ],
+          "defaultOptionId": "low"
+        },
+        {
+          "id": "workers", "label": "worker処理枠とrequest mix", "control": "radio",
+          "options": [
+            {"id": "baseline", "label": "read 80%・capacity 100 RPS"},
+            {"id": "write", "label": "write 70%・capacity 80 RPS"}
+          ],
+          "defaultOptionId": "baseline"
+        }
+      ],
+      "initialStateId": "stable-load",
+      "states": [
+        {"id": "stable-load", "label": "baseline低負荷", "status": "offered=40 RPS、accepted=40 RPS、success=40 RPS、queue=0、p99=70 ms。", "when": {"load-band": "low", "workers": "baseline"}, "activeNodeIds": ["fixture", "curve"], "activeEdgeIds": ["fixture-exposes-mechanism", "mechanism-shapes-curve"]},
+        {"id": "near-capacity", "label": "baseline限界付近", "status": "offered=100 RPS、accepted=100 RPS、success=100 RPS、queue=0、p99=100 ms。observed knee=100 RPS。", "when": {"load-band": "near", "workers": "baseline"}, "activeNodeIds": ["curve", "capacity"], "activeEdgeIds": ["curve-bounds-capacity"]},
+        {"id": "saturation", "label": "baseline飽和", "status": "offered=150 RPS、accepted=100 RPS、success=90 RPS、queue=50、p99=450 ms。safe capacity=80 RPS。", "when": {"load-band": "overload", "workers": "baseline"}, "activeNodeIds": ["bottleneck-mechanism", "curve", "capacity"], "activeEdgeIds": ["mechanism-shapes-curve", "curve-bounds-capacity"]},
+        {"id": "capacity-recovered", "label": "baseline回復hysteresis", "status": "offered=50 RPS、accepted=50 RPS、success=50 RPS、queue=25、p99=180 ms。負荷低下後もtailが残る。", "when": {"load-band": "recovery", "workers": "baseline"}, "activeNodeIds": ["curve", "capacity"], "activeEdgeIds": ["curve-bounds-capacity"]},
+        {"id": "write-stable-load", "label": "write中心低負荷", "status": "offered=40 RPS、accepted=40 RPS、success=40 RPS、queue=0、p99=90 ms。", "when": {"load-band": "low", "workers": "write"}, "activeNodeIds": ["fixture", "curve"], "activeEdgeIds": ["fixture-exposes-mechanism", "mechanism-shapes-curve"]},
+        {"id": "write-near-capacity", "label": "write中心限界付近", "status": "offered=80 RPS、accepted=80 RPS、success=80 RPS、queue=0、p99=190 ms。observed knee=80 RPS。", "when": {"load-band": "near", "workers": "write"}, "activeNodeIds": ["curve", "capacity"], "activeEdgeIds": ["curve-bounds-capacity"]},
+        {"id": "write-saturation", "label": "write中心飽和", "status": "offered=120 RPS、accepted=80 RPS、success=72 RPS、queue=40、p99=900 ms。safe capacity=64 RPS。", "when": {"load-band": "overload", "workers": "write"}, "activeNodeIds": ["bottleneck-mechanism", "curve", "capacity"], "activeEdgeIds": ["mechanism-shapes-curve", "curve-bounds-capacity"]},
+        {"id": "write-capacity-recovered", "label": "write中心回復hysteresis", "status": "offered=50 RPS、accepted=50 RPS、success=50 RPS、queue=25、p99=360 ms。負荷低下後もtailが残る。", "when": {"load-band": "recovery", "workers": "write"}, "activeNodeIds": ["curve", "capacity"], "activeEdgeIds": ["curve-bounds-capacity"]}
+      ],
+      "transitions": [],
+      "outcomes": [
+        {"id": "baseline-low-result", "stateId": "stable-load", "label": "baseline 40 RPSではqueue=0で安定する。"},
+        {"id": "baseline-near-result", "stateId": "near-capacity", "label": "baseline knee=100 RPSから20% headroomを引く前の境界。"},
+        {"id": "baseline-overload-result", "stateId": "saturation", "label": "baseline超過でthroughput plateau、error、tail、queueが同時に悪化する。"},
+        {"id": "baseline-recovery-result", "stateId": "capacity-recovered", "label": "baseline回復でもqueue=25とp99=180 msが残る。"},
+        {"id": "write-low-result", "stateId": "write-stable-load", "label": "write中心40 RPSではqueue=0で安定する。"},
+        {"id": "write-near-result", "stateId": "write-near-capacity", "label": "write中心knee=80 RPSから20% headroomを引く前の境界。"},
+        {"id": "write-overload-result", "stateId": "write-saturation", "label": "write中心超過でqueue=40、p99=900 msとなりsafe capacity=64 RPS。"},
+        {"id": "write-recovery-result", "stateId": "write-capacity-recovered", "label": "write中心回復でもqueue=25とp99=360 msが残る。"}
       ]
     }
   }],

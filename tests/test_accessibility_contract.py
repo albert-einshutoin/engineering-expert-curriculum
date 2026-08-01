@@ -20,6 +20,19 @@ TASK9_SCRIPTED_LESSONS = frozenset(
         "core-07-api-contract-design",
     }
 )
+TASK10_SCRIPTED_LESSONS = frozenset(
+    {
+        "core-02-algorithms-measurement",
+        "core-03-architecture-memory-caches",
+        "core-04-os-processes-concurrency",
+        "core-05-networks-latency-failure",
+        "core-07-api-contract-design",
+        "core-12-transactions-isolation-consistency",
+        "core-13-distributed-coordination-failure",
+        "core-14-performance-capacity",
+        "core-15-reliability-observability-slo",
+    }
+)
 _ACTIVE_CONTENT = frozenset(
     {
         "audio",
@@ -138,7 +151,7 @@ class AccessibilityContractTests(unittest.TestCase):
                 self.assertEqual(parser.h1_count, 1)
                 self.assertEqual(parser.skip_links, 1)
 
-    def test_task9_has_exactly_five_scripted_lesson_pages(
+    def test_task10_has_exactly_nine_scripted_lesson_pages_and_preserves_task9(
         self,
     ) -> None:
         self.assertEqual(
@@ -168,7 +181,11 @@ class AccessibilityContractTests(unittest.TestCase):
                 else:
                     self.assertEqual(parser.active_content, [])
                 self.assertEqual(parser.event_attributes, [])
-        self.assertEqual(scripted_lessons, TASK9_SCRIPTED_LESSONS)
+        self.assertEqual(
+            scripted_lessons & TASK9_SCRIPTED_LESSONS,
+            TASK9_SCRIPTED_LESSONS,
+        )
+        self.assertEqual(scripted_lessons, TASK10_SCRIPTED_LESSONS)
 
     def test_release_checker_rejects_semantics_hidden_in_template(self) -> None:
         page = next(iter(sorted(self.site.rglob("*.html"))))

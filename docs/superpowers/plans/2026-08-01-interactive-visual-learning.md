@@ -849,6 +849,13 @@ git commit -m "content: add foundational system simulations"
 - Modify lesson JSON for core-12, 13, 14, 15
 - Modify: `tests/test_content_acceptance.py`
 - Modify: `tests/test_visualization_runtime.py`
+- Modify: `tests/test_accessibility_contract.py`
+- Modify: `tests/test_build.py`
+- Modify: this plan (Task 9 subset oracle and Task 10 exact-nine scope only)
+
+The Task 9 five-lesson set remains an independent exact subset oracle. Task 10
+adds a separate exact nine-lesson inventory oracle; tests must not derive either
+set from the visualization catalog or from discovered generated pages.
 
 - [ ] **Step 1: Add RED exact-state tests**
 
@@ -872,7 +879,7 @@ window/error budget/burn/response. Static tables reproduce every result.
 ```bash
 python3.13 -m unittest tests.test_content_acceptance tests.test_visualization_runtime -v
 python3.13 -m unittest discover -s tests -v
-git add content/lessons/core-{12,13,14,15}-*/lesson.json tests/test_content_acceptance.py tests/test_visualization_runtime.py
+git add content/lessons/core-{12,13,14,15}-*/lesson.json tests/test_content_acceptance.py tests/test_visualization_runtime.py tests/test_accessibility_contract.py tests/test_build.py docs/superpowers/plans/2026-08-01-interactive-visual-learning.md
 git commit -m "content: add data and reliability simulations"
 ```
 

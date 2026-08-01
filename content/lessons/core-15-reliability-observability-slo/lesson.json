@@ -192,7 +192,7 @@
   ],
   "visualizations": [
     {
-      "id": "slo-action-loop",
+      "id": "slo-burn-static",
       "type": "state-loop",
       "caption": "利用者結果からon-call actionまでを閉じるflow",
       "question": "どのSLIとburn evidenceがpageを起動し、mitigation後の何を確認してloopを終了するか。",
@@ -304,6 +304,56 @@
         ],
         "exitStateId": "evidence-ready",
         "recoveryStateId": "alert"
+      },
+      "simulation": {
+        "kind": "slo-burn",
+        "interactionMode": "scenario",
+        "parameters": [
+          {
+            "id": "error-window",
+            "label": "error-window scenario",
+            "control": "radio",
+            "options": [
+              {"id": "normal", "label": "normal: failureなし"},
+              {"id": "short-only", "label": "直近5分に1 failure"},
+              {"id": "both", "label": "直近12分がfailure"}
+            ],
+            "defaultOptionId": "normal"
+          }
+        ],
+        "initialStateId": "budget-healthy",
+        "states": [
+          {
+            "id": "budget-healthy",
+            "label": "budget healthy",
+            "status": "28日、target=90%、error budget=10%。60/60 good、SLI=100%、5分/60分のburn=0、page=false。",
+            "when": {"error-window": "normal"},
+            "activeNodeIds": ["journey", "sli", "slo"],
+            "activeEdgeIds": ["journey-to-sli", "sli-to-slo"]
+          },
+          {
+            "id": "fast-burn",
+            "label": "短窓だけfast burn",
+            "status": "28日、target=90%、error budget=10%。5分は1/5 badでshort burn=2、60分は1/60 badでlong burn=0.1667、page=false。",
+            "when": {"error-window": "short-only"},
+            "activeNodeIds": ["slo", "telemetry", "alert"],
+            "activeEdgeIds": ["slo-to-telemetry", "telemetry-to-alert"]
+          },
+          {
+            "id": "page-triggered",
+            "label": "multi-window page",
+            "status": "28日、target=90%、error budget=10%。5分は5/5 badでshort burn=10、60分は12/60 badでlong burn=2、page=true。",
+            "when": {"error-window": "both"},
+            "activeNodeIds": ["alert", "runbook"],
+            "activeEdgeIds": ["alert-to-runbook"]
+          }
+        ],
+        "transitions": [],
+        "outcomes": [
+          {"id": "healthy-no-action", "stateId": "budget-healthy", "label": "両windowがthreshold未満なのでpageせず、通常観測を続ける。"},
+          {"id": "short-window-only", "stateId": "fast-burn", "label": "short burn=2でもlong burn=0.1667のためAND条件はfalse。pageしない。"},
+          {"id": "multi-window-page", "stateId": "page-triggered", "label": "short burn=10かつlong burn=2。購入impactを確認しcheckoutを縮退する。"}
+        ]
       }
     }
   ],

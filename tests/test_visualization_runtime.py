@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class VisualizationRuntimeContractTests(unittest.TestCase):
-    def test_task9_build_has_exactly_five_simulation_script_pages(self) -> None:
+    def test_task9_build_preserves_the_independent_five_lesson_boundary(self) -> None:
         expected = {
             "core-02-algorithms-measurement",
             "core-03-architecture-memory-caches",
@@ -35,7 +35,78 @@ class VisualizationRuntimeContractTests(unittest.TestCase):
                 in path.read_bytes()
             }
 
+        self.assertEqual(actual & expected, expected)
+
+    def test_task10_build_has_exactly_nine_simulation_script_pages(self) -> None:
+        expected = {
+            "core-02-algorithms-measurement",
+            "core-03-architecture-memory-caches",
+            "core-04-os-processes-concurrency",
+            "core-05-networks-latency-failure",
+            "core-07-api-contract-design",
+            "core-12-transactions-isolation-consistency",
+            "core-13-distributed-coordination-failure",
+            "core-14-performance-capacity",
+            "core-15-reliability-observability-slo",
+        }
+        with TemporaryDirectory(prefix=".task10-runtime-", dir=ROOT.parent) as temporary:
+            output = Path(temporary) / "site"
+            build_site(
+                ROOT / "content", ROOT / "templates", ROOT / "static", output,
+                require_complete_curriculum=True,
+            )
+            actual = {
+                path.parent.name
+                for path in (output / "lessons").glob("*/index.html")
+                if b'<script src="../../static/visualization.js" defer></script>'
+                in path.read_bytes()
+            }
+
         self.assertEqual(actual, expected)
+
+    def test_task10_real_dom_exposes_complete_oracles_and_controls(self) -> None:
+        expected = {
+            "core-12-transactions-isolation-consistency": "hybrid",
+            "core-13-distributed-coordination-failure": "hybrid",
+            "core-14-performance-capacity": "scenario",
+            "core-15-reliability-observability-slo": "scenario",
+        }
+        with TemporaryDirectory(prefix=".task10-real-dom-", dir=ROOT.parent) as temporary:
+            output = Path(temporary) / "site"
+            build_site(
+                ROOT / "content", ROOT / "templates", ROOT / "static", output,
+                require_complete_curriculum=True,
+            )
+            for lesson_id, mode in expected.items():
+                generated = (
+                    output / "lessons" / lesson_id / "index.html"
+                ).read_text(encoding="utf-8")
+                document = json.loads(
+                    (ROOT / "content/lessons" / lesson_id / "lesson.json")
+                    .read_bytes()
+                )
+                matching_simulations = [
+                    item["simulation"] for item in document["visualizations"]
+                    if "simulation" in item
+                ]
+                self.assertEqual(len(matching_simulations), 1)
+                simulation = matching_simulations[0]
+                self.assertIn(f'data-interaction-mode="{mode}"', generated)
+                self.assertIn("パラメータと選択肢", generated)
+                self.assertIn("完全な遷移", generated)
+                self.assertIn("観測結果", generated)
+                self.assertIn('data-action="apply"', generated)
+                self.assertIn('data-action="reset"', generated)
+                for state in simulation["states"]:
+                    self.assertIn(f'data-state-id="{state["id"]}"', generated)
+                for transition in simulation["transitions"]:
+                    self.assertIn(f'data-transition-id="{transition["id"]}"', generated)
+                if mode == "hybrid":
+                    for action in ("play", "pause", "previous", "next", "speed"):
+                        self.assertIn(f'data-action="{action}"', generated)
+                else:
+                    for action in ("play", "pause", "previous", "next", "speed"):
+                        self.assertNotIn(f'data-action="{action}"', generated)
 
     def test_real_hybrid_lessons_render_reselect_next_and_reset_edges(self) -> None:
         expected_edges = {

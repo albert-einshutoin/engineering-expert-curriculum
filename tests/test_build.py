@@ -51,6 +51,19 @@ TASK9_SCRIPTED_LESSONS = frozenset(
         "core-07-api-contract-design",
     }
 )
+TASK10_SCRIPTED_LESSONS = frozenset(
+    {
+        "core-02-algorithms-measurement",
+        "core-03-architecture-memory-caches",
+        "core-04-os-processes-concurrency",
+        "core-05-networks-latency-failure",
+        "core-07-api-contract-design",
+        "core-12-transactions-isolation-consistency",
+        "core-13-distributed-coordination-failure",
+        "core-14-performance-capacity",
+        "core-15-reliability-observability-slo",
+    }
+)
 
 
 def _repository_lesson_source_counts(
@@ -518,7 +531,7 @@ class BuildAcceptanceTests(unittest.TestCase):
                 self,
                 output,
                 _repository_lesson_source_counts(),
-                scripted_lesson_ids=TASK9_SCRIPTED_LESSONS,
+                scripted_lesson_ids=TASK10_SCRIPTED_LESSONS,
             )
             catalog = (output / "catalog/index.html").read_text(
                 encoding="utf-8"
@@ -579,7 +592,7 @@ class BuildAcceptanceTests(unittest.TestCase):
                 self,
                 output,
                 _repository_lesson_source_counts(),
-                scripted_lesson_ids=TASK9_SCRIPTED_LESSONS,
+                scripted_lesson_ids=TASK10_SCRIPTED_LESSONS,
             )
             first_metadata = {
                 path.relative_to(output): (
@@ -599,7 +612,7 @@ class BuildAcceptanceTests(unittest.TestCase):
                 self,
                 output,
                 _repository_lesson_source_counts(),
-                scripted_lesson_ids=TASK9_SCRIPTED_LESSONS,
+                scripted_lesson_ids=TASK10_SCRIPTED_LESSONS,
             )
             second_metadata = {
                 path.relative_to(output): (
@@ -664,7 +677,7 @@ class BuildAcceptanceTests(unittest.TestCase):
                 output,
                 _repository_lesson_source_counts(),
                 competency_source_count=3,
-                scripted_lesson_ids=TASK9_SCRIPTED_LESSONS,
+                scripted_lesson_ids=TASK10_SCRIPTED_LESSONS,
             )
 
     def test_cli_rejects_control_characters_without_log_injection(

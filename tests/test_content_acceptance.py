@@ -263,6 +263,67 @@ TASK9_SIMULATION_CONTRACTS["core-05-networks-latency-failure"]["transitions"] = 
         )
     ),
 )
+TASK10_SIMULATION_CONTRACTS = {
+    "core-12-transactions-isolation-consistency": {
+        "visual": "isolation-schedule-static",
+        "kind": "isolation-schedule",
+        "mode": "hybrid",
+        "parameters": ("isolation",),
+        "states": (
+            "concurrent-read", "snapshot-local-decision", "write-skew",
+            "serializable-validation", "transaction-aborted",
+            "transaction-retried",
+        ),
+        "outcomes": ("write-skew-observed", "retry-preserves-invariant"),
+        "interval": 1100,
+    },
+    "core-13-distributed-coordination-failure": {
+        "visual": "distributed-failure-static",
+        "kind": "distributed-failure",
+        "mode": "hybrid",
+        "parameters": ("event-case",),
+        "states": (
+            "event-received", "duplicate-received", "result-reused",
+            "reordered-delivery", "sequence-checked", "partition-detected",
+            "messages-buffered", "recovery-partition-detected",
+            "recovery-buffered", "recovery-converged",
+        ),
+        "outcomes": (
+            "duplicate-effect-once", "reorder-detected",
+            "partition-buffers-three", "recovery-before-deadline",
+        ),
+        "interval": 1000,
+    },
+    "core-14-performance-capacity": {
+        "visual": "queue-capacity-static",
+        "kind": "queue-capacity",
+        "mode": "scenario",
+        "parameters": ("load-band", "workers"),
+        "states": (
+            "stable-load", "near-capacity", "saturation", "capacity-recovered",
+            "write-stable-load", "write-near-capacity", "write-saturation",
+            "write-capacity-recovered",
+        ),
+        "outcomes": (
+            "baseline-low-result", "baseline-near-result",
+            "baseline-overload-result", "baseline-recovery-result",
+            "write-low-result", "write-near-result",
+            "write-overload-result", "write-recovery-result",
+        ),
+        "interval": None,
+    },
+    "core-15-reliability-observability-slo": {
+        "visual": "slo-burn-static",
+        "kind": "slo-burn",
+        "mode": "scenario",
+        "parameters": ("error-window",),
+        "states": ("budget-healthy", "fast-burn", "page-triggered"),
+        "outcomes": (
+            "healthy-no-action", "short-window-only", "multi-window-page",
+        ),
+        "interval": None,
+    },
+}
 TASK7_COMMON_CONTRACTS = {
     "core-02-algorithms-measurement": ("complexity-growth-static", "comparison", "mentalModel", None, "アルゴリズム再選択の検証経路", "同じquery列への構築済みlookupで、入力特性・size・setup・space・query回数が選択をどう変えるか。", "best・average・worst caseを区別し、予測と反復実測の差から再選択条件を説明できる。", ("obj-predict", "obj-measure", "obj-reselect"), ("benchmark-report", "assessment"), ("src-01", "src-02", "src-03", "src-04"), ("操作モデル: 比較、hash計算、割り当てなど、支配的な操作を決める。", "成長率予測: 支配操作がΘ(n)ならnを2倍にしたとき約2倍、Θ(n²)なら約4倍と予測する。", "入力モデル: サイズだけでなく、順序、重複率、問い合わせ位置を固定する。", "測定設計: 準備と対象区間を分け、ウォームアップ後に複数回測る。", "統計要約: 全値、中央値、範囲を残し、除外規則を先に決める。", "差の診断: 定数項、キャッシュ、GC、処理系、外れ値を追加測定で反証する。", "再選択条件: 本番のn、分布、呼出回数の変化を監視する。")),
     "core-03-architecture-memory-caches": ("memory-access-static", "memory", "mentalModel", None, "一つのロードを診断する論理段階", "一つのloadでaddress translationとdata transferの待ちをどう切り分けるか。", "TLB・page tableの変換経路とcache・主記憶の転送経路を区別し、機種依存の階層を普遍的latencyとして扱わない。", ("obj-path", "obj-locality", "obj-transfer"), ("locality-report", "assessment"), ("src-01", "src-02", "src-03"), ("命令: 仮想アドレスAの値を要求する。", "TLB: Aのページ変換を検索する。missならページテーブルwalkが必要になる。", "L1 cache: Aを含むcache lineを検索する。hitなら近い階層で返る。", "L2と最終レベルcache: L1 miss後の候補を調べる。L2やLLCがcore-privateか複数coreでsharedかというprivate/shared範囲は機種依存である。", "memory controller: 全cacheでmissなら主記憶からline単位で転送する。", "再利用: 同じline内の次要素を使えば空間的局所性、短時間に同じ値を使えば時間的局所性を得る。", "このDAGはhit/missの診断依存を示し、VIPTではTLB変換とL1 index lookupが並行し得るため普遍的な逐次latencyではない。")),
@@ -2733,8 +2794,31 @@ def _expected_artifacts() -> frozenset[PurePosixPath]:
     return frozenset(paths)
 
 
+_TASK10_PRIOR_VISUAL_IDS = {
+    "core-12-transactions-isolation-consistency": "isolation-schedule-timeline",
+    "core-13-distributed-coordination-failure": "dedupe-recovery-timeline",
+    "core-14-performance-capacity": "capacity-causal-cycle",
+    "core-15-reliability-observability-slo": "slo-action-loop",
+}
+
+
+def _prior_task_static_visual(
+    document: dict[str, object], visual: dict[str, object]
+) -> dict[str, object]:
+    """Keep Task 5/6 semantic oracles independent from later simulations."""
+    lesson_id = document["id"]
+    if lesson_id not in _TASK10_PRIOR_VISUAL_IDS:
+        return visual
+    normalized = deepcopy(visual)
+    normalized["id"] = _TASK10_PRIOR_VISUAL_IDS[lesson_id]
+    normalized.pop("simulation", None)
+    return normalized
+
+
 def _task5_visual_projection(document: dict[str, object]) -> dict[str, object]:
-    visual = document["visualizations"][0]  # type: ignore[index]
+    visual = _prior_task_static_visual(
+        document, document["visualizations"][0]  # type: ignore[index]
+    )
     payload = visual["payload"]  # type: ignore[index]
     projection: dict[str, object] = {
         "common": (
@@ -2790,8 +2874,11 @@ def _task5_visual_projection(document: dict[str, object]) -> dict[str, object]:
 
 def _task6_visual_contract_sha256(document: dict[str, object]) -> str:
     """Provide a compact secondary corruption signal for the readable oracle."""
+    visual = _prior_task_static_visual(
+        document, document["visualizations"][0]  # type: ignore[index]
+    )
     encoded = json.dumps(
-        document["visualizations"][0],
+        visual,
         ensure_ascii=False,
         separators=(",", ":"),
     ).encode("utf-8")
@@ -2800,7 +2887,9 @@ def _task6_visual_contract_sha256(document: dict[str, object]) -> str:
 
 def _task6_visual_projection(document: dict[str, object]) -> dict[str, object]:
     """Project every authored field without using production model objects."""
-    visual = document["visualizations"][0]
+    visual = _prior_task_static_visual(
+        document, document["visualizations"][0]  # type: ignore[index]
+    )
     payload = visual["payload"]
     projection: dict[str, object] = {
         "common": (
@@ -3757,6 +3846,205 @@ class ContentAcceptanceTests(unittest.TestCase):
                 self.assertIn(f"elapsed={expected_elapsed}ms", states[state_id]["status"])
                 self.assertIn(f"remaining={expected_remaining}ms", states[state_id]["status"])
 
+    def test_task10_simulations_have_exact_independent_finite_contracts(self) -> None:
+        catalog_document = json.loads(
+            (REPOSITORY_ROOT / "content/visualization-catalog.json").read_bytes()
+        )
+        catalog = {
+            item["lessonId"]: item["simulation"]
+            for item in catalog_document["lessons"]
+            if item["lessonId"] in TASK10_SIMULATION_CONTRACTS
+        }
+        self.assertEqual(set(catalog), set(TASK10_SIMULATION_CONTRACTS))
+
+        authored_simulations = {}
+        for lesson_id in LESSON_IDS:
+            document = json.loads(
+                (REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json")
+                .read_bytes()
+            )
+            for visual in document["visualizations"]:
+                if "simulation" in visual:
+                    authored_simulations[lesson_id] = visual
+
+        # This is intentionally independent from the catalog projection: Task 10
+        # advances the implemented boundary from five to exactly nine lessons.
+        self.assertEqual(
+            set(authored_simulations),
+            set(TASK9_SIMULATION_CONTRACTS) | set(TASK10_SIMULATION_CONTRACTS),
+        )
+        self.assertEqual(len(authored_simulations), 9)
+
+        for lesson_id, expected in TASK10_SIMULATION_CONTRACTS.items():
+            with self.subTest(lesson_id=lesson_id):
+                visual = authored_simulations[lesson_id]
+                simulation = visual["simulation"]
+                approved = catalog[lesson_id]
+                self.assertEqual(visual["id"], expected["visual"])
+                self.assertEqual(simulation["kind"], expected["kind"])
+                self.assertEqual(simulation["interactionMode"], expected["mode"])
+                self.assertEqual(approved["staticEquivalentId"], visual["id"])
+                self.assertEqual(approved["kind"], simulation["kind"])
+                self.assertEqual(approved["interactionMode"], expected["mode"])
+                self.assertEqual(
+                    tuple(item["id"] for item in simulation["parameters"]),
+                    expected["parameters"],
+                )
+                self.assertEqual(
+                    tuple(item["id"] for item in simulation["states"]),
+                    expected["states"],
+                )
+                self.assertEqual(
+                    tuple(item["id"] for item in simulation["outcomes"]),
+                    expected["outcomes"],
+                )
+                self.assertEqual(
+                    simulation.get("defaultIntervalMs"), expected["interval"]
+                )
+                state_ids = set(expected["states"])
+                self.assertIn(simulation["initialStateId"], state_ids)
+                self.assertTrue(
+                    set(approved["visualRegressionStateIds"]) <= state_ids
+                )
+
+    def test_task10_static_oracles_preserve_exact_lesson_fixture_results(self) -> None:
+        rendered = {}
+        for lesson_id, expected in TASK10_SIMULATION_CONTRACTS.items():
+            document = json.loads(
+                (REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json")
+                .read_bytes()
+            )
+            matching_visuals = [
+                item for item in document["visualizations"]
+                if item["id"] == expected["visual"]
+            ]
+            self.assertEqual(len(matching_visuals), 1)
+            visual = matching_visuals[0]
+            rendered[lesson_id] = str(
+                render_visualization(lesson_id, load_lesson_bytes(
+                    (REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json")
+                    .read_bytes(), lesson_id,
+                ).visualizations[0])
+            )
+            self.assertIn("パラメータと選択肢", rendered[lesson_id])
+            self.assertIn("完全な遷移", rendered[lesson_id])
+            self.assertIn("観測結果", rendered[lesson_id])
+            for state in visual["simulation"]["states"]:
+                self.assertIn(state["status"], rendered[lesson_id])
+            for outcome in visual["simulation"]["outcomes"]:
+                self.assertIn(outcome["label"], rendered[lesson_id])
+            self.assertLessEqual(len(visual["simulation"]["states"]), 64)
+            self.assertLessEqual(len(visual["simulation"]["transitions"]), 128)
+
+        exact_atoms = {
+            "core-12-transactions-isolation-consistency": (
+                "開始状態 {alice: on, bob: on}", "Snapshot Isolation",
+                "2件ともcommit", "当直者0人", "1件をabort",
+                "合計3 attempt", "当直者1人",
+            ),
+            "core-13-distributed-coordination-failure": (
+                "seed 20260731", "6 event", "3 message", "tick 6",
+                "deadline 8", "state transitionは1回", "resultを1回再利用",
+            ),
+            "core-14-performance-capacity": (
+                "offered=150 RPS", "accepted=100 RPS", "success=90 RPS",
+                "queue=50", "p99=450 ms", "safe capacity=80 RPS",
+                "offered=120 RPS", "accepted=80 RPS", "success=72 RPS",
+                "safe capacity=64 RPS",
+            ),
+            "core-15-reliability-observability-slo": (
+                "28日", "target=90%", "error budget=10%", "5分",
+                "60分", "short burn=2", "long burn=0.1667",
+                "short burn=10", "long burn=2", "page=true",
+            ),
+        }
+        for lesson_id, atoms in exact_atoms.items():
+            for atom in atoms:
+                with self.subTest(lesson_id=lesson_id, atom=atom):
+                    self.assertIn(atom, rendered[lesson_id])
+
+    def test_task10_hybrid_paths_have_complete_manual_timer_and_reset_edges(self) -> None:
+        expected_paths = {
+            "core-12-transactions-isolation-consistency": {
+                "snapshot": (
+                    "concurrent-read", "snapshot-local-decision", "write-skew",
+                ),
+                "serializable": (
+                    "concurrent-read", "serializable-validation",
+                    "transaction-aborted", "transaction-retried",
+                ),
+            },
+            "core-13-distributed-coordination-failure": {
+                "duplicate": (
+                    "event-received", "duplicate-received", "result-reused",
+                ),
+                "reorder": (
+                    "event-received", "reordered-delivery", "sequence-checked",
+                ),
+                "partition": (
+                    "event-received", "partition-detected", "messages-buffered",
+                ),
+                "recovery": (
+                    "event-received", "recovery-partition-detected",
+                    "recovery-buffered", "recovery-converged",
+                ),
+            },
+        }
+        for lesson_id, lesson_paths in expected_paths.items():
+            document = json.loads(
+                (REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json")
+                .read_bytes()
+            )
+            matching_simulations = [
+                item["simulation"] for item in document["visualizations"]
+                if "simulation" in item
+            ]
+            self.assertEqual(len(matching_simulations), 1)
+            simulation = matching_simulations[0]
+            parameter = simulation["parameters"][0]
+            states = {state["id"]: state for state in simulation["states"]}
+            transitions = simulation["transitions"]
+            initial = simulation["initialStateId"]
+            for option in parameter["options"]:
+                selection = {parameter["id"]: option["id"]}
+                active_states = {
+                    state_id for state_id, state in states.items()
+                    if all(selection[key] == value for key, value in state.get("when", {}).items())
+                }
+                active_edges = [
+                    edge for edge in transitions
+                    if all(selection[key] == value for key, value in edge.get("when", {}).items())
+                ]
+                with self.subTest(lesson_id=lesson_id, option=option["id"]):
+                    path = lesson_paths[option["id"]]
+                    self.assertEqual(active_states, set(path))
+                    parameter_changes = [
+                        edge for edge in active_edges
+                        if edge["event"] == "parameter-change"
+                    ]
+                    self.assertEqual(len(parameter_changes), 1)
+                    self.assertEqual(
+                        (parameter_changes[0]["from"], parameter_changes[0]["to"]),
+                        (initial, initial),
+                    )
+                    forward = {
+                        (edge["from"], edge["to"])
+                        for edge in active_edges if edge["event"] == "next"
+                    }
+                    self.assertEqual(forward, set(zip(path, path[1:])))
+                    self.assertEqual(forward, {
+                        (edge["from"], edge["to"])
+                        for edge in active_edges if edge["event"] == "timer"
+                    })
+                    self.assertEqual({(to_id, from_id) for from_id, to_id in forward}, {
+                        (edge["from"], edge["to"])
+                        for edge in active_edges if edge["event"] == "previous"
+                    })
+                    self.assertEqual(
+                        {(edge["from"], edge["to"]) for edge in active_edges if edge["event"] == "reset"},
+                        {(state_id, initial) for state_id in active_states - {initial}},
+                    )
+
     def test_catalog_bytes_and_identity_are_bound_to_the_preserved_release(
         self,
     ) -> None:
@@ -4420,7 +4708,8 @@ class ContentAcceptanceTests(unittest.TestCase):
                 self.assertEqual(
                     visual["caption"], legacy_by_lesson[lesson_id]["caption"]
                 )
-                self.assertNotIn("simulation", visual)
+                if lesson_id not in TASK10_SIMULATION_CONTRACTS:
+                    self.assertNotIn("simulation", visual)
                 self.assertTrue(visual["objectiveIds"])
                 self.assertTrue(visual["evidenceIds"])
                 self.assertTrue(visual["sourceIds"])
@@ -4510,7 +4799,8 @@ class ContentAcceptanceTests(unittest.TestCase):
                     visual["caption"], legacy_by_lesson[lesson_id]["caption"]
                 )
                 self.assertEqual(visual["afterSection"], "mentalModel")
-                self.assertNotIn("simulation", visual)
+                if lesson_id not in TASK10_SIMULATION_CONTRACTS:
+                    self.assertNotIn("simulation", visual)
                 semantic_text = json.dumps(visual, ensure_ascii=False)
                 for atom in legacy_by_lesson[lesson_id]["visibleAtoms"]:
                     normalized = atom[:-1] if atom.endswith(":") else atom
@@ -5564,7 +5854,7 @@ class ContentAcceptanceTests(unittest.TestCase):
                 for path, source in first.items()
                 if path.suffix.casefold() == ".html"
             ),
-            5,
+            9,
         )
         legacy_by_lesson = {
             entry["lessonId"]: entry
