@@ -106,7 +106,7 @@ TASK7_VISUAL_TYPES = {
 TASK7_COMMON_CONTRACTS = {
     "core-02-algorithms-measurement": ("complexity-growth-static", "comparison", "mentalModel", None, "アルゴリズム再選択の検証経路", "同じquery列への構築済みlookupで、入力特性・size・setup・space・query回数が選択をどう変えるか。", "best・average・worst caseを区別し、予測と反復実測の差から再選択条件を説明できる。", ("obj-predict", "obj-measure", "obj-reselect"), ("benchmark-report", "assessment"), ("src-01", "src-02", "src-03", "src-04"), ("操作モデル: 比較、hash計算、割り当てなど、支配的な操作を決める。", "成長率予測: 支配操作がΘ(n)ならnを2倍にしたとき約2倍、Θ(n²)なら約4倍と予測する。", "入力モデル: サイズだけでなく、順序、重複率、問い合わせ位置を固定する。", "測定設計: 準備と対象区間を分け、ウォームアップ後に複数回測る。", "統計要約: 全値、中央値、範囲を残し、除外規則を先に決める。", "差の診断: 定数項、キャッシュ、GC、処理系、外れ値を追加測定で反証する。", "再選択条件: 本番のn、分布、呼出回数の変化を監視する。")),
     "core-03-architecture-memory-caches": ("memory-access-static", "memory", "mentalModel", None, "一つのロードを診断する論理段階", "一つのloadでaddress translationとdata transferの待ちをどう切り分けるか。", "TLB・page tableの変換経路とcache・主記憶の転送経路を区別し、機種依存の階層を普遍的latencyとして扱わない。", ("obj-path", "obj-locality", "obj-transfer"), ("locality-report", "assessment"), ("src-01", "src-02", "src-03"), ("命令: 仮想アドレスAの値を要求する。", "TLB: Aのページ変換を検索する。missならページテーブルwalkが必要になる。", "L1 cache: Aを含むcache lineを検索する。hitなら近い階層で返る。", "L2と最終レベルcache: L1 miss後の候補を調べる。L2やLLCがcore-privateか複数coreでsharedかというprivate/shared範囲は機種依存である。", "memory controller: 全cacheでmissなら主記憶からline単位で転送する。", "再利用: 同じline内の次要素を使えば空間的局所性、短時間に同じ値を使えば時間的局所性を得る。", "このDAGはhit/missの診断依存を示し、VIPTではTLB変換とL1 index lookupが並行し得るため普遍的な逐次latencyではない。")),
-    "core-11-data-modeling-storage": ("storage-decision-matrix", "matrix", "mentalModel", None, "workload証拠からstorage ADRを再計算するmechanism", "同じworkload軸で三つのdata modelを比較し、query変化後に何を再計算するか。", "rowをstorage候補、columnを同一評価軸として読み、frequencyとratingの変更がscoreとwinnerを変えることを説明できる。", ("obj-workload", "obj-compare", "obj-recompute"), ("storage-adr", "assessment"), ("src-01", "src-02", "src-03", "src-04"), ("domain: 注文番号の一意性、合計額と明細合計の一致、注文状態遷移を不変条件にする。", "workload: 顧客履歴、注文detail、商品・期間検索、状態更新を一意なquery IDと時間当たり頻度で表す。", "growth: 現在件数と月間増加から12か月後を計算し、synthetic projectionである限界を残す。", "comparison: relational、document、key-valueをaccess fit、constraint、capacity、operations、recoveryの同じweightで採点する。", "ADR: winnerだけでなく、負の帰結、移行境界、confirmationを記録する。", "mutation: 商品・期間検索が主要queryになったらfrequencyとratingを変え、scoreとwinnerを再計算する。", "worked exampleでは全optionへ同じweight set 0.45/0.20/0.15/0.10/0.10を適用し、mutationで変更する入力はfrequencyだけでratingは固定する。", "baseline total 4.288957; winner relational; changed total 3.668868; winner key-value")),
+    "core-11-data-modeling-storage": ("storage-decision-matrix", "matrix", "mentalModel", None, "workload証拠からstorage ADRを再計算するmechanism", "query frequencyだけを変え、固定したquery-fit ratingから何を再計算するか。", "changed inputはfrequencyだけで、query-fit ratingは固定され、導出されるaccess-fit rating、weighted score、winnerが順に変わり得ることを説明できる。", ("obj-workload", "obj-compare", "obj-recompute"), ("storage-adr", "assessment"), ("src-01", "src-02", "src-03", "src-04"), ("domain: 注文番号の一意性、合計額と明細合計の一致、注文状態遷移を不変条件にする。", "workload: 顧客履歴、注文detail、商品・期間検索、状態更新を一意なquery IDと時間当たり頻度で表す。", "growth: 現在件数と月間増加から12か月後を計算し、synthetic projectionである限界を残す。", "comparison: relational、document、key-valueをaccess fit、constraint、capacity、operations、recoveryの同じweightで採点する。", "ADR: winnerだけでなく、負の帰結、移行境界、confirmationを記録する。", "mutation: 商品・期間検索が主要queryになったらfrequencyだけを変える。query-fit ratingは固定し、access-fit rating、weighted score、winnerを再計算する。", "worked exampleでは全optionへ同じweight set 0.45/0.20/0.15/0.10/0.10を適用する。query-fit ratingは固定し、frequency変更からaccess-fit ratingを導出する。", "baseline total 4.288957; winner relational; changed total 3.668868; winner key-value")),
     "core-16-hci-usability-accessibility": ("accessible-ui-state-static", "flow", "mentalModel", None, "生成サイトの監査を適合主張と利用者タスクへ結ぶ証拠flow", "限定した監査scopeから、適合結果と利用者taskの結果を混同せずにどう報告するか。", "scope、規範target、観測、人手review、限定claimの順序と、WCAG 3.0 Working DraftをWCAG 2.2適合根拠にしない境界を説明できる。", ("obj-audit", "obj-usability", "obj-scope"), ("audit-record", "assessment"), ("src-01", "src-02", "src-03", "src-04"), ("Scope:", "Target:", "Observe:", "Review:", "Claim:")),
     "core-17-graphics-visual-information": ("semantic-rendering-flow", "flow", "mentalModel", None, "一つのdata modelから視覚と同等textへ分岐するrendering pipeline", "一つのdata modelから視覚表現と同等textを作り、どの不変条件を照合するか。", "Data、Transform、Visual、Equivalent、Verifyの順序を説明し、別目的の0–100% worked-example chartを二重計上しない。", ("obj-pipeline", "obj-equivalence", "obj-encoding"), ("semantic-visual", "assessment"), ("src-01", "src-02", "src-03", "src-04", "src-05"), ("Data:", "Transform:", "Visual:", "Equivalent:", "Verify:")),
     "core-19-technical-communication-design-docs": ("decision-evidence-hierarchy", "hierarchy", "mentalModel", None, "一つの決定証拠から読者別viewを導く構造", "同じdecision evidenceを読者別viewへどう入れ子にし、driftを防ぐか。", "共通decision recordの下にevidenceと読者別viewを置き、executiveとimplementationの詳細度だけを変えて同じdecisionを参照すると説明できる。", ("obj-audience", "obj-decision", "obj-transfer"), ("design-document", "assessment"), ("src-01", "src-02", "src-03", "src-04", "src-05"), ("Audience:", "Evidence:", "Decision:", "Executive view:", "Implementation view:", "Drift check: 要約、付録、ADRが同じdecisionを指すか検査する。")),
@@ -685,7 +685,7 @@ TASK7_PAYLOAD_CONTRACTS = {'core-02-algorithms-measurement': {'alternatives': [{
 TASK7_VISUAL_CONTRACT_SHA256 = {
     "core-02-algorithms-measurement": "d54ddfd1d57997d9ad22214a414cf97090f30758e104ab15c13bd5247d326db7",
     "core-03-architecture-memory-caches": "a4a48705ff0725ab6549e3554f88975574a6e5390ed925a042aecf02e4b76776",
-    "core-11-data-modeling-storage": "716e87ceb4ab0093df727ff852df055eba67ee98e3718dcd43a2d7e400c72ee2",
+    "core-11-data-modeling-storage": "d069bd0f046036b715c2083bc2b208a08da846d44a24a44e182d0ae044376ad4",
     "core-16-hci-usability-accessibility": "2479940e86a8e782f34887cd0951068c0e731bd9c2f5282e3fa5d3b1217a7e56",
     "core-17-graphics-visual-information": "b546551905fbe4d447c690209377666ac3cbc9b6f89254786cec919b22048a6a",
     "core-19-technical-communication-design-docs": "19c43b251a3be87d4e9285af961000ba676d4df9fdef06a8fb29e3e8dc9bad91",
@@ -3568,6 +3568,15 @@ class ContentAcceptanceTests(unittest.TestCase):
                     load_lesson_bytes((root / "lesson.json").read_bytes(), "lesson.json").visualizations[0],
                 ))
                 for atom in legacy[lesson_id]["visibleAtoms"]:
+                    if (
+                        lesson_id == "core-11-data-modeling-storage"
+                        and atom == "商品・期間検索が主要queryになったらfrequencyとratingを変え、scoreとwinnerを再計算する。"
+                    ):
+                        # The legacy wording incorrectly treated query-fit
+                        # rating as a changed input. The exact Task 7 contract
+                        # above freezes the corrected input/derived boundary.
+                        self.assertNotIn(escape(atom), rendered)
+                        continue
                     self.assertIn(escape(atom), rendered)
 
     def test_complete_lesson_set_matches_every_catalog_assignment_exactly(self) -> None:
@@ -3810,6 +3819,27 @@ class ContentAcceptanceTests(unittest.TestCase):
         self.assertEqual(values, expected)
         self.assertTrue(any("baseline total 4.288957" in note for note in visual["notes"]))
         self.assertTrue(any("changed total 3.668868" in note for note in visual["notes"]))
+
+    def test_task7_core11_distinguishes_changed_input_from_derived_rating(self) -> None:
+        path = REPOSITORY_ROOT / "content/lessons/core-11-data-modeling-storage/lesson.json"
+        visual = json.loads(path.read_bytes())["visualizations"][0]
+        self.assertEqual(
+            visual["question"],
+            "query frequencyだけを変え、固定したquery-fit ratingから何を再計算するか。",
+        )
+        self.assertEqual(
+            visual["expectedObservation"],
+            "changed inputはfrequencyだけで、query-fit ratingは固定され、導出されるaccess-fit rating、weighted score、winnerが順に変わり得ることを説明できる。",
+        )
+        self.assertIn(
+            "mutation: 商品・期間検索が主要queryになったらfrequencyだけを変える。query-fit ratingは固定し、access-fit rating、weighted score、winnerを再計算する。",
+            visual["notes"],
+        )
+        semantic_text = " ".join(
+            (visual["question"], visual["expectedObservation"], *visual["notes"])
+        )
+        self.assertNotIn("frequencyとratingを変", semantic_text)
+        self.assertNotIn("ratingを変更", semantic_text)
 
     def test_task7_core25_matrix_reproduces_cost_and_sensitivity_arithmetic(self) -> None:
         path = REPOSITORY_ROOT / "content/lessons/core-25-engineering-economics-capacity/lesson.json"
