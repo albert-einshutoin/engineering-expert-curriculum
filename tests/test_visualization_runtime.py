@@ -12,17 +12,26 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class VisualizationRuntimeContractTests(unittest.TestCase):
-    def test_actual_runtime_passes_dependency_free_dom_contract(self) -> None:
-        completed = subprocess.run(
-            [
+    def _run_harness(self, harness: Path, *, timeout: float = 5.0):
+        try:
+            return subprocess.run(
+                [
                 "node",
-                str(ROOT / "tests" / "fixtures" / "visualization-runtime-dom-harness.js"),
+                str(harness),
                 str(ROOT / "static" / "visualization.js"),
-            ],
-            cwd=ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as error:
+            self.fail(f"visualization runtime harness timed out after {error.timeout}s")
+
+    def test_actual_runtime_passes_dependency_free_dom_contract(self) -> None:
+        completed = self._run_harness(
+            ROOT / "tests" / "fixtures" / "visualization-runtime-dom-harness.js"
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         report = json.loads(completed.stdout)
@@ -34,6 +43,13 @@ class VisualizationRuntimeContractTests(unittest.TestCase):
         self.assertEqual(report["timerLeaks"], 0)
         self.assertEqual(report["resetCycles"], 100)
         self.assertTrue(report["loadAbsence"])
+
+    def test_hanging_runtime_harness_fails_with_a_bounded_assertion(self) -> None:
+        with self.assertRaisesRegex(AssertionError, "timed out"):
+            self._run_harness(
+                ROOT / "tests" / "fixtures" / "visualization-runtime-hang.js",
+                timeout=0.1,
+            )
 
     def test_runtime_is_one_safe_dependency_free_strict_classic_iife(self) -> None:
         source = (ROOT / "static" / "visualization.js").read_bytes()
