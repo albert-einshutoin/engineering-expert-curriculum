@@ -4,15 +4,241 @@ from pathlib import Path
 import re
 import unittest
 
+from curriculum_builder.visualizations import (
+    VisualizationType,
+    render_visualization,
+)
+import tests.test_visualization_rendering as visualization_rendering_tests
+
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CSS_PATH = REPOSITORY_ROOT / "static" / "visualizations.css"
+
+_SEMANTIC_CONTAINERS = {
+    VisualizationType.FLOW: ("visualization__ordered-model",),
+    VisualizationType.HIERARCHY: ("visualization__hierarchy",),
+    VisualizationType.COMPARISON: ("visualization__table",),
+    VisualizationType.STATE_LOOP: ("visualization__nodes",),
+    VisualizationType.CAUSAL: ("visualization__causal-model",),
+    VisualizationType.TIMELINE: ("visualization__timeline-phases",),
+    VisualizationType.NETWORK: (
+        "visualization__components",
+        "visualization__nodes",
+    ),
+    VisualizationType.MEMORY: ("visualization__nodes",),
+    VisualizationType.MATRIX: ("visualization__table",),
+    VisualizationType.STATE_MACHINE: ("visualization__states",),
+}
+
+_MULTI_COLUMN_CONTAINERS = frozenset(
+    (kind, container)
+    for kind, containers in _SEMANTIC_CONTAINERS.items()
+    if kind not in {VisualizationType.COMPARISON, VisualizationType.MATRIX}
+    for container in containers
+)
+
+
+def _css_blocks(source: str) -> tuple[tuple[str, str, int], ...]:
+    blocks: list[tuple[str, str, int]] = []
+    depth = 0
+    opening = -1
+    prelude_start = 0
+    for index, character in enumerate(source):
+        if character == "{":
+            if depth == 0:
+                opening = index
+            depth += 1
+        elif character == "}":
+            depth -= 1
+            if depth < 0:
+                raise AssertionError("CSS has an unmatched closing brace")
+            if depth == 0:
+                prelude = source[prelude_start:opening].strip()
+                blocks.append((prelude, source[opening + 1:index], opening))
+                prelude_start = index + 1
+    if depth:
+        raise AssertionError("CSS has an unmatched opening brace")
+    return tuple(blocks)
+
+
+def _selector_list(source: str) -> tuple[str, ...]:
+    selectors: list[str] = []
+    start = 0
+    depth = 0
+    for index, character in enumerate(source):
+        if character in "([":
+            depth += 1
+        elif character in ")]":
+            depth -= 1
+        elif character == "," and depth == 0:
+            selectors.append(" ".join(source[start:index].split()))
+            start = index + 1
+    selectors.append(" ".join(source[start:].split()))
+    return tuple(selectors)
+
+
+def _rules(source: str) -> tuple[tuple[str, dict[str, str], int], ...]:
+    rules: list[tuple[str, dict[str, str], int]] = []
+    for prelude, body, position in _css_blocks(source):
+        if prelude.startswith("@media"):
+            for selector, nested_body, nested_position in _css_blocks(body):
+                declarations = {
+                    name.strip(): value.strip()
+                    for declaration in nested_body.split(";")
+                    if ":" in declaration
+                    for name, value in (declaration.split(":", 1),)
+                }
+                for item in _selector_list(selector):
+                    rules.append(
+                        (item, declarations, position + nested_position)
+                    )
+        elif not prelude.startswith("@"):
+            declarations = {
+                name.strip(): value.strip()
+                for declaration in body.split(";")
+                if ":" in declaration
+                for name, value in (declaration.split(":", 1),)
+            }
+            for item in _selector_list(prelude):
+                rules.append((item, declarations, position))
+    return tuple(rules)
+
+
+def _specificity(selector: str) -> tuple[int, int, int]:
+    ids = len(re.findall(r"#[a-zA-Z0-9_-]+", selector))
+    classes = len(
+        re.findall(
+            r"\.[a-zA-Z0-9_-]+|\[[^]]+\]|:(?!:)[a-zA-Z-]+",
+            selector,
+        )
+    )
+    elements = len(
+        re.findall(
+            r"(?:^|[ >+~])(?:[a-zA-Z][a-zA-Z0-9-]*|\*)",
+            selector,
+        )
+    )
+    return ids, classes, elements
+
+
+def _selector_classes(selector: str) -> frozenset[str]:
+    return frozenset(re.findall(r"\.([a-zA-Z0-9_-]+)", selector))
 
 
 class VisualizationAccessibilityTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.css = CSS_PATH.read_text(encoding="utf-8")
+        cls.payloads = (
+            visualization_rendering_tests.VisualizationRenderingTests().payloads()
+        )
+
+    def test_meaning_specific_selectors_match_real_renderer_containers(self) -> None:
+        selectors = {selector for selector, _, _ in _rules(self.css)}
+        for kind, containers in _SEMANTIC_CONTAINERS.items():
+            with self.subTest(kind=kind.value):
+                html = render_visualization(
+                    "core-01-systems-tradeoffs",
+                    visualization_rendering_tests._visual(
+                        kind, self.payloads[kind]
+                    ),
+                ).value
+                self.assertIn(f"visualization--{kind.value}", html)
+                for container in containers:
+                    self.assertIn(container, html)
+                    self.assertIn(
+                        f".visualization--{kind.value} .{container}",
+                        selectors,
+                    )
+
+    def test_mobile_overrides_win_the_cascade_for_real_multicolumn_containers(self) -> None:
+        top_level = _css_blocks(self.css)
+        mobile_blocks = tuple(
+            (body, position)
+            for prelude, body, position in top_level
+            if "@media (max-width: 20rem)" == " ".join(prelude.split())
+        )
+        self.assertEqual(len(mobile_blocks), 1)
+        mobile_body, mobile_position = mobile_blocks[0]
+        mobile_rules = {
+            selector: (declarations, position)
+            for selector, declarations, position in _rules(
+                f"@media (max-width: 20rem) {{{mobile_body}}}"
+            )
+        }
+        desktop_rules = {
+            selector: (declarations, position)
+            for selector, declarations, position in _rules(
+                self.css[:mobile_position]
+            )
+        }
+        expected_mobile = {
+            "grid-template-columns": "1fr",
+            "grid-auto-flow": "row",
+            "grid-auto-columns": "minmax(0, 1fr)",
+        }
+        for kind, container in _MULTI_COLUMN_CONTAINERS:
+            selector = f".visualization--{kind.value} .{container}"
+            with self.subTest(selector=selector):
+                self.assertIn(selector, desktop_rules)
+                self.assertIn(selector, mobile_rules)
+                desktop_declarations, _ = desktop_rules[selector]
+                mobile_declarations, _ = mobile_rules[selector]
+                self.assertTrue(
+                    {
+                        "grid-template-columns",
+                        "grid-auto-flow",
+                        "grid-auto-columns",
+                    }
+                    & desktop_declarations.keys()
+                )
+                node_classes = {
+                    f"visualization--{kind.value}",
+                    container,
+                }
+                competing_desktop_rules = [
+                    (candidate, position)
+                    for candidate, (declarations, position) in desktop_rules.items()
+                    if _selector_classes(candidate)
+                    and _selector_classes(candidate) <= node_classes
+                    and {
+                        "grid-template-columns",
+                        "grid-auto-flow",
+                        "grid-auto-columns",
+                    }
+                    & declarations.keys()
+                ]
+                self.assertTrue(competing_desktop_rules)
+                self.assertLessEqual(
+                    max(
+                        _specificity(candidate)
+                        for candidate, _ in competing_desktop_rules
+                    ),
+                    _specificity(selector),
+                )
+                self.assertLess(
+                    max(position for _, position in competing_desktop_rules),
+                    mobile_position,
+                )
+                self.assertEqual(
+                    {
+                        name: mobile_declarations.get(name)
+                        for name in expected_mobile
+                    },
+                    expected_mobile,
+                )
+        connector_rules = [
+            (selector, declarations)
+            for selector, declarations, _ in _rules(self.css[:mobile_position])
+            if "::after" in selector and declarations.get("content") == '""'
+        ]
+        self.assertTrue(connector_rules)
+        for selector, _ in connector_rules:
+            with self.subTest(connector=selector):
+                self.assertIn(selector, mobile_rules)
+                declarations, _ = mobile_rules[selector]
+                self.assertEqual(declarations.get("content"), "none")
+                self.assertEqual(declarations.get("display"), "none")
 
     def test_uses_shared_base_and_exact_closed_modifier_set(self) -> None:
         modifiers = set(

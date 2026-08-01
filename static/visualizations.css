@@ -23,6 +23,9 @@
 .visualization__components,
 .visualization__nodes,
 .visualization__states,
+.visualization__ordered-model,
+.visualization__hierarchy,
+.visualization__causal-model,
 .visualization__relationships,
 .visualization__timeline-phases,
 .visualization__timeline-events,
@@ -70,7 +73,9 @@
 
 .visualization__nodes > *,
 .visualization__states > *,
+.visualization__ordered-model > *,
 .visualization__components > *,
+.visualization__timeline-phases > *,
 .visualization__timeline-events > * {
   position: relative;
   padding-block: var(--space-2, 0.75rem);
@@ -79,9 +84,12 @@
   border-radius: 0.5rem;
 }
 
-.visualization__nodes > *:not(:last-child)::after,
-.visualization__states > *:not(:last-child)::after,
-.visualization__timeline-events > *:not(:last-child)::after {
+.visualization--flow .visualization__ordered-model > *:not(:last-child)::after,
+.visualization--state-loop .visualization__nodes > *:not(:last-child)::after,
+.visualization--timeline .visualization__timeline-phases > *:not(:last-child)::after,
+.visualization--network .visualization__nodes > *:not(:last-child)::after,
+.visualization--memory .visualization__nodes > *:not(:last-child)::after,
+.visualization--state-machine .visualization__states > *:not(:last-child)::after {
   content: "";
   position: absolute;
   inset-block-start: 50%;
@@ -103,45 +111,55 @@
   container-type: inline-size;
 }
 
-.visualization--comparison .visualization__components,
-.visualization--matrix .visualization__components,
-.visualization--memory .visualization__components {
+.visualization--comparison .visualization__table,
+.visualization--matrix .visualization__table {
+  inline-size: 100%;
+}
+
+.visualization--hierarchy .visualization__hierarchy,
+.visualization--causal .visualization__causal-model {
+  display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.visualization--hierarchy .visualization__nodes,
-.visualization--causal .visualization__nodes,
-.visualization--network .visualization__nodes {
-  align-items: stretch;
-}
-
-.visualization--state-loop .visualization__states,
-.visualization--state-machine .visualization__states,
-.visualization--timeline .visualization__timeline-phases,
-.visualization--flow .visualization__nodes {
   grid-auto-flow: column;
   grid-auto-columns: minmax(0, 1fr);
+  gap: var(--space-3, 1rem);
+}
+
+.visualization--flow .visualization__ordered-model,
+.visualization--state-loop .visualization__nodes,
+.visualization--state-machine .visualization__states,
+.visualization--timeline .visualization__timeline-phases,
+.visualization--network .visualization__components,
+.visualization--network .visualization__nodes,
+.visualization--memory .visualization__nodes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr));
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: var(--space-3, 1rem);
 }
 
 @media (max-width: 20rem) {
-  .visualization__components,
-  .visualization__nodes,
-  .visualization__states,
-  .visualization__relationships,
-  .visualization__timeline-phases,
-  .visualization__timeline-events,
-  .visualization__simulation-states,
-  .visualization--comparison .visualization__components,
-  .visualization--matrix .visualization__components,
-  .visualization--memory .visualization__components {
+  .visualization--flow .visualization__ordered-model,
+  .visualization--hierarchy .visualization__hierarchy,
+  .visualization--state-loop .visualization__nodes,
+  .visualization--causal .visualization__causal-model,
+  .visualization--timeline .visualization__timeline-phases,
+  .visualization--network .visualization__components,
+  .visualization--network .visualization__nodes,
+  .visualization--memory .visualization__nodes,
+  .visualization--state-machine .visualization__states {
     grid-template-columns: 1fr;
     grid-auto-flow: row;
-    grid-auto-columns: auto;
+    grid-auto-columns: minmax(0, 1fr);
   }
 
-  .visualization__nodes > *::after,
-  .visualization__states > *::after,
-  .visualization__timeline-events > *::after {
+  .visualization--flow .visualization__ordered-model > *:not(:last-child)::after,
+  .visualization--state-loop .visualization__nodes > *:not(:last-child)::after,
+  .visualization--timeline .visualization__timeline-phases > *:not(:last-child)::after,
+  .visualization--network .visualization__nodes > *:not(:last-child)::after,
+  .visualization--memory .visualization__nodes > *:not(:last-child)::after,
+  .visualization--state-machine .visualization__states > *:not(:last-child)::after {
     content: none;
     display: none;
   }
