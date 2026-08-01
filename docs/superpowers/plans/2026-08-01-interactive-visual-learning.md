@@ -475,6 +475,7 @@ git commit -m "feat: freeze visual assignments and source identity"
 **Files:**
 - Modify lesson JSON/body pairs for core-01, 06, 08, 10, 14, 18, 20, 21, 27, 30
 - Modify: `tests/test_content_acceptance.py`
+- Modify: `tests/test_capstones.py`
 
 - [ ] **Step 1: Add RED exact-assignment and legacy-fact tests for the group**
 
@@ -487,6 +488,11 @@ network: core-06, core-08, core-10, core-21, core-27
 
 Each visual must reference at least one objective, one reachable evidence ID,
 one source ID, and an observable expected result.
+
+When a legacy test fixture converts a complete lesson to draft by removing
+complete-only fields, remove `visualizations` in the same fixture transformation
+so the test continues to exercise its intended capstone boundary rather than a
+new dangling visualization reference.
 
 - [ ] **Step 2: Add structured payloads and remove only migrated figures**
 
@@ -506,7 +512,7 @@ python3.13 -m unittest discover -s tests -v
 - [ ] **Step 4: Commit**
 
 ```bash
-git add content/lessons/core-{01,06,08,10,14,18,20,21,27,30}-*/{lesson.json,body.html} tests/test_content_acceptance.py
+git add content/lessons/core-{01,06,08,10,14,18,20,21,27,30}-*/{lesson.json,body.html} tests/test_content_acceptance.py tests/test_capstones.py
 git commit -m "content: add causal and network lesson diagrams"
 ```
 
