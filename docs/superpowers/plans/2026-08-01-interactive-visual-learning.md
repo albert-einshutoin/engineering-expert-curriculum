@@ -631,6 +631,7 @@ git commit -m "content: complete semantic diagrams for all lessons"
 - Modify: `tools/check_site.py`
 - Create: `tests/test_visualization_security.py`
 - Create: `tests/test_visualization_runtime.py`
+- Create: `tests/fixtures/visualization-runtime-dom-harness.js`
 - Modify: `tests/test_render.py`
 - Modify: `tests/test_build.py`
 - Modify: `tests/test_site_checker.py`
@@ -671,6 +672,11 @@ The DOM allowlist is exact. Test transactional initialization, figure-local
 state, scenario/stepper/playback/hybrid/explorer controls, reset, timer cleanup,
 reduced motion, explicit-action status updates, and full restoration after a
 fault at each permitted mutation point.
+
+Execute the actual classic runtime in a dependency-free Node DOM/EventTarget,
+timer, and media-query harness. Source-marker assertions are supplementary only;
+the required gate drives all five modes, parameter changes, faults, isolation,
+and 100 reset cycles and verifies exact DOM/listener/timer restoration.
 
 Extend the renderer-owned generated HTML grammar and visualization renderer with
 the exact fixed `data-*` identifiers, state/node/edge identifiers, interaction
@@ -726,7 +732,7 @@ asset exists.
 ```bash
 python3.13 -m unittest tests.test_visualization_security tests.test_visualization_runtime tests.test_render tests.test_build tests.test_site_checker tests.test_accessibility_contract -v
 python3.13 -m unittest discover -s tests -v
-git add curriculum_builder/javascript_safety.py curriculum_builder/render.py curriculum_builder/build.py curriculum_builder/visualizations.py curriculum_builder/html_safety.py static/visualization.js static/visualizations.css templates/base.html tools/check_site.py tests/test_visualization_security.py tests/test_visualization_runtime.py tests/test_render.py tests/test_build.py tests/test_site_checker.py tests/test_accessibility_contract.py tests/test_repository_contract.py tests/test_content_standard_contract.py tests/test_visualization_rendering.py tests/test_html_safety.py tests/test_competencies.py tests/test_content_acceptance.py tests/test_lesson_rendering.py tests/test_roadmap_acceptance.py README.md README.en.md docs/content-standard.md SECURITY.md CHANGELOG.md
+git add curriculum_builder/javascript_safety.py curriculum_builder/render.py curriculum_builder/build.py curriculum_builder/visualizations.py curriculum_builder/html_safety.py static/visualization.js static/visualizations.css templates/base.html tools/check_site.py tests/test_visualization_security.py tests/test_visualization_runtime.py tests/fixtures/visualization-runtime-dom-harness.js tests/test_render.py tests/test_build.py tests/test_site_checker.py tests/test_accessibility_contract.py tests/test_repository_contract.py tests/test_content_standard_contract.py tests/test_visualization_rendering.py tests/test_html_safety.py tests/test_competencies.py tests/test_content_acceptance.py tests/test_lesson_rendering.py tests/test_roadmap_acceptance.py README.md README.en.md docs/content-standard.md SECURITY.md CHANGELOG.md
 git commit -m "feat: add safe progressive visualization runtime"
 ```
 
