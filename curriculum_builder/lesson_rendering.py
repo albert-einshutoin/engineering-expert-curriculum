@@ -26,9 +26,10 @@ from .html_safety import (
 from .lessons import Lesson, MAX_LESSON_BYTES, load_lesson_bytes
 from .render import Renderer
 from .visualizations import (
+    _render_validated_visualization,
+    _validate_visualization_for_rendering,
     LessonSectionRole,
     Visualization,
-    render_visualization,
     visualization_dom_namespace,
 )
 
@@ -717,6 +718,10 @@ def render_lesson_body(
     """Interleave visuals after complete typed sections, never by DOM ID."""
     if type(body) is not LessonBody or type(visualizations) is not tuple:
         raise CurriculumValidationError("lesson body rendering input is invalid")
+    if len(visualizations) > 2:
+        raise CurriculumValidationError(
+            "lesson body accepts at most two visualizations"
+        )
     if (
         type(body.sections) is not tuple
         or len(body.sections) != len(LessonSectionRole)
@@ -739,13 +744,15 @@ def render_lesson_body(
     by_role: dict[LessonSectionRole, list[Visualization]] = {
         role: [] for role in LessonSectionRole
     }
-    for visual in visualizations:
-        if type(visual) is not Visualization:
-            raise CurriculumValidationError("visualizations must be immutable models")
+    validated_visualizations = tuple(
+        _validate_visualization_for_rendering(lesson_id, visual)[1]
+        for visual in visualizations
+    )
+    for visual in validated_visualizations:
         by_role[visual.after_section].append(visual)
     namespaces = tuple(
         visualization_dom_namespace(lesson_id, visual.id)
-        for visual in visualizations
+        for visual in validated_visualizations
     )
     if len(namespaces) != len(set(namespaces)):
         raise CurriculumValidationError(
@@ -754,7 +761,7 @@ def render_lesson_body(
     rendered = "".join(
         section_html.value
         + "".join(
-            render_visualization(lesson_id, visual).value
+            _render_validated_visualization(lesson_id, visual).value
             for visual in by_role[role]
         )
         for role, section_html in safe_sections

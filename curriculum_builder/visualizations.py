@@ -1799,7 +1799,7 @@ def _simulation_render_raw(simulation: Simulation, path: str) -> dict[str, objec
     return raw
 
 
-def _validate_visualization_for_rendering(
+def _validate_visualization_for_rendering_unchecked(
     lesson_id: object,
     visual: object,
 ) -> tuple[str, Visualization]:
@@ -1866,6 +1866,25 @@ def _validate_visualization_for_rendering(
         notes,
         simulation,
     )
+
+
+def _validate_visualization_for_rendering(
+    lesson_id: object,
+    visual: object,
+) -> tuple[str, Visualization]:
+    """Convert expected structural corruption into one safe validation error."""
+    try:
+        return _validate_visualization_for_rendering_unchecked(
+            lesson_id,
+            visual,
+        )
+    except CurriculumValidationError:
+        raise
+    except (AttributeError, TypeError, ValueError):
+        # Slots can be removed through low-level Python APIs even on frozen
+        # dataclasses. These expected structural failures contain no useful
+        # author detail; process-control and allocation failures still escape.
+        _fail("visualization.render", "model structure is invalid")
 
 
 def _e(value: str, *, quote: bool = False) -> str:
@@ -2335,9 +2354,11 @@ def visualization_dom_namespace(lesson_id: str, visual_id: str) -> str:
     return f"viz-{digest}"
 
 
-def render_visualization(lesson_id: str, visual: Visualization) -> SafeHtml:
-    """Render a complete semantic model before optional enhancement controls."""
-    lesson_id, visual = _validate_visualization_for_rendering(lesson_id, visual)
+def _render_validated_visualization(
+    lesson_id: str,
+    visual: Visualization,
+) -> SafeHtml:
+    """Render the fresh model issued by the bounded render validator."""
     figure_id = visualization_dom_namespace(lesson_id, visual.id)
     notes = "".join(f"<li>{_e(note)}</li>" for note in visual.notes)
     simulation_oracle = (
@@ -2367,3 +2388,9 @@ def render_visualization(lesson_id: str, visual: Visualization) -> SafeHtml:
         + controls
         + "</figure>"
     )
+
+
+def render_visualization(lesson_id: str, visual: Visualization) -> SafeHtml:
+    """Validate once, then render a complete semantic model."""
+    lesson_id, visual = _validate_visualization_for_rendering(lesson_id, visual)
+    return _render_validated_visualization(lesson_id, visual)

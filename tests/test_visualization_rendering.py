@@ -326,6 +326,22 @@ class VisualizationRenderingTests(unittest.TestCase):
                 (first, second),
             )
 
+    def test_lesson_body_rejects_visual_count_before_reading_models(self) -> None:
+        body = parse_lesson_body(BODY)
+        unreadable = object.__new__(Visualization)
+
+        for count in (3, 10_000):
+            with self.subTest(count=count):
+                with self.assertRaisesRegex(
+                    CurriculumValidationError,
+                    "at most two",
+                ):
+                    render_lesson_body(
+                        "core-01-systems-tradeoffs",
+                        body,
+                        (unreadable,) * count,
+                    )
+
     def test_renderer_rejects_direct_payload_type_mismatch(self) -> None:
         flow = _visual(
             VisualizationType.FLOW,
@@ -360,6 +376,116 @@ class VisualizationRenderingTests(unittest.TestCase):
 
         with self.assertRaisesRegex(CurriculumValidationError, "type"):
             render_visualization("core-01-systems-tradeoffs", visual)
+
+    def test_renderer_converts_missing_model_slots_to_safe_validation_errors(self) -> None:
+        def parsed_visual() -> Visualization:
+            raw = _maximum_id_visual()
+            simulation = raw["simulation"]
+            assert isinstance(simulation, dict)
+            parameter_id = "p" * 64
+            second_option = "b" * 64
+            simulation["transitions"] = [{
+                "id": "advance-state",
+                "from": "first-state",
+                "to": "second-state",
+                "event": "parameter-change",
+                "when": {parameter_id: second_option},
+            }]
+            return parse_visualizations(
+                [raw],
+                lesson_id="core-01-systems-tradeoffs",
+                complete=False,
+                objective_evidence={"obj-1": frozenset({"evidence"})},
+                evidence_ids=frozenset({"evidence"}),
+                source_ids=frozenset({"source"}),
+            )[0]
+
+        cases = (
+            ("visualization", lambda visual: visual, "caption"),
+            ("payload", lambda visual: visual.payload, "steps"),
+            ("item", lambda visual: visual.payload.steps[0], "label"),
+            ("relationship", lambda visual: visual.payload.transitions[0], "to_id"),
+            ("simulation", lambda visual: visual.simulation, "parameters"),
+            (
+                "parameter",
+                lambda visual: visual.simulation.parameters[0],
+                "options",
+            ),
+            (
+                "option",
+                lambda visual: visual.simulation.parameters[0].options[0],
+                "label",
+            ),
+            ("state", lambda visual: visual.simulation.states[0], "active_node_ids"),
+            (
+                "simulation-transition",
+                lambda visual: visual.simulation.transitions[0],
+                "from_id",
+            ),
+            ("outcome", lambda visual: visual.simulation.outcomes[0], "state_id"),
+        )
+        blank = object.__new__(Visualization)
+        with self.assertRaisesRegex(CurriculumValidationError, "structure"):
+            render_visualization("core-01-systems-tradeoffs", blank)
+
+        for label, target, slot in cases:
+            with self.subTest(label=label):
+                visual = parsed_visual()
+                nested = target(visual)
+                assert nested is not None
+                object.__delattr__(nested, slot)
+                with self.assertRaisesRegex(
+                    CurriculumValidationError,
+                    "structure",
+                ) as caught:
+                    render_visualization(
+                        "core-01-systems-tradeoffs",
+                        visual,
+                    )
+                self.assertNotIn("PRIVATE", str(caught.exception))
+
+        payload_cases = (
+            (VisualizationType.HIERARCHY, lambda payload: payload.nodes[0], "parent_id"),
+            (VisualizationType.COMPARISON, lambda payload: payload.cells[0], "value"),
+            (VisualizationType.TIMELINE, lambda payload: payload.events[0], "phase_id"),
+            (VisualizationType.NETWORK, lambda payload: payload.nodes[0], "component_id"),
+            (VisualizationType.MEMORY, lambda payload: payload.layers[0], "group"),
+            (VisualizationType.MATRIX, lambda payload: payload.cells[0], "status"),
+            (
+                VisualizationType.STATE_MACHINE,
+                lambda payload: payload.transitions[0],
+                "reason",
+            ),
+        )
+        for kind, target, slot in payload_cases:
+            with self.subTest(nested_kind=kind):
+                payload = self.payloads()[kind]
+                visual = _visual(kind, payload)
+                object.__delattr__(target(payload), slot)
+                with self.assertRaisesRegex(
+                    CurriculumValidationError,
+                    "structure",
+                ):
+                    render_visualization(
+                        "core-01-systems-tradeoffs",
+                        visual,
+                    )
+
+    def test_renderer_does_not_swallow_process_control_failures(self) -> None:
+        visual = _visual(
+            VisualizationType.FLOW,
+            self.payloads()[VisualizationType.FLOW],
+        )
+        for failure in (MemoryError(), SystemExit(), KeyboardInterrupt()):
+            with self.subTest(failure=type(failure).__name__), patch(
+                "curriculum_builder.visualizations._payload_render_raw",
+                side_effect=failure,
+            ):
+                with self.assertRaises(type(failure)):
+                    render_visualization(
+                        "core-01-systems-tradeoffs",
+                        visual,
+                    )
 
     def test_simulation_static_oracle_precedes_controls_and_is_complete(self) -> None:
         visual = _visual(VisualizationType.FLOW, self.payloads()[VisualizationType.FLOW])
