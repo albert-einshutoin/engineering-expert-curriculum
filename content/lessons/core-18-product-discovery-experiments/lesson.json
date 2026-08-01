@@ -169,6 +169,13 @@
     "question": "観測後に基準を変えず、どの条件で継続または停止を判断するか。", "afterSection": "mentalModel",
     "objectiveIds": ["obj-falsifiable-hypothesis", "obj-analysis-plan"], "evidenceIds": ["experiment-plan"], "sourceIds": ["src-02", "src-04"],
     "expectedObservation": "問題、反証可能な仮説、事前固定した解析、固定集計、guardrailを含む判断を順に説明できる。",
+    "notes": [
+      "Problem: 利用者の行動と制約を観察し、solutionから独立した問題を記述する。",
+      "Hypothesis: 介入、success metricの期待差、反証条件を宣言する。",
+      "Plan: primary metric、guardrail、stop condition、always-valid解析を観測前に固定する。",
+      "Simulate: controlとtreatmentの固定集計からrateと差分を導出する。",
+      "Decide: successとguardrailを同時評価し、continue、stop、learnを記録する。"
+    ],
     "payload": {
       "causes": [{"id": "problem", "label": "Problem", "detail": "利用者の行動と制約を観察し、solutionから独立した問題を記述する。"}],
       "mechanisms": [

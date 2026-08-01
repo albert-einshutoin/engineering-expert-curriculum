@@ -172,6 +172,14 @@
     "question": "対立する指標と不確実性を、どの撤退条件を持つ投資判断へ変えるか。", "afterSection": "mentalModel",
     "objectiveIds": ["obj-strategy-evidence", "obj-reversible-leadership"], "evidenceIds": ["technical-strategy"], "sourceIds": ["src-01", "src-02", "src-03", "src-04"],
     "expectedObservation": "system outcome、複数metric、反証条件、投資順、可逆なfirst step、withdrawal conditionを一つの判断経路として説明できる。",
+    "notes": [
+      "Frame: system outcome、非目標、decision rightsを合意する。",
+      "Measure: five metrics、risk、cost、利用者影響を別々に観測する。",
+      "Challenge: uncertaintyとdissentから反証条件を作る。",
+      "Order: 制約を守るoptionを投資順へ置く。",
+      "Act: reversible first stepだけにtimeboxしたbudgetを与える。",
+      "Review: withdrawal conditionsでstop、adapt、expandを判断する。"
+    ],
     "payload": {
       "causes": [{"id": "frame", "label": "Frame", "detail": "system outcome、非目標、decision rightsを合意する。"}],
       "mechanisms": [

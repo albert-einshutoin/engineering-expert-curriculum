@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass, replace
 import hashlib
+from html import escape
 from html.parser import HTMLParser
 import json
 from pathlib import Path, PurePosixPath
@@ -72,6 +73,85 @@ TASK5_VISUAL_TYPES = {
     "core-21-maintenance-legacy-comprehension": "network",
     "core-27-team-interfaces-sociotechnical-architecture": "network",
     "core-30-evidence-based-technical-leadership": "causal",
+}
+TASK5_COMPANION_NOTES = {
+    "core-01-systems-tradeoffs": (
+        "目的: 利用者が二秒以内に受付結果を知る。",
+        "境界: Web、受付API、永続ストア、worker、通知を含め、決済事業者は外部契約とする。",
+        "制約: 重複確定は0件、受付データ損失は0件、運用当番は一名。",
+        "代替案: 同期完了、永続化後に非同期実行、負荷時だけ非同期化を比較する。",
+        "観測: p95受付時間、成果完了時間、重複率、最古滞留時間、復旧時間を測る。",
+        "反証: 観測が閾値を越えたら、境界または選択案を見直す。",
+    ),
+    "core-06-requirements-domain-modeling": (
+        "発言: 利害関係者の目的、困り事、制約を発言者と状況付きで記録する。",
+        "用語: 語ごとに定義、具体例、反例、所有する文脈を置く。",
+        "境界: 同じ語と不変条件が一貫する範囲を決め、境界間の翻訳を示す。",
+        "振る舞い: 意図をコマンド、起きた事実をイベント、許される状態変化を不変条件で表す。",
+        "例外: 時間切れ、在庫不足、権限不足、外部決済失敗を通常経路と同じ粒度で置く。",
+        "検証: 要求から観測までを追跡し、空欄と矛盾を次の質問へ戻す。",
+    ),
+    "core-08-modularity-evolutionary-architecture": (
+        "pricing-domain: 料金規則と不変条件。UIやDB形式を知らない。",
+        "pricing-application: use caseを順序付け、domainのportを使う。",
+        "pricing-adapters: HTTP、DB、batch形式をdomainの語彙へ変換する。",
+        "reporting: 料金計算の変更対象外となる独立module。impact計算のfalse positiveを検出する基準にする。",
+        "source dependencyはadaptersからapplication、applicationからdomainへ向ける。",
+        "運用viewでは逆向きのrequest flowを別の矢印として記述し、意味を混ぜない。",
+    ),
+    "core-10-threat-modeling-secure-design": (
+        "asset: customer data、deployment credential、audit logの価値と安全性目標を定義する。",
+        "actorとboundary: external customer、operations contractor、platform adminをID・type・scopeを持つentityとして定義し、flowの起点と越境点へ参照させる。",
+        "threat: 意図ではなく、credential再利用、誤ったbulk export、audit停止など観測可能な行為で表す。",
+        "control: prevent、detect、recoverを型として区別し、各threatへ三種類すべてを重ねる。",
+        "verification: 具体的なtest ID、control ID、resultをthreatへ接続する。",
+        "residual risk: threat ID、decision、uncertainty、owner、期限を付け、未解決を隠さない。",
+    ),
+    "core-14-performance-capacity": (
+        "Fixture: request mix、payload、依存、処理上限、環境を固定する。",
+        "Curve: 低負荷、限界付近、超過、回復を同じ列で記録する。",
+        "Diagnose: plateau、tail、error、queue、resource、downstreamを結ぶ。",
+        "Profile: 仮説に合う実processの局所証拠を別に採取する。",
+        "Capacity: observed kneeからheadroomを引き、再測定条件を残す。",
+    ),
+    "core-18-product-discovery-experiments": (
+        "Problem: 利用者の行動と制約を観察し、solutionから独立した問題を記述する。",
+        "Hypothesis: 介入、success metricの期待差、反証条件を宣言する。",
+        "Plan: primary metric、guardrail、stop condition、always-valid解析を観測前に固定する。",
+        "Simulate: controlとtreatmentの固定集計からrateと差分を導出する。",
+        "Decide: successとguardrailを同時評価し、continue、stop、learnを記録する。",
+    ),
+    "core-20-ethics-privacy-societal-impact": (
+        "People: 利益、害、権力、退出可能性が異なる集団を列挙する。",
+        "Lifecycle: collect、use、share、retain、deleteの目的とownerを追う。",
+        "Harm: privacy、security、accessibility、人権、労働への害を具体化する。",
+        "Inherent risk: likelihood、severity、exposureを軽減前に評価する。",
+        "Mitigation: 回避、最小化、検知、救済、退出を設計する。",
+        "Residual risk: 残る害、uneven harm、owner、期限、停止条件を記録する。",
+    ),
+    "core-21-maintenance-legacy-comprehension": (
+        "Reason: 誰のどの結果を変える要求かを一文で固定する。",
+        "Trace: entry pointから実際のexecution pathを入力付きで追う。",
+        "Map: component、data、side effect、ownerを経路へ結ぶ。",
+        "Unknown: 未観測、未所有、仕様不明を仮説から分離する。",
+        "Characterize: 現在のexpected、actual、observed pathをtestへ残す。",
+        "Decide: 証拠が足りなければ編集せず調査または停止を選ぶ。",
+    ),
+    "core-27-team-interfaces-sociotechnical-architecture": (
+        "Ownership: checkout teamがcheckout capabilityのdecision rightを持つ。",
+        "Dependency: checkoutはplatform capabilityへ依存する。",
+        "Cognitive load: assigned領域をcapacityと比較し、過負荷を個人努力へ隠さない。",
+        "SLO: dependency latencyのtargetとobservedを同じ単位で評価する。",
+        "Enablement: 各interface snapshotから判断を再計算し、healthyならmonitor、breachedならescalateとしてcheckoutの自律判断を増やす。",
+    ),
+    "core-30-evidence-based-technical-leadership": (
+        "Frame: system outcome、非目標、decision rightsを合意する。",
+        "Measure: five metrics、risk、cost、利用者影響を別々に観測する。",
+        "Challenge: uncertaintyとdissentから反証条件を作る。",
+        "Order: 制約を守るoptionを投資順へ置く。",
+        "Act: reversible first stepだけにtimeboxしたbudgetを与える。",
+        "Review: withdrawal conditionsでstop、adapt、expandを判断する。",
+    ),
 }
 TASK5_VISUAL_CONTRACTS = {
     "core-01-systems-tradeoffs": {
@@ -293,6 +373,61 @@ TASK5_VISUAL_CONTRACTS = {
         ),
     },
 }
+TASK5_COMMON_TEXT = {
+    "core-01-systems-tradeoffs": ("判断を更新可能にする因果ループ", "目的と制約から、どの観測が判断の再評価を起動するか。", "境界と制約を起点に、代替案、観測、反証条件までの因果経路を指し示せる。"),
+    "core-06-requirements-domain-modeling": ("発言を検証可能なドメインモデルへ変換する循環", "利害関係者の発言は、どの境界と関係を経て検証可能になるか。", "発言から用語、境界、振る舞い、例外、検証までの接続と、次の確認質問が生まれる位置を説明できる。"),
+    "core-08-modularity-evolutionary-architecture": ("変更理由を内側へ隠蔽する三層の依存graph", "変更理由を守る source dependency と運用時の request flow をどう区別するか。", "source dependencyはadapterからdomainへ、runtime request flowはdomain portからadapter実装へ進む逆向きのviewとして区別し、独立したreporting境界も指し示せる。"),
+    "core-10-threat-modeling-secure-design": ("assetから攻撃経路、control、verification、残余riskを結ぶtrace", "各 threat をどの control、verification、残余 risk の判断まで追跡できるか。", "assetと境界から観測可能なthreatをたどり、予防・検知・回復、test結果、残余riskの所有者まで説明できる。"),
+    "core-14-performance-capacity": ("負荷を証拠へ変えて安全容量を更新する循環", "固定した負荷条件から、どの証拠を経て安全容量を決めるか。", "負荷曲線のknee、tail、queue、局所profileを結び、headroomを引いた容量と再測定条件を示せる。"),
+    "core-18-product-discovery-experiments": ("問題発見から事前固定した停止判断までの因果flow", "観測後に基準を変えず、どの条件で継続または停止を判断するか。", "問題、反証可能な仮説、事前固定した解析、固定集計、guardrailを含む判断を順に説明できる。"),
+    "core-20-ethics-privacy-societal-impact": ("affected peopleから残余riskの意思決定へ至るimpact chain", "誰にどの害が残り、誰がどの条件で停止を判断するか。", "affected peopleとdata lifecycleから害を具体化し、軽減前risk、軽減策、unevenな残余riskまで追跡できる。"),
+    "core-21-maintenance-legacy-comprehension": ("change requestから変更前証拠を作るlegacy comprehension loop", "編集前に、要求からexecution pathと未知領域をどこまで証拠化できているか。", "change requestから実行経路、component、side effect、未知領域、characterization test、停止判断までを指し示せる。"),
+    "core-27-team-interfaces-sociotechnical-architecture": ("team ownershipからdependency SLOとcontributor enablementへ至る社会技術interface", "ownershipとdependencyの設計は、認知負荷とdelivery SLOへどう現れるか。", "checkoutとplatformの依存を、decision right、認知負荷、dependency latency、enablement判断まで結んで説明できる。"),
+    "core-30-evidence-based-technical-leadership": ("多面的evidenceから可逆な投資と撤退判断へ進むleadership loop", "対立する指標と不確実性を、どの撤退条件を持つ投資判断へ変えるか。", "system outcome、複数metric、反証条件、投資順、可逆なfirst step、withdrawal conditionを一つの判断経路として説明できる。"),
+}
+TASK5_ITEM_DETAILS = {
+    "core-01-systems-tradeoffs": {"constraints": "重複確定は0件、受付データ損失は0件、運用当番は一名。", "boundary": "Web、受付API、永続ストア、worker、通知を含め、決済事業者は外部契約とする。", "alternatives": "同期完了、永続化後に非同期実行、負荷時だけ非同期化を比較する。", "purpose": "利用者が二秒以内に受付結果を知る。", "observations": "p95受付時間、成果完了時間、重複率、最古滞留時間、復旧時間を測る。", "falsification": "観測が閾値を越えたら、境界または選択案を見直す。"},
+    "core-06-requirements-domain-modeling": {"requirements-model": "発言を追跡可能なモデルと観測へ接続する範囲。", "statement": "利害関係者の目的、困り事、制約を発言者と状況付きで記録する。", "language": "語ごとに定義、具体例、反例、所有する文脈を置く。", "boundary": "同じ語と不変条件が一貫する範囲を決め、境界間の翻訳を示す。", "behavior": "意図をコマンド、起きた事実をイベント、許される状態変化を不変条件で表す。", "exceptions": "時間切れ、在庫不足、権限不足、外部決済失敗を通常経路と同じ粒度で置く。", "verification": "要求から観測までを追跡し、空欄と矛盾を次の質問へ戻す。"},
+    "core-08-modularity-evolutionary-architecture": {"source-dependency-view": "source dependencyはadaptersからapplication、applicationからdomainへ向ける。", "runtime-request-flow-view": "運用viewでは逆向きのrequest flowを別の矢印として記述し、意味を混ぜない。", "independent-reporting": "pricingの依存graphから隔離し、impact計算のfalse positiveを検出する基準にする。", "source-domain": "料金規則と不変条件。UIやDB形式を知らない。", "source-application": "use caseを順序付け、domainのportを使う。", "source-adapters": "HTTP、DB、batch形式をdomainの語彙へ変換する。", "runtime-domain": "runtime viewでdomain portから外側の実装を呼び出す起点。", "runtime-application": "runtime viewでuse caseとdomain portの呼出しを中継する。", "runtime-adapters": "runtime viewでHTTP、DB、batchのadapter実装を実行する。", "reporting": "料金計算の変更対象外となる独立module。impact計算のfalse positiveを検出する基準にする。"},
+    "core-10-threat-modeling-secure-design": {"threat-trace": "資産から残余riskの意思決定までをIDで追跡する安全設計モデル。", "asset": "customer data、deployment credential、audit logの価値と安全性目標を定義する。", "actor-boundary": "external customer、operations contractor、platform adminをID・type・scopeを持つentityとして定義し、flowの起点と越境点へ参照させる。", "threat": "意図ではなく、credential再利用、誤ったbulk export、audit停止など観測可能な行為で表す。", "control": "prevent、detect、recoverを型として区別し、各threatへ三種類すべてを重ねる。", "verification": "具体的なtest ID、control ID、resultをthreatへ接続する。", "residual-risk": "threat ID、decision、uncertainty、owner、期限を付け、未解決を隠さない。"},
+    "core-14-performance-capacity": {"fixture": "request mix、payload、依存、処理上限、環境を固定する。", "bottleneck-mechanism": "resource上限、queue蓄積、downstream待機が処理率を制限し、tail latencyとerrorを増幅する。", "curve": "低負荷、限界付近、超過、回復を同じ列で記録する。", "profile": "仮説に合う実processの局所証拠を別に採取する。", "capacity": "observed kneeからheadroomを引き、再測定条件を残す。"},
+    "core-18-product-discovery-experiments": {"problem": "利用者の行動と制約を観察し、solutionから独立した問題を記述する。", "hypothesis": "介入、success metricの期待差、反証条件を宣言する。", "plan": "primary metric、guardrail、stop condition、always-valid解析を観測前に固定する。", "simulate": "controlとtreatmentの固定集計からrateと差分を導出する。", "decide": "successとguardrailを同時評価し、continue、stop、learnを記録する。", "guardrail-response": "停止条件に達したらstopまたはlearnを選び、追加被害と無駄な投資を抑える。"},
+    "core-20-ethics-privacy-societal-impact": {"lifecycle": "collect、use、share、retain、deleteの目的とownerを追う。", "exposure-mechanism": "収集、利用、共有、保持が、権力差や退出困難を通じて人とdataを害へ曝露する。", "harm": "privacy、security、accessibility、人権、労働への害を具体化する。", "residual-risk": "残る害、uneven harm、owner、期限、停止条件を記録する。", "mitigation": "回避、最小化、検知、救済、退出を設計する。"},
+    "core-21-maintenance-legacy-comprehension": {"change-evidence": "編集せずに要求と現行挙動を結ぶcomprehension範囲。", "reason": "誰のどの結果を変える要求かを一文で固定する。", "trace": "entry pointから実際のexecution pathを入力付きで追う。", "map": "component、data、side effect、ownerを経路へ結ぶ。", "unknown": "未観測、未所有、仕様不明を仮説から分離する。", "characterize": "現在のexpected、actual、observed pathをtestへ残す。", "decide": "証拠が足りなければ編集せず調査または停止を選ぶ。"},
+    "core-27-team-interfaces-sociotechnical-architecture": {"delivery-interface": "team境界とsoftware dependencyを同じsnapshotで評価する社会技術範囲。", "ownership": "checkout teamがcheckout capabilityのdecision rightを持つ。", "dependency": "checkoutはplatform capabilityへ依存する。", "cognitive-load": "assigned領域をcapacityと比較し、過負荷を個人努力へ隠さない。", "slo": "dependency latencyのtargetとobservedを同じ単位で評価する。", "enablement": "各interface snapshotから判断を再計算し、healthyならmonitor、breachedならescalateとしてcheckoutの自律判断を増やす。"},
+    "core-30-evidence-based-technical-leadership": {"frame": "system outcome、非目標、decision rightsを合意する。", "measure": "five metrics、risk、cost、利用者影響を別々に観測する。", "challenge": "uncertaintyとdissentから反証条件を作る。", "order": "制約を守るoptionを投資順へ置く。", "act": "reversible first stepだけにtimeboxしたbudgetを与える。", "review": "withdrawal conditionsでstop、adapt、expandを判断する。", "withdrawal-conditions": "害や埋没費用が増える前にstop、adapt、expandを判断する境界を固定する。"},
+}
+
+
+def _complete_task5_contracts() -> None:
+    """Expand hand-authored Task 5 facts into the exact projection shape."""
+    for lesson_id, contract in TASK5_VISUAL_CONTRACTS.items():
+        objective_ids, evidence_ids, source_ids = contract["trace"]
+        contract["common"] = (
+            *TASK5_COMMON_TEXT[lesson_id],
+            objective_ids,
+            evidence_ids,
+            source_ids,
+            TASK5_COMPANION_NOTES[lesson_id],
+        )
+        details = TASK5_ITEM_DETAILS[lesson_id]
+        if "structure" in contract:
+            contract["structure"] = {
+                group: tuple((*item, details[item[0]]) for item in items)
+                for group, items in contract["structure"].items()
+            }
+        else:
+            contract["components"] = tuple(
+                (*item, details[item[0]], "component")
+                for item in contract["components"]
+            )
+            contract["nodes"] = tuple(
+                (item[0], item[1], details[item[0]], "node", item[2])
+                for item in contract["nodes"]
+            )
+
+
+_complete_task5_contracts()
 CAPSTONE_IDS = ("global-service", "legacy-evolution", "oss-launch")
 CATALOG_SHA256 = (
     "4f38b5f63931a7f06e13f90f5d9ef90a0a435f30dae5d4fe70720d730a057473"
@@ -859,6 +994,15 @@ def _task5_visual_projection(document: dict[str, object]) -> dict[str, object]:
     visual = document["visualizations"][0]  # type: ignore[index]
     payload = visual["payload"]  # type: ignore[index]
     projection: dict[str, object] = {
+        "common": (
+            visual["caption"],  # type: ignore[index]
+            visual["question"],  # type: ignore[index]
+            visual["expectedObservation"],  # type: ignore[index]
+            tuple(visual["objectiveIds"]),  # type: ignore[index]
+            tuple(visual["evidenceIds"]),  # type: ignore[index]
+            tuple(visual["sourceIds"]),  # type: ignore[index]
+            tuple(visual.get("notes", ())),  # type: ignore[union-attr]
+        ),
         "trace": (
             tuple(visual["objectiveIds"]),  # type: ignore[index]
             tuple(visual["evidenceIds"]),  # type: ignore[index]
@@ -868,7 +1012,7 @@ def _task5_visual_projection(document: dict[str, object]) -> dict[str, object]:
     if visual["type"] == "causal":  # type: ignore[index]
         projection["structure"] = {
             group: tuple(
-                (item["id"], item["label"])
+                (item["id"], item["label"], item["detail"])
                 for item in payload[group]  # type: ignore[index]
             )
             for group in ("causes", "mechanisms", "outcomes", "mitigations")
@@ -876,11 +1020,17 @@ def _task5_visual_projection(document: dict[str, object]) -> dict[str, object]:
         relations = payload["relations"]  # type: ignore[index]
     else:
         projection["components"] = tuple(
-            (item["id"], item["label"])
+            (item["id"], item["label"], item["detail"], "component")
             for item in payload["components"]  # type: ignore[index]
         )
         projection["nodes"] = tuple(
-            (item["id"], item["label"], item["componentId"])
+            (
+                item["id"],
+                item["label"],
+                item["detail"],
+                "node",
+                item["componentId"],
+            )
             for item in payload["nodes"]  # type: ignore[index]
         )
         relations = payload["connections"]  # type: ignore[index]
@@ -1846,6 +1996,44 @@ class ContentAcceptanceTests(unittest.TestCase):
                     expected,
                 )
 
+    def test_task5_companion_notes_preserve_legacy_first_occurrence_order(
+        self,
+    ) -> None:
+        legacy_by_lesson = {
+            entry["lessonId"]: entry
+            for entry in json.loads(MIGRATION_ORACLE.read_bytes())["figures"]
+        }
+        self.assertEqual(set(TASK5_COMPANION_NOTES), set(TASK5_VISUAL_TYPES))
+        for lesson_id, expected_notes in TASK5_COMPANION_NOTES.items():
+            with self.subTest(lesson_id=lesson_id):
+                path = (
+                    REPOSITORY_ROOT
+                    / "content/lessons"
+                    / lesson_id
+                    / "lesson.json"
+                )
+                document = json.loads(path.read_bytes())
+                visual_document = document["visualizations"][0]
+                self.assertEqual(tuple(visual_document["notes"]), expected_notes)
+                lesson = load_lesson_bytes(path.read_bytes(), "lesson.json")
+                rendered = render_visualization(
+                    lesson_id, lesson.visualizations[0]
+                ).value
+                offsets = [
+                    rendered.index(escape(atom))
+                    for atom in legacy_by_lesson[lesson_id]["visibleAtoms"]
+                ]
+                self.assertEqual(offsets, sorted(offsets))
+                self.assertEqual(len(offsets), len(set(offsets)))
+                companion = rendered.index("旧図の読み順（補助）")
+                model_class = (
+                    "visualization__causal-model"
+                    if TASK5_VISUAL_TYPES[lesson_id] == "causal"
+                    else "visualization__components"
+                )
+                self.assertLess(companion, offsets[0])
+                self.assertLess(offsets[-1], rendered.index(model_class))
+
     def test_task5_exact_contract_rejects_semantic_relationship_and_source_mutations(
         self,
     ) -> None:
@@ -1910,6 +2098,52 @@ class ContentAcceptanceTests(unittest.TestCase):
             ],
         )
 
+        swapped_details = deepcopy(
+            documents["core-06-requirements-domain-modeling"]
+        )
+        nodes = swapped_details["visualizations"][0]["payload"]["nodes"]
+        nodes[0]["detail"], nodes[1]["detail"] = (
+            nodes[1]["detail"],
+            nodes[0]["detail"],
+        )
+        load_lesson_bytes(
+            json.dumps(swapped_details, ensure_ascii=False).encode("utf-8"),
+            "lesson.json",
+        )
+        self.assertNotEqual(
+            _task5_visual_projection(swapped_details),
+            TASK5_VISUAL_CONTRACTS["core-06-requirements-domain-modeling"],
+        )
+
+        relocated_notes = deepcopy(documents["core-01-systems-tradeoffs"])
+        notes = relocated_notes["visualizations"][0]["notes"]
+        notes[0], notes[1] = notes[1], notes[0]
+        load_lesson_bytes(
+            json.dumps(relocated_notes, ensure_ascii=False).encode("utf-8"),
+            "lesson.json",
+        )
+        self.assertNotEqual(
+            _task5_visual_projection(relocated_notes),
+            TASK5_VISUAL_CONTRACTS["core-01-systems-tradeoffs"],
+        )
+
+        misinformation = deepcopy(
+            documents["core-08-modularity-evolutionary-architecture"]
+        )
+        misinformation["visualizations"][0]["payload"]["components"][2][
+            "detail"
+        ] += " reportingはpricing-adaptersへ依存する。"
+        load_lesson_bytes(
+            json.dumps(misinformation, ensure_ascii=False).encode("utf-8"),
+            "lesson.json",
+        )
+        self.assertNotEqual(
+            _task5_visual_projection(misinformation),
+            TASK5_VISUAL_CONTRACTS[
+                "core-08-modularity-evolutionary-architecture"
+            ],
+        )
+
     def test_causal_no_js_oracles_place_items_under_semantic_headings(self) -> None:
         heading_by_group = {
             "causes": "原因",
@@ -1937,7 +2171,7 @@ class ContentAcceptanceTests(unittest.TestCase):
                     )
                     end = html.index("</dl></dd>", start)
                     section = html[start:end]
-                    for _, label in items:
+                    for _, label, _ in items:
                         self.assertIn(f"<dt>{label}</dt>", section)
 
     def test_core08_network_compares_source_and_runtime_views_without_linking_reporting(
@@ -2326,6 +2560,25 @@ class ContentAcceptanceTests(unittest.TestCase):
         self.assertEqual(sum(path.suffix.casefold() == ".html" for path in first), 39)
         self.assertEqual(sum(path.suffix.casefold() == ".css" for path in first), 2)
         self.assertEqual(sum(path.suffix.casefold() == ".js" for path in first), 0)
+        legacy_by_lesson = {
+            entry["lessonId"]: entry
+            for entry in json.loads(MIGRATION_ORACLE.read_bytes())["figures"]
+        }
+        for lesson_id, visual_type in TASK5_VISUAL_TYPES.items():
+            generated = first[
+                PurePosixPath("lessons") / lesson_id / "index.html"
+            ].decode("utf-8")
+            offsets = [
+                generated.index(escape(atom))
+                for atom in legacy_by_lesson[lesson_id]["visibleAtoms"]
+            ]
+            model_class = (
+                "visualization__causal-model"
+                if visual_type == "causal"
+                else "visualization__components"
+            )
+            self.assertEqual(offsets, sorted(offsets))
+            self.assertLess(offsets[-1], generated.index(model_class))
 
 
 if __name__ == "__main__":

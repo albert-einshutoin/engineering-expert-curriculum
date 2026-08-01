@@ -160,6 +160,14 @@
     "question": "目的と制約から、どの観測が判断の再評価を起動するか。", "afterSection": "mentalModel",
     "objectiveIds": ["obj-boundary", "obj-falsification"], "evidenceIds": ["assessment"], "sourceIds": ["src-01", "src-03"],
     "expectedObservation": "境界と制約を起点に、代替案、観測、反証条件までの因果経路を指し示せる。",
+    "notes": [
+      "目的: 利用者が二秒以内に受付結果を知る。",
+      "境界: Web、受付API、永続ストア、worker、通知を含め、決済事業者は外部契約とする。",
+      "制約: 重複確定は0件、受付データ損失は0件、運用当番は一名。",
+      "代替案: 同期完了、永続化後に非同期実行、負荷時だけ非同期化を比較する。",
+      "観測: p95受付時間、成果完了時間、重複率、最古滞留時間、復旧時間を測る。",
+      "反証: 観測が閾値を越えたら、境界または選択案を見直す。"
+    ],
     "payload": {
       "causes": [{"id": "constraints", "label": "制約", "detail": "重複確定は0件、受付データ損失は0件、運用当番は一名。"}],
       "mechanisms": [

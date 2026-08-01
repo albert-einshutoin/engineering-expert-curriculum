@@ -2513,6 +2513,15 @@ def _render_validated_visualization(
     """Render the fresh model issued by the bounded render validator."""
     figure_id = visualization_dom_namespace(lesson_id, visual.id)
     notes = "".join(f"<li>{_e(note)}</li>" for note in visual.notes)
+    companion_notes = (
+        '<div class="visualization__companion">'
+        "<h3>旧図の読み順（補助）</h3>"
+        "<p>後続の構造化モデルとは別の補助読順です。</p>"
+        f'<ol class="visualization__companion-notes">{notes}</ol>'
+        "</div>"
+        if notes
+        else ""
+    )
     simulation_oracle = (
         ""
         if visual.simulation is None
@@ -2522,10 +2531,10 @@ def _render_validated_visualization(
         f'<figure id="{_e(figure_id, quote=True)}" '
         f'class="visualization visualization--{_e(visual.type.value, quote=True)}">'
         f"<figcaption>{_e(visual.caption)}</figcaption>"
-        f'<p class="visualization__question">{_e(visual.question)}</p>'
+        + companion_notes
+        + f'<p class="visualization__question">{_e(visual.question)}</p>'
         + _render_payload(visual.payload)
         + f'<p class="visualization__observation">{_e(visual.expected_observation)}</p>'
-        + (f'<ul class="visualization__notes">{notes}</ul>' if notes else "")
         + simulation_oracle
         + "</figure>"
     )

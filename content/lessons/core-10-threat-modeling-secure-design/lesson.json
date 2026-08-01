@@ -175,6 +175,14 @@
     "question": "各 threat をどの control、verification、残余 risk の判断まで追跡できるか。", "afterSection": "mentalModel",
     "objectiveIds": ["obj-model", "obj-control"], "evidenceIds": ["threat-model"], "sourceIds": ["src-01", "src-04"],
     "expectedObservation": "assetと境界から観測可能なthreatをたどり、予防・検知・回復、test結果、残余riskの所有者まで説明できる。",
+    "notes": [
+      "asset: customer data、deployment credential、audit logの価値と安全性目標を定義する。",
+      "actorとboundary: external customer、operations contractor、platform adminをID・type・scopeを持つentityとして定義し、flowの起点と越境点へ参照させる。",
+      "threat: 意図ではなく、credential再利用、誤ったbulk export、audit停止など観測可能な行為で表す。",
+      "control: prevent、detect、recoverを型として区別し、各threatへ三種類すべてを重ねる。",
+      "verification: 具体的なtest ID、control ID、resultをthreatへ接続する。",
+      "residual risk: threat ID、decision、uncertainty、owner、期限を付け、未解決を隠さない。"
+    ],
     "payload": {
       "components": [{"id": "threat-trace", "label": "threat trace", "detail": "資産から残余riskの意思決定までをIDで追跡する安全設計モデル。"}],
       "nodes": [

@@ -230,6 +230,30 @@ class VisualizationRenderingTests(unittest.TestCase):
                     if "connector" in (attrs.get("class") or ""):
                         self.assertNotEqual(tag, "span")
 
+    def test_notes_render_as_an_ordered_companion_before_the_typed_model(self) -> None:
+        html = render_visualization(
+            "core-01-systems-tradeoffs",
+            _visual(
+                VisualizationType.FLOW,
+                self.payloads()[VisualizationType.FLOW],
+            ),
+        ).value
+
+        heading = html.index("旧図の読み順（補助）")
+        explanation = html.index("後続の構造化モデルとは別の補助読順です。")
+        notes = html.index('class="visualization__companion-notes"')
+        first_note = html.index("note &lt;escaped&gt;")
+        model = html.index("a detail")
+        self.assertLess(heading, explanation)
+        self.assertLess(explanation, notes)
+        self.assertLess(notes, first_note)
+        self.assertLess(first_note, model)
+        self.assertIn(
+            '<ol class="visualization__companion-notes">',
+            html,
+        )
+        self.assertNotIn('class="visualization__notes"', html)
+
     def test_tables_have_scoped_row_and_column_headers(self) -> None:
         for kind in (VisualizationType.COMPARISON, VisualizationType.MATRIX):
             html = render_visualization("core-01-systems-tradeoffs", _visual(kind, self.payloads()[kind])).value

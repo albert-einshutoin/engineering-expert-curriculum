@@ -178,7 +178,11 @@
     "expectedObservation": "affected peopleとdata lifecycleから害を具体化し、軽減前risk、軽減策、unevenな残余riskまで追跡できる。",
     "notes": [
       "People: 利益、害、権力、退出可能性が異なる集団を列挙する。",
-      "Inherent risk: likelihood、severity、exposureを軽減前に評価する。"
+      "Lifecycle: collect、use、share、retain、deleteの目的とownerを追う。",
+      "Harm: privacy、security、accessibility、人権、労働への害を具体化する。",
+      "Inherent risk: likelihood、severity、exposureを軽減前に評価する。",
+      "Mitigation: 回避、最小化、検知、救済、退出を設計する。",
+      "Residual risk: 残る害、uneven harm、owner、期限、停止条件を記録する。"
     ],
     "payload": {
       "causes": [{"id": "lifecycle", "label": "Lifecycle", "detail": "collect、use、share、retain、deleteの目的とownerを追う。"}],

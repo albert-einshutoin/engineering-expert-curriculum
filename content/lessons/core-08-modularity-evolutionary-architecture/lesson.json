@@ -169,6 +169,14 @@
     "question": "変更理由を守る source dependency と運用時の request flow をどう区別するか。", "afterSection": "mentalModel",
     "objectiveIds": ["obj-boundary", "obj-direction"], "evidenceIds": ["module-adr"], "sourceIds": ["src-01", "src-02"],
     "expectedObservation": "source dependencyはadapterからdomainへ、runtime request flowはdomain portからadapter実装へ進む逆向きのviewとして区別し、独立したreporting境界も指し示せる。",
+    "notes": [
+      "pricing-domain: 料金規則と不変条件。UIやDB形式を知らない。",
+      "pricing-application: use caseを順序付け、domainのportを使う。",
+      "pricing-adapters: HTTP、DB、batch形式をdomainの語彙へ変換する。",
+      "reporting: 料金計算の変更対象外となる独立module。impact計算のfalse positiveを検出する基準にする。",
+      "source dependencyはadaptersからapplication、applicationからdomainへ向ける。",
+      "運用viewでは逆向きのrequest flowを別の矢印として記述し、意味を混ぜない。"
+    ],
     "payload": {
       "components": [
         {"id": "source-dependency-view", "label": "source dependency view", "detail": "source dependencyはadaptersからapplication、applicationからdomainへ向ける。"},

@@ -170,6 +170,13 @@
     "question": "ownershipとdependencyの設計は、認知負荷とdelivery SLOへどう現れるか。", "afterSection": "mentalModel",
     "objectiveIds": ["obj-team-interface", "obj-cognitive-load"], "evidenceIds": ["team-interface"], "sourceIds": ["src-01", "src-02", "src-03"],
     "expectedObservation": "checkoutとplatformの依存を、decision right、認知負荷、dependency latency、enablement判断まで結んで説明できる。",
+    "notes": [
+      "Ownership: checkout teamがcheckout capabilityのdecision rightを持つ。",
+      "Dependency: checkoutはplatform capabilityへ依存する。",
+      "Cognitive load: assigned領域をcapacityと比較し、過負荷を個人努力へ隠さない。",
+      "SLO: dependency latencyのtargetとobservedを同じ単位で評価する。",
+      "Enablement: 各interface snapshotから判断を再計算し、healthyならmonitor、breachedならescalateとしてcheckoutの自律判断を増やす。"
+    ],
     "payload": {
       "components": [{"id": "delivery-interface", "label": "delivery interface", "detail": "team境界とsoftware dependencyを同じsnapshotで評価する社会技術範囲。"}],
       "nodes": [

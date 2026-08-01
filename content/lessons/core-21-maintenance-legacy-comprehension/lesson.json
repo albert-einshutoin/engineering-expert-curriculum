@@ -167,6 +167,14 @@
     "question": "編集前に、要求からexecution pathと未知領域をどこまで証拠化できているか。", "afterSection": "mentalModel",
     "objectiveIds": ["obj-comprehension", "obj-characterization"], "evidenceIds": ["system-map"], "sourceIds": ["src-01", "src-02"],
     "expectedObservation": "change requestから実行経路、component、side effect、未知領域、characterization test、停止判断までを指し示せる。",
+    "notes": [
+      "Reason: 誰のどの結果を変える要求かを一文で固定する。",
+      "Trace: entry pointから実際のexecution pathを入力付きで追う。",
+      "Map: component、data、side effect、ownerを経路へ結ぶ。",
+      "Unknown: 未観測、未所有、仕様不明を仮説から分離する。",
+      "Characterize: 現在のexpected、actual、observed pathをtestへ残す。",
+      "Decide: 証拠が足りなければ編集せず調査または停止を選ぶ。"
+    ],
     "payload": {
       "components": [{"id": "change-evidence", "label": "変更前証拠", "detail": "編集せずに要求と現行挙動を結ぶcomprehension範囲。"}],
       "nodes": [
