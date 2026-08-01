@@ -788,6 +788,16 @@ git commit -m "feat: add safe progressive visualization runtime"
 - Modify lesson JSON for core-02, 03, 04, 05, 07
 - Modify: `tests/test_content_acceptance.py`
 - Modify: `tests/test_visualization_runtime.py`
+- Modify: `tests/test_accessibility_contract.py`
+- Modify: `tests/test_build.py`
+- Modify: `tests/test_roadmap_acceptance.py`
+
+Scope amendment: Task 8 intentionally froze zero scripted lesson pages. Once
+Task 9 authors the first five simulations, those independent accessibility and
+build inventories must advance to the exact core-02/03/04/05/07 set; otherwise
+the full-suite gate continues to assert the superseded Task 8 boundary. The
+updated tests retain exact set equality and do not weaken active-content,
+event-handler, remote-resource, catalog, or artifact checks.
 
 - [ ] **Step 1: Add RED exact-state tests**
 

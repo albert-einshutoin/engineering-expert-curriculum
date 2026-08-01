@@ -11,6 +11,15 @@ from tools.check_site import check_site
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+TASK9_SCRIPTED_LESSONS = frozenset(
+    {
+        "core-02-algorithms-measurement",
+        "core-03-architecture-memory-caches",
+        "core-04-os-processes-concurrency",
+        "core-05-networks-latency-failure",
+        "core-07-api-contract-design",
+    }
+)
 _ACTIVE_CONTENT = frozenset(
     {
         "audio",
@@ -129,7 +138,7 @@ class AccessibilityContractTests(unittest.TestCase):
                 self.assertEqual(parser.h1_count, 1)
                 self.assertEqual(parser.skip_links, 1)
 
-    def test_task8_has_runtime_asset_but_zero_scripted_lesson_pages(
+    def test_task9_has_exactly_five_scripted_lesson_pages(
         self,
     ) -> None:
         self.assertEqual(
@@ -139,17 +148,27 @@ class AccessibilityContractTests(unittest.TestCase):
             ),
             ("static/visualization.js",),
         )
-        scripted_pages = 0
+        scripted_lessons: set[str] = set()
         for page in sorted(self.site.rglob("*.html")):
             relative = page.relative_to(self.site)
             with self.subTest(page=relative):
                 parser = _LandmarkParser()
                 parser.feed(page.read_text(encoding="utf-8"))
                 parser.close()
-                scripted_pages += parser.active_content.count("script")
-                self.assertEqual(parser.active_content, [])
+                scripts = parser.active_content.count("script")
+                if scripts:
+                    self.assertEqual(relative.parts[:1], ("lessons",))
+                    self.assertEqual(len(relative.parts), 3)
+                    scripted_lessons.add(relative.parts[1])
+                    self.assertEqual(scripts, 1)
+                    self.assertTrue(
+                        set(parser.active_content)
+                        <= {"button", "input", "script", "select"}
+                    )
+                else:
+                    self.assertEqual(parser.active_content, [])
                 self.assertEqual(parser.event_attributes, [])
-        self.assertEqual(scripted_pages, 0)
+        self.assertEqual(scripted_lessons, TASK9_SCRIPTED_LESSONS)
 
     def test_release_checker_rejects_semantics_hidden_in_template(self) -> None:
         page = next(iter(sorted(self.site.rglob("*.html"))))

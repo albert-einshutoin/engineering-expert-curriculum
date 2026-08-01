@@ -19,6 +19,23 @@ from curriculum_builder.lessons import Lesson, load_lesson
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 LESSONS_ROOT = REPOSITORY_ROOT / "content" / "lessons"
 ROADMAP_PATH = REPOSITORY_ROOT / "content" / "roadmap.json"
+TASK9_SCRIPTED_LESSONS = frozenset(
+    {
+        "core-02-algorithms-measurement",
+        "core-03-architecture-memory-caches",
+        "core-04-os-processes-concurrency",
+        "core-05-networks-latency-failure",
+        "core-07-api-contract-design",
+    }
+)
+
+
+def _scripted_lesson_ids(output: Path) -> set[str]:
+    return {
+        path.parent.name
+        for path in (output / "lessons").glob("*/index.html")
+        if "<script " in path.read_text(encoding="utf-8")
+    }
 _ORDINAL = re.compile(r"^core-(0[1-9]|[12][0-9]|30)-")
 EXPECTED_GATES = (
     {
@@ -676,13 +693,7 @@ class RoadmapAcceptanceTests(unittest.TestCase):
                 tuple(path.relative_to(output) for path in output.rglob("*.js")),
                 (Path("static/visualization.js"),),
             )
-            self.assertEqual(
-                sum(
-                    "<script " in path.read_text(encoding="utf-8")
-                    for path in output.rglob("*.html")
-                ),
-                0,
-            )
+            self.assertEqual(_scripted_lesson_ids(output), TASK9_SCRIPTED_LESSONS)
             self.assertEqual(tuple(project.glob(".site.staging-*")), ())
 
     def test_release_build_links_every_lesson_and_renders_six_gates(self) -> None:
@@ -794,13 +805,7 @@ class RoadmapAcceptanceTests(unittest.TestCase):
                 tuple(path.relative_to(output) for path in output.rglob("*.js")),
                 (Path("static/visualization.js"),),
             )
-            self.assertEqual(
-                sum(
-                    "<script " in path.read_text(encoding="utf-8")
-                    for path in output.rglob("*.html")
-                ),
-                0,
-            )
+            self.assertEqual(_scripted_lesson_ids(output), TASK9_SCRIPTED_LESSONS)
             stylesheet = (output / "styles.css").read_text(encoding="utf-8")
             self.assertIn(".mastery-gate h3", stylesheet)
             self.assertNotIn(".mastery-gate h2", stylesheet)

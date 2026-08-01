@@ -42,6 +42,15 @@ _CANONICAL_LESSON_DIRECTORY = re.compile(
     r"core-(0[1-9]|[12][0-9]|30)-[a-z0-9]+(?:-[a-z0-9]+)*\Z",
     re.ASCII,
 )
+TASK9_SCRIPTED_LESSONS = frozenset(
+    {
+        "core-02-algorithms-measurement",
+        "core-03-architecture-memory-caches",
+        "core-04-os-processes-concurrency",
+        "core-05-networks-latency-failure",
+        "core-07-api-contract-design",
+    }
+)
 
 
 def _repository_lesson_source_counts(
@@ -318,6 +327,7 @@ def _assert_static_site(
     output: Path,
     lesson_source_counts: dict[str, int] | None = None,
     competency_source_count: int = 0,
+    scripted_lesson_ids: frozenset[str] = frozenset(),
 ) -> dict[Path, bytes]:
     source_counts = lesson_source_counts or {}
     expected = {
@@ -368,15 +378,15 @@ def _assert_static_site(
         parser.feed(document)
         parser.close()
         test.assertTrue(parser.has_csp, relative)
-        test.assertFalse(parser.has_script, relative)
-        test.assertEqual(parser.event_attributes, [], relative)
-        test.assertEqual(parser.remote_attributes, [], relative)
         lesson_id = (
             relative.parts[1]
             if len(relative.parts) == 3
             and relative.parts[0] == "lessons"
             else None
         )
+        test.assertEqual(parser.has_script, lesson_id in scripted_lesson_ids, relative)
+        test.assertEqual(parser.event_attributes, [], relative)
+        test.assertEqual(parser.remote_attributes, [], relative)
         expected_source_count = source_counts.get(lesson_id or "", 0)
         if relative == Path("competencies/index.html"):
             expected_source_count = competency_source_count
@@ -508,6 +518,7 @@ class BuildAcceptanceTests(unittest.TestCase):
                 self,
                 output,
                 _repository_lesson_source_counts(),
+                scripted_lesson_ids=TASK9_SCRIPTED_LESSONS,
             )
             catalog = (output / "catalog/index.html").read_text(
                 encoding="utf-8"
@@ -568,6 +579,7 @@ class BuildAcceptanceTests(unittest.TestCase):
                 self,
                 output,
                 _repository_lesson_source_counts(),
+                scripted_lesson_ids=TASK9_SCRIPTED_LESSONS,
             )
             first_metadata = {
                 path.relative_to(output): (
@@ -587,6 +599,7 @@ class BuildAcceptanceTests(unittest.TestCase):
                 self,
                 output,
                 _repository_lesson_source_counts(),
+                scripted_lesson_ids=TASK9_SCRIPTED_LESSONS,
             )
             second_metadata = {
                 path.relative_to(output): (
@@ -651,6 +664,7 @@ class BuildAcceptanceTests(unittest.TestCase):
                 output,
                 _repository_lesson_source_counts(),
                 competency_source_count=3,
+                scripted_lesson_ids=TASK9_SCRIPTED_LESSONS,
             )
 
     def test_cli_rejects_control_characters_without_log_injection(
