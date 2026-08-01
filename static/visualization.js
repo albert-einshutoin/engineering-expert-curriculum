@@ -23,12 +23,19 @@
   var controllers = new Map();
 
   function values(list) { return Array.from(list); }
+  function sameSorted(left, right) {
+    if (left.length !== right.length) { return false; }
+    var expected = right.concat().sort();
+    return left.concat().sort().every(function (value, index) {
+      return value === expected[index];
+    });
+  }
   function attribute(element, name) { return element.getAttribute(name); }
   function exactData(element, expected) {
     // Reject unknown renderer data instead of letting malformed markup silently
     // become an unconditional state or an ignored control.
     var names = element.getAttributeNames().filter(function (name) { return name.indexOf('data-') === 0; }).sort();
-    return names.join(',') === expected.concat().sort().join(',');
+    return sameSorted(names, expected);
   }
   function exactAttributes(element, required, optional) {
     var names = element.getAttributeNames().sort();
@@ -139,7 +146,7 @@
         !unique(this.transitionElements, 'data-transition-id') || !this.outcomeElements.length ||
         this.outcomeElements.length > 64 || !unique(this.outcomeElements, 'data-outcome-id') ||
         (mode === 'scenario' && this.transitionElements.length !== 0) ||
-        actions.join(',') !== expected.concat().sort().join(',') ||
+        !sameSorted(actions, expected) ||
         intervalSource === null || !Number.isInteger(interval) || interval < 250 || interval > 5000 ||
         ((mode === 'playback' || mode === 'hybrid') !== Boolean(this.speed)) ||
         (this.speed && ['0.5', '1', '2'].indexOf(this.speed.value) < 0)) {

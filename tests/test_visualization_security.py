@@ -129,6 +129,16 @@ class JavaScriptSafetyTests(unittest.TestCase):
                 with self.assertRaises(CurriculumValidationError):
                     validate_javascript_bytes(source)
 
+    def test_rejects_computed_meta_member_key_generators(self) -> None:
+        payloads = (
+            b"[][['con', 'structor'].join('')]('return 1')();",
+            b"[][String.fromCharCode(99,111,110,115,116,114,117,99,116,111,114)]('return 1')();",
+        )
+        for source in payloads:
+            with self.subTest(source=source):
+                with self.assertRaises(CurriculumValidationError):
+                    validate_javascript_bytes(source)
+
     def test_reviewed_runtime_requires_the_versioned_exact_digest(self) -> None:
         source = (Path(__file__).resolve().parents[1] / "static/visualization.js").read_bytes()
         self.assertIn("use strict", validate_reviewed_visualization_runtime(source))

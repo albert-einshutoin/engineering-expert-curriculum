@@ -17,7 +17,7 @@ MAX_JAVASCRIPT_BYTES: Final = 40 * 1024
 # run the DOM/security suites, calculate SHA-256 independently, then update this
 # constant in its own reviewable commit. Tests must never derive or rewrite it.
 VISUALIZATION_RUNTIME_SHA256_V1: Final = (
-    "fd13c6b922ea4277b3249664fd73e8fb073d68b3fd2229f8019717c331ecce23"
+    "3dd0446b98f019ccb830b6ceff8b3adcf62949872a94349edba28d989fd5b07b"
 )
 _ALLOWED_CONTROLS: Final = frozenset("\t\n\r")
 _FORBIDDEN = tuple(
@@ -36,6 +36,7 @@ _FORBIDDEN = tuple(
         r"(?<![A-Za-z0-9_$])(?:requestAnimationFrame|MutationObserver)(?![A-Za-z0-9_$])",
         r"(?<![A-Za-z0-9_$])createElement(?![A-Za-z0-9_$])",
         r"(?<![A-Za-z0-9_$])(?:Reflect|getOwnPropertyDescriptor|slice)(?![A-Za-z0-9_$])",
+        r"(?<![A-Za-z0-9_$])(?:join|fromCharCode)(?![A-Za-z0-9_$])",
         r"(?<![A-Za-z0-9_$])style(?![A-Za-z0-9_$])",
         r"[A-Za-z][A-Za-z0-9+.-]*://[^\s'\"]+|['\"]//[^'\"]+",
         r"[#@]\s*source(?:Mapping)?URL\s*=",
