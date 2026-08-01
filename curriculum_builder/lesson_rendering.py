@@ -25,7 +25,12 @@ from .html_safety import (
 )
 from .lessons import Lesson, MAX_LESSON_BYTES, load_lesson_bytes
 from .render import Renderer
-from .visualizations import LessonSectionRole, Visualization, render_visualization
+from .visualizations import (
+    LessonSectionRole,
+    Visualization,
+    render_visualization,
+    visualization_dom_namespace,
+)
 
 
 _LESSON_ID: Final = re.compile(
@@ -738,6 +743,14 @@ def render_lesson_body(
         if type(visual) is not Visualization:
             raise CurriculumValidationError("visualizations must be immutable models")
         by_role[visual.after_section].append(visual)
+    namespaces = tuple(
+        visualization_dom_namespace(lesson_id, visual.id)
+        for visual in visualizations
+    )
+    if len(namespaces) != len(set(namespaces)):
+        raise CurriculumValidationError(
+            "generated visual namespace collision"
+        )
     rendered = "".join(
         section_html.value
         + "".join(

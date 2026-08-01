@@ -146,6 +146,64 @@ def _complete_document(
     return loaded
 
 
+def _maximum_id_visualization() -> dict[str, object]:
+    visual_id = "v" * 64
+    parameter_id = "p" * 64
+    first_option = "a" * 64
+    second_option = "b" * 64
+    return {
+        "id": visual_id,
+        "type": "flow",
+        "caption": "上限IDの図",
+        "question": "上限長でも描画できるか",
+        "afterSection": "mentalModel",
+        "objectiveIds": ["obj-1"],
+        "evidenceIds": ["lab-map"],
+        "sourceIds": ["src-nasa-handbook"],
+        "expectedObservation": "生成DOM IDは短く一意になる",
+        "payload": {
+            "steps": [
+                {"id": "start", "label": "開始", "detail": "始める"},
+                {"id": "finish", "label": "終了", "detail": "終える"},
+            ],
+            "transitions": [{
+                "id": "advance", "from": "start", "to": "finish",
+                "label": "進む",
+            }],
+        },
+        "simulation": {
+            "kind": "request-path",
+            "interactionMode": "scenario",
+            "parameters": [{
+                "id": parameter_id, "label": "方式", "control": "select",
+                "options": [
+                    {"id": first_option, "label": "第一"},
+                    {"id": second_option, "label": "第二"},
+                ],
+                "defaultOptionId": first_option,
+            }],
+            "initialStateId": "first-state",
+            "states": [
+                {
+                    "id": "first-state", "label": "第一", "status": "待機",
+                    "when": {parameter_id: first_option},
+                    "activeNodeIds": ["start"], "activeEdgeIds": [],
+                },
+                {
+                    "id": "second-state", "label": "第二", "status": "完了",
+                    "when": {parameter_id: second_option},
+                    "activeNodeIds": ["finish"], "activeEdgeIds": ["advance"],
+                },
+            ],
+            "transitions": [],
+            "outcomes": [
+                {"id": "first-result", "stateId": "first-state", "label": "第一"},
+                {"id": "second-result", "stateId": "second-state", "label": "第二"},
+            ],
+        },
+    }
+
+
 @contextmanager
 def _site_fixture():
     with TemporaryDirectory() as directory:
@@ -320,6 +378,19 @@ class LessonRenderingTests(unittest.TestCase):
             )
             self.assertEqual(parser.scripts, 0)
             self.assertEqual(parser.remote_dependencies, [])
+
+    def test_build_accepts_schema_maximum_visual_and_parameter_ids(self) -> None:
+        with _site_fixture() as (root, content, templates, static_root):
+            lesson = _complete_document()
+            lesson["visualizations"] = [_maximum_id_visualization()]
+            _add_lesson(content, lesson)
+
+            build_site(content, templates, static_root, root / "site")
+
+            page = root / "site/lessons/core-01-systems-tradeoffs/index.html"
+            html = page.read_text(encoding="utf-8")
+            self.assertTrue(page.is_file())
+            self.assertNotIn('id="' + "v" * 64, html)
 
     def test_index_is_topological_and_empty_state_is_meaningful(self) -> None:
         with _site_fixture() as (root, content, templates, static_root):

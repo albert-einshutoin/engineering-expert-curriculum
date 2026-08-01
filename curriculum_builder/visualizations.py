@@ -7,6 +7,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from html import escape
+import hashlib
 from itertools import product
 import re
 from types import MappingProxyType
@@ -22,6 +23,8 @@ from .html_safety import (
 
 _ID = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 _SIMULATION_EVENTS = frozenset({"next", "previous", "timer", "parameter-change", "reset"})
+_DOM_NAMESPACE_PREFIX = b"visualization-dom-v1\0"
+_DOM_NAMESPACE_DIGEST_HEX_CHARS = 20
 
 
 class VisualizationType(StrEnum):
@@ -1832,8 +1835,11 @@ def _render_simulation_controls(
     parameter_controls = ""
     if scenario:
         fields: list[str] = []
-        for parameter in simulation.parameters:
-            control_id = f"{figure_id}-parameter-{parameter.id}"
+        # Authored order is already schema-bounded and deterministic. Using its
+        # index keeps control IDs fixed-length instead of leaking a 64-byte
+        # authored identifier into the DOM namespace.
+        for parameter_index, parameter in enumerate(simulation.parameters):
+            control_id = f"{figure_id}-p-{parameter_index}"
             if parameter.control == "select":
                 options = "".join(
                     f'<option value="{_e(option.id, quote=True)}"'
@@ -1853,8 +1859,9 @@ def _render_simulation_controls(
                 )
             else:
                 radios = "".join(
-                    "<label>"
-                    f'<input type="radio" name="{_e(control_id, quote=True)}" '
+                    f'<label for="{_e(f"{control_id}-o-{option_index}", quote=True)}">'
+                    f'<input id="{_e(f"{control_id}-o-{option_index}", quote=True)}" '
+                    f'type="radio" name="{_e(control_id, quote=True)}" '
                     f'value="{_e(option.id, quote=True)}" disabled'
                     + (
                         " checked"
@@ -1862,7 +1869,7 @@ def _render_simulation_controls(
                         else ""
                     )
                     + f">{_e(option.label)}</label>"
-                    for option in parameter.options
+                    for option_index, option in enumerate(parameter.options)
                 )
                 fields.append(
                     f"<fieldset disabled><legend>{_e(parameter.label)}</legend>"
@@ -1870,21 +1877,27 @@ def _render_simulation_controls(
                 )
         parameter_controls = "".join(fields)
 
+    def button(role: str, label: str) -> str:
+        return (
+            f'<button id="{_e(f"{figure_id}-{role}", quote=True)}" '
+            f'type="button" disabled>{label}</button>'
+        )
+
     actions: list[str] = []
     if scenario:
-        actions.append('<button type="button" disabled>適用</button>')
+        actions.append(button("apply", "適用"))
     if playback:
         actions.extend(
             (
-                '<button type="button" disabled>再生</button>',
-                '<button type="button" disabled>一時停止</button>',
+                button("play", "再生"),
+                button("pause", "一時停止"),
             )
         )
     if stepping:
         actions.extend(
             (
-                '<button type="button" disabled>前へ</button>',
-                '<button type="button" disabled>次へ</button>',
+                button("previous", "前へ"),
+                button("next", "次へ"),
             )
         )
     if playback:
@@ -1896,16 +1909,37 @@ def _render_simulation_controls(
             '<option value="1" selected>1x</option>'
             '<option value="2">2x</option></select>'
         )
-    actions.append('<button type="button" disabled>リセット</button>')
+    actions.append(button("reset", "リセット"))
     return (
         '<div class="visualization__controls" hidden>'
         f"{parameter_controls}{''.join(actions)}</div>"
     )
 
 
+def visualization_dom_namespace(lesson_id: str, visual_id: str) -> str:
+    """Return the fixed-length DOM namespace for one authored visualization."""
+    if type(lesson_id) is not str or type(visual_id) is not str:
+        raise CurriculumValidationError("visual namespace inputs must be strings")
+    try:
+        lesson_bytes = lesson_id.encode("ascii")
+        visual_bytes = visual_id.encode("ascii")
+    except UnicodeError:
+        raise CurriculumValidationError(
+            "visual namespace inputs must be ASCII identifiers"
+        ) from None
+    # The versioned prefix, ASCII schema IDs, and NUL separator are fixed
+    # canonical bytes. SHA-256 with a fixed 80-bit lowercase-hex prefix keeps
+    # every derived DOM ID bounded; render_lesson_body still rejects the rare
+    # truncation collision before combining visualizations.
+    digest = hashlib.sha256(
+        _DOM_NAMESPACE_PREFIX + lesson_bytes + b"\0" + visual_bytes
+    ).hexdigest()[:_DOM_NAMESPACE_DIGEST_HEX_CHARS]
+    return f"viz-{digest}"
+
+
 def render_visualization(lesson_id: str, visual: Visualization) -> SafeHtml:
     """Render a complete semantic model before optional enhancement controls."""
-    figure_id = f"{lesson_id}-{visual.id}"
+    figure_id = visualization_dom_namespace(lesson_id, visual.id)
     notes = "".join(f"<li>{_e(note)}</li>" for note in visual.notes)
     simulation_oracle = (
         ""

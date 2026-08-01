@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from dataclasses import replace
 from html.parser import HTMLParser
+from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from curriculum_builder.errors import CurriculumValidationError
 from curriculum_builder.html_safety import validate_generated_fragment
@@ -12,6 +14,7 @@ from curriculum_builder.lesson_rendering import (
     parse_lesson_body,
     render_lesson_body,
 )
+from curriculum_builder.render import Renderer
 from curriculum_builder.visualizations import (
     CausalPayload,
     ComparisonCell,
@@ -55,6 +58,67 @@ BODY = "".join(
         "knowledge-check", "sources-next",
     )
 )
+TEMPLATE_ROOT = Path(__file__).resolve().parents[1] / "templates"
+
+
+def _maximum_id_visual() -> dict[str, object]:
+    visual_id = "v" * 64
+    parameter_id = "p" * 64
+    first_option = "a" * 64
+    second_option = "b" * 64
+    return {
+        "id": visual_id,
+        "type": "flow",
+        "caption": "上限IDの図",
+        "question": "上限長でも決定的に描画できるか",
+        "afterSection": "mentalModel",
+        "objectiveIds": ["obj-1"],
+        "evidenceIds": ["evidence"],
+        "sourceIds": ["source"],
+        "expectedObservation": "生成DOM IDは短く一意になる",
+        "payload": {
+            "steps": [
+                {"id": "start", "label": "開始", "detail": "始める"},
+                {"id": "finish", "label": "終了", "detail": "終える"},
+            ],
+            "transitions": [{
+                "id": "advance", "from": "start", "to": "finish",
+                "label": "進む",
+            }],
+        },
+        "simulation": {
+            "kind": "request-path",
+            "interactionMode": "scenario",
+            "parameters": [{
+                "id": parameter_id,
+                "label": "方式",
+                "control": "select",
+                "options": [
+                    {"id": first_option, "label": "第一"},
+                    {"id": second_option, "label": "第二"},
+                ],
+                "defaultOptionId": first_option,
+            }],
+            "initialStateId": "first-state",
+            "states": [
+                {
+                    "id": "first-state", "label": "第一", "status": "待機",
+                    "when": {parameter_id: first_option},
+                    "activeNodeIds": ["start"], "activeEdgeIds": [],
+                },
+                {
+                    "id": "second-state", "label": "第二", "status": "完了",
+                    "when": {parameter_id: second_option},
+                    "activeNodeIds": ["finish"], "activeEdgeIds": ["advance"],
+                },
+            ],
+            "transitions": [],
+            "outcomes": [
+                {"id": "first-result", "stateId": "first-state", "label": "第一"},
+                {"id": "second-result", "stateId": "second-state", "label": "第二"},
+            ],
+        },
+    }
 
 
 class _SemanticParser(HTMLParser):
@@ -190,13 +254,67 @@ class VisualizationRenderingTests(unittest.TestCase):
                 (),
             )
 
+    def test_schema_maximum_ids_render_with_bounded_unique_deterministic_dom_ids(self) -> None:
+        visual = parse_visualizations(
+            [_maximum_id_visual()],
+            lesson_id="core-01-systems-tradeoffs",
+            complete=False,
+            objective_evidence={"obj-1": frozenset({"evidence"})},
+            evidence_ids=frozenset({"evidence"}),
+            source_ids=frozenset({"source"}),
+        )[0]
+
+        first = render_visualization("core-01-systems-tradeoffs", visual)
+        second = render_visualization("core-01-systems-tradeoffs", visual)
+        page = Renderer(TEMPLATE_ROOT).page(
+            output_path=Path("lessons/core-01-systems-tradeoffs/index.html"),
+            title="上限ID",
+            description="上限IDの描画検証",
+            content=first,
+        )
+        parser = _SemanticParser()
+        parser.feed(page)
+        ids = [value for _, attrs in parser.tags if (value := attrs.get("id"))]
+        labels = [value for tag, attrs in parser.tags if tag == "label" and (value := attrs.get("for"))]
+        controls = [
+            attrs for tag, attrs in parser.tags
+            if tag in {"button", "input", "select"}
+        ]
+
+        self.assertEqual(first.value, second.value)
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertTrue(all(len(identifier) <= 64 for identifier in ids))
+        self.assertTrue(all(target in ids for target in labels))
+        self.assertTrue(all(control.get("id") in ids for control in controls))
+        self.assertNotIn("v" * 64, ids)
+        self.assertNotIn("p" * 64, ids)
+
+    def test_lesson_body_rejects_generated_visual_namespace_collision(self) -> None:
+        body = parse_lesson_body(BODY)
+        first = _visual(VisualizationType.FLOW, self.payloads()[VisualizationType.FLOW])
+        second = replace(first, id="second-visual")
+
+        with (
+            patch(
+                "curriculum_builder.lesson_rendering.visualization_dom_namespace",
+                return_value="viz-forced-collision",
+                create=True,
+            ),
+            self.assertRaisesRegex(CurriculumValidationError, "namespace collision"),
+        ):
+            render_lesson_body(
+                "core-01-systems-tradeoffs",
+                body,
+                (first, second),
+            )
+
     def test_simulation_static_oracle_precedes_controls_and_is_complete(self) -> None:
         visual = _visual(VisualizationType.FLOW, self.payloads()[VisualizationType.FLOW])
         simulation = Simulation(
             SimulationKind.REQUEST_PATH,
             InteractionMode.HYBRID,
             (SimulationParameter(
-                "fault", "障害", "select",
+                "fault", "障害", "radio",
                 (ParameterOption("none", "障害なし"), ParameterOption("drop", "破棄")),
                 "none",
             ),),
@@ -227,6 +345,22 @@ class VisualizationRenderingTests(unittest.TestCase):
             html.index("visualization__simulation-oracle"),
             html.index("visualization__controls"),
         )
+        parser = _SemanticParser()
+        parser.feed(html)
+        ids = {
+            value for _, attrs in parser.tags
+            if (value := attrs.get("id")) is not None
+        }
+        controls = [
+            attrs for tag, attrs in parser.tags
+            if tag in {"button", "input", "select"}
+        ]
+        labels = [
+            attrs["for"] for tag, attrs in parser.tags
+            if tag == "label" and attrs.get("for") is not None
+        ]
+        self.assertTrue(all(control.get("id") in ids for control in controls))
+        self.assertTrue(all(target in ids for target in labels))
 
     def test_timeline_groups_ordered_events_under_each_phase(self) -> None:
         payload = TimelinePayload(
