@@ -477,6 +477,8 @@ git commit -m "feat: freeze visual assignments and source identity"
 - Modify: `tests/test_content_acceptance.py`
 - Modify: `tests/test_capstones.py`
 - Modify: `tests/test_core_tracks.py`
+- Modify: `curriculum_builder/visualizations.py`
+- Modify: `tests/test_visualization_rendering.py`
 
 - [ ] **Step 1: Add RED exact-assignment and legacy-fact tests for the group**
 
@@ -506,6 +508,13 @@ Translate every legacy caption and ordered fact atom into the appropriate
 payload plus labelled semantic relations. Keep surrounding paragraphs, asides,
 tables, code, and section IDs byte-equivalent to the residual oracle.
 
+When correct typed grouping differs from the legacy list order, store the exact
+legacy atoms in ordered `notes` and render that companion oracle before the
+typed model. This preserves the original accessible reading order without
+misclassifying facts under causal or network headings. Independent Task 5
+contracts include every common field, ordered note, item/node/component detail,
+and complete labelled relationship, not merely nonempty IDs and labels.
+
 - [ ] **Step 3: Verify no-JS output, source projection, and full suite**
 
 ```bash
@@ -518,7 +527,7 @@ python3.13 -m unittest discover -s tests -v
 - [ ] **Step 4: Commit**
 
 ```bash
-git add content/lessons/core-{01,06,08,10,14,18,20,21,27,30}-*/{lesson.json,body.html} tests/test_content_acceptance.py tests/test_capstones.py tests/test_core_tracks.py
+git add content/lessons/core-{01,06,08,10,14,18,20,21,27,30}-*/{lesson.json,body.html} curriculum_builder/visualizations.py tests/test_content_acceptance.py tests/test_capstones.py tests/test_core_tracks.py tests/test_visualization_rendering.py
 git commit -m "content: add causal and network lesson diagrams"
 ```
 
