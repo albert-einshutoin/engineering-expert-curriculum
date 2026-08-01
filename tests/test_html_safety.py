@@ -157,6 +157,20 @@ class HtmlSafetyTests(unittest.TestCase):
                         + '</body></html>'
                     )
 
+    def test_generated_document_requires_paired_non_void_script(self) -> None:
+        paired = (
+            '<!doctype html><html lang="ja"><body>'
+            '<script src="static/visualization.js" defer></script>'
+            '</body></html>'
+        )
+        self.assertEqual(validate_generated_document(paired).value, paired)
+        with self.assertRaises(CurriculumValidationError):
+            validate_generated_document(
+                '<!doctype html><html lang="ja"><body>'
+                '<script src="static/visualization.js" defer />'
+                '</body></html>'
+            )
+
     def test_accepts_mixed_case_markup_and_safe_character_references(self) -> None:
         fragment = (
             "<SECTION CLASS='reading'><H2>A &amp; B</H2>"

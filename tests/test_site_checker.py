@@ -393,6 +393,35 @@ class SiteCheckerHtmlTests(unittest.TestCase):
                     for issue in self._issues_for(document)
                 ))
 
+    def test_deferred_script_requires_paired_non_void_markup(self) -> None:
+        figure = (
+            '<figure data-visualization-id="v" '
+            'data-simulation-kind="request-path" '
+            'data-interaction-mode="stepper"></figure>'
+        )
+        paired = _page(body=figure).replace(
+            "</body>",
+            '<script src="static/visualization.js" defer></script></body>',
+        )
+        self.assertFalse(any(
+            "malformed HTML" in issue
+            for issue in self._issues_for(paired)
+        ))
+        self_closing = paired.replace("></script>", " />")
+        self.assertTrue(any(
+            "malformed HTML" in issue
+            for issue in self._issues_for(self_closing)
+        ))
+
+    def test_rejects_unreviewed_runtime_artifact_bytes(self) -> None:
+        with _fixture() as root:
+            runtime = root / "static/visualization.js"
+            runtime.write_bytes(runtime.read_bytes() + b"\n")
+            self.assertTrue(any(
+                "reviewed runtime digest" in issue
+                for issue in check_site(root)
+            ))
+
     def test_requires_ja_nonempty_title_exactly_one_main_h1_and_skip_link(self) -> None:
         mutations = {
             "lang": _page(lang="en"),

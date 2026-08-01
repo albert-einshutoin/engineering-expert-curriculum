@@ -1568,6 +1568,14 @@ def _capstone_content(
     )
 
 
+_SITE_VOID_ELEMENTS: Final = frozenset(
+    {
+        "area", "base", "br", "col", "embed", "hr", "img", "input",
+        "link", "meta", "param", "source", "track", "wbr",
+    }
+)
+
+
 class _SiteDocumentParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=False)
@@ -1646,9 +1654,9 @@ class _SiteDocumentParser(HTMLParser):
     def handle_startendtag(
         self, tag: str, attrs: list[tuple[str, str | None]]
     ) -> None:
+        if tag.casefold() not in _SITE_VOID_ELEMENTS:
+            raise _validation("generated non-void elements must use paired tags")
         self.handle_starttag(tag, attrs)
-        if self.open_elements and self.open_elements[-1] == tag.casefold():
-            self.handle_endtag(tag)
 
     def handle_endtag(self, tag: str) -> None:
         lowered = tag.casefold()

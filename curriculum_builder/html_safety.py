@@ -419,10 +419,15 @@ class _FragmentParser(HTMLParser):
         tag: str,
         attrs: list[tuple[str, str | None]],
     ) -> None:
-        del tag, attrs
-        raise CurriculumValidationError(
-            "self-closing HTML elements are not allowed"
-        )
+        if not self._generated:
+            raise CurriculumValidationError(
+                "self-closing HTML elements are not allowed"
+            )
+        if tag not in _GENERATED_VOID_TAGS:
+            raise CurriculumValidationError(
+                "non-void self-closing HTML elements are not allowed"
+            )
+        self.handle_starttag(tag, attrs)
 
     def handle_endtag(self, tag: str) -> None:
         allowed_tags = ALLOWED_TAGS

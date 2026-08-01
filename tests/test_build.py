@@ -431,6 +431,19 @@ class BuildAcceptanceTests(unittest.TestCase):
                 with self.assertRaises(CurriculumValidationError):
                     parser.feed(document)
 
+    def test_generated_deferred_script_requires_paired_non_void_markup(self) -> None:
+        parser = build_module._SiteDocumentParser()
+        parser.feed(
+            '<html><body><script src="static/visualization.js" defer></script></body></html>'
+        )
+        self.assertEqual(parser.script_sources, ["static/visualization.js"])
+
+        parser = build_module._SiteDocumentParser()
+        with self.assertRaises(CurriculumValidationError):
+            parser.feed(
+                '<html><body><script src="static/visualization.js" defer /></body></html>'
+            )
+
     def test_complete_build_binds_all_lessons_to_visualization_catalog(self) -> None:
         with TemporaryDirectory() as directory, patch(
             "curriculum_builder.build.validate_visualization_assignments",

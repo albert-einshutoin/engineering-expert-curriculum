@@ -602,7 +602,8 @@ and per-control listeners remain singletons and failure stays in fallback.
 Generated deferred script elements are direct children of `body` and have no
 non-whitespace data, character/entity reference, or comment content. The model
 validator, generated-document validator, build parser, and release checker all
-enforce the same empty external-script contract.
+enforce the same empty, explicitly paired external-script contract; non-void
+self-closing syntax such as `<script />` is malformed.
 5. Reveal controls and mark the root as enhanced.
 
 Any exception before step 5 leaves the complete static figure visible. Any

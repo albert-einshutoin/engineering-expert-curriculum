@@ -307,9 +307,10 @@ class _PageParser(HTMLParser):
         tag: str,
         attrs: list[tuple[str, str | None]],
     ) -> None:
-        self.handle_starttag(tag, attrs)
         if tag.casefold() not in _VOID_ELEMENTS:
-            self.handle_endtag(tag)
+            self._malformed()
+            return
+        self.handle_starttag(tag, attrs)
 
     def handle_starttag(
         self,
