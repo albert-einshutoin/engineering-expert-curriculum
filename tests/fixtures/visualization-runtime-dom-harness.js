@@ -245,10 +245,6 @@ function fixture(tracker, mode, suffix = '', controlKind = 'select') {
     addState('state-b', 1, 'choice', 'b', 'node-2', 'edge-1');
     addOutcome('outcome-a', 'state-a');
     addOutcome('outcome-b', 'state-b');
-    addTransition('a-to-b', 'parameter-change', 'state-a', 'state-b', 'choice', 'b');
-    addTransition('b-to-a', 'parameter-change', 'state-b', 'state-a', 'choice', 'a');
-    addTransition('reset-a', 'reset', 'state-a', 'state-a', 'choice', 'a');
-    addTransition('reset-b', 'reset', 'state-b', 'state-b', 'choice', 'b');
   } else if (mode === 'hybrid' || mode === 'explorer') {
     addState('state-0', 0, null, null, 'node-0', null);
     addState('state-a', 1, 'choice', 'a', 'node-1', 'edge-0');
@@ -430,6 +426,21 @@ function runReducedMotion() {
   assert(activeState(value) === 'state-0', 'reduced motion advanced state');
 }
 
+function runTerminalPlayback() {
+  const tracker = new Tracker();
+  const value = fixture(tracker, 'playback', '-terminal');
+  environment(tracker, [value]);
+  click(value, 'next');
+  click(value, 'next');
+  const status = value.status.textContent;
+  click(value, 'play');
+  const play = value.controls.querySelector('[data-action="play"]');
+  assert(tracker.timers.size === 0, 'terminal playback scheduled a timer');
+  assert(play.getAttribute('aria-pressed') === 'false', 'terminal playback stayed pressed');
+  assert(play.textContent === '再生', 'terminal playback kept playing label');
+  assert(value.status.textContent === status, 'terminal playback changed status');
+}
+
 function runExactEventResolution() {
   const cases = [
     ['to-1', 'timer', 'next'],
@@ -462,7 +473,17 @@ function runValidationMutations() {
     ['stepper', (value) => value.root.querySelector('.visualization__simulation-transition').attributes.delete('data-transition-event')],
     ['stepper', (value) => value.root.querySelector('.visualization__simulation-transition').attributes.set('data-transition-event', 'unknown')],
     ['scenario', (value) => value.root.querySelector('.visualization__state-condition').attributes.delete('data-option-id')],
-    ['scenario', (value) => value.root.querySelector('.visualization__transition-condition').attributes.delete('data-parameter-id')],
+    ['scenario', (value) => value.root.querySelectorAll('.visualization__state-condition').find((item) => item.getAttribute('data-option-id') === 'b').attributes.set('data-option-id', 'a')],
+    ['scenario', (value) => {
+      value.statesList.children.pop();
+      const outcome = value.root.querySelectorAll('.visualization__simulation-outcome').find((item) => item.getAttribute('data-state-id') === 'state-b');
+      outcome.parent.children = outcome.parent.children.filter((item) => item !== outcome);
+    }],
+    ['scenario', (value, tracker) => {
+      const transition = element(tracker, 'tr', { 'data-transition-id': 'forbidden', 'data-transition-event': 'parameter-change', 'data-from-state-id': 'state-a', 'data-to-state-id': 'state-b' }, ['visualization__simulation-transition']);
+      value.root.children.filter((item) => item.tag === 'tbody')[0].append(transition);
+    }],
+    ['hybrid', (value) => value.root.querySelector('.visualization__transition-condition').attributes.delete('data-parameter-id')],
     ['scenario', (value) => value.root.querySelector('.visualization__state-condition').attributes.set('data-unexpected', 'x')],
     ['stepper', (value, tracker) => value.controls.append(element(tracker, 'button', { type: 'button', disabled: '' }, [], 'ignored'))],
     ['stepper', (value, tracker) => value.controls.append(element(tracker, 'select', { 'data-action': 'unknown', disabled: '' }))],
@@ -536,12 +557,15 @@ function runFaultMatrix() {
       const baseline = domSnapshot(value.root);
       const window = environment(tracker, [value]);
       actionSequence(value, tracker, mode);
-      window.dispatchEvent({ type: 'pagehide', target: window });
       assert(controlListenerCount(value) === 0, `${mode} mutation ${fault} leaked listeners`);
       assert(tracker.timers.size === 0, `${mode} mutation ${fault} leaked timer`);
       assert(value.controls.hidden, `${mode} mutation ${fault} did not restore controls`);
       const restored = domSnapshot(value.root, true);
       assert(restored === baseline, `${mode} mutation ${fault} did not restore exact DOM ${snapshotDifference(restored, baseline)}`);
+      window.dispatchEvent({ type: 'pagehide', target: window });
+      assert(controlListenerCount(value) === 0, `${mode} mutation ${fault} pagehide leaked listeners`);
+      assert(tracker.timers.size === 0, `${mode} mutation ${fault} pagehide leaked timer`);
+      assert(domSnapshot(value.root, true) === baseline, `${mode} mutation ${fault} pagehide changed fallback`);
     }
   }
   const listenerTracker = new Tracker();
@@ -553,13 +577,19 @@ function runFaultMatrix() {
 
   const timerTracker = new Tracker();
   const timerFixture = fixture(timerTracker, 'playback');
-  environment(timerTracker, [timerFixture]);
+  const timerBaseline = domSnapshot(timerFixture.root);
+  const timerWindow = environment(timerTracker, [timerFixture]);
   click(timerFixture, 'play');
   timerTracker.failAt = timerTracker.mutations + 1;
   timerTracker.flushOne();
   assert(timerTracker.timers.size === 0, 'timer callback failure leaked timer');
   assert(controlListenerCount(timerFixture) === 0, 'timer callback failure leaked listeners');
   assert(timerFixture.controls.hidden, 'timer callback failure did not restore fallback');
+  assert(domSnapshot(timerFixture.root, true) === timerBaseline, 'timer callback failure did not restore exact DOM');
+  timerWindow.dispatchEvent({ type: 'pagehide', target: timerWindow });
+  assert(controlListenerCount(timerFixture) === 0, 'timer callback pagehide leaked listeners');
+  assert(timerTracker.timers.size === 0, 'timer callback pagehide leaked timer');
+  assert(domSnapshot(timerFixture.root, true) === timerBaseline, 'timer callback pagehide changed fallback');
   return true;
 }
 
@@ -585,6 +615,7 @@ runLoadAbsence();
 runModes();
 runExactTeardown();
 runReducedMotion();
+runTerminalPlayback();
 runExactEventResolution();
 runValidationMutations();
 const faultMatrix = runFaultMatrix();

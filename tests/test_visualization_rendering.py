@@ -407,6 +407,7 @@ class VisualizationRenderingTests(unittest.TestCase):
             raw = _maximum_id_visual()
             simulation = raw["simulation"]
             assert isinstance(simulation, dict)
+            simulation["interactionMode"] = "stepper"
             parameter_id = "p" * 64
             second_option = "b" * 64
             simulation["transitions"] = [{

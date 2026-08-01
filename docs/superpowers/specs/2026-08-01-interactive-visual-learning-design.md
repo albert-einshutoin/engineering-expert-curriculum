@@ -549,6 +549,12 @@ play-label nodes, and the fixed classes `is-enhanced`, `is-active`,
 `is-complete`, and `has-runtime-error`. Values are validated IDs, bounded
 integers, or fixed literals; authored text is never passed to a selector.
 
+Scenario mode is the deliberate edge-free exception: its authored transition
+set is empty, Apply resolves the unique state in the validated finite parameter
+partition, and Reset restores `data-initial-state-id`. Missing or overlapping
+partition entries fail before enhancement. Event-keyed transitions remain
+mandatory for state movement in every non-scenario mode.
+
 The runtime must not use `fetch`, XMLHttpRequest, WebSocket, EventSource,
 dynamic `import()`, Worker, Service Worker, storage APIs, query/hash state,
 clipboard, navigation, `eval`, `Function`, `innerHTML`, `outerHTML`, DOMParser,

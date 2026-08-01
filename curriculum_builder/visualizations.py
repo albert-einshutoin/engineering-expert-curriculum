@@ -1025,6 +1025,10 @@ def _validate_simulation_domain(
     initial_state_id: str,
     transitions: tuple[SimulationTransition, ...],
 ) -> None:
+    # Scenario selection is a total partition lookup, not an event graph. An
+    # empty edge set keeps Apply and Reset independent of synthetic transitions.
+    if mode is InteractionMode.SCENARIO and transitions:
+        _fail(path, "scenario transitions must be empty")
     transition_index = _index_simulation_transitions(transitions)
     conditional_path_mode = mode in {
         InteractionMode.HYBRID,

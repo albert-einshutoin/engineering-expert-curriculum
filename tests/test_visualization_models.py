@@ -417,6 +417,26 @@ class VisualizationModelTests(unittest.TestCase):
         with self.assertRaises(TypeError):
             when["size"] = "large"  # type: ignore[index]
 
+    def test_scenario_uses_partitioned_states_without_authored_transitions(self) -> None:
+        valid = _scenario_simulation()
+        parsed = _parse([
+            _visual("flow", deepcopy(_payloads()["flow"]), simulation=valid)
+        ])[0]
+        self.assertEqual(parsed.simulation.transitions, ())  # type: ignore[union-attr]
+
+        invalid = deepcopy(valid)
+        invalid["transitions"] = [{
+            "id": "implicit-apply",
+            "from": "small-state",
+            "to": "large-state",
+            "event": "parameter-change",
+            "when": {"size": "large"},
+        }]
+        with self.assertRaises(CurriculumValidationError):
+            _parse([
+                _visual("flow", deepcopy(_payloads()["flow"]), simulation=invalid)
+            ])
+
     def test_complete_lessons_require_one_or_two_visuals(self) -> None:
         for value in (None, [], [_visual("flow", _payloads()["flow"])] * 3):
             with self.subTest(value=value):

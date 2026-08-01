@@ -113,6 +113,7 @@
         !unique(this.edges, 'data-edge-id') || this.transitionElements.length > 128 ||
         !unique(this.transitionElements, 'data-transition-id') || !this.outcomeElements.length ||
         this.outcomeElements.length > 64 || !unique(this.outcomeElements, 'data-outcome-id') ||
+        (mode === 'scenario' && this.transitionElements.length !== 0) ||
         actions.join(',') !== expected.slice().sort().join(',') ||
         intervalSource === null || !Number.isInteger(interval) || interval < 250 || interval > 5000 ||
         ((mode === 'playback' || mode === 'hybrid') !== Boolean(this.speed)) ||
@@ -237,6 +238,13 @@
     });
     if (!selections.length || selections.length > 64) { throw new Error('invalid parameter domain'); }
     selections.forEach(function (selection) {
+      if (this.mode === 'scenario') {
+        var scenarioStates = [];
+        this.stateById.forEach(function (state, stateId) {
+          if (matches(state.conditions, selection)) { scenarioStates.push(stateId); }
+        });
+        if (scenarioStates.length !== 1) { throw new Error('invalid scenario partition'); }
+      }
       this.transitions.forEach(function (transition) {
         if (matches(transition.conditions, selection) && !matches(this.stateById.get(transition.to).conditions, selection)) { throw new Error('transition target condition mismatch'); }
       }, this);
@@ -265,6 +273,15 @@
     this.currentId = candidates[0].to;
     this.applyState(this.currentId, announce);
     return true;
+  };
+  Controller.prototype.scenarioState = function () {
+    var selection = this.selection();
+    var states = [];
+    this.stateById.forEach(function (state, stateId) {
+      if (matches(state.conditions, selection)) { states.push(stateId); }
+    });
+    if (states.length !== 1) { throw new Error('invalid scenario partition'); }
+    return states[0];
   };
   Controller.prototype.hasTransition = function (eventName) {
     var selection = this.selection();
@@ -349,13 +366,19 @@
       this.transition('previous', true);
     } else if (name === 'apply') {
       this.stop();
-      this.transition('parameter-change', true);
+      if (this.mode === 'scenario') {
+        this.currentId = this.scenarioState();
+        this.applyState(this.currentId, true);
+      } else { this.transition('parameter-change', true); }
     } else if (name === 'reset') {
       this.stop();
-      this.transition('reset', true);
+      if (this.mode === 'scenario') {
+        this.currentId = this.initialId;
+        this.applyState(this.currentId, true);
+      } else { this.transition('reset', true); }
     } else if (name === 'pause') {
       this.stop();
-    } else if (name === 'play' && !this.reduced) {
+    } else if (name === 'play' && !this.reduced && this.hasTransition('timer')) {
       this.setPlaying(true);
       this.schedule();
     }

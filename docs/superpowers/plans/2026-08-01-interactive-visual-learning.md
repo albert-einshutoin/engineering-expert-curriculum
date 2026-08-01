@@ -692,6 +692,11 @@ Condition and control class inventories must equal the corresponding complete
 attribute inventories, so a missing attribute cannot silently become an
 unconditional node or an ignored enabled control.
 
+Keep scenario mode edge-free: schema validation rejects scenario transitions,
+Apply resolves exactly one state from the bounded parameter partition, and
+Reset restores the authored initial state. The event-edge requirement applies
+to state movement in the other four modes.
+
 - [ ] **Step 4: Implement one dependency-free classic script**
 
 Use a strict IIFE, fixed selectors, `Map`/`Set`, per-figure controller, one owned
