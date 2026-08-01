@@ -14,17 +14,26 @@
     {
       "id": "obj-anomaly",
       "statement": "同じ並行scheduleからRead Committedのnon-repeatable readとSnapshot Isolationのwrite skewをevent traceで再現できる",
-      "evidenceIds": ["transaction-experiment", "teach-back"]
+      "evidenceIds": [
+        "transaction-experiment",
+        "teach-back"
+      ]
     },
     {
       "id": "obj-serializable",
       "statement": "Serializableで競合する一方をabortし、トランザクション全体のretry後に明示した業務不変条件が回復したことを検証できる",
-      "evidenceIds": ["transaction-experiment", "assessment"]
+      "evidenceIds": [
+        "transaction-experiment",
+        "assessment"
+      ]
     },
     {
       "id": "obj-scope",
       "statement": "ACID、MVCC、Snapshot Isolation、SQL分離レベルの保証範囲とvendor差を区別し、並行性変更へ判断を移せる",
-      "evidenceIds": ["assessment", "transfer"]
+      "evidenceIds": [
+        "assessment",
+        "transfer"
+      ]
     }
   ],
   "evidence": [
@@ -53,27 +62,37 @@
     {
       "level": "recognize",
       "criterion": "atomicity、consistency、isolation、durabilityと、dirty read、non-repeatable read、phantom、write skewを区別できる",
-      "evidenceIds": ["transaction-experiment"]
+      "evidenceIds": [
+        "transaction-experiment"
+      ]
     },
     {
       "level": "explain",
       "criterion": "MVCCが読取り待ちを減らしても直列化可能性を自動的に保証せず、業務不変条件をdatabaseが推論しない理由を説明できる",
-      "evidenceIds": ["teach-back"]
+      "evidenceIds": [
+        "teach-back"
+      ]
     },
     {
       "level": "apply",
       "criterion": "固定scheduleで二つの分離異常を再現し、Serializableのabortをトランザクション境界からretryできる",
-      "evidenceIds": ["transaction-experiment"]
+      "evidenceIds": [
+        "transaction-experiment"
+      ]
     },
     {
       "level": "diagnose",
       "criterion": "event trace、snapshot、読み書き集合から異常を分類し、単なるlost updateや実装bugという誤診を反証できる",
-      "evidenceIds": ["assessment"]
+      "evidenceIds": [
+        "assessment"
+      ]
     },
     {
       "level": "lead",
       "criterion": "不変条件、競合率、latency、vendor保証、retry副作用をレビューし、運用可能な分離方針を合意できる",
-      "evidenceIds": ["transfer"]
+      "evidenceIds": [
+        "transfer"
+      ]
     }
   ],
   "lab": {
@@ -163,8 +182,92 @@
       "kind": "peer-reviewed"
     }
   ],
+  "visualizations": [
+    {
+      "id": "isolation-schedule-timeline",
+      "type": "timeline",
+      "caption": "snapshotから依存関係、commit判定、retryへ進む分離異常の因果経路",
+      "question": "どの順序と境界が、途中の観測を最終判断へ結ぶか。",
+      "afterSection": "mentalModel",
+      "objectiveIds": [
+        "obj-anomaly",
+        "obj-serializable"
+      ],
+      "evidenceIds": [
+        "transaction-experiment"
+      ],
+      "sourceIds": [
+        "src-01",
+        "src-02",
+        "src-04"
+      ],
+      "expectedObservation": "各eventの順序、技術的な境界、次の判断に必要な観測を、途中を省略せず説明できる。",
+      "notes": [],
+      "payload": {
+        "phases": [
+          {
+            "id": "contract",
+            "label": "不変条件",
+            "detail": "rowとは別に業務不変条件を固定する。"
+          },
+          {
+            "id": "concurrent",
+            "label": "並行schedule",
+            "detail": "二つのtransactionのreadと局所判断を並べる。"
+          },
+          {
+          "id": "validation-phase",
+            "label": "検証と回復",
+            "detail": "commit可否を判断し、abort後は読み直す。"
+          }
+        ],
+        "events": [
+          {
+            "id": "invariant",
+            "label": "不変条件",
+            "detail": "「aliceまたはbobの少なくとも一人が当直」をdatabaseのrowとは別に明示する。",
+            "phaseId": "contract",
+            "order": 0
+          },
+          {
+            "id": "snapshot",
+            "label": "snapshot",
+            "detail": "T1とT2が同じ開始状態 {alice: on, bob: on} を読む。",
+            "phaseId": "concurrent",
+            "order": 1
+          },
+          {
+            "id": "local-decision",
+            "label": "局所判断",
+            "detail": "T1はbobが当直なのでaliceを外し、T2はaliceが当直なのでbobを外す。",
+            "phaseId": "concurrent",
+            "order": 2
+          },
+          {
+            "id": "validation",
+            "label": "検証",
+            "detail": "Snapshot Isolationでは別rowへのwriteが双方commitし得る。Serializableでは危険な依存を検出して一方をabortする。",
+          "phaseId": "validation-phase",
+            "order": 3
+          },
+          {
+            "id": "retry",
+            "label": "retry",
+            "detail": "abortされたT2は古い判断を再利用せず、transaction開始から読み直す。aliceが外れているためbobを当直に残す。",
+          "phaseId": "validation-phase",
+            "order": 4
+          }
+        ]
+      }
+    }
+  ],
   "review": {
-    "intervalDays": [1, 7, 30, 90],
+    "intervalDays": [
+      1,
+      7,
+      30,
+      90
+    ],
     "prompts": [
       "ACID consistencyと業務不変条件の責任境界を一つの反例で示す",
       "Snapshot Isolationでwrite skewが起きる四つのeventを順に説明する",

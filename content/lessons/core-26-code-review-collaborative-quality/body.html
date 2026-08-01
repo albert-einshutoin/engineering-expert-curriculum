@@ -10,16 +10,6 @@
 <section id="review-mental-model">
   <h2>メンタルモデル</h2>
   <p>reviewを、sample changeからpriority / evidence / actionable commentを作る初回review、author fix、別reviewerによるindependent re-evaluationのループとして捉える。priorityは声の強さではなく、対象riskと影響から導く。</p>
-  <figure>
-    <figcaption>sample changeから共同で品質を改善し独立再評価するreview loop</figcaption>
-    <ol>
-      <li><strong>Scope:</strong> changeとrisk kind、review budgetを固定する。</li>
-      <li><strong>Initial review:</strong> priority、evidence、actionable fixを同じ入力から導く。</li>
-      <li><strong>Author fix:</strong> 指摘IDに対応するpatchをactual artifactへ適用し、patch IDを残す。</li>
-      <li><strong>Independent re-evaluation:</strong> 初回とは別のreviewerがprobeを再実行し、actualとexpectedからblocking findingとsystem outcomeを確認する。</li>
-      <li><strong>Enablement:</strong> 判断根拠を残し、他のcontributorが再利用できるようにする。</li>
-    </ol>
-  </figure>
   <p>初回reviewerと再評価者を分けるのは儀式ではない。最初の仮説へ引きずられる可能性を下げ、修正後snapshotから証拠を作り直すためである。review budgetは重要だが、時間切れをapprovalへ変換してはならない。</p>
 </section>
 <section id="worked-example">

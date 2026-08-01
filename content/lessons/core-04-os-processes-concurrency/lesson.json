@@ -15,17 +15,26 @@
     {
       "id": "obj-boundaries",
       "statement": "プロセスの隔離資源とスレッドの共有資源を、障害伝播と通信経路を含めて図示できる",
-      "evidenceIds": ["race-record", "teach-back"]
+      "evidenceIds": [
+        "race-record",
+        "teach-back"
+      ]
     },
     {
       "id": "obj-race",
       "statement": "100回以上の反復で競合を再現し、失敗時のinterleavingと破られた不変条件を記録できる",
-      "evidenceIds": ["race-record", "assessment"]
+      "evidenceIds": [
+        "race-record",
+        "assessment"
+      ]
     },
     {
       "id": "obj-fix",
       "statement": "同期方法を適用した後に正しさ、停止性、性能を再測定し、別の共有境界で選択を再比較できる",
-      "evidenceIds": ["assessment", "transfer"]
+      "evidenceIds": [
+        "assessment",
+        "transfer"
+      ]
     }
   ],
   "evidence": [
@@ -54,27 +63,37 @@
     {
       "level": "recognize",
       "criterion": "アドレス空間、ファイル記述子、実行状態、共有データを隔離または共有の観点で分類できる",
-      "evidenceIds": ["race-record"]
+      "evidenceIds": [
+        "race-record"
+      ]
     },
     {
       "level": "explain",
       "criterion": "操作のatomicity、可視性、順序性、deadlockを別の正しさ条件として説明できる",
-      "evidenceIds": ["teach-back"]
+      "evidenceIds": [
+        "teach-back"
+      ]
     },
     {
       "level": "apply",
       "criterion": "失敗頻度を測れる競合実験を作り、明示した不変条件に対して同期方法を適用できる",
-      "evidenceIds": ["race-record"]
+      "evidenceIds": [
+        "race-record"
+      ]
     },
     {
       "level": "diagnose",
       "criterion": "イベント列、ロック取得順、進捗カウンタからdata race、deadlock、starvationを切り分けられる",
-      "evidenceIds": ["assessment"]
+      "evidenceIds": [
+        "assessment"
+      ]
     },
     {
       "level": "lead",
       "criterion": "信頼境界、障害半径、通信量、デバッグ容易性から隔離単位のレビューを主導できる",
-      "evidenceIds": ["transfer"]
+      "evidenceIds": [
+        "transfer"
+      ]
     }
   ],
   "lab": {
@@ -170,8 +189,114 @@
       "kind": "primary"
     }
   ],
+  "visualizations": [
+    {
+      "id": "concurrency-diagnostic-timeline",
+      "type": "timeline",
+      "caption": "共有境界から不変条件を守る診断経路",
+      "question": "どの順序と境界が、途中の観測を最終判断へ結ぶか。",
+      "afterSection": "mentalModel",
+      "objectiveIds": [
+        "obj-boundaries",
+        "obj-race"
+      ],
+      "evidenceIds": [
+        "race-record"
+      ],
+      "sourceIds": [
+        "src-01",
+        "src-04"
+      ],
+      "expectedObservation": "各eventの順序、技術的な境界、次の判断に必要な観測を、途中を省略せず説明できる。",
+      "notes": [
+        "この注記は旧図の読み順を保持する補助です。",
+        "隔離単位: process A、process B、または同一process内thread AとBを置く。",
+        "共有対象: memory、file、socket、database row、queueを列挙する。",
+        "操作分解: read、compute、write、publishをイベントへ分ける。",
+        "不変条件: 在庫は0以上、合計減算数と最終値が一致、同じ注文を二度確定しない。",
+        "同期関係: mutex、atomic operation、message passingのどれが前後関係を作るか示す。",
+        "停止性: lock順、待機資源、timeout、cancel経路を観測する。",
+        "回帰: 同じstress条件で違反頻度と所要時間を再測定する。"
+      ],
+      "payload": {
+        "phases": [
+          {
+            "id": "boundary",
+            "label": "境界を固定",
+            "detail": "隔離単位と共有対象を先に確定する。"
+          },
+          {
+            "id": "execution",
+            "label": "操作を観測",
+            "detail": "共有操作をeventへ分解する。"
+          },
+          {
+            "id": "verification",
+            "label": "性質を検証",
+            "detail": "安全性、前後関係、停止性、再現性を検証する。"
+          }
+        ],
+        "events": [
+          {
+            "id": "isolation-unit",
+            "label": "隔離単位",
+            "detail": "process A、process B、または同一process内thread AとBを置く。",
+            "phaseId": "boundary",
+            "order": 0
+          },
+          {
+            "id": "shared-target",
+            "label": "共有対象",
+            "detail": "memory、file、socket、database row、queueを列挙する。",
+            "phaseId": "boundary",
+            "order": 1
+          },
+          {
+            "id": "operation-events",
+            "label": "操作分解",
+            "detail": "read、compute、write、publishをイベントへ分ける。",
+            "phaseId": "execution",
+            "order": 2
+          },
+          {
+            "id": "invariant-check",
+            "label": "不変条件",
+            "detail": "在庫は0以上、合計減算数と最終値が一致、同じ注文を二度確定しない。",
+            "phaseId": "verification",
+            "order": 3
+          },
+          {
+            "id": "synchronization",
+            "label": "同期関係",
+            "detail": "mutex、atomic operation、message passingのどれが前後関係を作るか示す。",
+            "phaseId": "verification",
+            "order": 4
+          },
+          {
+            "id": "liveness",
+            "label": "停止性",
+            "detail": "lock順、待機資源、timeout、cancel経路を観測する。",
+            "phaseId": "verification",
+            "order": 5
+          },
+          {
+            "id": "regression",
+            "label": "回帰",
+            "detail": "同じstress条件で違反頻度と所要時間を再測定する。",
+            "phaseId": "verification",
+            "order": 6
+          }
+        ]
+      }
+    }
+  ],
   "review": {
-    "intervalDays": [1, 7, 30, 90],
+    "intervalDays": [
+      1,
+      7,
+      30,
+      90
+    ],
     "prompts": [
       "atomicity、可視性、順序性のうち、今回の不変条件に必要なのはどれか",
       "deadlock説を反証する最小のイベント証拠は何か",

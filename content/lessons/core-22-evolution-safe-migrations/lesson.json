@@ -16,17 +16,26 @@
     {
       "id": "obj-state-machine",
       "statement": "schema changeを互換なexpand-contract phaseと明示的な遷移条件へ分解できる",
-      "evidenceIds": ["migration-plan", "teach-back"]
+      "evidenceIds": [
+        "migration-plan",
+        "teach-back"
+      ]
     },
     {
       "id": "obj-observation",
       "statement": "dual write、backfill、dual readの観測から停止とrollbackを判断できる",
-      "evidenceIds": ["migration-plan", "assessment"]
+      "evidenceIds": [
+        "migration-plan",
+        "assessment"
+      ]
     },
     {
       "id": "obj-transfer",
       "statement": "backfill error rateだけが変わる条件で同じ計画の継続判断を再評価できる",
-      "evidenceIds": ["assessment", "transfer"]
+      "evidenceIds": [
+        "assessment",
+        "transfer"
+      ]
     }
   ],
   "evidence": [
@@ -55,27 +64,37 @@
     {
       "level": "recognize",
       "criterion": "expand、dual write、backfill、dual read、contractの責務を区別できる",
-      "evidenceIds": ["migration-plan"]
+      "evidenceIds": [
+        "migration-plan"
+      ]
     },
     {
       "level": "explain",
       "criterion": "old readerとnew readerを同時に支える期間が必要な理由を説明できる",
-      "evidenceIds": ["teach-back"]
+      "evidenceIds": [
+        "teach-back"
+      ]
     },
     {
       "level": "apply",
       "criterion": "各phaseへ観測、停止条件、rollback、compatibilityを割り当てられる",
-      "evidenceIds": ["migration-plan"]
+      "evidenceIds": [
+        "migration-plan"
+      ]
     },
     {
       "level": "diagnose",
       "criterion": "backfill成功件数だけに隠れたerror、drift、reader incompatibilityを反証できる",
-      "evidenceIds": ["assessment"]
+      "evidenceIds": [
+        "assessment"
+      ]
     },
     {
       "level": "lead",
       "criterion": "application、database、operationsのownerと停止権限を含む段階移行を主導できる",
-      "evidenceIds": ["transfer"]
+      "evidenceIds": [
+        "transfer"
+      ]
     }
   ],
   "lab": {
@@ -157,8 +176,139 @@
       "kind": "primary"
     }
   ],
+  "visualizations": [
+    {
+      "id": "expand-contract-state-machine",
+      "type": "state-machine",
+      "caption": "互換性と観測gateを持つexpand-contract state machine",
+      "question": "どの証拠で遷移を許可または拒否し、安全な回復へ進むか。",
+      "afterSection": "mentalModel",
+      "objectiveIds": [
+        "obj-state-machine",
+        "obj-observation"
+      ],
+      "evidenceIds": [
+        "migration-plan"
+      ],
+      "sourceIds": [
+        "src-01",
+        "src-02",
+        "src-03"
+      ],
+      "expectedObservation": "初期stateからの許可遷移と、危険な遷移を拒否する理由を、技術的な証拠に基づいて説明できる。",
+      "notes": [
+        "この注記は旧図の読み順を保持する補助です。",
+        "expand: old readerを壊さないnullable構造を追加する。",
+        "dual write: 新旧fieldへ書き、成功率と値のparityを観測する。",
+        "backfill: bounded batchで既存rowを移しerror rateとlagを測る。",
+        "dual read: 新旧readerの結果差を比較しfallbackを保持する。",
+        "contract: 利用停止の証拠を確認してから旧構造を除く。",
+        "rollback: 各stateで戻す対象と回復確認を先に定義する。"
+      ],
+      "payload": {
+        "states": [
+          {
+            "id": "expand",
+            "label": "expand",
+            "detail": "old readerを壊さないnullable構造を追加する。"
+          },
+          {
+            "id": "dual-write",
+            "label": "dual write",
+            "detail": "新旧fieldへ書き、成功率と値のparityを観測する。"
+          },
+          {
+            "id": "backfill",
+            "label": "backfill",
+            "detail": "bounded batchで既存rowを移しerror rateとlagを測る。"
+          },
+          {
+            "id": "dual-read",
+            "label": "dual read",
+            "detail": "新旧readerの結果差を比較しfallbackを保持する。"
+          },
+          {
+            "id": "contract",
+            "label": "contract",
+            "detail": "利用停止の証拠を確認してから旧構造を除く。"
+          },
+          {
+            "id": "rollback-ready",
+            "label": "rollback",
+            "detail": "各stateで戻す対象と回復確認を先に定義する。"
+          }
+        ],
+        "initialStateId": "expand",
+        "transitions": [
+          {
+            "id": "expand-to-dual-write",
+            "from": "expand",
+            "to": "dual-write",
+            "event": "next",
+            "status": "allowed"
+          },
+          {
+            "id": "dual-write-to-backfill",
+            "from": "dual-write",
+            "to": "backfill",
+            "event": "next",
+            "status": "allowed"
+          },
+          {
+            "id": "backfill-to-dual-read",
+            "from": "backfill",
+            "to": "dual-read",
+            "event": "next",
+            "status": "allowed"
+          },
+          {
+            "id": "dual-read-to-contract",
+            "from": "dual-read",
+            "to": "contract",
+            "event": "next",
+            "status": "allowed"
+          },
+          {
+            "id": "backfill-rollback",
+            "from": "backfill",
+            "to": "rollback-ready",
+            "event": "previous",
+            "status": "allowed"
+          },
+          {
+            "id": "dual-read-rollback",
+            "from": "dual-read",
+            "to": "rollback-ready",
+            "event": "previous",
+            "status": "allowed"
+          },
+          {
+            "id": "parity-failed",
+            "from": "dual-write",
+            "to": "backfill",
+            "event": "timer",
+            "status": "rejected",
+            "reason": "成功率または値のparityがgateを満たさない間はbackfillへ進まない。"
+          },
+          {
+            "id": "contract-too-early",
+            "from": "dual-read",
+            "to": "contract",
+            "event": "timer",
+            "status": "rejected",
+            "reason": "旧構造の利用停止証拠が揃うまでcontractを開始しない。"
+          }
+        ]
+      }
+    }
+  ],
   "review": {
-    "intervalDays": [1, 7, 30, 90],
+    "intervalDays": [
+      1,
+      7,
+      30,
+      90
+    ],
     "prompts": [
       "expandとcontractの間にold readerを支える理由は何か",
       "backfillで件数以外に観測すべき結果は何か",

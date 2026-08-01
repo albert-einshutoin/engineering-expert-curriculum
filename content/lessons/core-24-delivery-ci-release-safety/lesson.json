@@ -15,17 +15,26 @@
     {
       "id": "obj-ci",
       "statement": "必須checkの欠落、失敗、未知を成功へ倒さないfail-closed CIを設計できる",
-      "evidenceIds": ["delivery-evidence", "assessment"]
+      "evidenceIds": [
+        "delivery-evidence",
+        "assessment"
+      ]
     },
     {
       "id": "obj-provenance",
       "statement": "artifact digest、subject、builderを結びprovenanceの存在と信頼を区別できる",
-      "evidenceIds": ["delivery-evidence", "teach-back"]
+      "evidenceIds": [
+        "delivery-evidence",
+        "teach-back"
+      ]
     },
     {
       "id": "obj-outcome",
       "statement": "段階配信の観測からadvanceとrollbackを決め、実行後のsystem outcomeまで検証できる",
-      "evidenceIds": ["delivery-evidence", "transfer"]
+      "evidenceIds": [
+        "delivery-evidence",
+        "transfer"
+      ]
     }
   ],
   "evidence": [
@@ -54,27 +63,37 @@
     {
       "level": "recognize",
       "criterion": "CI成功、artifact同一性、provenance検証、配信結果を別の証拠として識別できる",
-      "evidenceIds": ["delivery-evidence"]
+      "evidenceIds": [
+        "delivery-evidence"
+      ]
     },
     {
       "level": "explain",
       "criterion": "command successだけではsystem outcomeを証明できない理由を説明できる",
-      "evidenceIds": ["teach-back"]
+      "evidenceIds": [
+        "teach-back"
+      ]
     },
     {
       "level": "apply",
       "criterion": "必須check、digest、builder、canary指標から配信判断を再現できる",
-      "evidenceIds": ["delivery-evidence"]
+      "evidenceIds": [
+        "delivery-evidence"
+      ]
     },
     {
       "level": "diagnose",
       "criterion": "provenance presence、green表示、rollback commandを結果証拠と誤認する経路を反証できる",
-      "evidenceIds": ["assessment"]
+      "evidenceIds": [
+        "assessment"
+      ]
     },
     {
       "level": "lead",
       "criterion": "停止条件、rollback責任者、DORA five metrics、改善ループを合意できる",
-      "evidenceIds": ["transfer"]
+      "evidenceIds": [
+        "transfer"
+      ]
     }
   ],
   "lab": {
@@ -164,8 +183,133 @@
       "kind": "standard"
     }
   ],
+  "visualizations": [
+    {
+      "id": "release-evidence-state-machine",
+      "type": "state-machine",
+      "caption": "source変更からrollback outcomeまでを結ぶdelivery evidence chain",
+      "question": "どの証拠で遷移を許可または拒否し、安全な回復へ進むか。",
+      "afterSection": "mentalModel",
+      "objectiveIds": [
+        "obj-ci",
+        "obj-provenance",
+        "obj-outcome"
+      ],
+      "evidenceIds": [
+        "delivery-evidence"
+      ],
+      "sourceIds": [
+        "src-01",
+        "src-03",
+        "src-04"
+      ],
+      "expectedObservation": "初期stateからの許可遷移と、危険な遷移を拒否する理由を、技術的な証拠に基づいて説明できる。",
+      "notes": [],
+      "payload": {
+        "states": [
+          {
+            "id": "ci",
+            "label": "CI",
+            "detail": "required check集合がすべて観測され成功したか検査する。"
+          },
+          {
+            "id": "artifact",
+            "label": "Artifact",
+            "detail": "配信対象bytesからdigestを計算して固定する。"
+          },
+          {
+            "id": "provenance",
+            "label": "Provenance",
+            "detail": "subject digestとtrusted builderを独立に検証する。"
+          },
+          {
+            "id": "canary",
+            "label": "Canary",
+            "detail": "利用者可視のerror rateを閾値と比較する。"
+          },
+          {
+            "id": "decision",
+            "label": "Decision",
+            "detail": "advance、stop、rollbackを入力から導く。"
+          },
+          {
+            "id": "outcome",
+            "label": "Outcome",
+            "detail": "command完了後にservice restorationを再観測する。"
+          }
+        ],
+        "initialStateId": "ci",
+        "transitions": [
+          {
+            "id": "ci-to-artifact",
+            "from": "ci",
+            "to": "artifact",
+            "event": "next",
+            "status": "allowed"
+          },
+          {
+            "id": "artifact-to-provenance",
+            "from": "artifact",
+            "to": "provenance",
+            "event": "next",
+            "status": "allowed"
+          },
+          {
+            "id": "provenance-to-canary",
+            "from": "provenance",
+            "to": "canary",
+            "event": "next",
+            "status": "allowed"
+          },
+          {
+            "id": "canary-to-decision",
+            "from": "canary",
+            "to": "decision",
+            "event": "next",
+            "status": "allowed"
+          },
+          {
+            "id": "decision-to-outcome",
+            "from": "decision",
+            "to": "outcome",
+            "event": "next",
+            "status": "allowed"
+          },
+          {
+            "id": "ci-unknown",
+            "from": "ci",
+            "to": "artifact",
+            "event": "timer",
+            "status": "rejected",
+            "reason": "required checkが欠落、失敗、未知の時はartifact確定へ進まない。"
+          },
+          {
+            "id": "digest-mismatch",
+            "from": "artifact",
+            "to": "provenance",
+            "event": "timer",
+            "status": "rejected",
+            "reason": "subject digestが配信対象bytesと一致しない時はprovenanceを受理しない。"
+          },
+          {
+            "id": "skip-decision",
+            "from": "canary",
+            "to": "outcome",
+            "event": "next",
+            "status": "rejected",
+            "reason": "canary観測からadvance、stop、rollbackのdecisionを導く前にoutcomeへ進まない。"
+          }
+        ]
+      }
+    }
+  ],
   "review": {
-    "intervalDays": [1, 7, 30, 90],
+    "intervalDays": [
+      1,
+      7,
+      30,
+      90
+    ],
     "prompts": [
       "CIのunknownをfail-closedにする理由は何か",
       "provenance presence aloneが信頼証拠にならない理由は何か",

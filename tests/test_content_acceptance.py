@@ -74,6 +74,34 @@ TASK5_VISUAL_TYPES = {
     "core-27-team-interfaces-sociotechnical-architecture": "network",
     "core-30-evidence-based-technical-leadership": "causal",
 }
+TASK6_VISUAL_TYPES = {
+    "core-04-os-processes-concurrency": "timeline",
+    "core-05-networks-latency-failure": "timeline",
+    "core-07-api-contract-design": "state-machine",
+    "core-09-test-strategy-tdd": "state-loop",
+    "core-12-transactions-isolation-consistency": "timeline",
+    "core-13-distributed-coordination-failure": "timeline",
+    "core-15-reliability-observability-slo": "state-loop",
+    "core-22-evolution-safe-migrations": "state-machine",
+    "core-23-incident-response-learning": "timeline",
+    "core-24-delivery-ci-release-safety": "state-machine",
+    "core-26-code-review-collaborative-quality": "state-loop",
+    "core-29-cross-cultural-async-collaboration": "timeline",
+}
+TASK6_VISUAL_CONTRACT_SHA256 = {
+    "core-04-os-processes-concurrency": "8a4bc323ee00c4065166060fa4269b41023ff65dbe89c3f1ed62543b0d74307d",
+    "core-05-networks-latency-failure": "d054bab3119e4e895faeac66b1612c8e30bef62dfd6803eddc49025aacbbc956",
+    "core-07-api-contract-design": "c4b1f54b1a0aa98a706cb190afb3c3dd45359a1e5d56a896db185e79c68f0613",
+    "core-09-test-strategy-tdd": "8cc1d7e2fddb5b85a8e16ffb5c492e873c30b81ae2e28dc3aad609f4d2eca881",
+    "core-12-transactions-isolation-consistency": "d0473f3fbc406606e06596d1da4a724b1c82fa836258144fd5a3deecad54ea16",
+    "core-13-distributed-coordination-failure": "cff41b2944503a2d7354c1ee57d5200cb012e0d3a82be0683b05f9f6c34b9815",
+    "core-15-reliability-observability-slo": "374f8cca2dc29b65423a49fedc013d1ff24f8ea2a6e597836a9a5dd5d620624e",
+    "core-22-evolution-safe-migrations": "da8808faae064ada09f24cdafb8fd07e55d5b714d35c773250a131370edbdcda",
+    "core-23-incident-response-learning": "3dc73e0e56d7e307f2cc9558675e5e9a8fbc9375d7d7dfd69a2ff4dd87b2d989",
+    "core-24-delivery-ci-release-safety": "619f26a3d2c69380b4f01b642184097ea2df4441562beb509b592306b2a9f8d3",
+    "core-26-code-review-collaborative-quality": "70fe28a3669664debf4e94c9fb8072d29bb53ff7af8ccfebf434a4531c534277",
+    "core-29-cross-cultural-async-collaboration": "f2b8fb19214707bcf8428e62aec7214cefb8af8341950eb86b88d2be9c606474",
+}
 TASK5_READING_ORDER_MARKER = "この注記は旧図の読み順を保持する補助です。"
 TASK5_VISUAL_IDENTITIES = {
     "core-01-systems-tradeoffs": "decision-causal-loop",
@@ -1062,6 +1090,16 @@ def _task5_visual_projection(document: dict[str, object]) -> dict[str, object]:
     return projection
 
 
+def _task6_visual_contract_sha256(document: dict[str, object]) -> str:
+    """Freeze every ordered Task 6 field without sharing parser internals."""
+    encoded = json.dumps(
+        document["visualizations"][0],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _snapshot(root: Path) -> dict[PurePosixPath, bytes]:
     return {
         PurePosixPath(path.relative_to(root).as_posix()): path.read_bytes()
@@ -1848,7 +1886,7 @@ class ContentAcceptanceTests(unittest.TestCase):
         for lesson_id in LESSON_IDS:
             lesson_root = REPOSITORY_ROOT / "content/lessons" / lesson_id
             body = (lesson_root / "body.html").read_text(encoding="utf-8")
-            if lesson_id in TASK5_VISUAL_TYPES:
+            if lesson_id in TASK5_VISUAL_TYPES or lesson_id in TASK6_VISUAL_TYPES:
                 self.assertNotIn("<figure", body)
                 residual_sha256 = hashlib.sha256(body.encode("utf-8")).hexdigest()
             else:
@@ -1887,8 +1925,9 @@ class ContentAcceptanceTests(unittest.TestCase):
             item
             for item in oracle["figures"]
             if item["lessonId"] not in TASK5_VISUAL_TYPES
+            and item["lessonId"] not in TASK6_VISUAL_TYPES
         ]
-        self.assertEqual(len(actual_figures), 21)
+        self.assertEqual(len(actual_figures), 9)
         self.assertEqual(
             [
                 (item["lessonId"], item["sectionRole"], item["caption"])
@@ -1996,6 +2035,106 @@ class ContentAcceptanceTests(unittest.TestCase):
                 self.assertTrue(relations)
                 self.assertTrue(
                     all(relation["label"].strip() for relation in relations)
+                )
+
+    def test_task6_timeline_and_state_assignments_are_static_and_preserve_legacy_facts(
+        self,
+    ) -> None:
+        legacy_by_lesson = {
+            entry["lessonId"]: entry
+            for entry in json.loads(MIGRATION_ORACLE.read_bytes())["figures"]
+        }
+        for lesson_id, expected_type in TASK6_VISUAL_TYPES.items():
+            with self.subTest(lesson_id=lesson_id):
+                path = (
+                    REPOSITORY_ROOT
+                    / "content/lessons"
+                    / lesson_id
+                    / "lesson.json"
+                )
+                document = json.loads(path.read_bytes())
+                self.assertEqual(len(document.get("visualizations", [])), 1)
+                visual = document["visualizations"][0]
+                self.assertEqual(visual["type"], expected_type)
+                self.assertEqual(
+                    visual["caption"], legacy_by_lesson[lesson_id]["caption"]
+                )
+                self.assertEqual(visual["afterSection"], "mentalModel")
+                self.assertNotIn("simulation", visual)
+                semantic_text = json.dumps(visual, ensure_ascii=False)
+                for atom in legacy_by_lesson[lesson_id]["visibleAtoms"]:
+                    normalized = atom[:-1] if atom.endswith(":") else atom
+                    self.assertIn(normalized, semantic_text)
+                load_lesson_bytes(path.read_bytes(), "lesson.json")
+
+    def test_task6_visual_contracts_freeze_every_ordered_authored_field(self) -> None:
+        self.assertEqual(set(TASK6_VISUAL_CONTRACT_SHA256), set(TASK6_VISUAL_TYPES))
+        for lesson_id, expected in TASK6_VISUAL_CONTRACT_SHA256.items():
+            with self.subTest(lesson_id=lesson_id):
+                path = REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json"
+                document = json.loads(path.read_bytes())
+                self.assertEqual(_task6_visual_contract_sha256(document), expected)
+
+    def test_task6_contract_rejects_order_transition_text_source_note_and_placement_mutations(
+        self,
+    ) -> None:
+        def document(lesson_id: str) -> dict[str, object]:
+            path = REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json"
+            return json.loads(path.read_bytes())
+
+        timeline = document("core-05-networks-latency-failure")
+        expected = TASK6_VISUAL_CONTRACT_SHA256[
+            "core-05-networks-latency-failure"
+        ]
+        reversed_events = deepcopy(timeline)
+        reversed_events["visualizations"][0]["payload"]["events"].reverse()
+        with self.assertRaises(CurriculumValidationError):
+            load_lesson_bytes(
+                json.dumps(reversed_events, ensure_ascii=False).encode("utf-8"),
+                "lesson.json",
+            )
+        self.assertNotEqual(_task6_visual_contract_sha256(reversed_events), expected)
+
+        wrong_detail = deepcopy(timeline)
+        wrong_detail["visualizations"][0]["payload"]["events"][0]["detail"] += " altered"
+        load_lesson_bytes(
+            json.dumps(wrong_detail, ensure_ascii=False).encode("utf-8"),
+            "lesson.json",
+        )
+        self.assertNotEqual(_task6_visual_contract_sha256(wrong_detail), expected)
+
+        machine = document("core-24-delivery-ci-release-safety")
+        machine_expected = TASK6_VISUAL_CONTRACT_SHA256[
+            "core-24-delivery-ci-release-safety"
+        ]
+        wrong_transition = deepcopy(machine)
+        wrong_transition["visualizations"][0]["payload"]["transitions"][0][
+            "to"
+        ] = "provenance"
+        with self.assertRaises(CurriculumValidationError):
+            load_lesson_bytes(
+                json.dumps(wrong_transition, ensure_ascii=False).encode("utf-8"),
+                "lesson.json",
+            )
+        self.assertNotEqual(
+            _task6_visual_contract_sha256(wrong_transition), machine_expected
+        )
+
+        for field, value in (
+            ("caption", "誤ったcaption"),
+            ("sourceIds", ["src-02"]),
+            ("notes", ["誤った注記"]),
+            ("afterSection", "workedExample"),
+        ):
+            with self.subTest(field=field):
+                mutated = deepcopy(machine)
+                mutated["visualizations"][0][field] = value
+                load_lesson_bytes(
+                    json.dumps(mutated, ensure_ascii=False).encode("utf-8"),
+                    "lesson.json",
+                )
+                self.assertNotEqual(
+                    _task6_visual_contract_sha256(mutated), machine_expected
                 )
 
     def test_task5_visual_contracts_are_independently_exact(self) -> None:

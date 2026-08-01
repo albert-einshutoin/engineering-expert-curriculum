@@ -7,22 +7,33 @@
   "stage": 2,
   "difficulty": "intermediate",
   "estimatedMinutes": 300,
-  "prerequisiteIds": ["core-06-requirements-domain-modeling"],
+  "prerequisiteIds": [
+    "core-06-requirements-domain-modeling"
+  ],
   "objectives": [
     {
       "id": "obj-contract",
       "statement": "HTTP意味論、schema、業務不変条件、認可、失敗形式を分離したAPI契約を記述できる",
-      "evidenceIds": ["api-contract", "teach-back"]
+      "evidenceIds": [
+        "api-contract",
+        "teach-back"
+      ]
     },
     {
       "id": "obj-replay",
       "statement": "応答喪失後の再送で同じ副作用を一回に保ちつつ、同じ応答やexactly-onceを誤って保証しない",
-      "evidenceIds": ["api-contract", "assessment"]
+      "evidenceIds": [
+        "api-contract",
+        "assessment"
+      ]
     },
     {
       "id": "obj-evolution",
       "statement": "source、wire、意味の互換性を区別し、長時間オフラインの利用者へ契約変更を移せる",
-      "evidenceIds": ["assessment", "transfer"]
+      "evidenceIds": [
+        "assessment",
+        "transfer"
+      ]
     }
   ],
   "evidence": [
@@ -51,27 +62,37 @@
     {
       "level": "recognize",
       "criterion": "HTTP method、表現schema、業務意味、認証、認可、失敗形式を別の契約面として分類できる",
-      "evidenceIds": ["api-contract"]
+      "evidenceIds": [
+        "api-contract"
+      ]
     },
     {
       "level": "explain",
       "criterion": "同じ冪等keyの再送が同じ効果を保っても同じresponseやexactly-onceを意味しない理由を説明できる",
-      "evidenceIds": ["teach-back"]
+      "evidenceIds": [
+        "teach-back"
+      ]
     },
     {
       "level": "apply",
       "criterion": "version、再送、状態遷移、Problem Detailsを含むローカル契約fixtureを実装できる",
-      "evidenceIds": ["api-contract"]
+      "evidenceIds": [
+        "api-contract"
+      ]
     },
     {
       "level": "diagnose",
       "criterion": "schema違反、意味違反、認可拒否、version非互換を証拠から切り分けられる",
-      "evidenceIds": ["assessment"]
+      "evidenceIds": [
+        "assessment"
+      ]
     },
     {
       "level": "lead",
       "criterion": "利用者の更新遅延と撤回困難性を考慮し、互換性方針と廃止条件をレビューできる",
-      "evidenceIds": ["transfer"]
+      "evidenceIds": [
+        "transfer"
+      ]
     }
   ],
   "lab": {
@@ -168,8 +189,136 @@
       "kind": "standard"
     }
   ],
+  "visualizations": [
+    {
+      "id": "offline-operation-state-machine",
+      "type": "state-machine",
+      "caption": "オフライン操作を副作用と観測へ分ける契約経路",
+      "question": "どの証拠で遷移を許可または拒否し、安全な回復へ進むか。",
+      "afterSection": "mentalModel",
+      "objectiveIds": [
+        "obj-contract",
+        "obj-replay",
+        "obj-evolution"
+      ],
+      "evidenceIds": [
+        "api-contract"
+      ],
+      "sourceIds": [
+        "src-01",
+        "src-02",
+        "src-03"
+      ],
+      "expectedObservation": "初期stateからの許可遷移と、危険な遷移を拒否する理由を、技術的な証拠に基づいて説明できる。",
+      "notes": [],
+      "payload": {
+        "states": [
+          {
+            "id": "created",
+            "label": "作成",
+            "detail": "clientは操作ID、冪等key、対象version、tenantを永続化する。serverは認証済みprincipal、tenant、route、keyを保存scopeにする。"
+          },
+          {
+            "id": "sent",
+            "label": "送信",
+            "detail": "serverはschema、意味、認証、認可を順に検査する。"
+          },
+          {
+            "id": "applied",
+            "label": "適用",
+            "detail": "keyと操作結果を同じ耐久境界で記録し、状態を一度だけ進める。"
+          },
+          {
+            "id": "responded",
+            "label": "応答",
+            "detail": "現在時刻やtrace IDを含むresponseは試行ごとに違ってよい。"
+          },
+          {
+            "id": "response-lost",
+            "label": "喪失",
+            "detail": "responseが届かなくても、clientは同じkeyで安全に再送する。"
+          },
+          {
+            "id": "queried",
+            "label": "照会",
+            "detail": "保存済み効果を返し、同じ配送や同じresponseを保証したとは主張しない。"
+          },
+          {
+            "id": "evolved",
+            "label": "進化",
+            "detail": "旧versionの利用状況を観測し、source、wire、意味の互換性を別々に判定する。"
+          }
+        ],
+        "initialStateId": "created",
+        "transitions": [
+          {
+            "id": "created-to-sent",
+            "from": "created",
+            "to": "sent",
+            "event": "next",
+            "status": "allowed"
+          },
+          {
+            "id": "sent-to-applied",
+            "from": "sent",
+            "to": "applied",
+            "event": "next",
+            "status": "allowed"
+          },
+          {
+            "id": "applied-to-responded",
+            "from": "applied",
+            "to": "responded",
+            "event": "next",
+            "status": "allowed"
+          },
+          {
+            "id": "applied-to-lost",
+            "from": "applied",
+            "to": "response-lost",
+            "event": "timer",
+            "status": "allowed"
+          },
+          {
+            "id": "lost-to-query",
+            "from": "response-lost",
+            "to": "queried",
+            "event": "next",
+            "status": "allowed"
+          },
+          {
+            "id": "responded-to-evolved",
+            "from": "responded",
+            "to": "evolved",
+            "event": "next",
+            "status": "allowed"
+          },
+          {
+            "id": "queried-to-evolved",
+            "from": "queried",
+            "to": "evolved",
+            "event": "next",
+            "status": "allowed"
+          },
+          {
+            "id": "lost-reapply",
+            "from": "response-lost",
+            "to": "applied",
+            "event": "next",
+            "status": "rejected",
+            "reason": "同じ冪等keyの保存済み効果を再適用してはならない。"
+          }
+        ]
+      }
+    }
+  ],
   "review": {
-    "intervalDays": [1, 7, 30, 90],
+    "intervalDays": [
+      1,
+      7,
+      30,
+      90
+    ],
     "prompts": [
       "同じ効果だが同じresponseでない冪等再送の例を示す",
       "schema妥当性だけでは検出できない業務違反と認可違反は何か",

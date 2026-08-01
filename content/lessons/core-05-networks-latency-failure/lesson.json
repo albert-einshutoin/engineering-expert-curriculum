@@ -7,22 +7,33 @@
   "stage": 1,
   "difficulty": "foundation",
   "estimatedMinutes": 270,
-  "prerequisiteIds": ["core-04-os-processes-concurrency"],
+  "prerequisiteIds": [
+    "core-04-os-processes-concurrency"
+  ],
   "objectives": [
     {
       "id": "obj-timeline",
       "statement": "DNS問い合わせからHTTP応答完了までを少なくとも六イベントの時系列として図示できる",
-      "evidenceIds": ["trace-budget", "teach-back"]
+      "evidenceIds": [
+        "trace-budget",
+        "teach-back"
+      ]
     },
     {
       "id": "obj-budget",
       "statement": "利用者期限から接続、TLS、応答、再試行へ時間を配分し、最悪時の合計を計算できる",
-      "evidenceIds": ["trace-budget", "assessment"]
+      "evidenceIds": [
+        "trace-budget",
+        "assessment"
+      ]
     },
     {
       "id": "obj-diagnose",
       "statement": "パケット損失と依存サービス遅延の仮説を層別の時刻と再送観測で反証し、未知経路へ診断を移せる",
-      "evidenceIds": ["assessment", "transfer"]
+      "evidenceIds": [
+        "assessment",
+        "transfer"
+      ]
     }
   ],
   "evidence": [
@@ -51,27 +62,37 @@
     {
       "level": "recognize",
       "criterion": "DNS、TCP、TLS、HTTPの開始・完了イベントと各層の失敗を時系列上で識別できる",
-      "evidenceIds": ["trace-budget"]
+      "evidenceIds": [
+        "trace-budget"
+      ]
     },
     {
       "level": "explain",
       "criterion": "TCP到達、TLS認証、HTTP応答、業務処理成功が別の契約である理由を説明できる",
-      "evidenceIds": ["teach-back"]
+      "evidenceIds": [
+        "teach-back"
+      ]
     },
     {
       "level": "apply",
       "criterion": "総期限から各段の予算と再試行回数を逆算し、合計が期限を超えないトレースを作成できる",
-      "evidenceIds": ["trace-budget"]
+      "evidenceIds": [
+        "trace-budget"
+      ]
     },
     {
       "level": "diagnose",
       "criterion": "DNS時間、接続時間、再送、server timingを比較し、損失と依存遅延を反証できる",
-      "evidenceIds": ["assessment"]
+      "evidenceIds": [
+        "assessment"
+      ]
     },
     {
       "level": "lead",
       "criterion": "冪等性、deadline伝播、retry stormを含む障害レビューを未知の依存グラフで主導できる",
-      "evidenceIds": ["transfer"]
+      "evidenceIds": [
+        "transfer"
+      ]
     }
   ],
   "lab": {
@@ -167,8 +188,114 @@
       "kind": "standard"
     }
   ],
+  "visualizations": [
+    {
+      "id": "request-path-timeline",
+      "type": "timeline",
+      "caption": "DNSから業務結果までの時系列",
+      "question": "どの順序と境界が、途中の観測を最終判断へ結ぶか。",
+      "afterSection": "mentalModel",
+      "objectiveIds": [
+        "obj-timeline",
+        "obj-budget"
+      ],
+      "evidenceIds": [
+        "trace-budget"
+      ],
+      "sourceIds": [
+        "src-01",
+        "src-02",
+        "src-04",
+        "src-05"
+      ],
+      "expectedObservation": "各eventの順序、技術的な境界、次の判断に必要な観測を、途中を省略せず説明できる。",
+      "notes": [],
+      "payload": {
+        "phases": [
+          {
+            "id": "connection",
+            "label": "接続準備",
+            "detail": "名前解決、輸送、暗号の前提を成立させる。"
+          },
+          {
+            "id": "exchange",
+            "label": "HTTP交換",
+            "detail": "request送信からresponse本文完了までを観測する。"
+          },
+          {
+            "id": "business-result",
+            "label": "業務結果",
+            "detail": "transport完了と業務上の成功を分けて確定する。"
+          }
+        ],
+        "events": [
+          {
+            "id": "dns",
+            "label": "名前解決",
+            "detail": "DNS queryを送り、候補addressとTTLを得る。",
+            "phaseId": "connection",
+            "order": 0
+          },
+          {
+            "id": "tcp",
+            "label": "輸送接続",
+            "detail": "TCP SYN、SYN-ACK、ACKで接続状態を確立する。",
+            "phaseId": "connection",
+            "order": 1
+          },
+          {
+            "id": "tls",
+            "label": "暗号接続",
+            "detail": "TLSでversion、鍵、相手のidentityを検証する。",
+            "phaseId": "connection",
+            "order": 2
+          },
+          {
+            "id": "request",
+            "label": "request送信",
+            "detail": "HTTP method、target、header、bodyを送る。",
+            "phaseId": "exchange",
+            "order": 3
+          },
+          {
+            "id": "server",
+            "label": "server処理",
+            "detail": "handlerと依存serviceが状態を読み書きする。",
+            "phaseId": "exchange",
+            "order": 4
+          },
+          {
+            "id": "first-byte",
+            "label": "最初のbyte",
+            "detail": "statusとheaderを受け始める。",
+            "phaseId": "exchange",
+            "order": 5
+          },
+          {
+            "id": "body-complete",
+            "label": "本文完了",
+            "detail": "responseを読み終える。ただし業務結果はstatusとbodyの契約で判定する。",
+            "phaseId": "exchange",
+            "order": 6
+          },
+          {
+            "id": "result",
+            "label": "結果確定",
+            "detail": "clientが結果を永続化し、必要なら冪等keyで後から照会できる。",
+            "phaseId": "business-result",
+            "order": 7
+          }
+        ]
+      }
+    }
+  ],
   "review": {
-    "intervalDays": [1, 7, 30, 90],
+    "intervalDays": [
+      1,
+      7,
+      30,
+      90
+    ],
     "prompts": [
       "総期限2000msへ一回の再試行を入れるなら、各試行へ何ms配分するか",
       "TCP成功から業務成功までに残る結果不明状態は何か",

@@ -9,17 +9,6 @@
 <section id="mental-model">
   <h2>メンタルモデル</h2>
   <p>migrationを五つのstateへ分ける。expandで互換な構造を追加し、dual writeで新旧表現を同時更新し、backfillで既存rowを移す。dual readで新旧読取結果を比較し、十分な観測後にだけcontractで旧構造を除く。次phaseへの遷移は時刻ではなく検証済みのguardから導く。</p>
-  <figure>
-    <figcaption>互換性と観測gateを持つexpand-contract state machine</figcaption>
-    <ol>
-      <li><strong>expand:</strong> old readerを壊さないnullable構造を追加する。</li>
-      <li><strong>dual write:</strong> 新旧fieldへ書き、成功率と値のparityを観測する。</li>
-      <li><strong>backfill:</strong> bounded batchで既存rowを移しerror rateとlagを測る。</li>
-      <li><strong>dual read:</strong> 新旧readerの結果差を比較しfallbackを保持する。</li>
-      <li><strong>contract:</strong> 利用停止の証拠を確認してから旧構造を除く。</li>
-      <li><strong>rollback:</strong> 各stateで戻す対象と回復確認を先に定義する。</li>
-    </ol>
-  </figure>
   <p>rollbackは必ずしもDDLの逆操作ではない。feature flagでold readへ戻す、dual writeを止める、backfill checkpointへ戻る、contractを延期するなど、各phaseで安全な回復形が異なる。不可逆なcontractには、旧利用者がいないことを示す観測gateが必要である。</p>
 </section>
 <section id="worked-example">

@@ -16,17 +16,26 @@
     {
       "id": "obj-sli-slo",
       "statement": "利用者journeyのvalid eventとgood eventを定義し、window、target、error budgetを計算できる",
-      "evidenceIds": ["slo-runbook", "assessment"]
+      "evidenceIds": [
+        "slo-runbook",
+        "assessment"
+      ]
     },
     {
       "id": "obj-alert",
       "statement": "error budget burnをmulti-windowで評価し、pageとticketを行動可能性で分けられる",
-      "evidenceIds": ["slo-runbook", "teach-back"]
+      "evidenceIds": [
+        "slo-runbook",
+        "teach-back"
+      ]
     },
     {
       "id": "obj-telemetry",
       "statement": "telemetryのversion、stability、correlation、PII、cardinality、samplingを運用契約として管理できる",
-      "evidenceIds": ["assessment", "transfer"]
+      "evidenceIds": [
+        "assessment",
+        "transfer"
+      ]
     }
   ],
   "evidence": [
@@ -55,27 +64,37 @@
     {
       "level": "recognize",
       "criterion": "SLI、SLO、SLA、error budget、burn rate、page、ticketを区別できる",
-      "evidenceIds": ["slo-runbook"]
+      "evidenceIds": [
+        "slo-runbook"
+      ]
     },
     {
       "level": "explain",
       "criterion": "100%目標とtelemetry量の最大化が信頼性を保証しない理由を説明できる",
-      "evidenceIds": ["teach-back"]
+      "evidenceIds": [
+        "teach-back"
+      ]
     },
     {
       "level": "apply",
       "criterion": "固定eventからgoodとvalidを分類し、window targetとmulti-window alertを計算できる",
-      "evidenceIds": ["slo-runbook"]
+      "evidenceIds": [
+        "slo-runbook"
+      ]
     },
     {
       "level": "diagnose",
       "criterion": "利用者impactからtrace、metric、logへ相関し、samplingと欠測の限界を示せる",
-      "evidenceIds": ["assessment"]
+      "evidenceIds": [
+        "assessment"
+      ]
     },
     {
       "level": "lead",
       "criterion": "error budget方針、on-call action、PIIとcardinalityの境界を関係者と更新できる",
-      "evidenceIds": ["transfer"]
+      "evidenceIds": [
+        "transfer"
+      ]
     }
   ],
   "lab": {
@@ -171,8 +190,111 @@
       "kind": "standard"
     }
   ],
+  "visualizations": [
+    {
+      "id": "slo-action-loop",
+      "type": "state-loop",
+      "caption": "利用者結果からon-call actionまでを閉じるflow",
+      "question": "どのfeedbackと回復経路が、証拠の揃ったexitへ導くか。",
+      "afterSection": "mentalModel",
+      "objectiveIds": [
+        "obj-sli-slo",
+        "obj-alert",
+        "obj-telemetry"
+      ],
+      "evidenceIds": [
+        "slo-runbook"
+      ],
+      "sourceIds": [
+        "src-01",
+        "src-02",
+        "src-04"
+      ],
+      "expectedObservation": "各state、feedback cycle、recoveryからexitまでの経路を、観測する証拠とともに説明できる。",
+      "notes": [],
+      "payload": {
+        "states": [
+          {
+            "id": "journey",
+            "label": "Journey",
+            "detail": "利用者が達成したい結果とvalidな試行を定める。"
+          },
+          {
+            "id": "sli",
+            "label": "SLI",
+            "detail": "goodの結果とlatency境界をevent単位で計算する。"
+          },
+          {
+            "id": "slo",
+            "label": "SLO",
+            "detail": "window、target、error budget、例外を合意する。"
+          },
+          {
+            "id": "alert",
+            "label": "Alert",
+            "detail": "短窓と長窓のburnをpageとticketへ分ける。"
+          },
+          {
+            "id": "runbook",
+            "label": "Runbook",
+            "detail": "impact確認、mitigation、rollback、escalationを結ぶ。"
+          },
+          {
+            "id": "telemetry",
+            "label": "Telemetry",
+            "detail": "traceで原因へ相関し、意味とprivacyを検証する。"
+          }
+        ],
+        "transitions": [
+          {
+            "id": "journey-to-sli",
+            "from": "journey",
+            "to": "sli",
+            "label": "次の証拠を得る"
+          },
+          {
+            "id": "sli-to-slo",
+            "from": "sli",
+            "to": "slo",
+            "label": "次の証拠を得る"
+          },
+          {
+            "id": "slo-to-alert",
+            "from": "slo",
+            "to": "alert",
+            "label": "次の証拠を得る"
+          },
+          {
+            "id": "alert-to-runbook",
+            "from": "alert",
+            "to": "runbook",
+            "label": "次の証拠を得る"
+          },
+          {
+            "id": "runbook-to-telemetry",
+            "from": "runbook",
+            "to": "telemetry",
+            "label": "次の証拠を得る"
+          },
+          {
+            "id": "telemetry-feedback",
+            "from": "telemetry",
+            "to": "journey",
+            "label": "意味のずれをjourney定義へ戻す"
+          }
+        ],
+        "exitStateId": "runbook",
+        "recoveryStateId": "alert"
+      }
+    }
+  ],
   "review": {
-    "intervalDays": [1, 7, 30, 90],
+    "intervalDays": [
+      1,
+      7,
+      30,
+      90
+    ],
     "prompts": [
       "利用者journeyのvalid eventから除外する条件を一つ説明する",
       "短窓pageと長窓ticketを分ける理由は何か",

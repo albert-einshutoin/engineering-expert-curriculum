@@ -15,17 +15,26 @@
     {
       "id": "obj-failure-model",
       "statement": "delay、duplicate、reorder、network partition、recoveryを、model assumptionと観測可能なevent traceへ分解できる",
-      "evidenceIds": ["coordination-simulation", "teach-back"]
+      "evidenceIds": [
+        "coordination-simulation",
+        "teach-back"
+      ]
     },
     {
       "id": "obj-idempotency",
       "statement": "stableなdedupe key、永続結果、許可された状態遷移を結び、at-least-once retryで副作用を一度だけ適用して結果を再利用できる",
-      "evidenceIds": ["coordination-simulation", "assessment"]
+      "evidenceIds": [
+        "coordination-simulation",
+        "assessment"
+      ]
     },
     {
       "id": "obj-recovery",
       "statement": "分断期間を変更してreplayし、回復deadline、残留message、dedupe保持、利用者へ返す結果を再評価できる",
-      "evidenceIds": ["assessment", "transfer"]
+      "evidenceIds": [
+        "assessment",
+        "transfer"
+      ]
     }
   ],
   "evidence": [
@@ -54,27 +63,37 @@
     {
       "level": "recognize",
       "criterion": "message loss、delay、duplicate、reorder、partition、process recoveryを異なるfailure modeとして識別できる",
-      "evidenceIds": ["coordination-simulation"]
+      "evidenceIds": [
+        "coordination-simulation"
+      ]
     },
     {
       "level": "explain",
       "criterion": "FLPが扱う非同期consensusのscopeと、timeout・leader・quorumを使う実用protocolの仮定を区別して説明できる",
-      "evidenceIds": ["teach-back"]
+      "evidenceIds": [
+        "teach-back"
+      ]
     },
     {
       "level": "apply",
       "criterion": "stable dedupe key、永続結果、冪等な状態遷移によりat-least-once retryを安全に処理できる",
-      "evidenceIds": ["coordination-simulation"]
+      "evidenceIds": [
+        "coordination-simulation"
+      ]
     },
     {
       "level": "diagnose",
       "criterion": "同じ固定seedでevent traceをreplayし、duplicate effect、順序依存、分断中の不確実な結果を切り分けられる",
-      "evidenceIds": ["assessment"]
+      "evidenceIds": [
+        "assessment"
+      ]
     },
     {
       "level": "lead",
       "criterion": "failure model、復旧deadline、dedupe retention、reconciliation、利用者契約を合意するreviewを主導できる",
-      "evidenceIds": ["transfer"]
+      "evidenceIds": [
+        "transfer"
+      ]
     }
   ],
   "lab": {
@@ -164,8 +183,99 @@
       "kind": "peer-reviewed"
     }
   ],
+  "visualizations": [
+    {
+      "id": "dedupe-recovery-timeline",
+      "type": "timeline",
+      "caption": "at-least-once commandを永続dedupeと回復へ接続するmechanism",
+      "question": "どの順序と境界が、途中の観測を最終判断へ結ぶか。",
+      "afterSection": "mentalModel",
+      "objectiveIds": [
+        "obj-idempotency",
+        "obj-recovery"
+      ],
+      "evidenceIds": [
+        "coordination-simulation"
+      ],
+      "sourceIds": [
+        "src-01",
+        "src-03",
+        "src-04"
+      ],
+      "expectedObservation": "各eventの順序、技術的な境界、次の判断に必要な観測を、途中を省略せず説明できる。",
+      "notes": [],
+      "payload": {
+        "phases": [
+          {
+            "id": "dedupe",
+            "label": "重複排除",
+            "detail": "stable keyと入力fingerprintで再配送を識別する。"
+          },
+          {
+            "id": "durability",
+            "label": "耐久化",
+            "detail": "状態遷移と再利用resultを同じ境界で保存する。"
+          },
+          {
+            "id": "recovery",
+            "label": "回復",
+            "detail": "partition後の順序差と期限超過を再評価する。"
+          }
+        ],
+        "events": [
+          {
+            "id": "receive",
+            "label": "receive",
+            "detail": "tenant、resource、operationを含むstable keyと入力fingerprintを受け取る。",
+            "phaseId": "dedupe",
+            "order": 0
+          },
+          {
+            "id": "lookup",
+            "label": "lookup",
+            "detail": "永続dedupe storeにkeyがあれば入力fingerprintを照合し、一致時だけ状態遷移を再実行せず最初のresultを再利用する。不一致はkey衝突として拒否する。",
+            "phaseId": "dedupe",
+            "order": 1
+          },
+          {
+            "id": "apply",
+            "label": "apply",
+            "detail": "keyがなければ現在stateから許可された次stateへ一度だけ遷移する。",
+            "phaseId": "durability",
+            "order": 2
+          },
+          {
+            "id": "commit",
+            "label": "commit",
+            "detail": "state、fingerprint、resultを同じdurability境界で保存する。response lossはcommitを取り消さない。",
+            "phaseId": "durability",
+            "order": 3
+          },
+          {
+            "id": "recover",
+            "label": "recover",
+            "detail": "partition中のmessageを再開後に処理し、logical sequenceとdelivery orderの差を検査する。",
+            "phaseId": "recovery",
+            "order": 4
+          },
+          {
+            "id": "reevaluate",
+            "label": "re-evaluate",
+            "detail": "partitionがdeadlineを越えたら、queue、retention、stale command、reconciliation、利用者結果を更新する。",
+            "phaseId": "recovery",
+            "order": 5
+          }
+        ]
+      }
+    }
+  ],
   "review": {
-    "intervalDays": [1, 7, 30, 90],
+    "intervalDays": [
+      1,
+      7,
+      30,
+      90
+    ],
     "prompts": [
       "timeout後retryで同じresultを返すために永続化する情報を列挙する",
       "FLPのmodel assumptionと実用consensus protocolが追加する仮定を区別する",

@@ -9,18 +9,6 @@
 <section id="mental-model">
   <h2>メンタルモデル</h2>
   <p>API契約を六つの面へ分ける。transportはHTTP methodとstatus、structureはJSON Schema、semanticsはfieldと状態遷移の意味、identityは認証主体、authorityはその主体が対象へ行える操作、failureは失敗の分類と回復操作である。一面の検証結果を別の面の保証へ拡張しない。</p>
-  <figure>
-    <figcaption>オフライン操作を副作用と観測へ分ける契約経路</figcaption>
-    <ol>
-      <li><strong>作成:</strong> clientは操作ID、冪等key、対象version、tenantを永続化する。serverは認証済みprincipal、tenant、route、keyを保存scopeにする。</li>
-      <li><strong>送信:</strong> serverはschema、意味、認証、認可を順に検査する。</li>
-      <li><strong>適用:</strong> keyと操作結果を同じ耐久境界で記録し、状態を一度だけ進める。</li>
-      <li><strong>応答:</strong> 現在時刻やtrace IDを含むresponseは試行ごとに違ってよい。</li>
-      <li><strong>喪失:</strong> responseが届かなくても、clientは同じkeyで安全に再送する。</li>
-      <li><strong>照会:</strong> 保存済み効果を返し、同じ配送や同じresponseを保証したとは主張しない。</li>
-      <li><strong>進化:</strong> 旧versionの利用状況を観測し、source、wire、意味の互換性を別々に判定する。</li>
-    </ol>
-  </figure>
   <p>RFC 9110のmethod意味論は共通の土台だが、業務操作の副作用境界はapplicationが定義する。RFC 9457のProblem Detailsはtype、title、status、detail、instanceという標準memberを定義するが、RFC上これらは一律の必須memberではない。このAPIはtype、title、statusをprofileとして必須にし、detailとinstanceを任意にする。type URIを識別子として使う場合も、本文取得に成功しなければ処理できない設計にはしない。</p>
 </section>
 <section id="worked-example">
