@@ -109,7 +109,7 @@ def _css_value_tokens(source: str) -> tuple[str, ...]:
 def _rules(source: str) -> tuple[tuple[str, dict[str, str], int], ...]:
     rules: list[tuple[str, dict[str, str], int]] = []
     for prelude, body, position in _css_blocks(source):
-        if prelude.startswith("@media"):
+        if prelude.startswith(("@media", "@container")):
             for selector, nested_body, nested_position in _css_blocks(body):
                 declarations = {
                     name.strip(): value.strip()
@@ -329,6 +329,18 @@ class VisualizationAccessibilityTests(unittest.TestCase):
         for selector in (direct_item, nested_item):
             self.assertIn("padding-inline-start", mobile[selector])
 
+        container_narrow = _media_rules(
+            self.css,
+            "@container (max-width: 20rem)",
+        )
+        self.assertEqual(
+            container_narrow[nested_list].get("margin-inline-start"),
+            "0",
+        )
+        self.assertIn("padding-inline-start", container_narrow[nested_list])
+        for selector in (direct_item, nested_item):
+            self.assertIn("padding-inline-start", container_narrow[selector])
+
         forced_colors = _media_rules(
             self.css,
             "@media (forced-colors: active)",
@@ -384,7 +396,7 @@ class VisualizationAccessibilityTests(unittest.TestCase):
         self.assertEqual(mobile[selector].get("grid-template-columns"), "1fr")
         self.assertEqual(mobile[selector].get("grid-auto-flow"), "row")
 
-    def test_mobile_overrides_win_the_cascade_for_real_multicolumn_containers(self) -> None:
+    def test_narrow_overrides_preserve_dom_row_order_without_implicit_columns(self) -> None:
         top_level = _css_blocks(self.css)
         mobile_blocks = tuple(
             (body, position)
@@ -393,6 +405,13 @@ class VisualizationAccessibilityTests(unittest.TestCase):
         )
         self.assertEqual(len(mobile_blocks), 1)
         mobile_body, mobile_position = mobile_blocks[0]
+        container_blocks = tuple(
+            (body, position)
+            for prelude, body, position in top_level
+            if "@container (max-width: 20rem)" == " ".join(prelude.split())
+        )
+        self.assertEqual(len(container_blocks), 1)
+        _, container_position = container_blocks[0]
         mobile_rules = {
             selector: (declarations, position)
             for selector, declarations, position in _rules(
@@ -405,10 +424,13 @@ class VisualizationAccessibilityTests(unittest.TestCase):
                 self.css[:mobile_position]
             )
         }
-        expected_mobile = {
+        container_rules = _media_rules(
+            self.css,
+            "@container (max-width: 20rem)",
+        )
+        expected_narrow = {
             "grid-template-columns": "1fr",
             "grid-auto-flow": "row",
-            "grid-auto-columns": "minmax(0, 1fr)",
         }
         for kind, container in _MULTI_COLUMN_CONTAINERS:
             selector = f".visualization--{kind.value} .{container}"
@@ -417,14 +439,12 @@ class VisualizationAccessibilityTests(unittest.TestCase):
                 self.assertIn(selector, mobile_rules)
                 desktop_declarations, _ = desktop_rules[selector]
                 mobile_declarations, _ = mobile_rules[selector]
-                self.assertTrue(
-                    {
-                        "grid-template-columns",
-                        "grid-auto-flow",
-                        "grid-auto-columns",
-                    }
-                    & desktop_declarations.keys()
+                self.assertIn("grid-template-columns", desktop_declarations)
+                self.assertIn(
+                    desktop_declarations.get("grid-auto-flow"),
+                    {None, "row"},
                 )
+                self.assertNotIn("grid-auto-columns", desktop_declarations)
                 node_classes = {
                     f"visualization--{kind.value}",
                     container,
@@ -437,7 +457,6 @@ class VisualizationAccessibilityTests(unittest.TestCase):
                     and {
                         "grid-template-columns",
                         "grid-auto-flow",
-                        "grid-auto-columns",
                     }
                     & declarations.keys()
                 ]
@@ -453,13 +472,31 @@ class VisualizationAccessibilityTests(unittest.TestCase):
                     max(position for _, position in competing_desktop_rules),
                     mobile_position,
                 )
+                self.assertLess(
+                    max(position for _, position in competing_desktop_rules),
+                    container_position,
+                )
+                self.assertLessEqual(
+                    max(
+                        _specificity(candidate)
+                        for candidate, _ in competing_desktop_rules
+                    ),
+                    _specificity(selector),
+                )
+                self.assertEqual(
+                    {name: mobile_declarations.get(name) for name in expected_narrow},
+                    expected_narrow,
+                )
+                self.assertNotIn("grid-auto-columns", mobile_declarations)
+                self.assertIn(selector, container_rules)
                 self.assertEqual(
                     {
-                        name: mobile_declarations.get(name)
-                        for name in expected_mobile
+                        name: container_rules[selector].get(name)
+                        for name in expected_narrow
                     },
-                    expected_mobile,
+                    expected_narrow,
                 )
+                self.assertNotIn("grid-auto-columns", container_rules[selector])
         connector_rules = [
             (selector, declarations)
             for selector, declarations, _ in _rules(self.css[:mobile_position])
@@ -472,6 +509,32 @@ class VisualizationAccessibilityTests(unittest.TestCase):
                 declarations, _ = mobile_rules[selector]
                 self.assertEqual(declarations.get("content"), "none")
                 self.assertEqual(declarations.get("display"), "none")
+                self.assertEqual(
+                    container_rules[selector].get("content"),
+                    "none",
+                )
+                self.assertEqual(
+                    container_rules[selector].get("display"),
+                    "none",
+                )
+
+    def test_grid_contents_can_shrink_and_wrap_unbroken_text(self) -> None:
+        desktop = {
+            selector: declarations
+            for selector, declarations, _ in _rules(self.css)
+        }
+        self.assertEqual(
+            desktop[".visualization :is(dt, dd, li, th, td)"].get(
+                "min-inline-size"
+            ),
+            "0",
+        )
+        self.assertEqual(
+            desktop[".visualization :is(dt, dd, li, th, td)"].get(
+                "overflow-wrap"
+            ),
+            "anywhere",
+        )
 
     def test_uses_shared_base_and_exact_closed_modifier_set(self) -> None:
         modifiers = set(

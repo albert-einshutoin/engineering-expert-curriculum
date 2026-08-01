@@ -403,6 +403,11 @@ class _PageParser(HTMLParser):
                     "only a local stylesheet link is allowed",
                 )
             else:
+                if self.head_depth != 1:
+                    self.issues.add(
+                        self.relative,
+                        "stylesheet must be a direct child of head",
+                    )
                 self.stylesheet_count += 1
                 self.stylesheet_hrefs.append(values.get("href") or "")
             self._record_url(values.get("href"), "stylesheet", rel)

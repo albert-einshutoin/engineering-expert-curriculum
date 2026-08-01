@@ -562,6 +562,11 @@ class SiteCheckerHtmlTests(unittest.TestCase):
                 )
 
     def test_requires_exactly_two_ordered_local_stylesheets(self) -> None:
+        links = (
+            '  <link rel="stylesheet" href="styles.css">\n'
+            '  <link rel="stylesheet" href="static/visualizations.css">'
+        )
+        without_links = _page().replace(links, "")
         mutations = (
             _page().replace("styles.css", "https://example.com/styles.css", 1),
             _page(head='<link rel="stylesheet" href="styles.css">'),
@@ -572,10 +577,20 @@ class SiteCheckerHtmlTests(unittest.TestCase):
                 '  <link rel="stylesheet" href="static/visualizations.css">\n'
                 '  <link rel="stylesheet" href="styles.css">',
             ),
+            without_links.replace("<body>", f"<body>\n{links}"),
+            without_links.replace("</head>", f"</head>\n{links}"),
         )
         for document in mutations:
             issues = self._issues_for(document)
             self.assertTrue(any("stylesheet" in issue for issue in issues))
+
+        for document in mutations[-2:]:
+            self.assertTrue(
+                any(
+                    "stylesheet must be a direct child of head" in issue
+                    for issue in self._issues_for(document)
+                )
+            )
 
     def test_requires_exact_csp_contract(self) -> None:
         mutations = (

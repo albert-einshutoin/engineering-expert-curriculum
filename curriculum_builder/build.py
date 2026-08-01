@@ -116,7 +116,7 @@ class _StaticAsset:
 @dataclass(frozen=True, slots=True)
 class _StaticAssetSnapshot:
     source: bytes
-    identity: tuple[int, int]
+    signature: tuple[int, int, int, int, int, int]
 
 
 # This closed table is a security boundary: new repository files are never
@@ -344,6 +344,13 @@ def _require_owned_safe_node(
         raise _validation(f"{label} must not be group/world writable")
 
 
+def _require_single_link(value: os.stat_result, name: str) -> None:
+    # A second pathname lets another actor mutate the same inode outside the
+    # validated directory, so stable reads require exclusive inode naming.
+    if value.st_nlink != 1:
+        raise _validation(f"{name} must have exactly one link")
+
+
 @contextmanager
 def _open_trusted_directory(
     path: Path,
@@ -492,6 +499,8 @@ def _read_stable_regular_file(
     directory: _DirectoryHandle,
     name: str,
     maximum_bytes: int,
+    *,
+    require_single_link: bool = False,
 ) -> bytes:
     if (
         not name
@@ -515,6 +524,8 @@ def _read_stable_regular_file(
             follow_symlinks=False,
         )
         _require_owned_safe_node(before, label, directory=False)
+        if require_single_link:
+            _require_single_link(before, name)
         if before.st_size > maximum_bytes:
             raise _validation(f"{name} exceeds maximum byte count")
         descriptor = os.open(
@@ -523,6 +534,8 @@ def _read_stable_regular_file(
             dir_fd=directory.descriptor,
         )
         opened = os.fstat(descriptor)
+        if require_single_link:
+            _require_single_link(opened, name)
         _require_owned_safe_node(opened, label, directory=False)
         if _stat_signature(opened) != _stat_signature(before):
             raise _validation(f"{name} changed during read")
@@ -540,6 +553,8 @@ def _read_stable_regular_file(
         if os.read(descriptor, 1):
             raise _validation(f"{name} changed during read")
         after = os.fstat(descriptor)
+        if require_single_link:
+            _require_single_link(after, name)
         if _stat_signature(after) != _stat_signature(opened):
             raise _validation(f"{name} changed during read")
         current = os.stat(
@@ -547,6 +562,8 @@ def _read_stable_regular_file(
             dir_fd=directory.descriptor,
             follow_symlinks=False,
         )
+        if require_single_link:
+            _require_single_link(current, name)
         if _stat_signature(current) != _stat_signature(opened):
             raise _validation(f"{name} changed during read")
         return b"".join(chunks)
@@ -584,6 +601,7 @@ def _read_static_asset_snapshot(
             directory,
             asset.source_name,
             asset.maximum_bytes,
+            require_single_link=True,
         )
         after = os.stat(
             asset.source_name,
@@ -596,9 +614,9 @@ def _read_static_asset_snapshot(
         raise _validation(
             f"{asset.source_name} cannot be read safely"
         ) from None
-    if _identity(before) != _identity(after):
+    if _stat_signature(before) != _stat_signature(after):
         raise _validation(f"{asset.source_name} changed during build")
-    return _StaticAssetSnapshot(source=source, identity=_identity(after))
+    return _StaticAssetSnapshot(source=source, signature=_stat_signature(after))
 
 
 def _load_catalog_from_root(

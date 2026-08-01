@@ -110,6 +110,11 @@
   container-type: inline-size;
 }
 
+.visualization :is(dt, dd, li, th, td) {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
 .visualization--comparison .visualization__table,
 .visualization--matrix .visualization__table {
   inline-size: 100%;
@@ -158,8 +163,7 @@
 .visualization--memory .visualization__nodes {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr));
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: row;
   gap: var(--space-3, 1rem);
 }
 
@@ -174,7 +178,44 @@
   .visualization--state-machine .visualization__states {
     grid-template-columns: 1fr;
     grid-auto-flow: row;
-    grid-auto-columns: minmax(0, 1fr);
+  }
+
+  .visualization--hierarchy .visualization__hierarchy > ul {
+    padding-inline-start: var(--space-2, 0.75rem);
+  }
+
+  .visualization--hierarchy .visualization__hierarchy > ul > li,
+  .visualization--hierarchy .visualization__hierarchy li > ul > li {
+    padding-inline-start: var(--space-1, 0.5rem);
+  }
+
+  .visualization--hierarchy .visualization__hierarchy li > ul {
+    margin-inline-start: 0;
+    padding-inline-start: var(--space-2, 0.75rem);
+  }
+
+  .visualization--flow .visualization__ordered-model > *:not(:last-child)::after,
+  .visualization--state-loop .visualization__nodes > *:not(:last-child)::after,
+  .visualization--timeline .visualization__timeline-phases > *:not(:last-child)::after,
+  .visualization--network .visualization__nodes > *:not(:last-child)::after,
+  .visualization--memory .visualization__nodes > *:not(:last-child)::after,
+  .visualization--state-machine .visualization__states > *:not(:last-child)::after {
+    content: none;
+    display: none;
+  }
+}
+
+@container (max-width: 20rem) {
+  .visualization--flow .visualization__ordered-model,
+  .visualization--state-loop .visualization__nodes,
+  .visualization--causal .visualization__causal-model,
+  .visualization--timeline .visualization__timeline-phases,
+  .visualization--network .visualization__components,
+  .visualization--network .visualization__nodes,
+  .visualization--memory .visualization__nodes,
+  .visualization--state-machine .visualization__states {
+    grid-template-columns: 1fr;
+    grid-auto-flow: row;
   }
 
   .visualization--hierarchy .visualization__hierarchy > ul {

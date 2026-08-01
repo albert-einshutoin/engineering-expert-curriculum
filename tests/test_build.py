@@ -699,6 +699,8 @@ class BuildInputValidationTests(unittest.TestCase):
                 directory: object,
                 name: str,
                 maximum_bytes: int,
+                *,
+                require_single_link: bool = False,
             ) -> bytes:
                 nonlocal catalog_reads
                 if name != "catalog.json":
@@ -706,6 +708,7 @@ class BuildInputValidationTests(unittest.TestCase):
                         directory,  # type: ignore[arg-type]
                         name,
                         maximum_bytes,
+                        require_single_link=require_single_link,
                     )
                 catalog_reads += 1
                 if catalog_reads == 1:
@@ -983,6 +986,17 @@ class BuildInputValidationTests(unittest.TestCase):
     def test_visualization_stylesheet_is_regular_bounded_and_rechecked(self) -> None:
         with _fixture() as (root, content, templates, static_root):
             stylesheet = static_root / "visualizations.css"
+            external_link = root / "external-visualizations.css"
+            os.link(stylesheet, external_link)
+            with self.assertRaisesRegex(
+                CurriculumValidationError,
+                "visualizations.css must have exactly one link",
+            ) as caught:
+                build_site(content, templates, static_root, root / "site")
+            self.assertNotIn(str(root), str(caught.exception))
+
+        with _fixture() as (root, content, templates, static_root):
+            stylesheet = static_root / "visualizations.css"
             stylesheet.unlink()
             stylesheet.symlink_to(REPOSITORY_ROOT / "static/visualizations.css")
             with self.assertRaisesRegex(
@@ -1012,6 +1026,27 @@ class BuildInputValidationTests(unittest.TestCase):
             with patch(
                 "curriculum_builder.build._render_artifacts",
                 side_effect=racing_render,
+            ), self.assertRaisesRegex(
+                CurriculumValidationError,
+                "visualizations.css changed during build",
+            ):
+                build_site(content, templates, static_root, root / "site")
+
+        with _fixture() as (root, content, templates, static_root):
+            original_render = build_module._render_artifacts
+
+            stylesheet = static_root / "visualizations.css"
+            original_source = stylesheet.read_bytes()
+
+            def restoring_render(*args: object, **kwargs: object) -> object:
+                result = original_render(*args, **kwargs)  # type: ignore[arg-type]
+                stylesheet.write_bytes(b"temporarily changed")
+                stylesheet.write_bytes(original_source)
+                return result
+
+            with patch(
+                "curriculum_builder.build._render_artifacts",
+                side_effect=restoring_render,
             ), self.assertRaisesRegex(
                 CurriculumValidationError,
                 "visualizations.css changed during build",
