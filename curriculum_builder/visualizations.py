@@ -2357,10 +2357,16 @@ def _render_payload(payload: VisualizationPayload) -> str:
 
 
 def _render_simulation_oracle(simulation: Simulation) -> str:
-    def mapping_text(values: Mapping[str, str]) -> str:
+    def mapping_codes(class_name: str, values: Mapping[str, str]) -> str:
+        if not values:
+            return "常時"
         return "、".join(
-            f"{_e(key)}={_e(value)}" for key, value in sorted(values.items())
-        ) or "常時"
+            f'<code class="{class_name}" '
+            f'data-parameter-id="{_e(key, quote=True)}" '
+            f'data-option-id="{_e(value, quote=True)}">'
+            f"{_e(key)}={_e(value)}</code>"
+            for key, value in sorted(values.items())
+        )
 
     parameter_rows = "".join(
         "<tr>"
@@ -2373,7 +2379,7 @@ def _render_simulation_oracle(simulation: Simulation) -> str:
     state_items = "".join(
         f'<li data-state-id="{_e(state.id, quote=True)}" data-step-index="{index}">'
         f"<strong>{_e(state.label)}</strong>: {_e(state.status)}"
-        f"; 条件 {_e(mapping_text(state.when))}"
+        f'; 条件 {mapping_codes("visualization__state-condition", state.when)}'
         "; node "
         + (
             "、".join(
@@ -2396,15 +2402,20 @@ def _render_simulation_oracle(simulation: Simulation) -> str:
         for index, state in enumerate(simulation.states)
     )
     transition_rows = "".join(
-        "<tr>"
+        f'<tr class="visualization__simulation-transition" '
+        f'data-transition-id="{_e(edge.id, quote=True)}" '
+        f'data-from-state-id="{_e(edge.from_id, quote=True)}" '
+        f'data-to-state-id="{_e(edge.to_id, quote=True)}">'
         f'<th scope="row">{_e(edge.event)}</th>'
         f"<td>{_e(edge.from_id)}</td><td>{_e(edge.to_id)}</td>"
-        f"<td>{mapping_text(edge.when)}</td>"
+        f'<td>{mapping_codes("visualization__transition-condition", edge.when)}</td>'
         "</tr>"
         for edge in simulation.transitions
     )
     outcome_rows = "".join(
-        "<tr>"
+        f'<tr class="visualization__simulation-outcome" '
+        f'data-outcome-id="{_e(outcome.id, quote=True)}" '
+        f'data-state-id="{_e(outcome.state_id, quote=True)}">'
         f'<th scope="row">{_e(outcome.label)}</th>'
         f"<td>{_e(outcome.state_id)}</td></tr>"
         for outcome in simulation.outcomes
@@ -2600,6 +2611,7 @@ def _render_validated_visualization(
         + ("" if visual.simulation is None else
            f' data-simulation-kind="{_e(visual.simulation.kind.value, quote=True)}"'
            f' data-interaction-mode="{_e(visual.simulation.interaction_mode.value, quote=True)}"'
+           f' data-initial-state-id="{_e(visual.simulation.initial_state_id, quote=True)}"'
            f' data-default-interval-ms="{visual.simulation.default_interval_ms or 1000}"')
         + ">"
         f"<figcaption>{_e(visual.caption)}</figcaption>"

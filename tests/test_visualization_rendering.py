@@ -551,6 +551,20 @@ class VisualizationRenderingTests(unittest.TestCase):
             "適用", "再生", "一時停止", "前へ", "次へ", "リセット",
         ):
             self.assertIn(expected, html)
+        for expected_attribute in (
+            'data-initial-state-id="ready"',
+            'class="visualization__state-condition"',
+            'data-parameter-id="fault"',
+            'data-option-id="drop"',
+            'class="visualization__simulation-transition"',
+            'data-transition-id="retry"',
+            'data-from-state-id="ready"',
+            'data-to-state-id="dropped"',
+            'class="visualization__transition-condition"',
+            'class="visualization__simulation-outcome"',
+            'data-outcome-id="delivered"',
+        ):
+            self.assertIn(expected_attribute, html)
         self.assertLess(
             html.index("visualization__simulation-oracle"),
             html.index("visualization__controls"),

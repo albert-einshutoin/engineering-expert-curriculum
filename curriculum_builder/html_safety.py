@@ -192,7 +192,7 @@ _GENERATED_FRAGMENT_TAGS = ALLOWED_TAGS | _GENERATED_CONTROL_TAGS
 _GENERATED_ATTRIBUTES = MappingProxyType(
     {
         "button": frozenset({"data-action", "disabled", "type"}),
-        "code": frozenset({"data-edge-id", "data-node-id"}),
+        "code": frozenset({"data-edge-id", "data-node-id", "data-option-id", "data-parameter-id"}),
         "div": frozenset({"hidden"}),
         "dt": frozenset({"data-node-id"}),
         "fieldset": frozenset({"disabled"}),
@@ -201,6 +201,7 @@ _GENERATED_ATTRIBUTES = MappingProxyType(
             {
                 "data-default-interval-ms",
                 "data-interaction-mode",
+                "data-initial-state-id",
                 "data-simulation-kind",
                 "data-visualization-id",
             }
@@ -216,6 +217,7 @@ _GENERATED_ATTRIBUTES = MappingProxyType(
         "p": frozenset({"aria-live"}),
         "script": frozenset({"defer", "src"}),
         "select": frozenset({"data-action", "data-parameter-id", "disabled", "id"}),
+        "tr": frozenset({"data-from-state-id", "data-outcome-id", "data-state-id", "data-to-state-id", "data-transition-id"}),
     }
 )
 _BOOLEAN_ATTRIBUTES = frozenset({"checked", "defer", "disabled", "hidden", "selected"})
