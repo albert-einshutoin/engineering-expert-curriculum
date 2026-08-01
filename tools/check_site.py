@@ -26,7 +26,7 @@ from curriculum_builder.css_safety import validate_stylesheet_bytes  # noqa: E40
 from curriculum_builder.errors import CurriculumValidationError  # noqa: E402
 from curriculum_builder.javascript_safety import (  # noqa: E402
     MAX_JAVASCRIPT_BYTES,
-    validate_javascript_bytes,
+    validate_reviewed_visualization_runtime,
 )
 
 
@@ -867,9 +867,9 @@ def _validate_css(relative: PurePosixPath, source: bytes, issues: _Issues) -> No
 
 def _validate_javascript(relative: PurePosixPath, source: bytes, issues: _Issues) -> None:
     try:
-        validate_javascript_bytes(source)
+        validate_reviewed_visualization_runtime(source)
     except CurriculumValidationError:
-        issues.add(relative, "JavaScript violates the first-party runtime contract")
+        issues.add(relative, "JavaScript violates the reviewed runtime digest contract")
 
 
 def _validate_html(

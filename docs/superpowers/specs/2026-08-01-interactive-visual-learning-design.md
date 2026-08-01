@@ -765,7 +765,12 @@ fresh builds.
 - No build timestamp, random runtime ID, viewport-derived layout, or network
   result enters generated HTML.
 - `visualization.js` is copied byte-for-byte and included only on simulation
-  lessons.
+  lessons. Build and release checking independently require the exact bytes to
+  match the versioned reviewed SHA-256 constant; the bounded source lexer is
+  defense in depth rather than the primary trust boundary. Updating that
+  constant requires reviewing the runtime diff, running DOM/security tests,
+  independently calculating SHA-256, and committing the literal digest. Tests
+  neither derive nor rewrite the accepted digest.
 - A transition is O(V + E), does not perform forced layout in a loop, and leaves
   no active timer at completion.
 

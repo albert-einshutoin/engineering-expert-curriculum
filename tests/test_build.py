@@ -675,6 +675,16 @@ class BuildAcceptanceTests(unittest.TestCase):
 
 
 class BuildInputValidationTests(unittest.TestCase):
+    def test_build_rejects_unreviewed_runtime_source_bytes(self) -> None:
+        with _fixture() as (root, content, templates, static_root):
+            runtime = static_root / "visualization.js"
+            runtime.write_bytes(runtime.read_bytes() + b"\n")
+            with self.assertRaisesRegex(
+                CurriculumValidationError,
+                "reviewed SHA-256",
+            ):
+                build_site(content, templates, static_root, root / "site")
+
     def test_fixture_nests_overlap_root_below_owned_temporary_directory(
         self,
     ) -> None:

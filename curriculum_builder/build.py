@@ -42,7 +42,10 @@ from .css_safety import (
     MAX_STYLESHEET_BYTES,
     validate_stylesheet_bytes,
 )
-from .javascript_safety import MAX_JAVASCRIPT_BYTES, validate_javascript_bytes
+from .javascript_safety import (
+    MAX_JAVASCRIPT_BYTES,
+    validate_reviewed_visualization_runtime,
+)
 from .errors import CurriculumValidationError
 from .graph import topological_stages
 from .html_safety import SafeHtml, validate_fragment
@@ -3025,7 +3028,7 @@ def build_site(
             if path.suffix == ".css":
                 validate_stylesheet_bytes(snapshot.source)
             else:
-                validate_javascript_bytes(snapshot.source)
+                validate_reviewed_visualization_runtime(snapshot.source)
         before_templates = {
             name: _read_stable_regular_file(
                 templates,
