@@ -40,6 +40,23 @@ class JavaScriptSafetyTests(unittest.TestCase):
             with self.subTest(token=token), self.assertRaises(CurriculumValidationError):
                 validate_javascript_bytes(f"/* {token} */\nvar safe = 1;".encode())
 
+    def test_rejects_obfuscated_navigation_and_beacon_member_forms(self) -> None:
+        payloads = (
+            b"window [ 'open' ] ('x');",
+            b"window [ 'o' + 'pen' ] ('x');",
+            b"navigator [ \"sendBeacon\" ] ('x');",
+            b"navigator [ 'send' + 'Beacon' ] ('x');",
+            b"globalThis.navigation.navigate('x');",
+            b"var x = navigation['currentEntry'];",
+        )
+        for payload in payloads:
+            with self.subTest(payload=payload), self.assertRaises(CurriculumValidationError):
+                validate_javascript_bytes(payload)
+
+    def test_navigation_words_in_ordinary_text_do_not_create_false_positives(self) -> None:
+        source = b"var explanation = 'open navigation sendBeacon'; // ordinary prose\n"
+        self.assertEqual(validate_javascript_bytes(source), source.decode())
+
 
 if __name__ == "__main__":
     unittest.main()

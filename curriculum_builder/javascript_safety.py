@@ -31,10 +31,67 @@ _FORBIDDEN = tuple(
         r"[#@]\s*source(?:Mapping)?URL\s*=",
     )
 )
+_FORBIDDEN_NAVIGATION_CODE: Final = re.compile(
+    r"(?<![A-Za-z0-9_$])(?:navigation|sendBeacon)(?![A-Za-z0-9_$])"
+    r"|(?<![A-Za-z0-9_$])window\s*\.\s*open(?![A-Za-z0-9_$])"
+    r"|(?<![A-Za-z0-9_$])navigator\s*\.\s*sendBeacon(?![A-Za-z0-9_$])",
+    re.ASCII,
+)
+_FORBIDDEN_NAVIGATION_MEMBER: Final = re.compile(
+    r"(?<![A-Za-z0-9_$])(?:window|globalThis|navigator)\s*\[",
+    re.ASCII,
+)
 
 
 def _error(message: str) -> CurriculumValidationError:
     return CurriculumValidationError(message)
+
+
+def _navigation_views(text: str) -> tuple[str, str]:
+    """Return code-only and comment-free views for exact member checks.
+
+    Ordinary prose in comments and strings is ignored. Quoted member names are
+    retained only in the comment-free view so bracket notation remains visible
+    to the conservative closed-runtime policy.
+    """
+    code = list(text)
+    without_comments = list(text)
+    index = 0
+    state = "code"
+    quote = ""
+    while index < len(text):
+        char = text[index]
+        following = text[index + 1] if index + 1 < len(text) else ""
+        if state == "code":
+            if char in {"'", '"'}:
+                state, quote = "string", char
+                code[index] = " "
+            elif char == "/" and following == "*":
+                state = "block-comment"
+                code[index] = code[index + 1] = " "
+                without_comments[index] = without_comments[index + 1] = " "
+                index += 1
+            elif char == "/" and following == "/":
+                state = "line-comment"
+                code[index] = code[index + 1] = " "
+                without_comments[index] = without_comments[index + 1] = " "
+                index += 1
+        elif state == "string":
+            code[index] = " "
+            if char == quote:
+                state = "code"
+        elif state == "block-comment":
+            code[index] = without_comments[index] = " "
+            if char == "*" and following == "/":
+                code[index + 1] = without_comments[index + 1] = " "
+                state = "code"
+                index += 1
+        else:
+            code[index] = without_comments[index] = " "
+            if char in "\n\r":
+                state = "code"
+        index += 1
+    return "".join(code), "".join(without_comments)
 
 
 def validate_javascript_bytes(source: object) -> str:
@@ -70,6 +127,12 @@ def validate_javascript_bytes(source: object) -> str:
         raise _error("visualization.js contains forbidden escape syntax")
     if any(pattern.search(text) for pattern in _FORBIDDEN):
         raise _error("visualization.js contains a forbidden runtime capability")
+    code_view, member_view = _navigation_views(text)
+    if (
+        _FORBIDDEN_NAVIGATION_CODE.search(code_view)
+        or _FORBIDDEN_NAVIGATION_MEMBER.search(member_view)
+    ):
+        raise _error("visualization.js contains a forbidden navigation capability")
 
     # Reject unfinished strings/comments. Regex literals are intentionally not
     # used by the runtime, avoiding a lexer ambiguity at this security boundary.
