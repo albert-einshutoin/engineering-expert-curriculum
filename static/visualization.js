@@ -24,6 +24,8 @@
   function values(list) { return Array.prototype.slice.call(list); }
   function attribute(element, name) { return element.getAttribute(name); }
   function exactData(element, expected) {
+    // Reject unknown renderer data instead of letting malformed markup silently
+    // become an unconditional state or an ignored control.
     var names = element.getAttributeNames().filter(function (name) { return name.indexOf('data-') === 0; }).sort();
     return names.join(',') === expected.slice().sort().join(',');
   }
@@ -88,11 +90,7 @@
     this.listeners = [];
     this.timer = null;
     this.playing = false;
-    this.enhanced = false;
     this.mutated = false;
-    this.index = 0;
-    this.path = [];
-    this.pathIndex = 0;
     this.reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     this.mutable.forEach(function (element) { this.snapshot.set(element, capture(element, this)); }, this);
   }
@@ -169,7 +167,7 @@
       if (nodeIds.some(function (value) { return !this.nodeIds.has(value); }, this) ||
           edgeIds.some(function (value) { return !this.edgeIds.has(value); }, this)) { throw new Error('dangling active reference'); }
       var conditionItems = values(state.querySelectorAll('.visualization__state-condition'));
-      this.stateById.set(id, { element: state, conditions: conditionMap(state, '.visualization__state-condition'), nodes: new Set(nodeIds), edges: new Set(edgeIds), ordinal: ordinal });
+      this.stateById.set(id, { element: state, conditions: conditionMap(state, '.visualization__state-condition'), nodes: new Set(nodeIds), edges: new Set(edgeIds) });
       this.knownDataElements.add(state);
       nodeItems.concat(edgeItems, conditionItems).forEach(function (item) { this.knownDataElements.add(item); }, this);
     }, this);
@@ -220,10 +218,11 @@
       if (selected.length !== 1 || !options.has(selected[0].value)) { throw new Error('invalid parameter selection'); }
       result.set(parameter, selected[0].value);
     }, this);
-    this.currentSelection = result;
     return result;
   };
   Controller.prototype.validateTransitionDomain = function () {
+    // The schema caps the Cartesian selection domain at 64. Enumerating that
+    // finite domain makes ambiguity a pre-mutation validation error.
     var selections = [new Map()];
     this.parameters.forEach(function (options, parameter) {
       var expanded = [];
@@ -252,6 +251,8 @@
     }, this);
   };
   Controller.prototype.transition = function (eventName, announce) {
+    // Authored event identity is part of the edge key; ordinal state position
+    // is deliberately absent so a missing edge cannot become an implicit move.
     var selection = this.selection();
     var candidates = this.transitions.filter(function (transition) {
       return transition.from === this.currentId && transition.eventName === eventName && matches(transition.conditions, selection);
@@ -301,7 +302,6 @@
       }
       if (saved.text !== undefined) { element.textContent = saved.text; }
     });
-    this.enhanced = false;
   };
   Controller.prototype.fail = function () {
     var showFallback = this.mutated;
@@ -317,7 +317,6 @@
   Controller.prototype.applyState = function (stateId, announce) {
     var selected = this.stateById.get(stateId);
     if (!selected) { throw new Error('unknown state'); }
-    this.index = selected.ordinal;
     this.states.forEach(function (state) {
       var active = state === selected.element;
       state.classList.toggle('is-active', active);
@@ -386,7 +385,6 @@
     values(this.controls.querySelectorAll('button, select, input, fieldset')).forEach(function (control) { control.disabled = false; });
     this.controls.hidden = false;
     this.root.classList.add('is-enhanced');
-    this.enhanced = true;
   };
   Controller.prototype.dispose = function () { this.unbind(); this.restore(); };
 
