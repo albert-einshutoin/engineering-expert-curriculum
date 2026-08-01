@@ -120,6 +120,7 @@ class VisualizationRuntimeContractTests(unittest.TestCase):
                 "node",
                 str(harness),
                 str(ROOT / "static" / "visualization.js"),
+                str(ROOT / "content/lessons/core-05-networks-latency-failure/lesson.json"),
                 ],
                 cwd=ROOT,
                 check=False,
@@ -144,6 +145,7 @@ class VisualizationRuntimeContractTests(unittest.TestCase):
         self.assertEqual(report["timerLeaks"], 0)
         self.assertEqual(report["resetCycles"], 100)
         self.assertTrue(report["hybridReselection"])
+        self.assertEqual(report["core05RoundTrips"], 12)
         self.assertTrue(report["loadAbsence"])
 
     def test_hanging_runtime_harness_fails_with_a_bounded_assertion(self) -> None:

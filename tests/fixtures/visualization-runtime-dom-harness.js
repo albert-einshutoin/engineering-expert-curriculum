@@ -6,6 +6,9 @@ const vm = require('vm');
 const runtimePath = process.argv[2];
 if (!runtimePath) { throw new Error('runtime path is required'); }
 const runtime = fs.readFileSync(runtimePath, 'utf8');
+const core05Path = process.argv[3];
+if (!core05Path) { throw new Error('core05 lesson path is required'); }
+const core05Document = JSON.parse(fs.readFileSync(core05Path, 'utf8'));
 
 function assert(condition, message) {
   if (!condition) { throw new Error(message); }
@@ -291,6 +294,82 @@ function fixture(tracker, mode, suffix = '', controlKind = 'select') {
   return { root, controls, status, announcement, statesList, nodes, edges };
 }
 
+function authoredSimulationFixture(tracker, simulation) {
+  const rootId = 'viz-core05-authored';
+  const root = element(tracker, 'figure', {
+    id: rootId,
+    'data-visualization-id': rootId,
+    'data-simulation-kind': simulation.kind,
+    'data-interaction-mode': simulation.interactionMode,
+    'data-initial-state-id': simulation.initialStateId,
+    'data-default-interval-ms': String(simulation.defaultIntervalMs),
+  }, ['visualization']);
+  const nodeIds = [...new Set(simulation.states.flatMap((state) => state.activeNodeIds))];
+  const edgeIds = [...new Set(simulation.states.flatMap((state) => state.activeEdgeIds))];
+  const nodes = nodeIds.map((id) => element(tracker, 'dt', { 'data-node-id': id }, ['visualization__model-node'], id));
+  const edges = edgeIds.map((id) => element(tracker, 'li', { 'data-edge-id': id }, ['visualization__model-edge'], id));
+  const statesList = element(tracker, 'ol', {}, ['visualization__simulation-states']);
+  simulation.states.forEach((state, index) => {
+    const item = element(tracker, 'li', { 'data-state-id': state.id, 'data-step-index': String(index) }, [], `${state.label}: ${state.status}`);
+    Object.entries(state.when || {}).forEach(([parameterId, optionId]) => item.append(code(tracker, 'visualization__state-condition', parameterId, optionId)));
+    state.activeNodeIds.forEach((id) => item.append(element(tracker, 'code', { 'data-node-id': id }, ['visualization__state-node'], id)));
+    state.activeEdgeIds.forEach((id) => item.append(element(tracker, 'code', { 'data-edge-id': id }, ['visualization__state-edge'], id)));
+    statesList.append(item);
+  });
+  const transitionsTable = element(tracker, 'tbody');
+  simulation.transitions.forEach((transition) => {
+    const item = element(tracker, 'tr', {
+      'data-transition-id': transition.id,
+      'data-transition-event': transition.event,
+      'data-from-state-id': transition.from,
+      'data-to-state-id': transition.to,
+    }, ['visualization__simulation-transition']);
+    Object.entries(transition.when || {}).forEach(([parameterId, optionId]) => item.append(code(tracker, 'visualization__transition-condition', parameterId, optionId)));
+    transitionsTable.append(item);
+  });
+  const outcomesTable = element(tracker, 'tbody');
+  simulation.outcomes.forEach((outcome) => outcomesTable.append(element(tracker, 'tr', { 'data-outcome-id': outcome.id, 'data-state-id': outcome.stateId }, ['visualization__simulation-outcome'], outcome.label)));
+  const status = element(tracker, 'p', {}, ['visualization__current-status'], 'static status');
+  const announcement = element(tracker, 'p', { 'aria-live': 'polite', 'aria-atomic': 'true' }, ['visualization__announcement']);
+  const controls = element(tracker, 'div', { hidden: '' }, ['visualization__controls']);
+  simulation.parameters.forEach((parameterItem, parameterIndex) => {
+    if (parameterItem.control === 'select') {
+      const select = element(tracker, 'select', { id: `${rootId}-p-${parameterIndex}`, 'data-parameter-id': parameterItem.id, disabled: '' });
+      select.value = parameterItem.defaultOptionId;
+      parameterItem.options.forEach((option) => {
+        const attrs = { value: option.id };
+        if (option.id === parameterItem.defaultOptionId) { attrs.selected = ''; }
+        const item = element(tracker, 'option', attrs, [], option.label);
+        item.value = option.id;
+        select.append(item);
+      });
+      controls.append(select);
+    } else {
+      parameterItem.options.forEach((option, optionIndex) => {
+        const attrs = { id: `${rootId}-p-${parameterIndex}-o-${optionIndex}`, 'data-parameter-id': parameterItem.id, disabled: '', type: 'radio', name: `${rootId}-p-${parameterIndex}`, value: option.id };
+        if (option.id === parameterItem.defaultOptionId) { attrs.checked = ''; }
+        const item = element(tracker, 'input', attrs);
+        item.value = option.id;
+        item.checked = option.id === parameterItem.defaultOptionId;
+        controls.append(item);
+      });
+    }
+  });
+  ACTIONS.hybrid.forEach((action) => controls.append(element(tracker, 'button', { id: `${rootId}-${action}`, 'data-action': action, disabled: '', type: 'button' }, [], action)));
+  const speed = element(tracker, 'select', { id: `${rootId}-speed`, 'data-action': 'speed', disabled: '' });
+  speed.value = '1';
+  for (const value of ['0.5', '1', '2']) {
+    const attrs = { value };
+    if (value === '1') { attrs.selected = ''; }
+    const item = element(tracker, 'option', attrs, [], value);
+    item.value = value;
+    speed.append(item);
+  }
+  controls.append(speed);
+  root.append(...nodes, ...edges, statesList, transitionsTable, outcomesTable, status, announcement, controls);
+  return { root, controls, status, announcement, statesList, nodes, edges };
+}
+
 function environment(tracker, fixtures, reduced = false) {
   const window = new EventTarget(tracker);
   window.setTimeout = (callback) => tracker.setTimeout(callback);
@@ -318,6 +397,12 @@ function setParameter(fixtureValue, selectedValue) {
   const radios = fixtureValue.controls.querySelectorAll('input[data-parameter-id]');
   radios.forEach((radio) => { radio.checked = radio.value === selectedValue; });
   return radios.find((radio) => radio.checked);
+}
+function setAuthoredParameter(fixtureValue, parameterId, selectedValue) {
+  const select = fixtureValue.controls.querySelector(`select[data-parameter-id="${parameterId}"]`);
+  if (select) { select.value = selectedValue; return; }
+  const radios = fixtureValue.controls.querySelectorAll(`input[data-parameter-id="${parameterId}"]`);
+  radios.forEach((radio) => { radio.checked = radio.value === selectedValue; });
 }
 function controlListenerCount(fixtureValue) { return fixtureValue.controls.listenerCount(); }
 function snapshotObject(root, allowFallback = false) {
@@ -685,6 +770,44 @@ function runResetCycles() {
   }
 }
 
+function runCore05AuthoredRoundTrips() {
+  const simulation = core05Document.visualizations.find((visual) => visual.id === 'request-path-static').simulation;
+  const paths = [
+    ['ok', 'n', ['dns-lookup', 'h-tcp', 'tls-ready', 'h-req', 'h-ok']],
+    ['ok', 't', ['dns-lookup', 'h-tcp', 'tls-ready', 'h-req', 'h-retry-blocked']],
+    ['dns', 'n', ['dns-lookup', 'd-fail', 'd-retry']],
+    ['dns', 't', ['dns-lookup', 'd-fail', 'd-retry-blocked']],
+    ['tcp', 'n', ['dns-lookup', 't-fail', 't-retry']],
+    ['tcp', 't', ['dns-lookup', 't-fail', 't-retry-blocked']],
+    ['tls', 'n', ['dns-lookup', 'l-tcp', 'l-fail', 'l-retry-blocked']],
+    ['tls', 't', ['dns-lookup', 'l-tcp', 'l-fail', 'l-retry-blocked-tight']],
+    ['req', 'n', ['dns-lookup', 'q-tcp', 'q-tls', 'q-fail', 'q-retry']],
+    ['req', 't', ['dns-lookup', 'q-tcp', 'q-tls', 'q-fail', 'q-retry-blocked']],
+    ['resp', 'n', ['dns-lookup', 's-tcp', 's-tls', 's-req', 'deadline-exceeded', 's-inquiry', 's-retry']],
+    ['resp', 't', ['dns-lookup', 's-tcp', 's-tls', 's-req', 'deadline-exceeded', 's-inquiry', 's-retry-blocked']],
+  ];
+  paths.forEach(([failurePoint, latencyProfile, path]) => {
+    const tracker = new Tracker();
+    const value = authoredSimulationFixture(tracker, simulation);
+    const window = environment(tracker, [value]);
+    setAuthoredParameter(value, 'fault', failurePoint);
+    setAuthoredParameter(value, 'budget', latencyProfile);
+    click(value, 'apply');
+    assert(activeState(value) === path[0], `core05 apply changed initial ${failurePoint}/${latencyProfile}`);
+    for (let index = 1; index < path.length; index += 1) {
+      click(value, 'next');
+      assert(activeState(value) === path[index], `core05 next no-op ${failurePoint}/${latencyProfile}/${index}`);
+      click(value, 'previous');
+      assert(activeState(value) === path[index - 1], `core05 previous no-op ${failurePoint}/${latencyProfile}/${index}`);
+      click(value, 'next');
+      assert(activeState(value) === path[index], `core05 round-trip next failed ${failurePoint}/${latencyProfile}/${index}`);
+    }
+    click(value, 'reset');
+    assert(activeState(value) === 'dns-lookup', `core05 reset failed ${failurePoint}/${latencyProfile}`);
+    window.dispatchEvent({ type: 'pagehide', target: window });
+  });
+}
+
 runLoadAbsence();
 runModes();
 runExactTeardown();
@@ -696,6 +819,7 @@ runExactEventResolution();
 runValidationMutations();
 const faultMatrix = runFaultMatrix();
 runResetCycles();
+runCore05AuthoredRoundTrips();
 process.stdout.write(JSON.stringify({
   modes: ['scenario', 'stepper', 'playback', 'hybrid', 'explorer'],
   faultMatrix,
@@ -703,5 +827,6 @@ process.stdout.write(JSON.stringify({
   timerLeaks: 0,
   resetCycles: 100,
   hybridReselection: true,
+  core05RoundTrips: 12,
   loadAbsence: true,
 }));
