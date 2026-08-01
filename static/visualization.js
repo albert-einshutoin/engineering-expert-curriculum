@@ -91,7 +91,8 @@
     this.timer = null;
     this.playing = false;
     this.mutated = false;
-    this.reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
+    this.reduced = motionPreference.matches;
     this.mutable.forEach(function (element) { this.snapshot.set(element, capture(element, this)); }, this);
   }
   Controller.prototype.validate = function () {
@@ -372,14 +373,14 @@
     if (!this.hasTransition('timer') && this.playing) { this.stop(); }
   };
   Controller.prototype.schedule = function () {
-    var self = this;
+    var controller = this;
     if (!this.playing || this.reduced || this.timer !== null || !this.hasTransition('timer')) { return; }
     this.timer = window.setTimeout(function () {
-      self.timer = null;
+      controller.timer = null;
       try {
-        self.transition('timer', false);
-        self.schedule();
-      } catch (error) { self.fail(); }
+        controller.transition('timer', false);
+        controller.schedule();
+      } catch (error) { controller.fail(); }
     }, this.interval * (this.speed ? { '0.5': 2, '1': 1, '2': 0.5 }[this.speed.value] : 1));
   };
   Controller.prototype.action = function (name) {
@@ -409,19 +410,19 @@
     }
   };
   Controller.prototype.bind = function () {
-    var self = this;
+    var controller = this;
     function add(target, type, handler) {
       target.addEventListener(type, handler);
-      self.listeners.push([target, type, handler]);
+      controller.listeners.push([target, type, handler]);
     }
     add(this.controls, 'click', function (event) {
       var target = event.target.closest('button');
-      if (!target || !self.controls.contains(target)) { return; }
-      try { self.action(attribute(target, 'data-action')); } catch (error) { self.fail(); }
+      if (!target || !controller.controls.contains(target)) { return; }
+      try { controller.action(attribute(target, 'data-action')); } catch (error) { controller.fail(); }
     });
     add(this.controls, 'change', function (event) {
-      if (event.target === self.speed && self.playing) {
-        try { self.stop(); self.setPlaying(true); self.schedule(); } catch (error) { self.fail(); }
+      if (event.target === controller.speed && controller.playing) {
+        try { controller.stop(); controller.setPlaying(true); controller.schedule(); } catch (error) { controller.fail(); }
       }
     });
   };

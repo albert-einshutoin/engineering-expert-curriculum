@@ -88,6 +88,14 @@ class JavaScriptSafetyTests(unittest.TestCase):
             b"window.document;",
             b"globalThis.setTimeout(callback, 250);",
             b"navigator.language;",
+            b"var authority = self; authority['open']('x');",
+            b"var authority = top; authority['open']('x');",
+            b"var authority = parent; authority['open']('x');",
+            b"var authority = document.defaultView; authority['open']('x');",
+            b"window.setTimeout['con' + 'structor']('return 1')();",
+            b"window.matchMedia.constructor('return 1')();",
+            b"var timer = window.setTimeout; timer(callback, 250);",
+            b"window.matchMedia('print').constructor('return 1')();",
         )
         for source in forbidden:
             with self.subTest(source=source):

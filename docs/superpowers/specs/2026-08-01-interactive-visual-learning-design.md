@@ -564,10 +564,13 @@ The runtime must not use `fetch`, XMLHttpRequest, WebSocket, EventSource,
 dynamic `import()`, Worker, Service Worker, storage APIs, query/hash state,
 clipboard, navigation, `eval`, `Function`, `innerHTML`, `outerHTML`, DOMParser,
 `insertAdjacentHTML`, runtime style injection, or remote resources.
-Browser authority is also closed: `globalThis`, `navigator`, and bare `window`
-values are forbidden. The handwritten first-party runtime may use only direct
+Browser authority is also closed: `globalThis`, `navigator`, `self`, `top`,
+`parent`, `document.defaultView`, and bare `window` values are forbidden. The
+handwritten first-party runtime may use only complete direct calls to
 `window.matchMedia`, `window.setTimeout`, `window.clearTimeout`, and
-`window.addEventListener` members measured from the reviewed artifact.
+`window.addEventListener` measured from the reviewed artifact. Extracting those
+members or continuing the rooted expression through another property,
+computed member, or constructor is invalid.
 
 There is no continuous `requestAnimationFrame`, polling loop, document-wide
 MutationObserver, or browser graph-layout algorithm. Runtime complexity for one

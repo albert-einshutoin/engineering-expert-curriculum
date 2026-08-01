@@ -42,11 +42,17 @@ _FORBIDDEN_NAVIGATION_MEMBER: Final = re.compile(
     re.ASCII,
 )
 _BROWSER_AUTHORITY: Final = re.compile(
-    r"(?<![A-Za-z0-9_$])(window|globalThis|navigator)(?![A-Za-z0-9_$])",
+    r"(?<![A-Za-z0-9_$])"
+    r"(window|globalThis|navigator|self|top|parent)"
+    r"(?![A-Za-z0-9_$])",
     re.ASCII,
 )
-_DIRECT_WINDOW_MEMBER: Final = re.compile(
-    r"\s*\.\s*([A-Za-z_$][A-Za-z0-9_$]*)(?![A-Za-z0-9_$])",
+_DOCUMENT_DEFAULT_VIEW: Final = re.compile(
+    r"(?<![A-Za-z0-9_$])document\s*\.\s*defaultView(?![A-Za-z0-9_$])",
+    re.ASCII,
+)
+_DIRECT_WINDOW_CALL: Final = re.compile(
+    r"\s*\.\s*([A-Za-z_$][A-Za-z0-9_$]*)(?![A-Za-z0-9_$])\s*\(",
     re.ASCII,
 )
 _ALLOWED_WINDOW_MEMBERS: Final = frozenset(
@@ -105,18 +111,42 @@ def _navigation_views(text: str) -> tuple[str, str]:
     return "".join(code), "".join(without_comments)
 
 
+def _direct_call_end(code: str, opening: int) -> int | None:
+    depth = 1
+    for index in range(opening + 1, len(code)):
+        if code[index] == "(":
+            depth += 1
+        elif code[index] == ")":
+            depth -= 1
+            if depth == 0:
+                return index
+    return None
+
+
 def _has_forbidden_browser_authority(code: str) -> bool:
-    """Accept only the runtime's measured direct ``window`` capabilities.
+    """Accept only measured, complete direct ``window`` call expressions.
 
     This is intentionally an allowlist over the closed first-party artifact,
     not open-ended regex data-flow. Rejecting every bare authority value also
-    closes aliases hidden in containers, expressions, and function returns.
+    closes aliases hidden in containers, expressions, and function returns;
+    requiring the call terminator closes extraction and constructor chains.
     """
+    if _DOCUMENT_DEFAULT_VIEW.search(code):
+        return True
     for authority in _BROWSER_AUTHORITY.finditer(code):
         if authority.group(1) != "window":
             return True
-        member = _DIRECT_WINDOW_MEMBER.match(code, authority.end())
-        if member is None or member.group(1) not in _ALLOWED_WINDOW_MEMBERS:
+        call = _DIRECT_WINDOW_CALL.match(code, authority.end())
+        if call is None or call.group(1) not in _ALLOWED_WINDOW_MEMBERS:
+            return True
+        opening = call.end() - 1
+        closing = _direct_call_end(code, opening)
+        if closing is None:
+            return True
+        following = closing + 1
+        while following < len(code) and code[following].isspace():
+            following += 1
+        if following >= len(code) or code[following] != ";":
             return True
     return False
 

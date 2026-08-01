@@ -711,9 +711,11 @@ runtime layout, or arbitrary selector construction.
 
 Keep browser authority use allowlisted to the measured direct first-party
 members: `window.matchMedia`, `window.setTimeout`, `window.clearTimeout`, and
-`window.addEventListener`. Reject `globalThis`, `navigator`, bare `window`
-values, computed authority members, and aliases hidden in expressions or
-containers instead of extending regex data-flow inference.
+`window.addEventListener`. Accept them only as complete direct calls. Reject
+`globalThis`, `navigator`, `self`, `top`, `parent`, `document.defaultView`, bare
+`window` values, member extraction, computed or subsequent authority members,
+and aliases hidden in expressions or containers instead of extending regex
+data-flow inference.
 
 Add non-color visual rules for the runtime's fixed enhanced, active, complete,
 and error classes, including forced-colors, reduced-motion, focus, and print
