@@ -288,6 +288,9 @@
       selections = expanded;
     });
     if (!selections.length || selections.length > 64) { throw new Error('invalid parameter domain'); }
+    if ((this.mode === 'hybrid' || this.mode === 'explorer') && this.transitions.some(function (transition) {
+      return transition.eventName === 'parameter-change' && transition.from !== this.initialId;
+    }, this)) { throw new Error('parameter-change must start from initial state'); }
     selections.forEach(function (selection) {
       var applicable = new Set();
       this.stateById.forEach(function (state, stateId) {
@@ -341,7 +344,7 @@
   ControllerMethods.transition = function (eventName, announce, selectedParameters) {
     // Authored event identity is part of the edge key; ordinal state position
     // is deliberately absent so a missing edge cannot become an implicit move.
-    var selection = selectedParameters || this.selection();
+    var selection = selectedParameters || this.appliedSelection;
     var candidates = this.transitions.filter(function (transition) {
       return transition.from === this.currentId && transition.eventName === eventName && matches(transition.conditions, selection);
     }, this);
@@ -364,7 +367,7 @@
     return states[0];
   };
   ControllerMethods.hasTransition = function (eventName) {
-    var selection = this.selection();
+    var selection = this.appliedSelection;
     return this.transitions.some(function (transition) {
       return transition.from === this.currentId && transition.eventName === eventName && matches(transition.conditions, selection);
     }, this);
@@ -458,6 +461,9 @@
     } else if (name === 'apply') {
       this.stop();
       var selected = this.selection();
+      // Controls are only a draft until Apply commits them. Commit before
+      // painting so completion and timer decisions observe the same branch.
+      this.appliedSelection = new Map(selected);
       if (this.mode === 'scenario') {
         this.currentId = this.scenarioState();
         this.applyState(this.currentId, true);
@@ -468,12 +474,12 @@
         this.currentId = this.initialId;
         if (!this.transition('parameter-change', true, selected)) { throw new Error('missing parameter-change transition'); }
       }
-      this.appliedSelection = new Map(selected);
     } else if (name === 'reset') {
       this.stop();
       if (this.mode === 'scenario') {
         this.restoreParameters();
         this.currentId = this.initialId;
+        this.appliedSelection = this.selection();
         this.applyState(this.currentId, true);
       } else {
         // An edited control is not an applied branch. Validate recovery using

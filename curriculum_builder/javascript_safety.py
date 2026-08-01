@@ -17,7 +17,7 @@ MAX_JAVASCRIPT_BYTES: Final = 40 * 1024
 # run the DOM/security suites, calculate SHA-256 independently, then update this
 # constant in its own reviewable commit. Tests must never derive or rewrite it.
 VISUALIZATION_RUNTIME_SHA256_V1: Final = (
-    "cef22c50ee82b95dbb7a1b187b37acd20b210161d2e0976917c2cebebbfaaf71"
+    "f9e7bba65c9be52ed57817b42273dff734e1df869e6a611264b0992cf27e6c64"
 )
 _ALLOWED_CONTROLS: Final = frozenset("\t\n\r")
 _FORBIDDEN = tuple(

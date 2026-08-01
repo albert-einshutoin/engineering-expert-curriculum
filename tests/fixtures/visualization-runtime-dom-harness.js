@@ -9,6 +9,9 @@ const runtime = fs.readFileSync(runtimePath, 'utf8');
 const core05Path = process.argv[3];
 if (!core05Path) { throw new Error('core05 lesson path is required'); }
 const core05Document = JSON.parse(fs.readFileSync(core05Path, 'utf8'));
+const core03Path = process.argv[4];
+if (!core03Path) { throw new Error('core03 lesson path is required'); }
+const core03Document = JSON.parse(fs.readFileSync(core03Path, 'utf8'));
 
 function assert(condition, message) {
   if (!condition) { throw new Error(message); }
@@ -476,11 +479,22 @@ function runModes() {
   assert(tracker.timers.size === 0, 'pause leaked timer');
   setParameter(hybrid, 'b');
   click(hybrid, 'apply');
-  click(hybrid, 'next');
-  assert(activeState(hybrid) === 'state-b-done', 'hybrid did not select path');
   setParameter(hybrid, 'a');
+  click(hybrid, 'next');
+  assert(activeState(hybrid) === 'state-b-done', 'hybrid unapplied edit changed Next branch');
+  assert(hybrid.status.textContent.startsWith('state-b-done'), 'hybrid unapplied edit desynchronized status');
+  assert(hybrid.announcement.textContent === hybrid.status.textContent, 'hybrid unapplied edit desynchronized aria announcement');
+  click(hybrid, 'previous');
+  assert(activeState(hybrid) === 'state-b', 'hybrid unapplied edit changed Previous branch');
+  click(hybrid, 'play');
+  assert(tracker.timers.size === 1, 'hybrid unapplied edit suppressed Play timer');
+  tracker.flushOne();
+  assert(activeState(hybrid) === 'state-b-done', 'hybrid unapplied edit changed timer branch');
+  click(hybrid, 'reset');
+  assert(activeState(hybrid) === 'state-0', 'hybrid reset did not recover applied branch');
+  assert(hybrid.controls.querySelector('[data-parameter-id]').value === 'a', 'hybrid reset did not restore authored default');
   click(hybrid, 'apply');
-  assert(activeState(hybrid) === 'state-a', 'hybrid terminal reselection did not restart transactionally');
+  assert(activeState(hybrid) === 'state-a', 'hybrid Apply did not commit live selection');
   click(hybrid, 'next');
   assert(activeState(hybrid) === 'state-a-done', 'hybrid reselection next used stale branch');
   setParameter(hybrid, 'b');
@@ -640,6 +654,11 @@ function runValidationMutations() {
       const transition = value.root.querySelectorAll('.visualization__simulation-transition').find((item) => item.getAttribute('data-transition-id') === 'b-done-reset');
       transition.parent.children = transition.parent.children.filter((item) => item !== transition);
     }],
+    ['hybrid', (value, tracker) => {
+      const transition = element(tracker, 'tr', { 'data-transition-id': 'late-parameter-change', 'data-transition-event': 'parameter-change', 'data-from-state-id': 'state-a', 'data-to-state-id': 'state-a' }, ['visualization__simulation-transition']);
+      transition.append(code(tracker, 'visualization__transition-condition', 'choice', 'a'));
+      value.root.children.filter((item) => item.tag === 'tbody')[0].append(transition);
+    }],
     ['hybrid', (value) => value.root.querySelector('.visualization__transition-condition').attributes.delete('data-parameter-id')],
     ['scenario', (value) => value.root.querySelector('.visualization__state-condition').attributes.set('data-unexpected', 'x')],
     ['scenario', (value) => value.controls.querySelector('option[selected]').attributes.delete('selected')],
@@ -794,9 +813,19 @@ function runCore05AuthoredRoundTrips() {
     setAuthoredParameter(value, 'budget', latencyProfile);
     click(value, 'apply');
     assert(activeState(value) === path[0], `core05 apply changed initial ${failurePoint}/${latencyProfile}`);
+    setAuthoredParameter(value, 'fault', failurePoint === 'ok' ? 'dns' : 'ok');
+    setAuthoredParameter(value, 'budget', latencyProfile === 'n' ? 't' : 'n');
+    click(value, 'play');
+    assert(tracker.timers.size === 1, `core05 unapplied edit suppressed timer ${failurePoint}/${latencyProfile}`);
+    tracker.flushOne();
+    assert(activeState(value) === path[1], `core05 unapplied edit changed timer branch ${failurePoint}/${latencyProfile}`);
+    assert(value.status.textContent === value.statesList.children.find((state) => state.getAttribute('data-state-id') === path[1]).textContent.trim(), `core05 timer desynchronized status ${failurePoint}/${latencyProfile}`);
+    click(value, 'previous');
+    assert(activeState(value) === path[0], `core05 unapplied edit changed timer Previous ${failurePoint}/${latencyProfile}`);
     for (let index = 1; index < path.length; index += 1) {
       click(value, 'next');
       assert(activeState(value) === path[index], `core05 next no-op ${failurePoint}/${latencyProfile}/${index}`);
+      assert(value.status.textContent === value.announcement.textContent, `core05 Next desynchronized aria ${failurePoint}/${latencyProfile}/${index}`);
       click(value, 'previous');
       assert(activeState(value) === path[index - 1], `core05 previous no-op ${failurePoint}/${latencyProfile}/${index}`);
       click(value, 'next');
@@ -804,7 +833,47 @@ function runCore05AuthoredRoundTrips() {
     }
     click(value, 'reset');
     assert(activeState(value) === 'dns-lookup', `core05 reset failed ${failurePoint}/${latencyProfile}`);
+    assert(value.controls.querySelector('select[data-parameter-id="fault"]').value === 'ok', `core05 reset did not restore fault default ${failurePoint}/${latencyProfile}`);
+    assert(value.controls.querySelectorAll('input[data-parameter-id="budget"]').find((radio) => radio.checked).value === 'n', `core05 reset did not restore budget default ${failurePoint}/${latencyProfile}`);
     window.dispatchEvent({ type: 'pagehide', target: window });
+    assert(controlListenerCount(value) === 0, `core05 pagehide leaked listeners ${failurePoint}/${latencyProfile}`);
+    assert(tracker.timers.size === 0, `core05 pagehide leaked timers ${failurePoint}/${latencyProfile}`);
+  });
+}
+
+function runCore03UnappliedNavigation() {
+  const simulation = core03Document.visualizations.find((visual) => visual.id === 'memory-access-static').simulation;
+  const paths = [
+    ['small', 'sequential', 'l1-hit'],
+    ['small', 'random', 'small-random-return'],
+    ['large', 'sequential', 'large-sequential-return'],
+    ['large', 'random', 'memory-return'],
+  ];
+  paths.forEach(([workingSet, accessOrder, terminal]) => {
+    const tracker = new Tracker();
+    const value = authoredSimulationFixture(tracker, simulation);
+    const window = environment(tracker, [value]);
+    setAuthoredParameter(value, 'working-set', workingSet);
+    setAuthoredParameter(value, 'access-order', accessOrder);
+    click(value, 'apply');
+    setAuthoredParameter(value, 'working-set', workingSet === 'small' ? 'large' : 'small');
+    setAuthoredParameter(value, 'access-order', accessOrder === 'sequential' ? 'random' : 'sequential');
+    click(value, 'next');
+    assert(activeState(value) === terminal, `core03 unapplied edit changed Next ${workingSet}/${accessOrder}`);
+    click(value, 'previous');
+    assert(activeState(value) === 'tlb-lookup', `core03 unapplied edit changed Previous ${workingSet}/${accessOrder}`);
+    click(value, 'play');
+    assert(tracker.timers.size === 1, `core03 unapplied edit suppressed timer ${workingSet}/${accessOrder}`);
+    tracker.flushOne();
+    assert(activeState(value) === terminal, `core03 unapplied edit changed timer ${workingSet}/${accessOrder}`);
+    assert(value.status.textContent === value.statesList.children.find((state) => state.getAttribute('data-state-id') === terminal).textContent.trim(), `core03 timer desynchronized status ${workingSet}/${accessOrder}`);
+    click(value, 'reset');
+    assert(activeState(value) === 'tlb-lookup', `core03 reset failed ${workingSet}/${accessOrder}`);
+    assert(value.controls.querySelector('select[data-parameter-id="working-set"]').value === 'small', `core03 reset did not restore working-set default ${workingSet}/${accessOrder}`);
+    assert(value.controls.querySelectorAll('input[data-parameter-id="access-order"]').find((radio) => radio.checked).value === 'sequential', `core03 reset did not restore access-order default ${workingSet}/${accessOrder}`);
+    window.dispatchEvent({ type: 'pagehide', target: window });
+    assert(controlListenerCount(value) === 0, `core03 pagehide leaked listeners ${workingSet}/${accessOrder}`);
+    assert(tracker.timers.size === 0, `core03 pagehide leaked timers ${workingSet}/${accessOrder}`);
   });
 }
 
@@ -820,6 +889,7 @@ runValidationMutations();
 const faultMatrix = runFaultMatrix();
 runResetCycles();
 runCore05AuthoredRoundTrips();
+runCore03UnappliedNavigation();
 process.stdout.write(JSON.stringify({
   modes: ['scenario', 'stepper', 'playback', 'hybrid', 'explorer'],
   faultMatrix,
@@ -828,5 +898,6 @@ process.stdout.write(JSON.stringify({
   resetCycles: 100,
   hybridReselection: true,
   core05RoundTrips: 12,
+  core03UnappliedPaths: 4,
   loadAbsence: true,
 }));
