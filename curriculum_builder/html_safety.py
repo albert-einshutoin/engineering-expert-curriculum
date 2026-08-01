@@ -186,26 +186,39 @@ _GENERATED_CONTROL_TAGS = frozenset(
     {"button", "fieldset", "input", "label", "legend", "option", "select"}
 )
 _GENERATED_DOCUMENT_TAGS = frozenset(
-    {"body", "footer", "head", "html", "link", "main", "meta", "nav", "title"}
+    {"body", "footer", "head", "html", "link", "main", "meta", "nav", "script", "title"}
 )
 _GENERATED_FRAGMENT_TAGS = ALLOWED_TAGS | _GENERATED_CONTROL_TAGS
 _GENERATED_ATTRIBUTES = MappingProxyType(
     {
-        "button": frozenset({"disabled", "type"}),
+        "button": frozenset({"data-action", "disabled", "type"}),
+        "code": frozenset({"data-edge-id", "data-node-id"}),
         "div": frozenset({"hidden"}),
+        "dt": frozenset({"data-node-id"}),
         "fieldset": frozenset({"disabled"}),
         "html": frozenset({"lang"}),
-        "input": frozenset({"checked", "disabled", "name", "type", "value"}),
+        "figure": frozenset(
+            {
+                "data-default-interval-ms",
+                "data-interaction-mode",
+                "data-simulation-kind",
+                "data-visualization-id",
+            }
+        ),
+        "input": frozenset({"checked", "data-parameter-id", "disabled", "name", "type", "value"}),
         "label": frozenset({"for"}),
+        "li": frozenset({"data-edge-id", "data-node-id", "data-state-id", "data-step-index"}),
         "link": frozenset({"href", "rel"}),
         "main": frozenset({"id"}),
         "meta": frozenset({"charset", "content", "http-equiv", "name"}),
         "nav": frozenset({"aria-label"}),
         "option": frozenset({"selected", "value"}),
-        "select": frozenset({"disabled", "id"}),
+        "p": frozenset({"aria-live"}),
+        "script": frozenset({"defer", "src"}),
+        "select": frozenset({"data-action", "data-parameter-id", "disabled", "id"}),
     }
 )
-_BOOLEAN_ATTRIBUTES = frozenset({"checked", "disabled", "hidden", "selected"})
+_BOOLEAN_ATTRIBUTES = frozenset({"checked", "defer", "disabled", "hidden", "selected"})
 _GENERATED_VOID_TAGS = frozenset({"input", "link", "meta"})
 
 
@@ -718,11 +731,28 @@ class _FragmentParser(HTMLParser):
         elif name == "http-equiv":
             if value.casefold() != "content-security-policy":
                 raise CurriculumValidationError("invalid http-equiv attribute")
+        elif name == "aria-live":
+            if value != "polite":
+                raise CurriculumValidationError("invalid aria-live attribute")
         elif name in {"aria-label", "content"}:
             if len(value) > MAX_ATTRIBUTE_VALUE_CHARS:
                 raise CurriculumValidationError(
                     "HTML attribute value exceeds maximum character count"
                 )
+        elif name == "src":
+            _validate_url(value)
+        elif name.startswith("data-"):
+            if name == "data-action":
+                if value not in {"apply", "play", "pause", "previous", "next", "reset", "speed"}:
+                    raise CurriculumValidationError("invalid generated action")
+            elif name == "data-step-index" or name == "data-default-interval-ms":
+                if not value.isascii() or not value.isdecimal() or not 0 <= int(value) <= 10_000:
+                    raise CurriculumValidationError("invalid generated numeric data attribute")
+            elif name == "data-interaction-mode":
+                if value not in {"scenario", "stepper", "playback", "hybrid", "explorer"}:
+                    raise CurriculumValidationError("invalid generated interaction mode")
+            elif _ID_PATTERN.fullmatch(value) is None:
+                raise CurriculumValidationError("invalid generated identifier data attribute")
 
 
 def _validate_url(value: str) -> None:

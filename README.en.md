@@ -19,7 +19,9 @@ The learning loop is intentionally cumulative. Learners study a mechanism and it
 
 ## Static delivery contract
 
-The published runtime uses HTML and CSS with no JavaScript. After building, open `site/index.html` directly over `file://` or publish the same output on GitHub Pages. There are no accounts, analytics, server APIs, databases, or stored learner data.
+v0.1.0 is the immutable HTML/CSS-only release. In v0.2.0, every lesson remains complete and understandable with HTML and CSS and no JavaScript; approved simulation lessons may progressively load the single repository-owned `static/visualization.js` asset. After building, open `site/index.html` directly over `file://` or publish the same output on GitHub Pages. Disabled, blocked, or failed JavaScript never removes lesson information.
+
+The dependency-free runtime uses no network, storage, analytics, or URL state. There are no accounts, server APIs, databases, or collected, retained, or transmitted learner data.
 
 The information structure remains meaningful without CSS and does not rely on color or connector lines alone. Browser Find provides catalog search, keeping the first release portable and inspectable.
 
@@ -51,7 +53,7 @@ Review is recorded independently for technical accuracy, learning design and evi
 
 ## Repository map
 
-Canonical content lives under `content/`; the prerequisite graph is `content/roadmap.json`; competency mappings are in `content/competencies.json`; the standard-library builder is under `curriculum_builder/`; templates and CSS are under `templates/` and `static/`; and executable contracts live in `tests/`. Generated `site/` output is intentionally not version controlled.
+Canonical content lives under `content/`; the prerequisite graph is `content/roadmap.json`; competency mappings are in `content/competencies.json`; the standard-library builder is under `curriculum_builder/`; templates, CSS, and the optional first-party progressive runtime are under `templates/` and `static/`; and executable contracts live in `tests/`. Generated `site/` output is intentionally not version controlled.
 
 ## Contributing and reporting
 

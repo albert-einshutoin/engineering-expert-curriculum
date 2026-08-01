@@ -238,6 +238,9 @@ def _fixture(
         (static_root / "visualizations.css").write_bytes(
             (REPOSITORY_ROOT / "static" / "visualizations.css").read_bytes()
         )
+        (static_root / "visualization.js").write_bytes(
+            (REPOSITORY_ROOT / "static" / "visualization.js").read_bytes()
+        )
         (content / "catalog.json").write_bytes(
             serialize_catalog_document(
                 catalog_items or [_catalog_item()],
@@ -321,6 +324,7 @@ def _assert_static_site(
         Path("index.html"),
         Path("styles.css"),
         Path("static/visualizations.css"),
+        Path("static/visualization.js"),
         Path("catalog/index.html"),
         Path("capstones/index.html"),
         Path("competencies/index.html"),
@@ -346,10 +350,14 @@ def _assert_static_site(
         if path.is_file()
     }
     test.assertEqual(actual, expected)
-    test.assertEqual(list(output.rglob("*.js")), [])
+    test.assertEqual(list(output.rglob("*.js")), [output / "static/visualization.js"])
     test.assertEqual(
         (output / "static/visualizations.css").read_bytes(),
         (REPOSITORY_ROOT / "static/visualizations.css").read_bytes(),
+    )
+    test.assertEqual(
+        (output / "static/visualization.js").read_bytes(),
+        (REPOSITORY_ROOT / "static/visualization.js").read_bytes(),
     )
 
     ids_by_page: dict[Path, set[str]] = {}

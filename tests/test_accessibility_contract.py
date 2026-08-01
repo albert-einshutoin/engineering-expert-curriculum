@@ -129,17 +129,27 @@ class AccessibilityContractTests(unittest.TestCase):
                 self.assertEqual(parser.h1_count, 1)
                 self.assertEqual(parser.skip_links, 1)
 
-    def test_generated_pages_contain_no_active_or_inline_executable_content(
+    def test_task8_has_runtime_asset_but_zero_scripted_lesson_pages(
         self,
     ) -> None:
+        self.assertEqual(
+            tuple(
+                path.relative_to(self.site).as_posix()
+                for path in self.site.rglob("*.js")
+            ),
+            ("static/visualization.js",),
+        )
+        scripted_pages = 0
         for page in sorted(self.site.rglob("*.html")):
             relative = page.relative_to(self.site)
             with self.subTest(page=relative):
                 parser = _LandmarkParser()
                 parser.feed(page.read_text(encoding="utf-8"))
                 parser.close()
+                scripted_pages += parser.active_content.count("script")
                 self.assertEqual(parser.active_content, [])
                 self.assertEqual(parser.event_attributes, [])
+        self.assertEqual(scripted_pages, 0)
 
     def test_release_checker_rejects_semantics_hidden_in_template(self) -> None:
         page = next(iter(sorted(self.site.rglob("*.html"))))
@@ -174,6 +184,24 @@ class AccessibilityContractTests(unittest.TestCase):
                 print_rules,
                 rf"(?m)^\s*{content_selector}\s*\{{[^}}]*display:\s*none",
             )
+
+    def test_runtime_states_have_non_color_css_markers_and_keep_static_oracle(self) -> None:
+        stylesheet = (self.site / "static/visualizations.css").read_text(
+            encoding="utf-8"
+        )
+        for selector in (
+            ".visualization.is-enhanced",
+            ".visualization__model-node.is-active",
+            ".visualization__model-edge.is-active",
+            ".visualization.is-complete",
+            ".visualization.has-runtime-error",
+        ):
+            with self.subTest(selector=selector):
+                self.assertIn(selector, stylesheet)
+        self.assertNotRegex(
+            stylesheet,
+            r"(?s)\.visualization[^{}]*::(?:before|after)\s*\{[^}]*content:\s*['\"][^'\"]",
+        )
 
 
 if __name__ == "__main__":

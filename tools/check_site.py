@@ -24,6 +24,10 @@ if str(_REPOSITORY_ROOT) not in sys.path:
 
 from curriculum_builder.css_safety import validate_stylesheet_bytes  # noqa: E402
 from curriculum_builder.errors import CurriculumValidationError  # noqa: E402
+from curriculum_builder.javascript_safety import (  # noqa: E402
+    MAX_JAVASCRIPT_BYTES,
+    validate_javascript_bytes,
+)
 
 
 MAX_ISSUES: Final = 64
@@ -35,10 +39,10 @@ MAX_VISUALIZATION_CSS_BYTES: Final = 80 * 1024
 MAX_DIAGNOSTIC_VALUE_CHARS: Final = 160
 
 REQUIRED_CSP: Final = (
-    "default-src 'none'; script-src 'none'; style-src 'self'; "
+    "default-src 'none'; script-src 'self'; script-src-attr 'none'; style-src 'self'; "
     "img-src 'self' data:; font-src 'self'; connect-src 'none'; "
-    "base-uri 'none'; form-action 'none'; object-src 'none'; "
-    "frame-src 'none'"
+    "worker-src 'none'; media-src 'none'; object-src 'none'; "
+    "frame-src 'none'; base-uri 'none'; form-action 'none'"
 )
 
 _LESSON_IDS: Final = (
@@ -83,6 +87,7 @@ _BASE_INVENTORY: Final = frozenset(
         "index.html",
         "styles.css",
         "static/visualizations.css",
+        "static/visualization.js",
         "catalog/index.html",
         "competencies/index.html",
         "capstones/index.html",
@@ -96,7 +101,7 @@ CURRENT_RELEASE_INVENTORY: Final = frozenset(
     | {f"capstones/{capstone_id}/index.html" for capstone_id in _CAPSTONE_IDS}
 )
 
-_ALLOWED_SUFFIXES: Final = frozenset({".html", ".css"})
+_ALLOWED_SUFFIXES: Final = frozenset({".html", ".css", ".js"})
 _VOID_ELEMENTS: Final = frozenset(
     {
         "area",
@@ -115,7 +120,7 @@ _VOID_ELEMENTS: Final = frozenset(
     }
 )
 _FORBIDDEN_ELEMENTS: Final = frozenset(
-    {"base", "embed", "form", "iframe", "object", "script", "style"}
+    {"base", "embed", "form", "iframe", "object", "style"}
 )
 _RESOURCE_ELEMENTS: Final = frozenset(
     {"audio", "img", "source", "track", "video"}
@@ -272,6 +277,10 @@ class _PageParser(HTMLParser):
         self.csp_values: list[str] = []
         self.stylesheet_count = 0
         self.stylesheet_hrefs: list[str] = []
+        self.script_sources: list[str] = []
+        self.script_depth = 0
+        self.simulation_roots = 0
+        self.resource_before_csp = False
         self.doctype_count = 0
         self.malformed = False
 
@@ -320,9 +329,13 @@ class _PageParser(HTMLParser):
             (values.get("aria-hidden") or "").strip().casefold() == "true"
         )
         closed_disclosure = tag in {"details", "dialog"} and "open" not in values
+        hidden_fallback_control = (
+            tag == "div"
+            and "visualization__controls" in (values.get("class") or "").split()
+        )
         if (
             tag == "template"
-            or "hidden" in values
+            or ("hidden" in values and not hidden_fallback_control)
             or "inert" in values
             or aria_hidden
             or closed_disclosure
@@ -361,6 +374,12 @@ class _PageParser(HTMLParser):
             else:
                 self.ids.add(identifier)
 
+        simulation_names = {
+            "data-visualization-id", "data-simulation-kind", "data-interaction-mode"
+        }
+        if tag == "figure" and simulation_names <= set(values):
+            self.simulation_roots += 1
+
         if tag == "head":
             self.head_count += 1
             self.head_depth += 1
@@ -396,6 +415,8 @@ class _PageParser(HTMLParser):
             elif http_equiv == "content-security-policy":
                 self.csp_values.append(values.get("content") or "")
         elif tag == "link":
+            if not self.csp_values:
+                self.resource_before_csp = True
             rel = _rel_tokens(values.get("rel"))
             if rel != {"stylesheet"}:
                 self.issues.add(
@@ -415,6 +436,20 @@ class _PageParser(HTMLParser):
                 self.stylesheet_count += 1
                 self.stylesheet_hrefs.append(values.get("href") or "")
             self._record_url(values.get("href"), "stylesheet", rel)
+        elif tag == "script":
+            if self.head_depth:
+                self.resource_before_csp = not self.csp_values
+            if set(values) != {"src", "defer"} or values.get("defer") is not None:
+                self.issues.add(
+                    self.relative,
+                    "script is forbidden unless it is the deferred classic asset",
+                )
+            if not self.stack or self.stack[-1] != "body":
+                self.issues.add(self.relative, "script must be a direct child of body")
+            source = values.get("src") or ""
+            self.script_sources.append(source)
+            self._record_url(source, "script", set())
+            self.script_depth += 1
         elif tag == "a":
             href = values.get("href")
             classes = set((values.get("class") or "").split())
@@ -504,10 +539,14 @@ class _PageParser(HTMLParser):
             self.title_depth -= 1
         elif tag == "head":
             self.head_depth -= 1
+        elif tag == "script":
+            self.script_depth -= 1
         elif len(tag) == 2 and tag[0] == "h" and tag[1] in "123456":
             self.open_heading = None
 
     def handle_data(self, data: str) -> None:
+        if self.script_depth and data.strip():
+            self.issues.add(self.relative, "inline script is forbidden")
         if self.title_depth:
             self.title_parts.append(data)
         if self.open_heading is not None:
@@ -557,6 +596,8 @@ class _PageParser(HTMLParser):
             )
         if self.csp_values != [REQUIRED_CSP]:
             self.issues.add(self.relative, "CSP must match the exact safe contract")
+        if self.resource_before_csp:
+            self.issues.add(self.relative, "CSP must precede resource-bearing elements")
         root = "../" * len(self.relative.parent.parts)
         expected_stylesheets = [
             f"{root}styles.css",
@@ -567,6 +608,11 @@ class _PageParser(HTMLParser):
                 self.relative,
                 "page must contain exactly two ordered local stylesheets",
             )
+        expected_scripts = (
+            [f"{root}static/visualization.js"] if self.simulation_roots else []
+        )
+        if self.script_sources != expected_scripts:
+            self.issues.add(self.relative, "script assets must exactly match simulation content")
         return _Page(ids=self.ids, references=self.references)
 
 
@@ -757,13 +803,18 @@ def _scan_tree(root: Path, issues: _Issues) -> _Tree | None:
                 issues.add(child, "hard links are forbidden")
                 continue
             suffix = child.suffix.casefold()
-            if suffix not in _ALLOWED_SUFFIXES:
+            if suffix not in _ALLOWED_SUFFIXES or (
+                suffix == ".js"
+                and child != PurePosixPath("static/visualization.js")
+            ):
                 issues.add(child, "disallowed static file type")
                 continue
             if suffix == ".html":
                 maximum = MAX_HTML_BYTES
             elif child == PurePosixPath("static/visualizations.css"):
                 maximum = MAX_VISUALIZATION_CSS_BYTES
+            elif child == PurePosixPath("static/visualization.js"):
+                maximum = MAX_JAVASCRIPT_BYTES
             else:
                 maximum = MAX_CSS_BYTES
             result = _read_regular_file(directory_fd, entry.name, status, maximum)
@@ -795,6 +846,13 @@ def _validate_css(relative: PurePosixPath, source: bytes, issues: _Issues) -> No
         validate_stylesheet_bytes(source)
     except CurriculumValidationError:
         issues.add(relative, "CSS violates the local-only stylesheet contract")
+
+
+def _validate_javascript(relative: PurePosixPath, source: bytes, issues: _Issues) -> None:
+    try:
+        validate_javascript_bytes(source)
+    except CurriculumValidationError:
+        issues.add(relative, "JavaScript violates the first-party runtime contract")
 
 
 def _validate_html(
@@ -870,6 +928,8 @@ def _resolve_reference(
         return
     if reference.role == "stylesheet" and target.suffix.casefold() != ".css":
         issues.add(reference.source, "stylesheet target must be local CSS")
+    if reference.role == "script" and target != PurePosixPath("static/visualization.js"):
+        issues.add(reference.source, "script target must be the fixed runtime asset")
     fragment = reference.fragment
     if fragment is not None:
         if not fragment:
@@ -948,6 +1008,8 @@ def check_site(
     for relative, source in sorted(tree.files.items()):
         if relative.suffix.casefold() == ".css":
             _validate_css(relative, source, issues)
+        elif relative.suffix.casefold() == ".js":
+            _validate_javascript(relative, source, issues)
         else:
             page = _validate_html(relative, source, issues)
             if page is not None:

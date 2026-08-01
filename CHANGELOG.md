@@ -4,7 +4,13 @@ Engineering Expert Curriculumの利用者に影響する変更を記録します
 
 ## [Unreleased]
 
-- 次回releaseの変更は、検証証拠が確定した時点で追記します。
+### Added
+
+- 全情報を保持するno-JS baseline上で、承認済みsimulationを操作できるdependency-free first-party progressive runtime。
+
+### Security
+
+- exact v0.2 meta CSP、40 KiB JavaScript source policy、network/storage/analyticsを禁止するruntime境界。
 
 ## [0.1.0] - 2026-07-31
 

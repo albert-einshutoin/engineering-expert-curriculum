@@ -261,8 +261,8 @@ class RendererTests(unittest.TestCase):
 
     def test_from_template_bytes_reuses_base_policy_validation(self) -> None:
         base = (TEMPLATE_ROOT / "base.html").read_bytes().replace(
-            b"script-src 'none'",
             b"script-src 'self'",
+            b"script-src 'none'",
         )
         self.assert_validation_error(
             "base template CSP is incomplete",
@@ -337,7 +337,8 @@ class RendererTests(unittest.TestCase):
         self.assertIn('<html lang="ja">', html)
         self.assertIn('class="skip-link" href="#main"', html)
         self.assertIn('<nav aria-label="主要ナビゲーション">', html)
-        self.assertIn("script-src 'none'", html)
+        self.assertIn("script-src 'self'", html)
+        self.assertIn("script-src-attr 'none'", html)
         self.assertNotIn("frame-ancestors", html)
         self.assertNotIn("<script", html.casefold())
 
@@ -394,6 +395,10 @@ class RendererTests(unittest.TestCase):
 
         self.assertIn("visualization__controls", html)
         self.assertIn("<button", html)
+        self.assertIn(
+            '<script src="static/visualization.js" defer></script>',
+            html,
+        )
         object.__setattr__(generated, "value", generated.value.replace(
             "<button", '<button onclick="run()"', 1
         ))
@@ -1300,27 +1305,27 @@ class RendererTests(unittest.TestCase):
                 "base template placeholders do not match required counts",
             ),
             (
-                base.replace("script-src 'none'; ", ""),
+                base.replace("script-src 'self'; ", ""),
                 "base template CSP is incomplete",
             ),
             (
                 base.replace(
-                    "script-src 'none';",
-                    "script-src 'none'; script-src-elem 'self';",
+                    "script-src 'self';",
+                    "script-src 'self'; script-src-elem 'self';",
                 ),
                 "base template CSP is incomplete",
             ),
             (
                 base.replace(
-                    "script-src 'none';",
-                    "script-src 'none'; script-src-attr 'unsafe-inline';",
+                    "script-src-attr 'none';",
+                    "script-src-attr 'unsafe-inline';",
                 ),
                 "base template CSP is incomplete",
             ),
             (
                 base.replace(
-                    "script-src 'none';",
-                    "script-src 'none'; script-src 'self';",
+                    "script-src 'self';",
+                    "script-src 'self'; script-src 'self';",
                 ),
                 "base template CSP is incomplete",
             ),

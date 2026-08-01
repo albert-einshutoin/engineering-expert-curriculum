@@ -73,11 +73,14 @@ _BASE_PLACEHOLDER_COUNTS = MappingProxyType(
 _REQUIRED_CSP = MappingProxyType(
     {
         "default-src": ("'none'",),
-        "script-src": ("'none'",),
+        "script-src": ("'self'",),
+        "script-src-attr": ("'none'",),
         "style-src": ("'self'",),
         "img-src": ("'self'", "data:"),
         "font-src": ("'self'",),
         "connect-src": ("'none'",),
+        "worker-src": ("'none'",),
+        "media-src": ("'none'",),
         "base-uri": ("'none'",),
         "form-action": ("'none'",),
         "object-src": ("'none'",),
@@ -1079,6 +1082,9 @@ class Renderer:
             raise CurriculumValidationError(
                 "base template substitution failed"
             ) from None
+        if ' data-simulation-kind="' in safe_content.value:
+            script = f'<script src="{root}static/visualization.js" defer></script>'
+            document = document.replace("</body>", f"  {script}\n</body>", 1)
         _reject_duplicate_document_ids(document)
         return validate_generated_document(document).value
 

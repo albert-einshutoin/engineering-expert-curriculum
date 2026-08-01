@@ -42,6 +42,7 @@ from .css_safety import (
     MAX_STYLESHEET_BYTES,
     validate_stylesheet_bytes,
 )
+from .javascript_safety import MAX_JAVASCRIPT_BYTES, validate_javascript_bytes
 from .errors import CurriculumValidationError
 from .graph import topological_stages
 from .html_safety import SafeHtml, validate_fragment
@@ -103,6 +104,7 @@ _BASE_ARTIFACTS = frozenset(
         PurePosixPath("index.html"),
         PurePosixPath("styles.css"),
         PurePosixPath("static/visualizations.css"),
+        PurePosixPath("static/visualization.js"),
         PurePosixPath("catalog/index.html"),
         PurePosixPath("competencies/index.html"),
         PurePosixPath("capstones/index.html"),
@@ -137,6 +139,11 @@ _STATIC_ASSETS: Final = (
         source_name="visualizations.css",
         output_path=PurePosixPath("static/visualizations.css"),
         maximum_bytes=MAX_VISUALIZATION_STYLESHEET_BYTES,
+    ),
+    _StaticAsset(
+        source_name="visualization.js",
+        output_path=PurePosixPath("static/visualization.js"),
+        maximum_bytes=MAX_JAVASCRIPT_BYTES,
     ),
 )
 
@@ -1565,6 +1572,8 @@ class _SiteDocumentParser(HTMLParser):
         self.links: list[str] = []
         self.external_links: list[str] = []
         self.has_csp = False
+        self.script_sources: list[str] = []
+        self.simulation_roots = 0
 
     def handle_starttag(
         self,
@@ -1572,12 +1581,18 @@ class _SiteDocumentParser(HTMLParser):
         attrs: list[tuple[str, str | None]],
     ) -> None:
         lowered_tag = tag.casefold()
-        if lowered_tag == "script":
-            raise _validation("generated site must not contain scripts")
         normalized = {
             name.casefold(): value
             for name, value in attrs
         }
+        if lowered_tag == "script":
+            if set(normalized) != {"src", "defer"} or normalized["defer"] is not None:
+                raise _validation("generated scripts must use the fixed deferred classic contract")
+            self.script_sources.append(normalized["src"] or "")
+        if lowered_tag == "figure" and {
+            "data-visualization-id", "data-simulation-kind", "data-interaction-mode"
+        } <= set(normalized):
+            self.simulation_roots += 1
         for name, value in attrs:
             lowered_name = name.casefold()
             if lowered_name.startswith("on"):
@@ -1735,6 +1750,12 @@ def _validate_site_artifacts(
             raise _validation("generated HTML cannot be parsed") from None
         if not parser.has_csp:
             raise _validation("generated page is missing CSP")
+        root = "../" * len(path.parent.parts)
+        expected_scripts = (
+            [f"{root}static/visualization.js"] if parser.simulation_roots else []
+        )
+        if parser.script_sources != expected_scripts:
+            raise _validation("generated script assets do not match lesson simulations")
         ids_by_page[path] = parser.ids
         links_by_page[path] = parser.links
         external_links_by_page[path] = tuple(parser.external_links)
@@ -2960,8 +2981,11 @@ def build_site(
             path: snapshot.source
             for path, snapshot in static_asset_snapshots.items()
         }
-        for snapshot in static_asset_snapshots.values():
-            validate_stylesheet_bytes(snapshot.source)
+        for path, snapshot in static_asset_snapshots.items():
+            if path.suffix == ".css":
+                validate_stylesheet_bytes(snapshot.source)
+            else:
+                validate_javascript_bytes(snapshot.source)
         before_templates = {
             name: _read_stable_regular_file(
                 templates,

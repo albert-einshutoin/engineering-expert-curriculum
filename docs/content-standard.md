@@ -125,7 +125,8 @@ reasoningを証明したことにせず、学習設計reviewerが内容を判断
 
 ## 10. Accessibilityと静的配信
 
-公開成果物はHTMLとCSSのみで理解でき、JavaScriptなしで全情報へ到達できることをMUSTとする。
+公開成果物はHTMLとCSSのみで理解でき、JavaScriptなしで全情報へ到達できることをMUSTとする。v0.1.0はHTML/CSS-onlyとし、v0.2.0は承認済みsimulation lessonに限り、単一のrepository-owned `static/visualization.js`を任意のprogressive enhancementとしてMAYで読み込む。
+runtimeはnetwork、storage、analytics、URL state、third-party dependencyを使用してはならない。JavaScriptの404、構文error、初期化error、無効化時にも完全なstatic oracleを保持することをMUSTとする。
 CSSを無効にしても読み順と依存関係が残り、色や線だけへ意味を委ねない。
 
 すべてのactive elementはkeyboardで到達・操作でき、visible focusと単独で理解できる名前を持つことをMUSTとする。
@@ -133,8 +134,8 @@ CSSを無効にしても読み順と依存関係が残り、色や線だけへ�
 全ページは日本語の文書言語、固有title、一つの`main`と`h1`、skip link、論理的な
 heading、visible focusを持つ。Tableにはcaptionとscope、figureにはfigcaption、
 linkには単独で理解できる名前を付ける。200% zoom、狭い画面、high contrast、printで
-情報を失わない。script、iframe、object、embed、form、inline event handler、remote
-font/image、unsafe URL schemeは禁止する。
+情報を失わない。承認済みのdeferred classic runtime以外のscript、iframe、object、embed、form、inline event handler、remote
+font/image、unsafe URL schemeは禁止する。meta CSPはexact v0.2 policyを持ちresourceより前に置く。`frame-ancestors`はmeta CSPでは強制されず、GitHub Pagesで任意response headerを設定できないため、clickjacking防止を主張しない。
 
 ## 11. Review roles
 
@@ -185,7 +186,7 @@ JavaScriptなしのbaseline、catalog保存には例外を認めない。
 - [ ] Transferが重要制約を変え、同じ判断のコピーになっていない。
 - [ ] Rubricの4観点×4段階が観測可能で、proficient境界が明確である。
 - [ ] Source hierarchy、version、関連性、断定範囲、異なる2件以上のHTTPS URLを確認した。
-- [ ] Semantic HTML、keyboard、zoom、contrast、print、JS0を確認した。
+- [ ] Semantic HTML、keyboard、zoom、contrast、print、JavaScript無効時の完全性を確認した。
 - [ ] 4 review dimensions、reviewerKind、author fix、再確認結果を記録した。
 - [ ] v0.1.0以後のreviewerKindを開示し、AI reviewをhuman approvalに数えていない。
 - [ ] Generated map、full tests、2回build、local link、安全性、accessibility検査と認証済みmaintainer decisionが揃った。

@@ -2082,9 +2082,17 @@ def _e(value: str, *, quote: bool = False) -> str:
     return escape(value, quote=quote)
 
 
-def _item_description(item: Item | HierarchyNode | NetworkNode | MemoryLayer) -> str:
+def _item_description(
+    item: Item | HierarchyNode | NetworkNode | MemoryLayer,
+    *,
+    runtime_node: bool = False,
+) -> str:
+    node_attribute = (
+        f' class="visualization__model-node" data-node-id="{_e(item.id, quote=True)}"'
+        if runtime_node else ""
+    )
     return (
-        f"<dt>{_e(item.label)}</dt>"
+        f"<dt{node_attribute}>{_e(item.label)}</dt>"
         f"<dd>{_e(item.detail)}</dd>"
     )
 
@@ -2094,7 +2102,7 @@ def _relationship_list(
     labels: Mapping[str, str],
 ) -> str:
     entries = "".join(
-        "<li>"
+        f'<li class="visualization__model-edge" data-edge-id="{_e(edge.id, quote=True)}">'
         f"{_e(labels[edge.from_id])} → {_e(labels[edge.to_id])}: "
         f"{_e(edge.label)}"
         + (f" ({_e(edge.kind)})" if edge.kind is not None else "")
@@ -2111,7 +2119,7 @@ def _render_flow(payload: FlowPayload) -> str:
         outgoing[edge.from_id].append(edge)
     entries = "".join(
         "<li><dl>"
-        + _item_description(step)
+        + _item_description(step, runtime_node=True)
         + "</dl>"
         + (
             _relationship_list(tuple(outgoing[step.id]), labels)
@@ -2134,7 +2142,7 @@ def _render_hierarchy(payload: HierarchyPayload) -> str:
     def branch(parent: str | None) -> str:
         return "<ul>" + "".join(
             "<li><dl>"
-            + _item_description(node)
+            + _item_description(node, runtime_node=True)
             + "</dl>"
             + (branch(node.id) if node.id in children else "")
             + "</li>"
@@ -2233,7 +2241,7 @@ def _render_nodes_and_edges(
 ) -> str:
     tag = "ol" if ordered else "ul"
     node_entries = "".join(
-        f"<li><dl>{_item_description(node)}</dl></li>" for node in nodes
+        f"<li><dl>{_item_description(node, runtime_node=True)}</dl></li>" for node in nodes
     )
     labels = {node.id: node.label for node in nodes}
     return (
@@ -2260,7 +2268,7 @@ def _render_network(payload: NetworkPayload) -> str:
     )
     nodes = "".join(
         "<li><dl>"
-        + _item_description(node)
+        + _item_description(node, runtime_node=True)
         + f"<dt>component</dt><dd>{_e(components[node.component_id].label)}</dd>"
         + "</dl></li>"
         for node in payload.nodes
@@ -2276,7 +2284,7 @@ def _render_network(payload: NetworkPayload) -> str:
 def _render_memory(payload: MemoryPayload) -> str:
     nodes = "".join(
         "<li><dl>"
-        + _item_description(layer)
+        + _item_description(layer, runtime_node=True)
         + f"<dt>group</dt><dd>{_e(layer.group)}</dd>"
         + "</dl></li>"
         for layer in payload.layers
@@ -2363,12 +2371,29 @@ def _render_simulation_oracle(simulation: Simulation) -> str:
         for parameter in simulation.parameters
     )
     state_items = "".join(
-        f"<li><strong>{_e(state.label)}</strong>: {_e(state.status)}"
+        f'<li data-state-id="{_e(state.id, quote=True)}" data-step-index="{index}">'
+        f"<strong>{_e(state.label)}</strong>: {_e(state.status)}"
         f"; 条件 {_e(mapping_text(state.when))}"
-        f"; node {'、'.join(_e(value) for value in state.active_node_ids) or 'なし'}"
-        f"; edge {'、'.join(_e(value) for value in state.active_edge_ids) or 'なし'}"
-        "</li>"
-        for state in simulation.states
+        "; node "
+        + (
+            "、".join(
+                f'<code class="visualization__state-node" '
+                f'data-node-id="{_e(value, quote=True)}">{_e(value)}</code>'
+                for value in state.active_node_ids
+            )
+            or "なし"
+        )
+        + "; edge "
+        + (
+            "、".join(
+                f'<code class="visualization__state-edge" '
+                f'data-edge-id="{_e(value, quote=True)}">{_e(value)}</code>'
+                for value in state.active_edge_ids
+            )
+            or "なし"
+        )
+        + "</li>"
+        for index, state in enumerate(simulation.states)
     )
     transition_rows = "".join(
         "<tr>"
@@ -2410,8 +2435,8 @@ def _render_simulation_oracle(simulation: Simulation) -> str:
         if state.id == simulation.initial_state_id
     )
     status = (
-        '<p class="visualization__current-status">'
-        f"<strong>現在の状態:</strong> {_e(initial.label)} — {_e(initial.status)}"
+        '<p class="visualization__current-status" aria-live="polite">'
+        f"現在の状態: {_e(initial.label)} — {_e(initial.status)}"
         "</p>"
     )
     model_note = (
@@ -2462,13 +2487,15 @@ def _render_simulation_controls(
                 fields.append(
                     f'<label for="{_e(control_id, quote=True)}">'
                     f"{_e(parameter.label)}</label>"
-                    f'<select id="{_e(control_id, quote=True)}" disabled>'
+                    f'<select id="{_e(control_id, quote=True)}" '
+                    f'data-parameter-id="{_e(parameter.id, quote=True)}" disabled>'
                     f"{options}</select>"
                 )
             else:
                 radios = "".join(
                     f'<label for="{_e(f"{control_id}-o-{option_index}", quote=True)}">'
                     f'<input id="{_e(f"{control_id}-o-{option_index}", quote=True)}" '
+                    f'data-parameter-id="{_e(parameter.id, quote=True)}" '
                     f'type="radio" name="{_e(control_id, quote=True)}" '
                     f'value="{_e(option.id, quote=True)}" disabled'
                     + (
@@ -2488,7 +2515,7 @@ def _render_simulation_controls(
     def button(role: str, label: str) -> str:
         return (
             f'<button id="{_e(f"{figure_id}-{role}", quote=True)}" '
-            f'type="button" disabled>{label}</button>'
+            f'type="button" data-action="{_e(role, quote=True)}" disabled>{label}</button>'
         )
 
     actions: list[str] = []
@@ -2512,7 +2539,7 @@ def _render_simulation_controls(
         speed_id = f"{figure_id}-speed"
         actions.append(
             f'<label for="{_e(speed_id, quote=True)}">速度</label>'
-            f'<select id="{_e(speed_id, quote=True)}" disabled>'
+            f'<select id="{_e(speed_id, quote=True)}" data-action="speed" disabled>'
             '<option value="0.5">0.5x</option>'
             '<option value="1" selected>1x</option>'
             '<option value="2">2x</option></select>'
@@ -2566,9 +2593,15 @@ def _render_validated_visualization(
         if visual.simulation is None
         else _render_simulation_oracle(visual.simulation)
     )
-    safe_figure = validate_fragment(
+    safe_figure = validate_generated_fragment(
         f'<figure id="{_e(figure_id, quote=True)}" '
-        f'class="visualization visualization--{_e(visual.type.value, quote=True)}">'
+        f'class="visualization visualization--{_e(visual.type.value, quote=True)}"'
+        f' data-visualization-id="{_e(figure_id, quote=True)}"'
+        + ("" if visual.simulation is None else
+           f' data-simulation-kind="{_e(visual.simulation.kind.value, quote=True)}"'
+           f' data-interaction-mode="{_e(visual.simulation.interaction_mode.value, quote=True)}"'
+           f' data-default-interval-ms="{visual.simulation.default_interval_ms or 1000}"')
+        + ">"
         f"<figcaption>{_e(visual.caption)}</figcaption>"
         + companion_notes
         + f'<p class="visualization__question">{_e(visual.question)}</p>'

@@ -42,6 +42,33 @@
   align-items: center;
 }
 
+.visualization.is-enhanced .visualization__controls:not([hidden]) {
+  border-block-start: 2px solid currentColor;
+  padding-block-start: var(--space-3, 1rem);
+}
+
+.visualization__model-node.is-active,
+.visualization__model-edge.is-active {
+  border-block-end: 3px double currentColor;
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-thickness: 0.12em;
+}
+
+.visualization.is-complete {
+  border-style: double;
+  border-width: 4px;
+}
+
+.visualization.has-runtime-error {
+  border-style: dashed;
+}
+
+.visualization.has-runtime-error .visualization__current-status {
+  text-decoration: underline;
+  text-decoration-thickness: 0.12em;
+}
+
 .visualization__table {
   inline-size: 100%;
   border-collapse: collapse;
@@ -226,6 +253,13 @@
 
   .visualization :is(button, input, select):focus-visible {
     outline-color: Highlight;
+  }
+
+  .visualization__model-node.is-active,
+  .visualization__model-edge.is-active,
+  .visualization.is-complete,
+  .visualization.has-runtime-error {
+    border-color: currentColor;
   }
 
   .visualization--hierarchy .visualization__hierarchy > ul,

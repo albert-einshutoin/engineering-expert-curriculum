@@ -23,10 +23,10 @@ from tools.check_site import (
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CHECKER = REPOSITORY_ROOT / "tools" / "check_site.py"
 CSP = (
-    "default-src 'none'; script-src 'none'; style-src 'self'; "
+    "default-src 'none'; script-src 'self'; script-src-attr 'none'; style-src 'self'; "
     "img-src 'self' data:; font-src 'self'; connect-src 'none'; "
-    "base-uri 'none'; form-action 'none'; object-src 'none'; "
-    "frame-src 'none'"
+    "worker-src 'none'; media-src 'none'; object-src 'none'; "
+    "frame-src 'none'; base-uri 'none'; form-action 'none'"
 )
 
 
@@ -70,6 +70,9 @@ def _fixture():
             ".visualization { display: grid; }\n",
             encoding="utf-8",
         )
+        (root / "static" / "visualization.js").write_bytes(
+            (REPOSITORY_ROOT / "static" / "visualization.js").read_bytes()
+        )
         (root / "index.html").write_text(
             _page(
                 body=(
@@ -104,6 +107,7 @@ class SiteCheckerHappyPathTests(unittest.TestCase):
                         "guide/index.html",
                         "styles.css",
                         "static/visualizations.css",
+                        "static/visualization.js",
                     },
                 ),
                 [],
@@ -599,7 +603,7 @@ class SiteCheckerHtmlTests(unittest.TestCase):
 
     def test_requires_exact_csp_contract(self) -> None:
         mutations = (
-            _page(csp=CSP.replace("script-src 'none'; ", "")),
+            _page(csp=CSP.replace("script-src 'self'; ", "")),
             _page(csp=CSP + "; media-src https:"),
             _page(csp=CSP.replace("; ", ";  ", 1)),
             _page().replace("Content-Security-Policy", "content-security-policy", 1)

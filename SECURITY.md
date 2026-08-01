@@ -1,6 +1,8 @@
 # Security Policy
 
-Engineering Expert Curriculumは、HTMLとCSSだけの公開サイトと、Python標準ライブラリによるbuild/validation処理で構成されます。サイトには認証、server API、database、analyticsがなく、learner dataを保存しません。ただし、build処理、template escaping、リンク、GitHub Actions、配信設定には脆弱性が入り得ます。
+Engineering Expert Curriculumのv0.1.0はHTML/CSS-onlyです。v0.2.0は完全なsemantic HTMLをbaselineとし、simulation lessonだけで単一のdependency-free first-party runtimeを任意に読み込みます。このruntimeはnetwork、storage、analytics、URL state、third-party codeを使わず、learner dataを収集・保存・送信しません。つまりlearner dataを保存しません。ただし、build処理、JavaScript source/DOM境界、template escaping、リンク、GitHub Actions、配信設定には脆弱性が入り得ます。
+
+exact meta CSPはruntimeとinline scriptを分離し、resourceより前に配置します。ただし`frame-ancestors`はmeta CSPで強制されず、GitHub Pagesではこのrepositoryが任意response headerを設定できないため、本projectはclickjacking防止を保証しません。
 
 ## サポート対象
 
@@ -42,6 +44,7 @@ Maintainerは通常5営業日以内に受領を確認し、その後は通常10�
 
 - path traversal、symlink race、生成先逸脱、任意file overwrite。
 - authored HTMLやstructured contentからのscript実行、unsafe URL、escape回避。
+- first-party runtimeのDOM allowlist逸脱、network/storage利用、timerや状態のfigure間漏洩。
 - CI権限の過大付与、secret露出、untrusted contributionの危険な実行。
 - 配布物の完全性を偽る決定性、検証、publication boundaryの欠陥。
 
