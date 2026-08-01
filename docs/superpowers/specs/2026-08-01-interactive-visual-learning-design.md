@@ -2,7 +2,7 @@
 
 Date: 2026-08-01
 
-Status: Written review requested
+Status: Approved for implementation
 
 Target release: v0.2.0 candidate
 
