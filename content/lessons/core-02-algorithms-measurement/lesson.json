@@ -220,20 +220,20 @@
         "kind": "complexity-growth",
         "interactionMode": "scenario",
         "parameters": [
-          {"id": "input-size", "label": "入力size", "control": "select", "options": [{"id": "small", "label": "小"}, {"id": "crossover-size", "label": "交差付近"}, {"id": "large", "label": "大"}], "defaultOptionId": "small"},
+          {"id": "input-size", "label": "入力size", "control": "select", "options": [{"id": "small", "label": "n=1000"}, {"id": "crossover-size", "label": "n=10000"}, {"id": "large", "label": "n=100000"}], "defaultOptionId": "small"},
           {"id": "algorithm-family", "label": "algorithm family", "control": "radio", "options": [{"id": "linear", "label": "線形走査"}, {"id": "binary", "label": "二分探索"}, {"id": "hash", "label": "hash lookup"}], "defaultOptionId": "linear"}
         ],
         "initialStateId": "small-input",
         "states": [
-          {"id": "small-input", "label": "小入力・線形走査", "status": "setup不要の線形走査を比較基準にする。", "when": {"input-size": "small", "algorithm-family": "linear"}, "activeNodeIds": ["linear-scan"], "activeEdgeIds": []},
-          {"id": "small-binary", "label": "小入力・二分探索", "status": "整列済みならlog nだが、未整列ならsetupも分けて測る。", "when": {"input-size": "small", "algorithm-family": "binary"}, "activeNodeIds": ["binary-search"], "activeEdgeIds": []},
-          {"id": "small-hash", "label": "小入力・hash", "status": "期待O(1)だけでなくhash table構築と追加spaceを含める。", "when": {"input-size": "small", "algorithm-family": "hash"}, "activeNodeIds": ["hash-lookup"], "activeEdgeIds": []},
-          {"id": "crossover-linear", "label": "交差付近・線形走査", "status": "反復実測で線形走査の比較回数と分布を記録する。", "when": {"input-size": "crossover-size", "algorithm-family": "linear"}, "activeNodeIds": ["linear-scan"], "activeEdgeIds": []},
-          {"id": "crossover", "label": "交差付近・二分探索", "status": "sort費用をquery回数で償却できるかを測る。", "when": {"input-size": "crossover-size", "algorithm-family": "binary"}, "activeNodeIds": ["binary-search"], "activeEdgeIds": []},
-          {"id": "crossover-hash", "label": "交差付近・hash", "status": "build中央値を1 query当たり短縮で割り、交差条件を求める。", "when": {"input-size": "crossover-size", "algorithm-family": "hash"}, "activeNodeIds": ["hash-lookup"], "activeEdgeIds": []},
-          {"id": "large-linear", "label": "大入力・線形走査", "status": "worst caseのΘ(n)と実測値の差を追加測定で診断する。", "when": {"input-size": "large", "algorithm-family": "linear"}, "activeNodeIds": ["linear-scan"], "activeEdgeIds": []},
-          {"id": "large-binary", "label": "大入力・二分探索", "status": "整列済み条件とsetup費用を保ったままΘ(log n)を検証する。", "when": {"input-size": "large", "algorithm-family": "binary"}, "activeNodeIds": ["binary-search"], "activeEdgeIds": []},
-          {"id": "large-input", "label": "大入力・hash", "status": "期待Θ(1)の成立条件、衝突、memory使用量を同時に記録する。", "when": {"input-size": "large", "algorithm-family": "hash"}, "activeNodeIds": ["hash-lookup"], "activeEdgeIds": []}
+          {"id": "small-input", "label": "n=1000・線形走査", "status": "理論操作数 n=1000: 線形1000・二分10・hash期待1。測定sampleは7反復のmedian_ns/range_nsを別欄へ記録し、普遍的な時間にしない。", "when": {"input-size": "small", "algorithm-family": "linear"}, "activeNodeIds": ["linear-scan"], "activeEdgeIds": []},
+          {"id": "small-binary", "label": "n=1000・二分探索", "status": "理論操作数 n=1000: 線形1000・二分10・hash期待1。未整列ならsort費用を測定sampleと分離する。", "when": {"input-size": "small", "algorithm-family": "binary"}, "activeNodeIds": ["binary-search"], "activeEdgeIds": []},
+          {"id": "small-hash", "label": "n=1000・hash", "status": "理論操作数 n=1000: 線形1000・二分10・hash期待1。buildとlookupのmedian_ns/range_nsを分ける。", "when": {"input-size": "small", "algorithm-family": "hash"}, "activeNodeIds": ["hash-lookup"], "activeEdgeIds": []},
+          {"id": "crossover-linear", "label": "n=10000・線形走査", "status": "理論操作数 n=10000: 線形10000・二分14・hash期待1。測定sampleの増加率を理論値へ後付けしない。", "when": {"input-size": "crossover-size", "algorithm-family": "linear"}, "activeNodeIds": ["linear-scan"], "activeEdgeIds": []},
+          {"id": "crossover", "label": "n=10000・二分探索", "status": "理論操作数 n=10000: 線形10000・二分14・hash期待1。sort費用をquery回数で償却できるか測る。", "when": {"input-size": "crossover-size", "algorithm-family": "binary"}, "activeNodeIds": ["binary-search"], "activeEdgeIds": []},
+          {"id": "crossover-hash", "label": "n=10000・hash", "status": "理論操作数 n=10000: 線形10000・二分14・hash期待1。build中央値とlookup短縮の交差条件を算出する。", "when": {"input-size": "crossover-size", "algorithm-family": "hash"}, "activeNodeIds": ["hash-lookup"], "activeEdgeIds": []},
+          {"id": "large-linear", "label": "n=100000・線形走査", "status": "理論操作数 n=100000: 線形100000・二分17・hash期待1。median_ns/range_nsとの差を追加測定で診断する。", "when": {"input-size": "large", "algorithm-family": "linear"}, "activeNodeIds": ["linear-scan"], "activeEdgeIds": []},
+          {"id": "large-binary", "label": "n=100000・二分探索", "status": "理論操作数 n=100000: 線形100000・二分17・hash期待1。整列条件とsetupの測定sampleを別々に残す。", "when": {"input-size": "large", "algorithm-family": "binary"}, "activeNodeIds": ["binary-search"], "activeEdgeIds": []},
+          {"id": "large-input", "label": "n=100000・hash", "status": "理論操作数 n=100000: 線形100000・二分17・hash期待1。衝突とmemoryを測り、環境依存時間を普遍化しない。", "when": {"input-size": "large", "algorithm-family": "hash"}, "activeNodeIds": ["hash-lookup"], "activeEdgeIds": []}
         ],
         "transitions": [],
         "outcomes": [

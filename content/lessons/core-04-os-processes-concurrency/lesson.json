@@ -402,33 +402,64 @@
       "notes": ["x=10から二回減算する説明用fixtureであり、schedulerの普遍的な実行順を表さない。"],
       "payload": {
         "states": [
-          {"id": "read-old-value", "label": "同じ古い値をread", "detail": "Thread A/Bがともにx=10を読み、localに9を計算する。"},
-          {"id": "lost-update", "label": "lost update", "detail": "双方が9を書き、期待値8に対してactual 9となる。"},
-          {"id": "locked-complete", "label": "mutexで完了", "detail": "Aが10から9、Bが9から8へ更新し、不変条件を守る。"}
+          {"id": "read-old-value", "label": "A read", "detail": "primary event a-read: Thread Aがx=10を読む。"},
+          {"id": "b-read-old-value", "label": "B read", "detail": "primary event b-read: BもA write前のx=10を読む。"},
+          {"id": "a-compute", "label": "A compute", "detail": "primary event a-compute: localで10-1=9。"},
+          {"id": "b-compute", "label": "B compute", "detail": "primary event b-compute: localで10-1=9。"},
+          {"id": "a-write", "label": "A write", "detail": "primary event a-write: x=9を書く。"},
+          {"id": "lost-update", "label": "B write / lost update", "detail": "primary events b-write/lost-update-violation: 9を上書きし、期待値x=8に対してactual x=9。"},
+          {"id": "lock-acquired", "label": "A lock", "detail": "primary event a-lock: fixtureを10へ戻してmutex取得。"},
+          {"id": "a-locked-write", "label": "A locked read/compute/write", "detail": "primary event a-locked-update: mutex内で10→9。"},
+          {"id": "unlock", "label": "A unlock", "detail": "primary event a-unlock: write後にmutex解放。"},
+          {"id": "b-lock-acquired", "label": "B lock", "detail": "primary event b-lock: A unlock後にmutex取得。"},
+          {"id": "b-locked-write", "label": "B locked read/compute/write", "detail": "primary event b-locked-update: 同期後の9を読み9→8。"},
+          {"id": "locked-complete", "label": "invariant complete", "detail": "primary event synchronized-invariant: 期待値x=8とactual x=8。lock/unlock単位の完全trace。"}
         ],
         "initialStateId": "read-old-value",
         "transitions": [
-          {"id": "old-to-lost", "from": "read-old-value", "to": "lost-update", "event": "next", "status": "allowed"},
-          {"id": "lost-to-locked", "from": "lost-update", "to": "locked-complete", "event": "reset", "status": "allowed"},
+          {"id": "step-01", "from": "read-old-value", "to": "b-read-old-value", "event": "next", "status": "allowed"},
+          {"id": "step-02", "from": "b-read-old-value", "to": "a-compute", "event": "next", "status": "allowed"},
+          {"id": "step-03", "from": "a-compute", "to": "b-compute", "event": "next", "status": "allowed"},
+          {"id": "step-04", "from": "b-compute", "to": "a-write", "event": "next", "status": "allowed"},
+          {"id": "step-05", "from": "a-write", "to": "lost-update", "event": "next", "status": "allowed"},
+          {"id": "step-06", "from": "lost-update", "to": "lock-acquired", "event": "reset", "status": "allowed"},
+          {"id": "step-07", "from": "lock-acquired", "to": "a-locked-write", "event": "next", "status": "allowed"},
+          {"id": "step-08", "from": "a-locked-write", "to": "unlock", "event": "next", "status": "allowed"},
+          {"id": "step-09", "from": "unlock", "to": "b-lock-acquired", "event": "next", "status": "allowed"},
+          {"id": "step-10", "from": "b-lock-acquired", "to": "b-locked-write", "event": "next", "status": "allowed"},
+          {"id": "step-11", "from": "b-locked-write", "to": "locked-complete", "event": "next", "status": "allowed"},
           {"id": "locked-to-lost-rejected", "from": "locked-complete", "to": "lost-update", "event": "next", "status": "rejected", "reason": "read/compute/write全体を同じmutex境界で保護する。"}
         ]
       },
       "simulation": {
         "kind": "scheduler-interleaving", "interactionMode": "playback", "parameters": [], "initialStateId": "read-old-value", "defaultIntervalMs": 1200,
         "states": [
-          {"id": "read-old-value", "label": "両threadがx=10をread", "status": "Thread A/Bが同じ古い値を読み、各localで9を計算する。", "activeNodeIds": ["read-old-value"], "activeEdgeIds": []},
-          {"id": "lost-update", "label": "双方がx=9をwrite", "status": "期待値8に対してactual 9となり、不変条件違反を観測する。", "activeNodeIds": ["lost-update"], "activeEdgeIds": ["old-to-lost"]},
-          {"id": "locked-complete", "label": "mutex内で二回更新", "status": "Aのwrite後にBが9を読み、最終値8で不変条件を回復する。", "activeNodeIds": ["locked-complete"], "activeEdgeIds": ["lost-to-locked"]}
+          {"id": "read-old-value", "label": "A read", "status": "read/compute/write trace 1: Aがx=10をread。", "activeNodeIds": ["read-old-value"], "activeEdgeIds": []},
+          {"id": "b-read-old-value", "label": "B read", "status": "trace 2: Bもx=10をread。", "activeNodeIds": ["b-read-old-value"], "activeEdgeIds": ["step-01"]},
+          {"id": "a-compute", "label": "A compute", "status": "trace 3: Aがlocal 9をcompute。", "activeNodeIds": ["a-compute"], "activeEdgeIds": ["step-02"]},
+          {"id": "b-compute", "label": "B compute", "status": "trace 4: Bもlocal 9をcompute。", "activeNodeIds": ["b-compute"], "activeEdgeIds": ["step-03"]},
+          {"id": "a-write", "label": "A write", "status": "trace 5: Aがx=9をwrite。", "activeNodeIds": ["a-write"], "activeEdgeIds": ["step-04"]},
+          {"id": "lost-update", "label": "B write", "status": "trace 6: Bが9を上書き。期待値x=8、actual x=9でinvariant違反。", "activeNodeIds": ["lost-update"], "activeEdgeIds": ["step-05"]},
+          {"id": "lock-acquired", "label": "A lock", "status": "trace 7: fixtureを10へ戻しAがlock。", "activeNodeIds": ["lock-acquired"], "activeEdgeIds": ["step-06"]},
+          {"id": "a-locked-write", "label": "A locked update", "status": "trace 8: mutex内でAがread/compute/writeし10→9。", "activeNodeIds": ["a-locked-write"], "activeEdgeIds": ["step-07"]},
+          {"id": "unlock", "label": "A unlock", "status": "trace 9: Aがwrite後にunlock。", "activeNodeIds": ["unlock"], "activeEdgeIds": ["step-08"]},
+          {"id": "b-lock-acquired", "label": "B lock", "status": "trace 10: Bがlockし、同期後の9を観測。", "activeNodeIds": ["b-lock-acquired"], "activeEdgeIds": ["step-09"]},
+          {"id": "b-locked-write", "label": "B locked update", "status": "trace 11: Bがread/compute/writeし9→8。", "activeNodeIds": ["b-locked-write"], "activeEdgeIds": ["step-10"]},
+          {"id": "locked-complete", "label": "invariant complete", "status": "trace 12: 期待値x=8、actual x=8。lock/unlockを含む完全trace。", "activeNodeIds": ["locked-complete"], "activeEdgeIds": ["step-11"]}
         ],
         "transitions": [
-          {"id": "read-to-lost-next", "from": "read-old-value", "to": "lost-update", "event": "next"},
-          {"id": "read-to-lost-timer", "from": "read-old-value", "to": "lost-update", "event": "timer"},
-          {"id": "lost-to-locked-next", "from": "lost-update", "to": "locked-complete", "event": "next"},
-          {"id": "lost-to-locked-timer", "from": "lost-update", "to": "locked-complete", "event": "timer"},
-          {"id": "lost-to-read-previous", "from": "lost-update", "to": "read-old-value", "event": "previous"},
-          {"id": "lost-to-read-reset", "from": "lost-update", "to": "read-old-value", "event": "reset"},
-          {"id": "locked-to-lost-previous", "from": "locked-complete", "to": "lost-update", "event": "previous"},
-          {"id": "locked-to-read-reset", "from": "locked-complete", "to": "read-old-value", "event": "reset"}
+          {"id": "read-next", "from": "read-old-value", "to": "b-read-old-value", "event": "next"}, {"id": "read-timer", "from": "read-old-value", "to": "b-read-old-value", "event": "timer"},
+          {"id": "b-read-next", "from": "b-read-old-value", "to": "a-compute", "event": "next"}, {"id": "b-read-timer", "from": "b-read-old-value", "to": "a-compute", "event": "timer"}, {"id": "b-read-previous", "from": "b-read-old-value", "to": "read-old-value", "event": "previous"}, {"id": "b-read-reset", "from": "b-read-old-value", "to": "read-old-value", "event": "reset"},
+          {"id": "a-compute-next", "from": "a-compute", "to": "b-compute", "event": "next"}, {"id": "a-compute-timer", "from": "a-compute", "to": "b-compute", "event": "timer"}, {"id": "a-compute-previous", "from": "a-compute", "to": "b-read-old-value", "event": "previous"}, {"id": "a-compute-reset", "from": "a-compute", "to": "read-old-value", "event": "reset"},
+          {"id": "b-compute-next", "from": "b-compute", "to": "a-write", "event": "next"}, {"id": "b-compute-timer", "from": "b-compute", "to": "a-write", "event": "timer"}, {"id": "b-compute-previous", "from": "b-compute", "to": "a-compute", "event": "previous"}, {"id": "b-compute-reset", "from": "b-compute", "to": "read-old-value", "event": "reset"},
+          {"id": "a-write-next", "from": "a-write", "to": "lost-update", "event": "next"}, {"id": "a-write-timer", "from": "a-write", "to": "lost-update", "event": "timer"}, {"id": "a-write-previous", "from": "a-write", "to": "b-compute", "event": "previous"}, {"id": "a-write-reset", "from": "a-write", "to": "read-old-value", "event": "reset"},
+          {"id": "lost-next", "from": "lost-update", "to": "lock-acquired", "event": "next"}, {"id": "lost-timer", "from": "lost-update", "to": "lock-acquired", "event": "timer"}, {"id": "lost-previous", "from": "lost-update", "to": "a-write", "event": "previous"}, {"id": "lost-reset", "from": "lost-update", "to": "read-old-value", "event": "reset"},
+          {"id": "lock-next", "from": "lock-acquired", "to": "a-locked-write", "event": "next"}, {"id": "lock-timer", "from": "lock-acquired", "to": "a-locked-write", "event": "timer"}, {"id": "lock-previous", "from": "lock-acquired", "to": "lost-update", "event": "previous"}, {"id": "lock-reset", "from": "lock-acquired", "to": "read-old-value", "event": "reset"},
+          {"id": "a-locked-next", "from": "a-locked-write", "to": "unlock", "event": "next"}, {"id": "a-locked-timer", "from": "a-locked-write", "to": "unlock", "event": "timer"}, {"id": "a-locked-previous", "from": "a-locked-write", "to": "lock-acquired", "event": "previous"}, {"id": "a-locked-reset", "from": "a-locked-write", "to": "read-old-value", "event": "reset"},
+          {"id": "unlock-next", "from": "unlock", "to": "b-lock-acquired", "event": "next"}, {"id": "unlock-timer", "from": "unlock", "to": "b-lock-acquired", "event": "timer"}, {"id": "unlock-previous", "from": "unlock", "to": "a-locked-write", "event": "previous"}, {"id": "unlock-reset", "from": "unlock", "to": "read-old-value", "event": "reset"},
+          {"id": "b-lock-next", "from": "b-lock-acquired", "to": "b-locked-write", "event": "next"}, {"id": "b-lock-timer", "from": "b-lock-acquired", "to": "b-locked-write", "event": "timer"}, {"id": "b-lock-previous", "from": "b-lock-acquired", "to": "unlock", "event": "previous"}, {"id": "b-lock-reset", "from": "b-lock-acquired", "to": "read-old-value", "event": "reset"},
+          {"id": "b-locked-next", "from": "b-locked-write", "to": "locked-complete", "event": "next"}, {"id": "b-locked-timer", "from": "b-locked-write", "to": "locked-complete", "event": "timer"}, {"id": "b-locked-previous", "from": "b-locked-write", "to": "b-lock-acquired", "event": "previous"}, {"id": "b-locked-reset", "from": "b-locked-write", "to": "read-old-value", "event": "reset"},
+          {"id": "complete-previous", "from": "locked-complete", "to": "b-locked-write", "event": "previous"}, {"id": "complete-reset", "from": "locked-complete", "to": "read-old-value", "event": "reset"}
         ],
         "outcomes": [
           {"id": "lost-update-outcome", "stateId": "lost-update", "label": "同期なしtraceでは期待値8とactual 9の差を示す。"},

@@ -154,12 +154,25 @@ TASK9_SIMULATION_CONTRACTS = {
         "kind": "scheduler-interleaving",
         "mode": "playback",
         "parameters": (),
-        "states": ("read-old-value", "lost-update", "locked-complete"),
+        "states": (
+            "read-old-value", "b-read-old-value", "a-compute", "b-compute",
+            "a-write", "lost-update", "lock-acquired", "a-locked-write",
+            "unlock", "b-lock-acquired", "b-locked-write", "locked-complete",
+        ),
         "transitions": (
-            "read-to-lost-next", "read-to-lost-timer",
-            "lost-to-locked-next", "lost-to-locked-timer",
-            "lost-to-read-previous", "lost-to-read-reset",
-            "locked-to-lost-previous", "locked-to-read-reset",
+            "read-next", "read-timer", "b-read-next", "b-read-timer",
+            "b-read-previous", "b-read-reset", "a-compute-next",
+            "a-compute-timer", "a-compute-previous", "a-compute-reset",
+            "b-compute-next", "b-compute-timer", "b-compute-previous",
+            "b-compute-reset", "a-write-next", "a-write-timer",
+            "a-write-previous", "a-write-reset", "lost-next", "lost-timer",
+            "lost-previous", "lost-reset", "lock-next", "lock-timer",
+            "lock-previous", "lock-reset", "a-locked-next", "a-locked-timer",
+            "a-locked-previous", "a-locked-reset", "unlock-next", "unlock-timer",
+            "unlock-previous", "unlock-reset", "b-lock-next", "b-lock-timer",
+            "b-lock-previous", "b-lock-reset", "b-locked-next", "b-locked-timer",
+            "b-locked-previous", "b-locked-reset", "complete-previous",
+            "complete-reset",
         ),
         "outcomes": ("lost-update-outcome", "locked-outcome"),
         "interval": 1200,
@@ -168,23 +181,42 @@ TASK9_SIMULATION_CONTRACTS = {
         "visual": "request-path-static",
         "kind": "request-path",
         "mode": "hybrid",
-        "parameters": ("failure-point",),
+        "parameters": ("failure-point", "latency-profile"),
         "states": (
-            "dns-lookup", "healthy-response", "dns-failure", "tcp-failure",
-            "tls-ready", "request-failure", "deadline-exceeded",
+            "dns-lookup", "tcp-ready", "tls-ready", "request-sent",
+            "healthy-response", "healthy-tight-deadline", "dns-failure",
+            "dns-failure-tight", "tcp-failure", "tcp-failure-tight",
+            "tls-failure", "tls-failure-tight", "request-failure",
+            "request-failure-tight", "deadline-exceeded",
+            "deadline-exceeded-tight",
         ),
         "transitions": (
-            "apply-healthy", "next-healthy", "timer-healthy", "previous-healthy", "reset-healthy",
-            "apply-dns", "next-dns", "timer-dns", "previous-dns", "reset-dns",
-            "apply-tcp", "next-tcp", "timer-tcp", "previous-tcp", "reset-tcp",
-            "apply-tls", "next-tls", "timer-tls", "previous-tls", "reset-tls",
-            "apply-request", "next-request", "timer-request", "previous-request", "reset-request",
-            "apply-response", "next-response", "timer-response", "previous-response", "reset-response",
+            "apply-healthy", "next-healthy", "timer-healthy", "tcp-next",
+            "tcp-timer", "tcp-previous", "tcp-reset", "tls-next", "tls-timer",
+            "tls-previous", "tls-reset", "request-next", "request-timer",
+            "request-tight-next", "request-tight-timer", "request-previous",
+            "request-reset", "previous-healthy", "reset-healthy",
+            "previous-healthy-tight", "reset-healthy-tight", "apply-dns",
+            "next-dns", "timer-dns", "next-dns-tight", "timer-dns-tight",
+            "previous-dns", "reset-dns", "previous-dns-tight", "reset-dns-tight",
+            "apply-tcp", "next-tcp", "timer-tcp", "next-tcp-tight",
+            "timer-tcp-tight", "previous-tcp", "reset-tcp",
+            "previous-tcp-tight", "reset-tcp-tight", "apply-tls", "next-tls",
+            "timer-tls", "next-tls-tight", "timer-tls-tight", "previous-tls",
+            "reset-tls", "previous-tls-tight", "reset-tls-tight", "apply-request",
+            "next-request", "timer-request", "next-request-tight",
+            "timer-request-tight", "previous-request", "reset-request",
+            "previous-request-tight", "reset-request-tight", "apply-response",
+            "next-response", "timer-response", "next-response-tight",
+            "timer-response-tight", "previous-response", "reset-response",
+            "previous-response-tight", "reset-response-tight",
         ),
         "outcomes": (
-            "healthy-outcome", "dns-failure-outcome", "tcp-failure-outcome",
-            "tls-failure-outcome", "request-failure-outcome",
-            "response-unknown-outcome",
+            "healthy-outcome", "healthy-tight-outcome", "dns-failure-outcome",
+            "dns-tight-outcome", "tcp-failure-outcome", "tcp-tight-outcome",
+            "tls-failure-outcome", "tls-tight-outcome",
+            "request-failure-outcome", "request-tight-outcome",
+            "response-unknown-outcome", "response-tight-outcome",
         ),
         "interval": 1000,
     },
@@ -3452,6 +3484,62 @@ class ContentAcceptanceTests(unittest.TestCase):
                 self.assertTrue(
                     all(item["stateId"] in state_ids for item in simulation["outcomes"])
                 )
+
+    def test_task9_review_contracts_preserve_measurement_and_trace_boundaries(self) -> None:
+        documents = {
+            lesson_id: json.loads(
+                (REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json")
+                .read_bytes()
+            )
+            for lesson_id in TASK9_SIMULATION_CONTRACTS
+        }
+        simulations = {
+            lesson_id: next(
+                visual["simulation"] for visual in document["visualizations"]
+                if "simulation" in visual
+            )
+            for lesson_id, document in documents.items()
+        }
+
+        core02 = json.dumps(simulations["core-02-algorithms-measurement"], ensure_ascii=False)
+        for atom in (
+            "n=1000: 線形1000・二分10・hash期待1",
+            "n=10000: 線形10000・二分14・hash期待1",
+            "n=100000: 線形100000・二分17・hash期待1",
+            "median_ns/range_ns", "理論操作数", "普遍的な時間",
+        ):
+            self.assertIn(atom, core02)
+
+        core03 = json.dumps(simulations["core-03-architecture-memory-caches"], ensure_ascii=False)
+        for atom in (
+            "固定sample trace", "原因候補", "観測値だけでは証明できない",
+            "hardware counter", "translationとtransferを独立",
+        ):
+            self.assertIn(atom, core03)
+
+        self.assertEqual(
+            tuple(item["id"] for item in simulations["core-04-os-processes-concurrency"]["states"]),
+            (
+                "read-old-value", "b-read-old-value", "a-compute", "b-compute",
+                "a-write", "lost-update", "lock-acquired", "a-locked-write",
+                "unlock", "b-lock-acquired", "b-locked-write", "locked-complete",
+            ),
+        )
+        core04 = json.dumps(simulations["core-04-os-processes-concurrency"], ensure_ascii=False)
+        for atom in ("期待値x=8", "actual x=9", "read/compute/write", "lock/unlock"):
+            self.assertIn(atom, core04)
+
+        core05_simulation = simulations["core-05-networks-latency-failure"]
+        self.assertEqual(
+            tuple(item["id"] for item in core05_simulation["parameters"]),
+            ("failure-point", "latency-profile"),
+        )
+        core05 = json.dumps(core05_simulation, ensure_ascii=False)
+        for atom in (
+            "DNS→TCP→TLS→request", "retry decision", "設定不整合なのでretry禁止",
+            "side effectは不明", "normal-budget", "tight-budget",
+        ):
+            self.assertIn(atom, core05)
 
     def test_catalog_bytes_and_identity_are_bound_to_the_preserved_release(
         self,
