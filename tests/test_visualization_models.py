@@ -226,10 +226,36 @@ class VisualizationCatalogTests(unittest.TestCase):
 
     def test_catalog_parser_rejects_shape_sort_duplicate_and_enum_mutations(self) -> None:
         baseline = json.loads(self._catalog_bytes())
-        mutations = []
+        mutations: list[tuple[str, dict[str, object]]] = []
+
         unknown_root = deepcopy(baseline)
         unknown_root["defaultPrimaryType"] = "flow"
         mutations.append(("root shape", unknown_root))
+        for field in ("version", "lessons"):
+            missing_root_field = deepcopy(baseline)
+            missing_root_field.pop(field)
+            mutations.append((f"root missing {field}", missing_root_field))
+        invalid_version = deepcopy(baseline)
+        invalid_version["version"] = True
+        mutations.append(("version invalid", invalid_version))
+        twenty_nine_rows = deepcopy(baseline)
+        twenty_nine_rows["lessons"].pop()
+        mutations.append(("29 rows", twenty_nine_rows))
+        thirty_one_rows = deepcopy(baseline)
+        extra_row = deepcopy(thirty_one_rows["lessons"][-1])
+        extra_row["lessonId"] = "core-30-z-extra"
+        thirty_one_rows["lessons"].append(extra_row)
+        mutations.append(("31 rows", thirty_one_rows))
+
+        for field in (
+            "lessonId",
+            "primaryType",
+            "optionalSecondaryType",
+            "dynamic",
+        ):
+            missing_row_field = deepcopy(baseline)
+            missing_row_field["lessons"][1].pop(field)
+            mutations.append((f"row missing {field}", missing_row_field))
         row_level = deepcopy(baseline)
         row_level["lessons"][1]["interactionMode"] = "scenario"
         mutations.append(("row-level simulation", row_level))
@@ -246,10 +272,64 @@ class VisualizationCatalogTests(unittest.TestCase):
         duplicate = deepcopy(baseline)
         duplicate["lessons"][1]["lessonId"] = duplicate["lessons"][0]["lessonId"]
         mutations.append(("duplicate", duplicate))
-        invalid_enum = deepcopy(baseline)
-        invalid_enum["lessons"][0]["primaryType"] = "graph"
-        mutations.append(("enum", invalid_enum))
+        invalid_primary_type = deepcopy(baseline)
+        invalid_primary_type["lessons"][0]["primaryType"] = "graph"
+        mutations.append(("primaryType enum", invalid_primary_type))
+        invalid_secondary_type = deepcopy(baseline)
+        invalid_secondary_type["lessons"][0]["optionalSecondaryType"] = "graph"
+        mutations.append(("optionalSecondaryType enum", invalid_secondary_type))
 
+        missing_dynamic_simulation = deepcopy(baseline)
+        missing_dynamic_simulation["lessons"][1].pop("simulation")
+        mutations.append(
+            ("dynamic simulation missing", missing_dynamic_simulation)
+        )
+        unknown_simulation_field = deepcopy(baseline)
+        unknown_simulation_field["lessons"][1]["simulation"]["seed"] = 1
+        mutations.append(("simulation unknown field", unknown_simulation_field))
+        for field in (
+            "kind",
+            "interactionMode",
+            "staticEquivalentId",
+            "visualRegressionStateIds",
+        ):
+            missing_simulation_field = deepcopy(baseline)
+            missing_simulation_field["lessons"][1]["simulation"].pop(field)
+            mutations.append(
+                (f"simulation missing {field}", missing_simulation_field)
+            )
+        invalid_kind = deepcopy(baseline)
+        invalid_kind["lessons"][1]["simulation"]["kind"] = "unknown-kind"
+        mutations.append(("simulation kind enum", invalid_kind))
+        invalid_interaction_mode = deepcopy(baseline)
+        invalid_interaction_mode["lessons"][1]["simulation"][
+            "interactionMode"
+        ] = "random"
+        mutations.append(
+            ("simulation interactionMode enum", invalid_interaction_mode)
+        )
+
+        regression_ids = {
+            state_id
+            for row in baseline["lessons"]
+            if "simulation" in row
+            for state_id in row["simulation"]["visualRegressionStateIds"]
+        }
+        duplicate_boundary_id = "mutation-boundary"
+        control_boundary_id = "mutation-control"
+        self.assertTrue(
+            {duplicate_boundary_id, control_boundary_id}.isdisjoint(regression_ids)
+        )
+        duplicate_regression_state = deepcopy(baseline)
+        duplicate_regression_state["lessons"][1]["simulation"][
+            "visualRegressionStateIds"
+        ] = [duplicate_boundary_id, duplicate_boundary_id, control_boundary_id]
+        mutations.append(
+            ("duplicate visualRegressionStateIds", duplicate_regression_state)
+        )
+
+        self.assertEqual(len(mutations), 25)
+        self.assertEqual(len(mutations), len({name for name, _ in mutations}))
         for name, document in mutations:
             with self.subTest(name=name):
                 with self.assertRaises(CurriculumValidationError):
