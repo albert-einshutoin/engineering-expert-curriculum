@@ -15,7 +15,6 @@ from .errors import CurriculumValidationError
 
 
 _ID = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
-_PLACEMENTS = frozenset({"why", "mentalModel", "workedExample", "tradeoffs", "knowledgeCheck", "sourcesNext"})
 _SIMULATION_EVENTS = frozenset({"next", "previous", "timer", "parameter-change", "reset"})
 
 
@@ -30,6 +29,15 @@ class VisualizationType(StrEnum):
     MEMORY = "memory"
     MATRIX = "matrix"
     STATE_MACHINE = "state-machine"
+
+
+class LessonSectionRole(StrEnum):
+    WHY = "why"
+    MENTAL_MODEL = "mentalModel"
+    WORKED_EXAMPLE = "workedExample"
+    TRADEOFFS = "tradeoffs"
+    KNOWLEDGE_CHECK = "knowledgeCheck"
+    SOURCES_NEXT = "sourcesNext"
 
 
 class InteractionMode(StrEnum):
@@ -266,7 +274,7 @@ class Visualization:
     type: VisualizationType
     caption: str
     question: str
-    after_section: str
+    after_section: LessonSectionRole
     objective_ids: tuple[str, ...]
     evidence_ids: tuple[str, ...]
     source_ids: tuple[str, ...]
@@ -620,6 +628,70 @@ def _matches(conditions: Mapping[str, str], selection: Mapping[str, str]) -> boo
     return all(selection.get(key) == value for key, value in conditions.items())
 
 
+def _index_simulation_transitions(
+    transitions: tuple[SimulationTransition, ...],
+) -> dict[tuple[str, str], tuple[SimulationTransition, ...]]:
+    mutable: dict[tuple[str, str], list[SimulationTransition]] = {}
+    for transition in transitions:
+        key = (transition.from_id, transition.event)
+        mutable.setdefault(key, []).append(transition)
+    return {key: tuple(bucket) for key, bucket in mutable.items()}
+
+
+def _validate_simulation_domain(
+    *,
+    path: str,
+    mode: InteractionMode,
+    selections: list[dict[str, str]],
+    states: tuple[SimulationState, ...],
+    initial_state_id: str,
+    transitions: tuple[SimulationTransition, ...],
+) -> None:
+    transition_index = _index_simulation_transitions(transitions)
+    conditional_path_mode = mode in {
+        InteractionMode.HYBRID,
+        InteractionMode.EXPLORER,
+    }
+
+    # The Cartesian domain is rejected above 64. Within that closed domain each
+    # state and transition is inspected once per selection, and each active
+    # graph is traversed once. Thus validation is linear in the bounded expanded
+    # domain C * (V + E), and O(V + E) with the schema-fixed C <= 64.
+    for selection in selections:
+        applicable_state_ids = {
+            state.id for state in states if _matches(state.when, selection)
+        }
+        if mode is InteractionMode.SCENARIO:
+            if len(applicable_state_ids) != 1:
+                _fail(path, "scenario states must partition parameter combinations")
+
+        active_transitions: list[SimulationTransition] = []
+        for bucket in transition_index.values():
+            matches = [
+                edge for edge in bucket if _matches(edge.when, selection)
+            ]
+            if len(matches) > 1:
+                _fail(path, "simulation transitions are ambiguous")
+            active_transitions.extend(matches)
+
+        if not conditional_path_mode:
+            continue
+        if initial_state_id not in applicable_state_ids:
+            _fail(path, "initial state is unavailable for a parameter selection")
+        if any(
+            edge.from_id not in applicable_state_ids
+            or edge.to_id not in applicable_state_ids
+            for edge in active_transitions
+        ):
+            _fail(path, "transition conditions do not imply endpoint conditions")
+
+        adjacency = {state_id: [] for state_id in applicable_state_ids}
+        for edge in active_transitions:
+            adjacency[edge.from_id].append(edge.to_id)
+        if _reachable(initial_state_id, adjacency) != applicable_state_ids:
+            _fail(path, "parameter selection has an unreachable step path")
+
+
 def _parse_simulation(value: object, path: str, node_ids: set[str], edge_ids: set[str]) -> Simulation:
     raw = _mapping(value, path)
     required = {"kind", "interactionMode", "parameters", "initialStateId", "states", "transitions", "outcomes"}
@@ -665,22 +737,24 @@ def _parse_simulation(value: object, path: str, node_ids: set[str], edge_ids: se
         if type(interval) is not int or not 250 <= interval <= 5000 or interval % 50: _fail(f"{path}.defaultIntervalMs", "must be 250..5000 and a multiple of 50")
     elif "defaultIntervalMs" in raw: _fail(path, "default interval is forbidden for this mode")
     selections = [dict(zip(parameter_options, values, strict=True)) for values in product(*(parameter_options[key] for key in parameter_options))] if parameter_options else [{}]
-    for selection in selections:
-        matching_states = [state for state in state_result if _matches(state.when, selection)]
-        if mode is InteractionMode.SCENARIO and len(matching_states) != 1: _fail(path, "scenario states must partition parameter combinations")
-        for state in state_result:
-            for event in _SIMULATION_EVENTS:
-                matches = [edge for edge in transition_result if edge.from_id == state.id and edge.event == event and _matches(edge.when, selection)]
-                if len(matches) > 1: _fail(path, "simulation transitions are ambiguous")
-    reachable = {initial}
-    queue = deque([initial])
-    adjacency = {state: [] for state in state_ids}
-    for edge in transition_result: adjacency[edge.from_id].append(edge.to_id)
-    while queue:
-        current = queue.popleft()
-        for target in adjacency[current]:
-            if target not in reachable: reachable.add(target); queue.append(target)
-    if reachable != state_ids and mode is not InteractionMode.SCENARIO: _fail(path, "simulation contains unreachable states")
+    _validate_simulation_domain(
+        path=path,
+        mode=mode,
+        selections=selections,
+        states=state_result,
+        initial_state_id=initial,
+        transitions=transition_result,
+    )
+    if mode not in {
+        InteractionMode.SCENARIO,
+        InteractionMode.HYBRID,
+        InteractionMode.EXPLORER,
+    }:
+        adjacency = {state: [] for state in state_ids}
+        for edge in transition_result:
+            adjacency[edge.from_id].append(edge.to_id)
+        if _reachable(initial, adjacency) != state_ids:
+            _fail(path, "simulation contains unreachable states")
     return Simulation(kind, mode, parameter_result, initial, state_result, transition_result, outcome_result, interval if playback else None)
 
 
@@ -707,16 +781,26 @@ def parse_visualizations(
     source_ids: frozenset[str],
 ) -> tuple[Visualization, ...]:
     """Validate and detach a lesson's authored visualization snapshot."""
-    _id(lesson_id, "lesson_id")
-    if type(complete) is not bool: _fail("complete", "must be a boolean")
+    validated_lesson_id = _id(lesson_id, "lesson_id")
+    lesson_path = f"lesson[{validated_lesson_id}]"
+    if type(complete) is not bool:
+        _fail(f"{lesson_path}.complete", "must be a boolean")
     if value is None:
-        if complete: _fail("visualizations", "complete lessons require visualizations")
+        if complete: _fail(f"{lesson_path}.visualizations", "complete lessons require visualizations")
         return ()
-    values = _sequence(value, "visualizations", 1, 2)
+    values = _sequence(value, f"{lesson_path}.visualizations", 1, 2)
     required = {"id", "type", "caption", "question", "afterSection", "objectiveIds", "evidenceIds", "sourceIds", "expectedObservation", "payload"}
     parsed: list[Visualization] = []
     for index, item in enumerate(values):
-        path = f"visualizations[{index}]"; raw = _mapping(item, path); _fields(raw, required=required, optional={"notes", "simulation"}, path=path)
+        indexed_path = f"{lesson_path}.visualizations[{index}]"
+        raw = _mapping(item, indexed_path)
+        path = indexed_path
+        visualization_id: str | None = None
+        if "id" in raw:
+            visualization_id = _id(raw["id"], f"{indexed_path}.id")
+            path = f"{lesson_path}.visualization[{visualization_id}]"
+        _fields(raw, required=required, optional={"notes", "simulation"}, path=path)
+        assert visualization_id is not None
         kind_value = _enum(raw["type"], frozenset(kind.value for kind in VisualizationType), f"{path}.type"); kind = VisualizationType(kind_value)
         objectives = _ids(raw["objectiveIds"], f"{path}.objectiveIds", 1, 6); evidence = _ids(raw["evidenceIds"], f"{path}.evidenceIds", 1, 8); sources = _ids(raw["sourceIds"], f"{path}.sourceIds", 1, 8)
         if not set(objectives) <= set(objective_evidence): _fail(path, "has a dangling objective reference")
@@ -730,7 +814,14 @@ def parse_visualizations(
         payload = _parse_payload(kind, raw["payload"], f"{path}.payload"); node_ids, edge_ids = _payload_ids(payload)
         simulation = None if "simulation" not in raw else _parse_simulation(raw["simulation"], f"{path}.simulation", node_ids, edge_ids)
         notes = tuple(_text(note, f"{path}.notes[{note_index}]", 600) for note_index, note in enumerate(_sequence(raw.get("notes", []), f"{path}.notes", 0, 8)))
-        parsed.append(Visualization(_id(raw["id"], f"{path}.id"), kind, _text(raw["caption"], f"{path}.caption", 160), _text(raw["question"], f"{path}.question", 160), _enum(raw["afterSection"], _PLACEMENTS, f"{path}.afterSection"), objectives, evidence, sources, _text(raw["expectedObservation"], f"{path}.expectedObservation", 300), payload, notes, simulation))
+        placement = LessonSectionRole(
+            _enum(
+                raw["afterSection"],
+                frozenset(role.value for role in LessonSectionRole),
+                f"{path}.afterSection",
+            )
+        )
+        parsed.append(Visualization(visualization_id, kind, _text(raw["caption"], f"{path}.caption", 160), _text(raw["question"], f"{path}.question", 160), placement, objectives, evidence, sources, _text(raw["expectedObservation"], f"{path}.expectedObservation", 300), payload, notes, simulation))
     result = tuple(parsed)
-    _unique(result, "visualizations")
+    _unique(result, f"{lesson_path}.visualizations")
     return result

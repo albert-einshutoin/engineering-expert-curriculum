@@ -4,9 +4,12 @@ from dataclasses import FrozenInstanceError
 from copy import deepcopy
 from types import MappingProxyType
 import unittest
+from unittest.mock import patch
 
+import curriculum_builder.visualizations as visualization_models
 from curriculum_builder.errors import CurriculumValidationError
 from curriculum_builder.visualizations import (
+    LessonSectionRole,
     VisualizationType,
     parse_visualizations,
 )
@@ -152,6 +155,12 @@ def _scenario_simulation() -> dict[str, object]:
 
 
 class VisualizationModelTests(unittest.TestCase):
+    def test_after_section_uses_the_closed_section_role_enum(self) -> None:
+        visual = _parse([_visual("flow", deepcopy(_payloads()["flow"]))])[0]
+
+        self.assertIsInstance(visual.after_section, LessonSectionRole)
+        self.assertEqual(visual.after_section, LessonSectionRole.MENTAL_MODEL)
+
     def test_accepts_all_ten_payloads_with_common_fields_in_authored_order(self) -> None:
         raw = [_visual(kind, payload) for kind, payload in _payloads().items()]
 
@@ -303,6 +312,75 @@ class VisualizationModelTests(unittest.TestCase):
         with self.assertRaises(CurriculumValidationError):
             _parse([_visual("flow", deepcopy(_payloads()["flow"]), simulation=simulation)])
 
+    def test_hybrid_and_explorer_require_executable_paths_for_every_selection(self) -> None:
+        for mode in ("hybrid", "explorer"):
+            invalid_initial = _scenario_simulation()
+            invalid_initial["interactionMode"] = mode
+            if mode == "hybrid":
+                invalid_initial["defaultIntervalMs"] = 250
+            invalid_initial["transitions"] = [
+                {
+                    "id": "small-only-edge",
+                    "from": "small-state",
+                    "to": "large-state",
+                    "event": "next",
+                    "when": {"size": "small"},
+                }
+            ]
+
+            invalid_edge = deepcopy(invalid_initial)
+            invalid_edge["states"][0]["when"] = {}  # type: ignore[index]
+
+            for mutation, simulation in (
+                ("initial", invalid_initial),
+                ("edge", invalid_edge),
+            ):
+                with self.subTest(mode=mode, mutation=mutation):
+                    with self.assertRaises(CurriculumValidationError):
+                        _parse([
+                            _visual(
+                                "flow",
+                                deepcopy(_payloads()["flow"]),
+                                simulation=simulation,
+                            )
+                        ])
+
+    def test_simulation_validation_indexes_each_state_and_edge_once_per_selection(self) -> None:
+        self.assertTrue(
+            hasattr(visualization_models, "_index_simulation_transitions"),
+            "simulation validation must build a transition index",
+        )
+        simulation = _scenario_simulation()
+        simulation["interactionMode"] = "hybrid"
+        simulation["defaultIntervalMs"] = 250
+        simulation["states"][0]["when"] = {}  # type: ignore[index]
+        simulation["transitions"] = [
+            {
+                "id": "large-edge",
+                "from": "small-state",
+                "to": "large-state",
+                "event": "next",
+                "when": {"size": "large"},
+            }
+        ]
+
+        original_matches = visualization_models._matches
+        with patch.object(
+            visualization_models,
+            "_matches",
+            wraps=original_matches,
+        ) as matches:
+            _parse([
+                _visual(
+                    "flow",
+                    deepcopy(_payloads()["flow"]),
+                    simulation=simulation,
+                )
+            ])
+
+        # Two selections inspect two states and one edge exactly once each.
+        self.assertEqual(matches.call_count, 2 * (2 + 1))
+
     def test_interval_closed_bounds_and_multiple_of_fifty(self) -> None:
         for interval, accepted in ((249, False), (250, True), (251, False), (5000, True), (5001, False)):
             with self.subTest(interval=interval):
@@ -420,6 +498,27 @@ class VisualizationModelTests(unittest.TestCase):
 
         self.assertNotIn(secret_marker, str(raised.exception))
         self.assertNotIn("attacker.invalid", str(raised.exception))
+
+    def test_diagnostics_identify_validated_lesson_visual_and_field(self) -> None:
+        malicious_target = "private-attacker-value"
+        value = _visual("flow", deepcopy(_payloads()["flow"]), id="request-path")
+        value["payload"]["transitions"][0]["to"] = malicious_target  # type: ignore[index]
+
+        with self.assertRaises(CurriculumValidationError) as raised:
+            parse_visualizations(
+                [value],
+                lesson_id="core-05-network",
+                complete=True,
+                objective_evidence={"obj-path": frozenset({"trace"})},
+                evidence_ids=frozenset({"trace"}),
+                source_ids=frozenset({"source-one"}),
+            )
+
+        diagnostic = str(raised.exception)
+        self.assertIn("core-05-network", diagnostic)
+        self.assertIn("request-path", diagnostic)
+        self.assertIn("payload.transitions[0]", diagnostic)
+        self.assertNotIn(malicious_target, diagnostic)
 
     def test_network_components_cannot_be_joined_through_another_component(self) -> None:
         payload = deepcopy(_payloads()["network"])
