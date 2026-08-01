@@ -8,6 +8,7 @@ from html.parser import HTMLParser
 import json
 from pathlib import Path, PurePosixPath
 import re
+import shutil
 import stat
 import string
 from tempfile import TemporaryDirectory
@@ -102,20 +103,30 @@ TASK7_VISUAL_TYPES = {
     "core-25-engineering-economics-capacity": "matrix",
     "core-28-oss-governance-stewardship": "flow",
 }
+TASK7_COMMON_CONTRACTS = {
+    "core-02-algorithms-measurement": ("complexity-growth-static", "comparison", "mentalModel", None, "アルゴリズム再選択の検証経路", "同じquery列への構築済みlookupで、入力特性・size・setup・space・query回数が選択をどう変えるか。", "best・average・worst caseを区別し、予測と反復実測の差から再選択条件を説明できる。", ("obj-predict", "obj-measure", "obj-reselect"), ("benchmark-report", "assessment"), ("src-01", "src-02", "src-03", "src-04"), ("操作モデル: 比較、hash計算、割り当てなど、支配的な操作を決める。", "成長率予測: 支配操作がΘ(n)ならnを2倍にしたとき約2倍、Θ(n²)なら約4倍と予測する。", "入力モデル: サイズだけでなく、順序、重複率、問い合わせ位置を固定する。", "測定設計: 準備と対象区間を分け、ウォームアップ後に複数回測る。", "統計要約: 全値、中央値、範囲を残し、除外規則を先に決める。", "差の診断: 定数項、キャッシュ、GC、処理系、外れ値を追加測定で反証する。", "再選択条件: 本番のn、分布、呼出回数の変化を監視する。")),
+    "core-03-architecture-memory-caches": ("memory-access-static", "memory", "mentalModel", None, "一つのロードを診断する論理段階", "一つのloadでaddress translationとdata transferの待ちをどう切り分けるか。", "TLB・page tableの変換経路とcache・主記憶の転送経路を区別し、機種依存の階層を普遍的latencyとして扱わない。", ("obj-path", "obj-locality", "obj-transfer"), ("locality-report", "assessment"), ("src-01", "src-02", "src-03"), ("命令: 仮想アドレスAの値を要求する。", "TLB: Aのページ変換を検索する。missならページテーブルwalkが必要になる。", "L1 cache: Aを含むcache lineを検索する。hitなら近い階層で返る。", "L2と最終レベルcache: L1 miss後の候補を調べる。L2やLLCがcore-privateか複数coreでsharedかというprivate/shared範囲は機種依存である。", "memory controller: 全cacheでmissなら主記憶からline単位で転送する。", "再利用: 同じline内の次要素を使えば空間的局所性、短時間に同じ値を使えば時間的局所性を得る。", "このDAGはhit/missの診断依存を示し、VIPTではTLB変換とL1 index lookupが並行し得るため普遍的な逐次latencyではない。")),
+    "core-11-data-modeling-storage": ("storage-decision-matrix", "matrix", "mentalModel", None, "workload証拠からstorage ADRを再計算するmechanism", "同じworkload軸で三つのdata modelを比較し、query変化後に何を再計算するか。", "rowをstorage候補、columnを同一評価軸として読み、frequencyとratingの変更がscoreとwinnerを変えることを説明できる。", ("obj-workload", "obj-compare", "obj-recompute"), ("storage-adr", "assessment"), ("src-01", "src-02", "src-03", "src-04"), ("domain: 注文番号の一意性、合計額と明細合計の一致、注文状態遷移を不変条件にする。", "workload: 顧客履歴、注文detail、商品・期間検索、状態更新を一意なquery IDと時間当たり頻度で表す。", "growth: 現在件数と月間増加から12か月後を計算し、synthetic projectionである限界を残す。", "comparison: relational、document、key-valueをaccess fit、constraint、capacity、operations、recoveryの同じweightで採点する。", "ADR: winnerだけでなく、負の帰結、移行境界、confirmationを記録する。", "mutation: 商品・期間検索が主要queryになったらfrequencyとratingを変え、scoreとwinnerを再計算する。", "worked exampleでは全optionへ同じweight set 0.45/0.20/0.15/0.10/0.10を適用し、mutationで変更する入力はfrequencyだけでratingは固定する。", "baseline total 4.288957; winner relational; changed total 3.668868; winner key-value")),
+    "core-16-hci-usability-accessibility": ("accessible-ui-state-static", "flow", "mentalModel", None, "生成サイトの監査を適合主張と利用者タスクへ結ぶ証拠flow", "限定した監査scopeから、適合結果と利用者taskの結果を混同せずにどう報告するか。", "scope、規範target、観測、人手review、限定claimの順序と、WCAG 3.0 Working DraftをWCAG 2.2適合根拠にしない境界を説明できる。", ("obj-audit", "obj-usability", "obj-scope"), ("audit-record", "assessment"), ("src-01", "src-02", "src-03", "src-04"), ("Scope:", "Target:", "Observe:", "Review:", "Claim:")),
+    "core-17-graphics-visual-information": ("semantic-rendering-flow", "flow", "mentalModel", None, "一つのdata modelから視覚と同等textへ分岐するrendering pipeline", "一つのdata modelから視覚表現と同等textを作り、どの不変条件を照合するか。", "Data、Transform、Visual、Equivalent、Verifyの順序を説明し、別目的の0–100% worked-example chartを二重計上しない。", ("obj-pipeline", "obj-equivalence", "obj-encoding"), ("semantic-visual", "assessment"), ("src-01", "src-02", "src-03", "src-04", "src-05"), ("Data:", "Transform:", "Visual:", "Equivalent:", "Verify:")),
+    "core-19-technical-communication-design-docs": ("decision-evidence-hierarchy", "hierarchy", "mentalModel", None, "一つの決定証拠から読者別viewを導く構造", "同じdecision evidenceを読者別viewへどう入れ子にし、driftを防ぐか。", "共通decision recordの下にevidenceと読者別viewを置き、executiveとimplementationの詳細度だけを変えて同じdecisionを参照すると説明できる。", ("obj-audience", "obj-decision", "obj-transfer"), ("design-document", "assessment"), ("src-01", "src-02", "src-03", "src-04", "src-05"), ("Audience:", "Evidence:", "Decision:", "Executive view:", "Implementation view:", "Drift check: 要約、付録、ADRが同じdecisionを指すか検査する。")),
+    "core-25-engineering-economics-capacity": ("investment-capacity-matrix", "matrix", "mentalModel", None, "入力からcapacity制約とunit economicsを経て投資判断へ至るchain", "投資候補ごとにcost構成とcapacity制約を同じ軸で比較し、どの順で判断するか。", "制約違反候補を先に除き、direct・opportunity・operations・reliabilityを合算したtotal costとunit costを比較し、一変数の感度境界を説明できる。", ("obj-economics", "obj-capacity", "obj-sensitivity"), ("investment-comparison", "assessment"), ("src-01", "src-02", "src-03", "src-04"), ("Direct: fixtureで与えた取得・実行費を置く。", "Opportunity: engineering hoursと一時間の代替価値を掛ける。", "Operations: operations hoursと運用単価を掛ける。", "Reliability: 障害確率、時間、時間当たり影響を掛ける。", "Capacity: 需要と供給からheadroomとbreachを導く。", "Decision: 制約違反を先に、unit costを次に比較する。")),
+    "core-28-oss-governance-stewardship": ("contribution-governance-flow", "flow", "mentalModel", None, "第三者contributionをmaintainerのreview・merge・release evidenceへ安全に接続するgovernance chain", "第三者のopen contributionとmaintainerのwrite権限を分離したままrelease evidenceへどう接続するか。", "discoverからrelease evidenceまでの順序、第三者とmaintainerの権限境界、command successと公開artifactのsystem outcomeの差を説明できる。", ("obj-readiness", "obj-journey", "obj-transfer"), ("stewardship-repository", "repository-audit", "transfer"), ("src-01", "src-02", "src-03", "src-04", "src-05"), ("discover:", "prepare:", "submit:", "review:", "maintainer-merge:", "release-evidence:")),
+}
 TASK7_STRUCTURE_IDS = {
     "core-02-algorithms-measurement": {
         "alternatives": ("linear-scan", "binary-search", "hash-lookup"),
-        "criteria": ("best-case", "average-case", "worst-case"),
-        "cells": ("linear-best", "linear-average", "linear-worst", "binary-best", "binary-average", "binary-worst", "hash-best", "hash-average", "hash-worst"),
+        "criteria": ("best-case", "average-case", "worst-case", "setup-cost", "space-cost", "query-crossover"),
+        "cells": ("linear-best", "linear-average", "linear-worst", "linear-setup", "linear-space", "linear-crossover", "binary-best", "binary-average", "binary-worst", "binary-setup", "binary-space", "binary-crossover", "hash-best", "hash-average", "hash-worst", "hash-setup", "hash-space", "hash-crossover"),
     },
     "core-03-architecture-memory-caches": {
-        "layers": ("instruction", "tlb", "page-table", "l1-cache", "lower-cache", "memory-controller", "reuse"),
-        "transfers": ("instruction-to-tlb", "tlb-to-page-table", "page-table-to-l1", "l1-to-lower", "lower-to-memory", "memory-to-reuse"),
+        "layers": ("instruction", "tlb", "page-table", "address-ready", "l1-cache", "lower-cache", "memory-controller", "return", "reuse"),
+        "transfers": ("instruction-to-tlb", "instruction-to-l1", "tlb-hit", "tlb-miss", "walk-complete", "address-to-l1", "l1-hit-return", "l1-miss-lower", "lower-hit-return", "lower-miss-memory", "memory-return", "return-to-reuse"),
     },
     "core-11-data-modeling-storage": {
         "rows": ("relational", "document", "key-value"),
-        "columns": ("access-fit", "constraint", "operations-recovery"),
-        "cells": ("relational-access", "relational-constraint", "relational-ops", "document-access", "document-constraint", "document-ops", "key-value-access", "key-value-constraint", "key-value-ops"),
+        "columns": ("access-fit", "constraint", "capacity", "operations", "recovery"),
+        "cells": ("relational-access", "relational-constraint", "relational-capacity", "relational-operations", "relational-recovery", "document-access", "document-constraint", "document-capacity", "document-operations", "document-recovery", "key-value-access", "key-value-constraint", "key-value-capacity", "key-value-operations", "key-value-recovery"),
     },
     "core-16-hci-usability-accessibility": {
         "steps": ("scope", "target", "observe", "review", "claim"),
@@ -123,20 +134,563 @@ TASK7_STRUCTURE_IDS = {
     },
     "core-17-graphics-visual-information": {
         "steps": ("data", "transform", "visual", "equivalent", "verify"),
-        "transitions": ("data-to-transform", "transform-to-visual", "visual-to-equivalent", "equivalent-to-verify"),
+        "transitions": ("data-to-transform", "transform-to-visual", "transform-to-equivalent", "visual-to-verify", "equivalent-to-verify"),
     },
     "core-19-technical-communication-design-docs": {
         "nodes": ("decision-record", "audience", "evidence", "executive-view", "implementation-view", "alternatives", "validation"),
     },
     "core-25-engineering-economics-capacity": {
-        "rows": ("option-a", "option-b"),
-        "columns": ("total-cost", "capacity", "decision"),
-        "cells": ("a-cost", "a-capacity", "a-decision", "b-cost", "b-capacity", "b-decision"),
+        "rows": ("scale-up", "automation"),
+        "columns": ("direct", "opportunity", "operations", "reliability", "capacity-unit", "sensitivity"),
+        "cells": ("scale-direct", "scale-opportunity", "scale-operations", "scale-reliability", "scale-total", "scale-sensitivity", "automation-direct", "automation-opportunity", "automation-operations", "automation-reliability", "automation-total", "automation-sensitivity"),
     },
     "core-28-oss-governance-stewardship": {
         "steps": ("discover", "prepare", "submit", "review", "maintainer-merge", "release-evidence"),
         "transitions": ("discover-to-prepare", "prepare-to-submit", "submit-to-review", "review-to-merge", "merge-to-release"),
     },
+}
+
+TASK7_PAYLOAD_CONTRACTS = {'core-02-algorithms-measurement': {'alternatives': [{'id': 'linear-scan',
+                                                      'label': '線形走査',
+                                                      'detail': '順序なし配列を先頭から探索する候補。'},
+                                                     {'id': 'binary-search',
+                                                      'label': '二分探索',
+                                                      'detail': '整列済み配列を半分ずつ絞る候補。'},
+                                                     {'id': 'hash-lookup',
+                                                      'label': 'hash lookup',
+                                                      'detail': 'hash tableを構築してkeyを探索する候補。'}],
+                                    'criteria': [{'id': 'best-case',
+                                                  'label': 'best case',
+                                                  'detail': '最も有利な入力配置での支配操作。'},
+                                                 {'id': 'average-case',
+                                                  'label': 'average case',
+                                                  'detail': '明示した入力分布の期待操作回数。'},
+                                                 {'id': 'worst-case',
+                                                  'label': 'worst case',
+                                                  'detail': '最も不利な入力と衝突条件の上界。'},
+                                                 {'id': 'setup-cost',
+                                                  'label': 'setup / build cost',
+                                                  'detail': 'worked exampleで分離測定するset構築または整列の費用。'},
+                                                 {'id': 'space-cost',
+                                                  'label': 'space cost',
+                                                  'detail': '追加indexやcopyに必要なmemory。'},
+                                                 {'id': 'query-crossover',
+                                                  'label': 'query count / crossover',
+                                                  'detail': 'setup費用をlookup短縮で償却できる環境固有のquery回数。'}],
+                                    'cells': [{'id': 'linear-best',
+                                               'alternativeId': 'linear-scan',
+                                               'criterionId': 'best-case',
+                                               'value': 'Θ(1): 先頭で一致'},
+                                              {'id': 'linear-average',
+                                               'alternativeId': 'linear-scan',
+                                               'criterionId': 'average-case',
+                                               'value': 'Θ(n): 平均で約n/2比較'},
+                                              {'id': 'linear-worst',
+                                               'alternativeId': 'linear-scan',
+                                               'criterionId': 'worst-case',
+                                               'value': 'Θ(n): 末尾または不在'},
+                                              {'id': 'linear-setup',
+                                               'alternativeId': 'linear-scan',
+                                               'criterionId': 'setup-cost',
+                                               'value': '追加構築なしΘ(1)'},
+                                              {'id': 'linear-space',
+                                               'alternativeId': 'linear-scan',
+                                               'criterionId': 'space-cost',
+                                               'value': '追加space Θ(1)'},
+                                              {'id': 'linear-crossover',
+                                               'alternativeId': 'linear-scan',
+                                               'criterionId': 'query-crossover',
+                                               'value': '少数queryではbuild費用がないため候補'},
+                                              {'id': 'binary-best',
+                                               'alternativeId': 'binary-search',
+                                               'criterionId': 'best-case',
+                                               'value': 'Θ(1): 中央で一致'},
+                                              {'id': 'binary-average',
+                                               'alternativeId': 'binary-search',
+                                               'criterionId': 'average-case',
+                                               'value': 'Θ(log n): 整列済み入力'},
+                                              {'id': 'binary-worst',
+                                               'alternativeId': 'binary-search',
+                                               'criterionId': 'worst-case',
+                                               'value': 'Θ(log n): 不在でも半減'},
+                                              {'id': 'binary-setup',
+                                               'alternativeId': 'binary-search',
+                                               'criterionId': 'setup-cost',
+                                               'value': '未整列ならsort Θ(n log n)'},
+                                              {'id': 'binary-space',
+                                               'alternativeId': 'binary-search',
+                                               'criterionId': 'space-cost',
+                                               'value': 'sort実装とcopy方針に依存'},
+                                              {'id': 'binary-crossover',
+                                               'alternativeId': 'binary-search',
+                                               'criterionId': 'query-crossover',
+                                               'value': 'sort費用を複数queryで償却'},
+                                              {'id': 'hash-best',
+                                               'alternativeId': 'hash-lookup',
+                                               'criterionId': 'best-case',
+                                               'value': 'Θ(1): 衝突なし'},
+                                              {'id': 'hash-average',
+                                               'alternativeId': 'hash-lookup',
+                                               'criterionId': 'average-case',
+                                               'value': '期待Θ(1): hash分布を仮定'},
+                                              {'id': 'hash-worst',
+                                               'alternativeId': 'hash-lookup',
+                                               'criterionId': 'worst-case',
+                                               'value': 'Θ(n): 全keyが衝突'},
+                                              {'id': 'hash-setup',
+                                               'alternativeId': 'hash-lookup',
+                                               'criterionId': 'setup-cost',
+                                               'value': 'set構築Θ(n)をlookupと分離測定'},
+                                              {'id': 'hash-space',
+                                               'alternativeId': 'hash-lookup',
+                                               'criterionId': 'space-cost',
+                                               'value': 'set tableの追加space Θ(n)'},
+                                              {'id': 'hash-crossover',
+                                               'alternativeId': 'hash-lookup',
+                                               'criterionId': 'query-crossover',
+                                               'value': 'set_build中央値 ÷ 1 query当たり短縮; query回数8と比較'}]},
+ 'core-03-architecture-memory-caches': {'layers': [{'id': 'instruction',
+                                                    'label': '命令',
+                                                    'detail': '仮想アドレスAの値を要求する。',
+                                                    'group': 'request'},
+                                                   {'id': 'tlb',
+                                                    'label': 'TLB',
+                                                    'detail': 'Aのページ変換を検索し、missならpage table walkを開始する。',
+                                                    'group': 'translation'},
+                                                   {'id': 'page-table',
+                                                    'label': 'page table walk',
+                                                    'detail': 'TLB miss branchだけで仮想pageから物理pageへの変換情報を取得する。',
+                                                    'group': 'translation'},
+                                                   {'id': 'address-ready',
+                                                    'label': '物理address ready',
+                                                    'detail': 'TLB hitまたはpage table walk完了が合流し、物理tag照合へ必要なaddressを渡す。',
+                                                    'group': 'translation'},
+                                                   {'id': 'l1-cache',
+                                                    'label': 'L1 cache',
+                                                    'detail': 'VIPTでは仮想addressのindex '
+                                                              'lookupがTLBと並行し得るが、物理tag照合後にhit/missを判断する。',
+                                                    'group': 'transfer'},
+                                                   {'id': 'lower-cache',
+                                                    'label': 'L2と最終レベルcache',
+                                                    'detail': 'private/shared範囲と段数は機種依存で、固定latencyではない。',
+                                                    'group': 'transfer'},
+                                                   {'id': 'memory-controller',
+                                                    'label': 'memory controller',
+                                                    'detail': '全cache miss時に主記憶からline単位で転送する。',
+                                                    'group': 'transfer'},
+                                                   {'id': 'return',
+                                                    'label': '値を命令へreturn',
+                                                    'detail': 'L1 hit、lower cache hit、またはmemory転送完了が共通returnへ合流する。',
+                                                    'group': 'return'},
+                                                   {'id': 'reuse',
+                                                    'label': '再利用',
+                                                    'detail': 'return後、空間的局所性または時間的局所性で後続accessのhitを増やす。',
+                                                    'group': 'reuse'}],
+                                        'transfers': [{'id': 'instruction-to-tlb',
+                                                       'from': 'instruction',
+                                                       'to': 'tlb',
+                                                       'label': '仮想アドレスAの変換を検索',
+                                                       'kind': 'translation-request'},
+                                                      {'id': 'instruction-to-l1',
+                                                       'from': 'instruction',
+                                                       'to': 'l1-cache',
+                                                       'label': 'VIPT index lookupは変換と並行し得る',
+                                                       'kind': 'vipt-parallel-index'},
+                                                      {'id': 'tlb-hit',
+                                                       'from': 'tlb',
+                                                       'to': 'address-ready',
+                                                       'label': 'TLB hitなら保持した変換を使う',
+                                                       'kind': 'tlb-hit'},
+                                                      {'id': 'tlb-miss',
+                                                       'from': 'tlb',
+                                                       'to': 'page-table',
+                                                       'label': 'TLB miss時だけpage table walk',
+                                                       'kind': 'tlb-miss'},
+                                                      {'id': 'walk-complete',
+                                                       'from': 'page-table',
+                                                       'to': 'address-ready',
+                                                       'label': 'walk完了で物理addressを得る',
+                                                       'kind': 'translation-result'},
+                                                      {'id': 'address-to-l1',
+                                                       'from': 'address-ready',
+                                                       'to': 'l1-cache',
+                                                       'label': '物理tag照合でdata hit/missを確定',
+                                                       'kind': 'tag-check'},
+                                                      {'id': 'l1-hit-return',
+                                                       'from': 'l1-cache',
+                                                       'to': 'return',
+                                                       'label': 'L1 hitなら値を返す',
+                                                       'kind': 'l1-hit'},
+                                                      {'id': 'l1-miss-lower',
+                                                       'from': 'l1-cache',
+                                                       'to': 'lower-cache',
+                                                       'label': 'L1 miss時だけ下位cacheへ',
+                                                       'kind': 'l1-miss'},
+                                                      {'id': 'lower-hit-return',
+                                                       'from': 'lower-cache',
+                                                       'to': 'return',
+                                                       'label': 'lower cache hitなら値を返す',
+                                                       'kind': 'lower-hit'},
+                                                      {'id': 'lower-miss-memory',
+                                                       'from': 'lower-cache',
+                                                       'to': 'memory-controller',
+                                                       'label': '全cache miss時だけ主記憶へ',
+                                                       'kind': 'lower-miss'},
+                                                      {'id': 'memory-return',
+                                                       'from': 'memory-controller',
+                                                       'to': 'return',
+                                                       'label': 'line転送完了後に値を返す',
+                                                       'kind': 'memory-return'},
+                                                      {'id': 'return-to-reuse',
+                                                       'from': 'return',
+                                                       'to': 'reuse',
+                                                       'label': '返却後のlineを後続accessで再利用',
+                                                       'kind': 'reuse'}]},
+ 'core-11-data-modeling-storage': {'rows': [{'id': 'relational',
+                                             'label': 'relational',
+                                             'detail': '関係・constraint・transactionを明示する候補。'},
+                                            {'id': 'document',
+                                             'label': 'document',
+                                             'detail': 'aggregate単位で一緒に読むdataを保持する候補。'},
+                                            {'id': 'key-value',
+                                             'label': 'key-value',
+                                             'detail': 'keyによるbounded lookupを中心にする候補。'}],
+                                   'columns': [{'id': 'access-fit',
+                                                'label': 'access fit × 0.45',
+                                                'detail': 'query frequency×model別ratingの加重平均。baselineと変更後を同じ式で再計算する。'},
+                                               {'id': 'constraint',
+                                                'label': 'constraint × 0.20',
+                                                'detail': '不変条件と更新競合のratingとscore contribution。'},
+                                               {'id': 'capacity',
+                                                'label': 'capacity × 0.15',
+                                                'detail': '1.1M projected recordsへのtested pathのratingとcontribution。'},
+                                               {'id': 'operations',
+                                                'label': 'operations × 0.10',
+                                                'detail': 'migration・observe・operateのratingとcontribution。'},
+                                               {'id': 'recovery',
+                                                'label': 'recovery × 0.10',
+                                                'detail': 'backup・restore・reconstructionのratingとcontribution。'}],
+                                   'cells': [{'id': 'relational-access',
+                                              'rowId': 'relational',
+                                              'columnId': 'access-fit',
+                                              'value': 'baseline (480×5 + 360×3 + 48×1 + 90×4) / 978 = 3.975460; '
+                                                       'changed (24×5 + 360×3 + 480×1 + 90×4) / 954 = 2.138365; weight '
+                                                       '0.45',
+                                              'status': 'value'},
+                                             {'id': 'relational-constraint',
+                                              'rowId': 'relational',
+                                              'columnId': 'constraint',
+                                              'value': 'rating 5 × 0.20 = 1.00',
+                                              'status': 'value'},
+                                             {'id': 'relational-capacity',
+                                              'rowId': 'relational',
+                                              'columnId': 'capacity',
+                                              'value': 'rating 4 × 0.15 = 0.60',
+                                              'status': 'value'},
+                                             {'id': 'relational-operations',
+                                              'rowId': 'relational',
+                                              'columnId': 'operations',
+                                              'value': 'rating 4 × 0.10 = 0.40',
+                                              'status': 'value'},
+                                             {'id': 'relational-recovery',
+                                              'rowId': 'relational',
+                                              'columnId': 'recovery',
+                                              'value': 'rating 5 × 0.10 = 0.50; baseline total 4.288957; changed total '
+                                                       '3.462264',
+                                              'status': 'value'},
+                                             {'id': 'document-access',
+                                              'rowId': 'document',
+                                              'columnId': 'access-fit',
+                                              'value': 'baseline (480×4 + 360×5 + 48×2 + 90×4) / 978 = 4.269939; '
+                                                       'changed (24×4 + 360×5 + 480×2 + 90×4) / 954 = 3.371069; weight '
+                                                       '0.45',
+                                              'status': 'value'},
+                                             {'id': 'document-constraint',
+                                              'rowId': 'document',
+                                              'columnId': 'constraint',
+                                              'value': 'rating 3 × 0.20 = 0.60',
+                                              'status': 'value'},
+                                             {'id': 'document-capacity',
+                                              'rowId': 'document',
+                                              'columnId': 'capacity',
+                                              'value': 'rating 4 × 0.15 = 0.60',
+                                              'status': 'value'},
+                                             {'id': 'document-operations',
+                                              'rowId': 'document',
+                                              'columnId': 'operations',
+                                              'value': 'rating 3 × 0.10 = 0.30',
+                                              'status': 'value'},
+                                             {'id': 'document-recovery',
+                                              'rowId': 'document',
+                                              'columnId': 'recovery',
+                                              'value': 'rating 3 × 0.10 = 0.30; baseline total 3.721472; changed total '
+                                                       '3.316981',
+                                              'status': 'value'},
+                                             {'id': 'key-value-access',
+                                              'rowId': 'key-value',
+                                              'columnId': 'access-fit',
+                                              'value': 'baseline (480×2 + 360×4 + 48×5 + 90×2) / 978 = 2.883436; '
+                                                       'changed (24×2 + 360×4 + 480×5 + 90×2) / 954 = 4.264151; weight '
+                                                       '0.45',
+                                              'status': 'value'},
+                                             {'id': 'key-value-constraint',
+                                              'rowId': 'key-value',
+                                              'columnId': 'constraint',
+                                              'value': 'rating 2 × 0.20 = 0.40',
+                                              'status': 'value'},
+                                             {'id': 'key-value-capacity',
+                                              'rowId': 'key-value',
+                                              'columnId': 'capacity',
+                                              'value': 'rating 5 × 0.15 = 0.75',
+                                              'status': 'value'},
+                                             {'id': 'key-value-operations',
+                                              'rowId': 'key-value',
+                                              'columnId': 'operations',
+                                              'value': 'rating 2 × 0.10 = 0.20',
+                                              'status': 'value'},
+                                             {'id': 'key-value-recovery',
+                                              'rowId': 'key-value',
+                                              'columnId': 'recovery',
+                                              'value': 'rating 4 × 0.10 = 0.40; baseline total 3.047546; changed total '
+                                                       '3.668868',
+                                              'status': 'value'}]},
+ 'core-16-hci-usability-accessibility': {'steps': [{'id': 'scope',
+                                                    'label': 'Scope',
+                                                    'detail': 'ページfixture、利用者、入力方式、環境、除外を固定する。'},
+                                                   {'id': 'target',
+                                                    'label': 'Target',
+                                                    'detail': 'WCAG 2.2 Level AAの規範的targetと版を記録する。'},
+                                                   {'id': 'observe',
+                                                    'label': 'Observe',
+                                                    'detail': 'keyboard、200% zoom、reading order、usabilityを期待値と比較する。'},
+                                                   {'id': 'review',
+                                                    'label': 'Review',
+                                                    'detail': '自動化で判定できない意味、順序、タスク成功を人が確認する。'},
+                                                   {'id': 'claim',
+                                                    'label': 'Claim',
+                                                    'detail': '合否、未確認、残余リスクを分け、範囲を限定して報告する。'}],
+                                         'transitions': [{'id': 'scope-to-target',
+                                                          'from': 'scope',
+                                                          'to': 'target',
+                                                          'label': '対象を固定'},
+                                                         {'id': 'target-to-observe',
+                                                          'from': 'target',
+                                                          'to': 'observe',
+                                                          'label': '規範期待値を適用'},
+                                                         {'id': 'observe-to-review',
+                                                          'from': 'observe',
+                                                          'to': 'review',
+                                                          'label': '自動結果と手動観測を渡す'},
+                                                         {'id': 'review-to-claim',
+                                                          'from': 'review',
+                                                          'to': 'claim',
+                                                          'label': '証拠の限界を含める'}]},
+ 'core-17-graphics-visual-information': {'steps': [{'id': 'data',
+                                                    'label': 'Data',
+                                                    'detail': 'roadmapのnodeとedge、chartのlabelとvalueをID付きで定義する。'},
+                                                   {'id': 'transform',
+                                                    'label': 'Transform',
+                                                    'detail': '並び、scale、minimum、maximumを決定的に計算する。'},
+                                                   {'id': 'visual',
+                                                    'label': 'Visual',
+                                                    'detail': 'semantic HTMLとCSSでroadmapとquantitative chartを配置する。'},
+                                                   {'id': 'equivalent',
+                                                    'label': 'Equivalent',
+                                                    'detail': 'node関係list、caption付きtable、summaryを同じdataから導出する。'},
+                                                   {'id': 'verify',
+                                                    'label': 'Verify',
+                                                    'detail': 'ID、edge、row、値、集約、display modeの不変条件を照合する。'}],
+                                         'transitions': [{'id': 'data-to-transform',
+                                                          'from': 'data',
+                                                          'to': 'transform',
+                                                          'label': 'typed values'},
+                                                         {'id': 'transform-to-visual',
+                                                          'from': 'transform',
+                                                          'to': 'visual',
+                                                          'label': '同じtransformから決定的layout'},
+                                                         {'id': 'transform-to-equivalent',
+                                                          'from': 'transform',
+                                                          'to': 'equivalent',
+                                                          'label': '同じtransformから同等text'},
+                                                         {'id': 'visual-to-verify',
+                                                          'from': 'visual',
+                                                          'to': 'verify',
+                                                          'label': '視覚側のID・値を照合'},
+                                                         {'id': 'equivalent-to-verify',
+                                                          'from': 'equivalent',
+                                                          'to': 'verify',
+                                                          'label': 'text側のID・値を照合'}]},
+ 'core-19-technical-communication-design-docs': {'nodes': [{'id': 'decision-record',
+                                                            'label': 'Decision record',
+                                                            'detail': '選定結果、負うconsequence、再評価条件を明示する。',
+                                                            'parentId': None},
+                                                           {'id': 'audience',
+                                                            'label': 'Audience',
+                                                            'detail': '責務、判断、既知の用語、時間制約を定義する。',
+                                                            'parentId': 'decision-record'},
+                                                           {'id': 'evidence',
+                                                            'label': 'Evidence',
+                                                            'detail': '評価基準、入力、代替案、risk、検証結果を固定する。',
+                                                            'parentId': 'decision-record'},
+                                                           {'id': 'executive-view',
+                                                            'label': 'Executive view',
+                                                            'detail': '結論、価値、主要risk、承認依頼を一頁へ収める。',
+                                                            'parentId': 'audience'},
+                                                           {'id': 'implementation-view',
+                                                            'label': 'Implementation view',
+                                                            'detail': 'interface、migration、rollback、validationを付録へ置く。',
+                                                            'parentId': 'audience'},
+                                                           {'id': 'alternatives',
+                                                            'label': '代替案と基準',
+                                                            'detail': '採用案だけでなく比較対象と評価基準を保持する。',
+                                                            'parentId': 'evidence'},
+                                                           {'id': 'validation',
+                                                            'label': '検証と再評価',
+                                                            'detail': '結果の確認方法とdecisionを開き直す条件を保持する。',
+                                                            'parentId': 'evidence'}]},
+ 'core-25-engineering-economics-capacity': {'rows': [{'id': 'scale-up',
+                                                      'label': 'scale-up',
+                                                      'detail': 'synthetic fixture: capacity 1000、direct '
+                                                                '12000、engineering 40h、operations 20h、failure '
+                                                                '0.05×8h。'},
+                                                     {'id': 'automation',
+                                                      'label': 'automation',
+                                                      'detail': 'synthetic fixture: capacity 1600、direct '
+                                                                '16000、engineering 120h、operations 5h、failure '
+                                                                '0.01×2h。'}],
+                                            'columns': [{'id': 'direct',
+                                                         'label': 'direct cost',
+                                                         'detail': 'lesson-defined取得・実行費。provider quoteではない。'},
+                                                        {'id': 'opportunity',
+                                                         'label': 'opportunity cost',
+                                                         'detail': 'engineering hours × 100/hour。'},
+                                                        {'id': 'operations',
+                                                         'label': 'operations cost',
+                                                         'detail': 'operations hours × 80/hour。'},
+                                                        {'id': 'reliability',
+                                                         'label': 'reliability loss',
+                                                         'detail': 'failure probability × incident hours × '
+                                                                   '10000/hour。'},
+                                                        {'id': 'capacity-unit',
+                                                         'label': 'total・capacity・unit cost',
+                                                         'detail': '四cost合計、required capacity、served '
+                                                                   'units、headroom、total/served units。'},
+                                                        {'id': 'sensitivity',
+                                                         'label': 'demand-growth sensitivity',
+                                                         'detail': 'base demand 800でgrowthだけを変え、constraint breachをunit '
+                                                                   'costより先に評価する。'}],
+                                            'cells': [{'id': 'scale-direct',
+                                                       'rowId': 'scale-up',
+                                                       'columnId': 'direct',
+                                                       'value': '12000',
+                                                       'status': 'value'},
+                                                      {'id': 'scale-opportunity',
+                                                       'rowId': 'scale-up',
+                                                       'columnId': 'opportunity',
+                                                       'value': '40×100 = 4000',
+                                                       'status': 'value'},
+                                                      {'id': 'scale-operations',
+                                                       'rowId': 'scale-up',
+                                                       'columnId': 'operations',
+                                                       'value': '20×80 = 1600',
+                                                       'status': 'value'},
+                                                      {'id': 'scale-reliability',
+                                                       'rowId': 'scale-up',
+                                                       'columnId': 'reliability',
+                                                       'value': '0.05×8×10000 = 4000',
+                                                       'status': 'value'},
+                                                      {'id': 'scale-total',
+                                                       'rowId': 'scale-up',
+                                                       'columnId': 'capacity-unit',
+                                                       'value': '12000 + 40×100 + 20×80 + 0.05×8×10000 = 21600; '
+                                                                '21600/800 = 27.00/unit',
+                                                       'status': 'value'},
+                                                      {'id': 'scale-sensitivity',
+                                                       'rowId': 'scale-up',
+                                                       'columnId': 'sensitivity',
+                                                       'value': 'growth 0.25でrequired capacity 1000、headroom 0; '
+                                                                '0.25超でbreach',
+                                                       'status': 'value'},
+                                                      {'id': 'automation-direct',
+                                                       'rowId': 'automation',
+                                                       'columnId': 'direct',
+                                                       'value': '16000',
+                                                       'status': 'value'},
+                                                      {'id': 'automation-opportunity',
+                                                       'rowId': 'automation',
+                                                       'columnId': 'opportunity',
+                                                       'value': '120×100 = 12000',
+                                                       'status': 'value'},
+                                                      {'id': 'automation-operations',
+                                                       'rowId': 'automation',
+                                                       'columnId': 'operations',
+                                                       'value': '5×80 = 400',
+                                                       'status': 'value'},
+                                                      {'id': 'automation-reliability',
+                                                       'rowId': 'automation',
+                                                       'columnId': 'reliability',
+                                                       'value': '0.01×2×10000 = 200',
+                                                       'status': 'value'},
+                                                      {'id': 'automation-total',
+                                                       'rowId': 'automation',
+                                                       'columnId': 'capacity-unit',
+                                                       'value': '16000 + 120×100 + 5×80 + 0.01×2×10000 = 28600; '
+                                                                '28600/800 = 35.75/unit',
+                                                       'status': 'value'},
+                                                      {'id': 'automation-sensitivity',
+                                                       'rowId': 'automation',
+                                                       'columnId': 'sensitivity',
+                                                       'value': 'growth 0.5でrequired capacity 1200、headroom '
+                                                                '400、automationを選択',
+                                                       'status': 'value'}]},
+ 'core-28-oss-governance-stewardship': {'steps': [{'id': 'discover',
+                                                   'label': 'discover',
+                                                   'detail': '第三者がlicense、community '
+                                                             'rule、security窓口、contribution手順を見つける。'},
+                                                  {'id': 'prepare',
+                                                   'label': 'prepare',
+                                                   'detail': 'forkまたは同等のread-only境界で変更と検証証拠を作る。'},
+                                                  {'id': 'submit',
+                                                   'label': 'submit',
+                                                   'detail': '変更理由、scope、test結果をreview可能な単位で提示する。'},
+                                                  {'id': 'review',
+                                                   'label': 'review',
+                                                   'detail': 'maintainerが品質、security、policy、互換性を証拠で判断する。'},
+                                                  {'id': 'maintainer-merge',
+                                                   'label': 'maintainer-merge',
+                                                   'detail': 'write権限を第三者へ移さず、承認済み変更だけを統合する。'},
+                                                  {'id': 'release-evidence',
+                                                   'label': 'release-evidence',
+                                                   'detail': 'CI結果、provenance、承認、公開artifactを対応付ける。'}],
+                                        'transitions': [{'id': 'discover-to-prepare',
+                                                         'from': 'discover',
+                                                         'to': 'prepare',
+                                                         'label': '公開policyを理解'},
+                                                        {'id': 'prepare-to-submit',
+                                                         'from': 'prepare',
+                                                         'to': 'submit',
+                                                         'label': '変更と検証証拠'},
+                                                        {'id': 'submit-to-review',
+                                                         'from': 'submit',
+                                                         'to': 'review',
+                                                         'label': 'review可能なscope'},
+                                                        {'id': 'review-to-merge',
+                                                         'from': 'review',
+                                                         'to': 'maintainer-merge',
+                                                         'label': 'maintainer承認'},
+                                                        {'id': 'merge-to-release',
+                                                         'from': 'maintainer-merge',
+                                                         'to': 'release-evidence',
+                                                         'label': '統合commitをartifactへ追跡'}]}}
+TASK7_VISUAL_CONTRACT_SHA256 = {
+    "core-02-algorithms-measurement": "d54ddfd1d57997d9ad22214a414cf97090f30758e104ab15c13bd5247d326db7",
+    "core-03-architecture-memory-caches": "a4a48705ff0725ab6549e3554f88975574a6e5390ed925a042aecf02e4b76776",
+    "core-11-data-modeling-storage": "716e87ceb4ab0093df727ff852df055eba67ee98e3718dcd43a2d7e400c72ee2",
+    "core-16-hci-usability-accessibility": "2479940e86a8e782f34887cd0951068c0e731bd9c2f5282e3fa5d3b1217a7e56",
+    "core-17-graphics-visual-information": "b546551905fbe4d447c690209377666ac3cbc9b6f89254786cec919b22048a6a",
+    "core-19-technical-communication-design-docs": "19c43b251a3be87d4e9285af961000ba676d4df9fdef06a8fb29e3e8dc9bad91",
+    "core-25-engineering-economics-capacity": "c98dd7dfbdc4419478107a61c19a340f516ebc30bf16fabe67bf695bdee582c6",
+    "core-28-oss-governance-stewardship": "53b530d4a257216d7f96d47404163f8bab72e8730909ea68df0dfc6fce223082",
 }
 TASK6_VISUAL_CONTRACT_SHA256 = {
     "core-04-os-processes-concurrency": "01e944d4d1847cc76b638183bdf58f4613eb55fb2da38d2d491ba30d8df6ae13",
@@ -3034,18 +3588,123 @@ class ContentAcceptanceTests(unittest.TestCase):
         with self.assertRaisesRegex(CurriculumValidationError, "primary visualization type"):
             validate_visualization_assignments(mutated, visuals)
 
+    def test_visualization_catalog_rejects_coverage_secondary_and_simulation_mutations(self) -> None:
+        catalog_path = REPOSITORY_ROOT / "content/visualization-catalog.json"
+        catalog = parse_visualization_catalog_bytes(
+            catalog_path.read_bytes(), catalog_path.name
+        )
+        visuals = {}
+        for lesson_id in LESSON_IDS:
+            path = REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json"
+            visuals[lesson_id] = load_lesson_bytes(
+                path.read_bytes(), path.name
+            ).visualizations
+
+        missing = dict(visuals)
+        missing.pop("core-30-evidence-based-technical-leadership")
+        with self.assertRaisesRegex(CurriculumValidationError, "exact catalog lesson IDs"):
+            validate_visualization_assignments(catalog, missing)
+
+        extra = dict(visuals)
+        extra["core-31-unapproved"] = visuals["core-30-evidence-based-technical-leadership"]
+        with self.assertRaisesRegex(CurriculumValidationError, "exact catalog lesson IDs"):
+            validate_visualization_assignments(catalog, extra)
+
+        wrong_secondary = dict(visuals)
+        wrong_secondary["core-01-systems-tradeoffs"] = (
+            visuals["core-01-systems-tradeoffs"][0],
+            visuals["core-16-hci-usability-accessibility"][0],
+        )
+        with self.assertRaisesRegex(CurriculumValidationError, "unapproved secondary"):
+            validate_visualization_assignments(catalog, wrong_secondary)
+
+        accepted_secondary = dict(visuals)
+        accepted_secondary["core-01-systems-tradeoffs"] = (
+            visuals["core-01-systems-tradeoffs"][0],
+            visuals["core-11-data-modeling-storage"][0],
+        )
+        validate_visualization_assignments(catalog, accepted_secondary)
+        swapped_document = json.loads(catalog_path.read_bytes())
+        swapped_document["lessons"][0]["optionalSecondaryType"] = "flow"
+        swapped_catalog = parse_visualization_catalog_bytes(
+            _json_bytes(swapped_document), "optional-swap.json"
+        )
+        with self.assertRaisesRegex(CurriculumValidationError, "unapproved secondary"):
+            validate_visualization_assignments(swapped_catalog, accepted_secondary)
+
+        unapproved_static = dict(visuals)
+        unapproved_static["core-01-systems-tradeoffs"] = (
+            replace(visuals["core-01-systems-tradeoffs"][0], simulation=object()),
+        )
+        with self.assertRaisesRegex(CurriculumValidationError, "unapproved simulation"):
+            validate_visualization_assignments(catalog, unapproved_static)
+
+        broken_dynamic_relation = dict(visuals)
+        broken_dynamic_relation["core-02-algorithms-measurement"] = (
+            replace(
+                visuals["core-02-algorithms-measurement"][0],
+                id="wrong-static-equivalent",
+                simulation=object(),
+            ),
+        )
+        with self.assertRaisesRegex(CurriculumValidationError, "unapproved simulation"):
+            validate_visualization_assignments(catalog, broken_dynamic_relation)
+
+    def test_production_build_rejects_a_catalog_assignment_mutation(self) -> None:
+        with TemporaryDirectory(
+            prefix=".catalog-assignment-",
+            dir=REPOSITORY_ROOT.parent,
+        ) as temporary:
+            root = Path(temporary)
+            content = root / "content"
+            shutil.copytree(REPOSITORY_ROOT / "content", content)
+            catalog_path = content / "visualization-catalog.json"
+            document = json.loads(catalog_path.read_bytes())
+            document["lessons"][0]["primaryType"] = "network"
+            catalog_path.write_bytes(_json_bytes(document))
+            # The catalog remains schema-valid; failure must come from the
+            # production build's release-wide assignment validation.
+            parse_visualization_catalog_bytes(
+                catalog_path.read_bytes(), catalog_path.name
+            )
+            with self.assertRaisesRegex(
+                CurriculumValidationError, "wrong primary visualization type"
+            ):
+                build_site(
+                    content,
+                    REPOSITORY_ROOT / "templates",
+                    REPOSITORY_ROOT / "static",
+                    root / "site",
+                    require_complete_curriculum=True,
+                )
+
     def test_task7_readable_contracts_freeze_every_structured_row_and_relation(self) -> None:
+        self.assertEqual(set(TASK7_COMMON_CONTRACTS), set(TASK7_VISUAL_TYPES))
+        self.assertEqual(set(TASK7_PAYLOAD_CONTRACTS), set(TASK7_VISUAL_TYPES))
+        self.assertEqual(set(TASK7_VISUAL_CONTRACT_SHA256), set(TASK7_VISUAL_TYPES))
         for lesson_id, expected in TASK7_STRUCTURE_IDS.items():
             with self.subTest(lesson_id=lesson_id):
                 path = REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json"
                 visual = json.loads(path.read_bytes())["visualizations"][0]
-                self.assertEqual(visual["afterSection"], "mentalModel")
-                self.assertNotIn("simulation", visual)
-                for field in ("id", "caption", "question", "expectedObservation"):
-                    self.assertTrue(visual[field].strip())
-                for field in ("objectiveIds", "evidenceIds", "sourceIds"):
-                    self.assertTrue(visual[field])
+                self.assertEqual(
+                    (
+                        visual["id"], visual["type"], visual["afterSection"],
+                        visual.get("simulation"), visual["caption"],
+                        visual["question"], visual["expectedObservation"],
+                        tuple(visual["objectiveIds"]), tuple(visual["evidenceIds"]),
+                        tuple(visual["sourceIds"]), tuple(visual.get("notes", ())),
+                    ),
+                    TASK7_COMMON_CONTRACTS[lesson_id],
+                )
                 payload = visual["payload"]
+                self.assertEqual(payload, TASK7_PAYLOAD_CONTRACTS[lesson_id])
+                encoded = json.dumps(
+                    visual, ensure_ascii=False, separators=(",", ":")
+                ).encode("utf-8")
+                self.assertEqual(
+                    hashlib.sha256(encoded).hexdigest(),
+                    TASK7_VISUAL_CONTRACT_SHA256[lesson_id],
+                )
                 for group, expected_ids in expected.items():
                     items = payload[group]
                     self.assertEqual(tuple(item["id"] for item in items), expected_ids)
@@ -3062,22 +3721,156 @@ class ContentAcceptanceTests(unittest.TestCase):
 
         memory = json.loads((REPOSITORY_ROOT / "content/lessons/core-03-architecture-memory-caches/lesson.json").read_bytes())["visualizations"][0]
         self.assertIn("translation", memory["question"])
-        self.assertIn("固定latencyではない", memory["payload"]["layers"][4]["detail"])
+        lower = next(
+            item for item in memory["payload"]["layers"]
+            if item["id"] == "lower-cache"
+        )
+        self.assertIn("固定latencyではない", lower["detail"])
         complexity = json.loads((REPOSITORY_ROOT / "content/lessons/core-02-algorithms-measurement/lesson.json").read_bytes())["visualizations"][0]
-        self.assertEqual(tuple(item["label"] for item in complexity["payload"]["criteria"]), ("best case", "average case", "worst case"))
+        self.assertEqual(
+            tuple(item["label"] for item in complexity["payload"]["criteria"]),
+            (
+                "best case", "average case", "worst case",
+                "setup / build cost", "space cost", "query count / crossover",
+            ),
+        )
         hierarchy = json.loads((REPOSITORY_ROOT / "content/lessons/core-19-technical-communication-design-docs/lesson.json").read_bytes())["visualizations"][0]
         self.assertEqual(tuple(item["parentId"] for item in hierarchy["payload"]["nodes"]), (None, "decision-record", "decision-record", "audience", "audience", "evidence", "evidence"))
 
     def test_task7_readable_contract_detects_structure_and_detail_mutations(self) -> None:
+        def load_visual(lesson_id: str) -> dict[str, object]:
+            path = REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json"
+            return json.loads(path.read_bytes())["visualizations"][0]
+
+        def assert_contract(lesson_id: str, visual: dict[str, object]) -> None:
+            self.assertEqual(
+                (
+                    visual["id"], visual["type"], visual["afterSection"],
+                    visual.get("simulation"), visual["caption"], visual["question"],
+                    visual["expectedObservation"], tuple(visual["objectiveIds"]),
+                    tuple(visual["evidenceIds"]), tuple(visual["sourceIds"]),
+                    tuple(visual.get("notes", ())),
+                ),
+                TASK7_COMMON_CONTRACTS[lesson_id],
+            )
+            self.assertEqual(visual["payload"], TASK7_PAYLOAD_CONTRACTS[lesson_id])
+
+        mutations: list[tuple[str, dict[str, object]]] = []
+
+        memory = load_visual("core-03-architecture-memory-caches")
+        memory["payload"]["transfers"][2]["label"] = "TLB結果を常に無視する"
+        mutations.append(("core-03-architecture-memory-caches", memory))
+
+        matrix = load_visual("core-11-data-modeling-storage")
+        matrix["payload"]["cells"][0]["value"] = "baseline total 5.0"
+        mutations.append(("core-11-data-modeling-storage", matrix))
+
+        hierarchy = load_visual("core-19-technical-communication-design-docs")
+        hierarchy["payload"]["nodes"][3]["detail"] = "実装詳細を意思決定から切り離す。"
+        mutations.append(("core-19-technical-communication-design-docs", hierarchy))
+
+        sources = load_visual("core-28-oss-governance-stewardship")
+        sources["sourceIds"] = ["src-02", "src-01", "src-03", "src-04", "src-05"]
+        mutations.append(("core-28-oss-governance-stewardship", sources))
+
+        placement = load_visual("core-02-algorithms-measurement")
+        placement["afterSection"] = "workedExample"
+        mutations.append(("core-02-algorithms-measurement", placement))
+
+        for lesson_id, mutated in mutations:
+            with self.subTest(lesson_id=lesson_id), self.assertRaises(AssertionError):
+                assert_contract(lesson_id, mutated)
+
+    def test_task7_core11_matrix_reproduces_the_worked_example_calculations(self) -> None:
+        path = REPOSITORY_ROOT / "content/lessons/core-11-data-modeling-storage/lesson.json"
+        visual = json.loads(path.read_bytes())["visualizations"][0]
+        payload = visual["payload"]
+        self.assertEqual(
+            tuple(column["id"] for column in payload["columns"]),
+            ("access-fit", "constraint", "capacity", "operations", "recovery"),
+        )
+        values = {cell["id"]: cell["value"] for cell in payload["cells"]}
+        expected = {
+            "relational-access": "baseline (480×5 + 360×3 + 48×1 + 90×4) / 978 = 3.975460; changed (24×5 + 360×3 + 480×1 + 90×4) / 954 = 2.138365; weight 0.45",
+            "relational-constraint": "rating 5 × 0.20 = 1.00",
+            "relational-capacity": "rating 4 × 0.15 = 0.60",
+            "relational-operations": "rating 4 × 0.10 = 0.40",
+            "relational-recovery": "rating 5 × 0.10 = 0.50; baseline total 4.288957; changed total 3.462264",
+            "document-access": "baseline (480×4 + 360×5 + 48×2 + 90×4) / 978 = 4.269939; changed (24×4 + 360×5 + 480×2 + 90×4) / 954 = 3.371069; weight 0.45",
+            "document-constraint": "rating 3 × 0.20 = 0.60",
+            "document-capacity": "rating 4 × 0.15 = 0.60",
+            "document-operations": "rating 3 × 0.10 = 0.30",
+            "document-recovery": "rating 3 × 0.10 = 0.30; baseline total 3.721472; changed total 3.316981",
+            "key-value-access": "baseline (480×2 + 360×4 + 48×5 + 90×2) / 978 = 2.883436; changed (24×2 + 360×4 + 480×5 + 90×2) / 954 = 4.264151; weight 0.45",
+            "key-value-constraint": "rating 2 × 0.20 = 0.40",
+            "key-value-capacity": "rating 5 × 0.15 = 0.75",
+            "key-value-operations": "rating 2 × 0.10 = 0.20",
+            "key-value-recovery": "rating 4 × 0.10 = 0.40; baseline total 3.047546; changed total 3.668868",
+        }
+        self.assertEqual(values, expected)
+        self.assertTrue(any("baseline total 4.288957" in note for note in visual["notes"]))
+        self.assertTrue(any("changed total 3.668868" in note for note in visual["notes"]))
+
+    def test_task7_core25_matrix_reproduces_cost_and_sensitivity_arithmetic(self) -> None:
+        path = REPOSITORY_ROOT / "content/lessons/core-25-engineering-economics-capacity/lesson.json"
+        visual = json.loads(path.read_bytes())["visualizations"][0]
+        payload = visual["payload"]
+        self.assertEqual(tuple(row["id"] for row in payload["rows"]), ("scale-up", "automation"))
+        self.assertEqual(
+            tuple(column["id"] for column in payload["columns"]),
+            ("direct", "opportunity", "operations", "reliability", "capacity-unit", "sensitivity"),
+        )
+        values = {cell["id"]: cell["value"] for cell in payload["cells"]}
+        self.assertEqual(values, {
+            "scale-direct": "12000",
+            "scale-opportunity": "40×100 = 4000",
+            "scale-operations": "20×80 = 1600",
+            "scale-reliability": "0.05×8×10000 = 4000",
+            "scale-total": "12000 + 40×100 + 20×80 + 0.05×8×10000 = 21600; 21600/800 = 27.00/unit",
+            "scale-sensitivity": "growth 0.25でrequired capacity 1000、headroom 0; 0.25超でbreach",
+            "automation-direct": "16000",
+            "automation-opportunity": "120×100 = 12000",
+            "automation-operations": "5×80 = 400",
+            "automation-reliability": "0.01×2×10000 = 200",
+            "automation-total": "16000 + 120×100 + 5×80 + 0.01×2×10000 = 28600; 28600/800 = 35.75/unit",
+            "automation-sensitivity": "growth 0.5でrequired capacity 1200、headroom 400、automationを選択",
+        })
+
+    def test_task7_core17_branches_visual_and_text_from_transform_before_verify(self) -> None:
+        path = REPOSITORY_ROOT / "content/lessons/core-17-graphics-visual-information/lesson.json"
+        transitions = json.loads(path.read_bytes())["visualizations"][0]["payload"]["transitions"]
+        edges = {(edge["from"], edge["to"]) for edge in transitions}
+        self.assertEqual(edges, {("data", "transform"), ("transform", "visual"), ("transform", "equivalent"), ("visual", "verify"), ("equivalent", "verify")})
+        self.assertNotIn(("visual", "equivalent"), edges)
+
+    def test_task7_core03_models_translation_and_data_hit_miss_branches(self) -> None:
         path = REPOSITORY_ROOT / "content/lessons/core-03-architecture-memory-caches/lesson.json"
-        original = json.loads(path.read_bytes())["visualizations"][0]["payload"]
-        expected_layers = TASK7_STRUCTURE_IDS["core-03-architecture-memory-caches"]["layers"]
-        mutated = deepcopy(original)
-        mutated["layers"][1]["detail"] = "translationとdata transferは常に同じlatency"
-        self.assertNotEqual(mutated, original)
-        swapped = deepcopy(original)
-        swapped["layers"][0], swapped["layers"][1] = swapped["layers"][1], swapped["layers"][0]
-        self.assertNotEqual(tuple(item["id"] for item in swapped["layers"]), expected_layers)
+        visual = json.loads(path.read_bytes())["visualizations"][0]
+        edges = {(edge["from"], edge["to"], edge["kind"]) for edge in visual["payload"]["transfers"]}
+        for required in {
+            ("tlb", "address-ready", "tlb-hit"),
+            ("tlb", "page-table", "tlb-miss"),
+            ("l1-cache", "return", "l1-hit"),
+            ("l1-cache", "lower-cache", "l1-miss"),
+            ("lower-cache", "return", "lower-hit"),
+            ("lower-cache", "memory-controller", "lower-miss"),
+        }:
+            self.assertIn(required, edges)
+        self.assertIn(("instruction", "l1-cache", "vipt-parallel-index"), edges)
+        self.assertNotIn(("memory-controller", "reuse", "data-transfer"), edges)
+        self.assertTrue(
+            any("普遍的な逐次latencyではない" in note for note in visual["notes"])
+        )
+
+    def test_task7_core02_includes_build_space_query_count_and_crossover(self) -> None:
+        path = REPOSITORY_ROOT / "content/lessons/core-02-algorithms-measurement/lesson.json"
+        visual = json.loads(path.read_bytes())["visualizations"][0]
+        criteria = tuple(item["id"] for item in visual["payload"]["criteria"])
+        self.assertEqual(criteria, ("best-case", "average-case", "worst-case", "setup-cost", "space-cost", "query-crossover"))
+        self.assertIn("構築済みlookup", visual["question"])
+        values = {cell["id"]: cell["value"] for cell in visual["payload"]["cells"]}
+        self.assertIn("set構築Θ(n)", values["hash-setup"])
+        self.assertIn("query回数", values["hash-crossover"])
 
     def test_core17_retains_distinct_worked_example_chart_byte_exact(self) -> None:
         lesson_id = "core-17-graphics-visual-information"

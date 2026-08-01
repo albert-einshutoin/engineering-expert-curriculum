@@ -166,7 +166,7 @@
       "id": "complexity-growth-static",
       "type": "comparison",
       "caption": "アルゴリズム再選択の検証経路",
-      "question": "入力特性と入力サイズが変わると候補の成長率と実測上の選択はどう変わるか。",
+      "question": "同じquery列への構築済みlookupで、入力特性・size・setup・space・query回数が選択をどう変えるか。",
       "afterSection": "mentalModel",
       "objectiveIds": ["obj-predict", "obj-measure", "obj-reselect"],
       "evidenceIds": ["benchmark-report", "assessment"],
@@ -190,18 +190,30 @@
         "criteria": [
           {"id": "best-case", "label": "best case", "detail": "最も有利な入力配置での支配操作。"},
           {"id": "average-case", "label": "average case", "detail": "明示した入力分布の期待操作回数。"},
-          {"id": "worst-case", "label": "worst case", "detail": "最も不利な入力と衝突条件の上界。"}
+          {"id": "worst-case", "label": "worst case", "detail": "最も不利な入力と衝突条件の上界。"},
+          {"id": "setup-cost", "label": "setup / build cost", "detail": "worked exampleで分離測定するset構築または整列の費用。"},
+          {"id": "space-cost", "label": "space cost", "detail": "追加indexやcopyに必要なmemory。"},
+          {"id": "query-crossover", "label": "query count / crossover", "detail": "setup費用をlookup短縮で償却できる環境固有のquery回数。"}
         ],
         "cells": [
           {"id": "linear-best", "alternativeId": "linear-scan", "criterionId": "best-case", "value": "Θ(1): 先頭で一致"},
           {"id": "linear-average", "alternativeId": "linear-scan", "criterionId": "average-case", "value": "Θ(n): 平均で約n/2比較"},
           {"id": "linear-worst", "alternativeId": "linear-scan", "criterionId": "worst-case", "value": "Θ(n): 末尾または不在"},
+          {"id": "linear-setup", "alternativeId": "linear-scan", "criterionId": "setup-cost", "value": "追加構築なしΘ(1)"},
+          {"id": "linear-space", "alternativeId": "linear-scan", "criterionId": "space-cost", "value": "追加space Θ(1)"},
+          {"id": "linear-crossover", "alternativeId": "linear-scan", "criterionId": "query-crossover", "value": "少数queryではbuild費用がないため候補"},
           {"id": "binary-best", "alternativeId": "binary-search", "criterionId": "best-case", "value": "Θ(1): 中央で一致"},
           {"id": "binary-average", "alternativeId": "binary-search", "criterionId": "average-case", "value": "Θ(log n): 整列済み入力"},
           {"id": "binary-worst", "alternativeId": "binary-search", "criterionId": "worst-case", "value": "Θ(log n): 不在でも半減"},
+          {"id": "binary-setup", "alternativeId": "binary-search", "criterionId": "setup-cost", "value": "未整列ならsort Θ(n log n)"},
+          {"id": "binary-space", "alternativeId": "binary-search", "criterionId": "space-cost", "value": "sort実装とcopy方針に依存"},
+          {"id": "binary-crossover", "alternativeId": "binary-search", "criterionId": "query-crossover", "value": "sort費用を複数queryで償却"},
           {"id": "hash-best", "alternativeId": "hash-lookup", "criterionId": "best-case", "value": "Θ(1): 衝突なし"},
           {"id": "hash-average", "alternativeId": "hash-lookup", "criterionId": "average-case", "value": "期待Θ(1): hash分布を仮定"},
-          {"id": "hash-worst", "alternativeId": "hash-lookup", "criterionId": "worst-case", "value": "Θ(n): 全keyが衝突"}
+          {"id": "hash-worst", "alternativeId": "hash-lookup", "criterionId": "worst-case", "value": "Θ(n): 全keyが衝突"},
+          {"id": "hash-setup", "alternativeId": "hash-lookup", "criterionId": "setup-cost", "value": "set構築Θ(n)をlookupと分離測定"},
+          {"id": "hash-space", "alternativeId": "hash-lookup", "criterionId": "space-cost", "value": "set tableの追加space Θ(n)"},
+          {"id": "hash-crossover", "alternativeId": "hash-lookup", "criterionId": "query-crossover", "value": "set_build中央値 ÷ 1 query当たり短縮; query回数8と比較"}
         ]
       }
     }

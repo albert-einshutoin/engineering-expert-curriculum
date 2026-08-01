@@ -178,7 +178,7 @@
     "notes": ["Data:", "Transform:", "Visual:", "Equivalent:", "Verify:"],
     "payload": {
       "steps": [{"id": "data", "label": "Data", "detail": "roadmapのnodeとedge、chartのlabelとvalueをID付きで定義する。"}, {"id": "transform", "label": "Transform", "detail": "並び、scale、minimum、maximumを決定的に計算する。"}, {"id": "visual", "label": "Visual", "detail": "semantic HTMLとCSSでroadmapとquantitative chartを配置する。"}, {"id": "equivalent", "label": "Equivalent", "detail": "node関係list、caption付きtable、summaryを同じdataから導出する。"}, {"id": "verify", "label": "Verify", "detail": "ID、edge、row、値、集約、display modeの不変条件を照合する。"}],
-      "transitions": [{"id": "data-to-transform", "from": "data", "to": "transform", "label": "typed values"}, {"id": "transform-to-visual", "from": "transform", "to": "visual", "label": "決定的layout"}, {"id": "visual-to-equivalent", "from": "visual", "to": "equivalent", "label": "同じdataから導出"}, {"id": "equivalent-to-verify", "from": "equivalent", "to": "verify", "label": "意味の同等性を照合"}]
+      "transitions": [{"id": "data-to-transform", "from": "data", "to": "transform", "label": "typed values"}, {"id": "transform-to-visual", "from": "transform", "to": "visual", "label": "同じtransformから決定的layout"}, {"id": "transform-to-equivalent", "from": "transform", "to": "equivalent", "label": "同じtransformから同等text"}, {"id": "visual-to-verify", "from": "visual", "to": "verify", "label": "視覚側のID・値を照合"}, {"id": "equivalent-to-verify", "from": "equivalent", "to": "verify", "label": "text側のID・値を照合"}]
     }
   }],
   "review": {
