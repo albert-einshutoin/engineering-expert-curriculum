@@ -46,7 +46,6 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-import sysconfig
 from tempfile import TemporaryDirectory
 
 HARNESS = "test_strategy_lab_v1"
@@ -244,15 +243,24 @@ def isolated_environment(overrides=None):
         "PYTHONHASHSEED": "0",
     }
     if sys.platform.startswith("linux"):
-        library_directory = sysconfig.get_config_var("LIBDIR")
-        if type(library_directory) is str:
-            # setup-python relies on its own libpython directory. Deriving the
-            # one required loader path keeps child interpreters runnable
-            # without forwarding ambient variables or CI secrets.
-            library_path = Path(library_directory).resolve(strict=True)
-            if not library_path.is_dir():
-                raise RuntimeError("Python runtime library path is invalid")
-            environment["LD_LIBRARY_PATH"] = str(library_path)
+        executable = sys.executable
+        if type(executable) is not str or not executable or "\0" in executable:
+            raise RuntimeError("Python runtime executable path is invalid")
+        executable_path = Path(executable)
+        try:
+            if not executable_path.is_absolute() or not executable_path.is_file():
+                raise RuntimeError("Python runtime executable path is invalid")
+            # A setup-python runtime is mounted at a different container path
+            # than its compiled sysconfig LIBDIR. Deriving from the executable's
+            # visible bin directory keeps the loader path inside that mount.
+            library_path = (
+                executable_path.parent.parent / "lib"
+            ).resolve(strict=True)
+        except OSError as error:
+            raise RuntimeError("Python runtime library path is invalid") from error
+        if not library_path.is_dir():
+            raise RuntimeError("Python runtime library path is invalid")
+        environment["LD_LIBRARY_PATH"] = str(library_path)
     if overrides is not None:
         allowed = {"FIXTURE_SEED", "FIXED_CLOCK_TICK", "ORDER_MODE"}
         if (

@@ -3596,8 +3596,8 @@ class CoreTrackTests(unittest.TestCase):
             "\"FIXTURE_SEED\", \"FIXED_CLOCK_TICK\", \"ORDER_MODE\"}\n"
             "    if sys.platform.startswith(\"linux\"):\n"
             "        allowed.add(\"LD_LIBRARY_PATH\")\n"
-            "        expected = str(Path(sysconfig.get_config_var(\"LIBDIR\"))"
-            ".resolve(strict=True))\n"
+            "        expected = str((Path(sys.executable).parent.parent / "
+            "\"lib\").resolve(strict=True))\n"
             "        assert environment[\"LD_LIBRARY_PATH\"] == expected\n"
             "    assert set(environment) <= allowed\n",
             1,
@@ -3612,6 +3612,41 @@ class CoreTrackTests(unittest.TestCase):
             [phase["returncode"] for phase in report["phases"]],
             [1, 0, 0],
         )
+
+    def test_testing_harness_uses_mounted_runtime_when_libdir_is_host_only(
+        self,
+    ) -> None:
+        source = self.python_harness_source(
+            "core-09-test-strategy-tdd",
+            "test_strategy_lab_v1",
+        )
+        marker = (
+            'with TemporaryDirectory(prefix="test-strategy-lab-") '
+            "as workspace_text:\n"
+        )
+        self.assertIn(marker, source)
+        checks = (
+            "import sysconfig\n"
+            "original_platform = sys.platform\n"
+            "original_get_config_var = sysconfig.get_config_var\n"
+            "try:\n"
+            '    sys.platform = "linux"\n'
+            "    sysconfig.get_config_var = lambda name: "
+            '"/opt/hostedtoolcache/Python/missing/lib"\n'
+            "    environment = isolated_environment()\n"
+            "finally:\n"
+            "    sys.platform = original_platform\n"
+            "    sysconfig.get_config_var = original_get_config_var\n"
+            "expected = str((Path(sys.executable).parent.parent / "
+            '"lib").resolve(strict=True))\n'
+            'assert environment["LD_LIBRARY_PATH"] == expected\n'
+        )
+        instrumented = source.replace(marker, checks + marker, 1)
+        self.assertNotEqual(instrumented, source)
+
+        result = self.execute_python_harness_source(instrumented)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_testing_harness_rejects_nonstring_and_nul_environment_overrides(
         self,
