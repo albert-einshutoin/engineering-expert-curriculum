@@ -29,6 +29,12 @@ from curriculum_builder.javascript_safety import (  # noqa: E402
     MAX_JAVASCRIPT_BYTES,
     validate_reviewed_visualization_runtime,
 )
+from tools.verify_release_manifest import (  # noqa: E402
+    MANIFEST_NAME,
+    MAX_MANIFEST_BYTES,
+    ReleaseManifestError,
+    verify_release_manifest,
+)
 
 
 MAX_ISSUES: Final = 64
@@ -721,7 +727,12 @@ def _read_regular_file(
     return _FileRead(source=source, close_failed=close_failed)
 
 
-def _scan_tree(root: Path, issues: _Issues) -> _Tree | None:
+def _scan_tree(
+    root: Path,
+    issues: _Issues,
+    *,
+    allow_release_manifest: bool = False,
+) -> _Tree | None:
     try:
         root_status = os.lstat(root)
     except (OSError, ValueError):
@@ -829,13 +840,19 @@ def _scan_tree(root: Path, issues: _Issues) -> _Tree | None:
                 issues.add(child, "hard links are forbidden")
                 continue
             suffix = child.suffix.casefold()
-            if suffix not in _ALLOWED_SUFFIXES or (
+            is_release_manifest = (
+                allow_release_manifest
+                and child == PurePosixPath(MANIFEST_NAME)
+            )
+            if (suffix not in _ALLOWED_SUFFIXES and not is_release_manifest) or (
                 suffix == ".js"
                 and child != PurePosixPath("static/visualization.js")
             ):
                 issues.add(child, "disallowed static file type")
                 continue
-            if suffix == ".html":
+            if is_release_manifest:
+                maximum = MAX_MANIFEST_BYTES
+            elif suffix == ".html":
                 maximum = MAX_HTML_BYTES
             elif child == PurePosixPath("static/visualizations.css"):
                 maximum = MAX_VISUALIZATION_CSS_BYTES
@@ -1014,14 +1031,21 @@ def check_site(
     *,
     expected_entrypoints: Iterable[str | PurePosixPath] | None = None,
     require_current_release: bool = False,
+    with_release_manifest: bool = False,
 ) -> list[str]:
     """Return bounded release issues, or raise for an invalid API contract."""
     if not isinstance(root, Path):
         raise SiteValidationError("root must be a pathlib.Path")
     if expected_entrypoints is not None and require_current_release:
         raise SiteValidationError("choose one exact inventory contract")
+    if with_release_manifest and not require_current_release:
+        raise SiteValidationError("release manifest mode requires the current release inventory")
     expected = (
-        CURRENT_RELEASE_INVENTORY
+        (
+            CURRENT_RELEASE_INVENTORY | {MANIFEST_NAME}
+            if with_release_manifest
+            else CURRENT_RELEASE_INVENTORY
+        )
         if require_current_release
         else (
             _normalize_inventory(expected_entrypoints)
@@ -1030,12 +1054,14 @@ def check_site(
         )
     )
     issues = _Issues()
-    tree = _scan_tree(root, issues)
+    tree = _scan_tree(root, issues, allow_release_manifest=with_release_manifest)
     if tree is None:
         return issues.result()
 
     pages: dict[PurePosixPath, _Page] = {}
     for relative, source in sorted(tree.files.items()):
+        if relative == PurePosixPath(MANIFEST_NAME):
+            continue
         if relative.suffix.casefold() == ".css":
             _validate_css(relative, source, issues)
         elif relative.suffix.casefold() == ".js":
@@ -1056,6 +1082,11 @@ def check_site(
             issues.add(PurePosixPath(missing), "missing expected entrypoint")
         for unexpected in sorted(actual - expected):
             issues.add(PurePosixPath(unexpected), "unexpected entrypoint")
+    if with_release_manifest:
+        try:
+            verify_release_manifest(root, root / MANIFEST_NAME)
+        except ReleaseManifestError:
+            issues.add(PurePosixPath(MANIFEST_NAME), "release manifest verification failed")
     return issues.result()
 
 
@@ -1066,7 +1097,12 @@ def _argument_parser() -> argparse.ArgumentParser:
     inventory.add_argument(
         "--require-current-release",
         action="store_true",
-        help="require the exact current 41-artifact release inventory",
+        help="require the exact current 42-artifact release inventory",
+    )
+    parser.add_argument(
+        "--with-release-manifest",
+        action="store_true",
+        help="allow and verify only the root release-manifest.json artifact",
     )
     inventory.add_argument(
         "--expected-entrypoint",
@@ -1084,6 +1120,7 @@ def main(arguments: list[str] | None = None) -> int:
             Path(options.root),
             expected_entrypoints=options.expected_entrypoint,
             require_current_release=options.require_current_release,
+            with_release_manifest=options.with_release_manifest,
         )
     except SiteValidationError as error:
         print(f"site check configuration error: {_safe_value(error)}", file=sys.stderr)

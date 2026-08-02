@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass
+import json
 from pathlib import Path
 import re
 import unittest
@@ -39,6 +40,10 @@ _ACTION_REFERENCE = re.compile(
 _ALLOWED_PERMISSION_VALUES = frozenset({"read", "write", "none"})
 _ALLOWED_PERMISSION_KEYS = frozenset(
     {"contents", "security-events", "pages", "id-token"}
+)
+_BROWSER_RUNNER = (
+    "mcr.microsoft.com/playwright/python:v1.61.0-noble-amd64@"
+    "sha256:80fd7c1aad9600ea348572dd46ca00b9ea31d890831f5838fc61319ab79900d2"
 )
 
 
@@ -381,6 +386,7 @@ class RepositorySecurityTests(unittest.TestCase):
                 "security-events": "write",
             },
             ("pages.yml", "deploy"): {
+                "contents": "read",
                 "pages": "write",
                 "id-token": "write",
             },
@@ -444,11 +450,16 @@ class RepositorySecurityTests(unittest.TestCase):
             document.get("on"),
             {"pull_request": {}, "push": {"branches": ["main"]}},
         )
-        self.assertEqual(set(_jobs(document)), {"full-validation"})
+        self.assertEqual(set(_jobs(document)), {"full-validation", "browser-contract"})
+        browser = _mapping(_jobs(document)["browser-contract"], "validate.browser-contract")
+        self.assertEqual(
+            _mapping(browser.get("container"), "validate.browser-contract.container"),
+            {"image": _BROWSER_RUNNER, "options": "--user 1001"},
+        )
         runs = "\n".join(_runs(document))
         self.assertIn("python -m unittest discover -s tests -v", runs)
         self.assertIn("python tools/generate_curriculum_map.py --check", runs)
-        self.assertEqual(runs.count("python tools/build.py"), 2)
+        self.assertEqual(runs.count("python tools/build.py"), 3)
         self.assertEqual(
             runs.count(
                 "python tools/check_site.py --root site --require-current-release"
@@ -457,6 +468,23 @@ class RepositorySecurityTests(unittest.TestCase):
         )
         self.assertIn("sha256sum", runs)
         self.assertIn("diff -u", runs)
+        self.assertIn("python tools/install_test_browsers.py", runs)
+        self.assertIn("python tools/run_browser_contract.py", runs)
+
+    def test_browser_runner_digest_cannot_drift_from_the_canonical_matrix(self) -> None:
+        matrix = json.loads(
+            (REPOSITORY_ROOT / "tests" / "browser-matrix.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        runner = matrix["ciRunner"]
+        image, separator, digest = _BROWSER_RUNNER.partition("@")
+        self.assertEqual(separator, "@")
+        self.assertEqual(
+            image,
+            runner["image"] + ":v1.61.0-noble-amd64",
+        )
+        self.assertEqual(digest, runner["digest"])
 
     def test_dependency_review_is_pull_request_only_and_read_only(self) -> None:
         document = _workflow("dependency-review.yml")
@@ -464,7 +492,7 @@ class RepositorySecurityTests(unittest.TestCase):
         self.assertEqual(document.get("permissions"), {"contents": "read"})
         self.assertNotIn("permissions", _mapping(_jobs(document)["review"], "review"))
 
-    def test_codeql_analyzes_python_on_pr_main_and_a_weekly_schedule(self) -> None:
+    def test_codeql_analyzes_python_and_javascript_on_pr_main_and_schedule(self) -> None:
         document = _workflow("codeql.yml")
         trigger = _mapping(document.get("on"), "codeql.on")
         self.assertEqual(set(trigger), {"pull_request", "push", "schedule"})
@@ -486,7 +514,10 @@ class RepositorySecurityTests(unittest.TestCase):
             for step in steps
             if str(step.get("uses", "")).startswith("github/codeql-action/init@")
         )
-        self.assertEqual(init.get("with"), {"languages": "python"})
+        self.assertEqual(
+            init.get("with"),
+            {"languages": "python,javascript-typescript"},
+        )
 
     def test_gitleaks_verifies_official_cli_and_scans_redacted_history(self) -> None:
         document = _workflow("gitleaks.yml")
@@ -527,7 +558,7 @@ class RepositorySecurityTests(unittest.TestCase):
         self.assertEqual(deploy.get("needs"), "build")
         self.assertEqual(
             deploy.get("permissions"),
-            {"pages": "write", "id-token": "write"},
+            {"contents": "read", "pages": "write", "id-token": "write"},
         )
         environment = _mapping(
             deploy.get("environment"),
@@ -535,6 +566,10 @@ class RepositorySecurityTests(unittest.TestCase):
         )
         self.assertEqual(environment.get("name"), "github-pages")
         build_steps = _steps(build, "pages.jobs.build")
+        self.assertEqual(
+            _mapping(build.get("container"), "pages.jobs.build.container"),
+            {"image": _BROWSER_RUNNER, "options": "--user 1001"},
+        )
         upload_index = next(
             index
             for index, step in enumerate(build_steps)
@@ -556,7 +591,7 @@ class RepositorySecurityTests(unittest.TestCase):
         self.assertEqual(runs.count("python tools/build.py --output"), 2)
         self.assertEqual(
             runs.count("python tools/check_site.py --root "),
-            2,
+            3,
         )
         for output in ("site-first", "site-second"):
             with self.subTest(output=output):
@@ -572,10 +607,17 @@ class RepositorySecurityTests(unittest.TestCase):
                 self.assertIn(f"cd {output}", runs)
         self.assertIn("sha256sum", runs)
         self.assertIn("diff -u", runs)
+        self.assertIn("python tools/install_test_browsers.py", runs)
+        self.assertIn("python tools/run_browser_contract.py --site site-first", runs)
+        self.assertIn("python tools/create_release_manifest.py --root site-first", runs)
+        self.assertIn("python tools/verify_release_manifest.py --root site-first", runs)
+        self.assertIn("--with-release-manifest", runs)
         self.assertEqual(
             build_steps[upload_index].get("with"),
             {"path": "site-first"},
         )
+        deploy_runs = "\n".join(_runs(document)[-1:])
+        self.assertIn("python tools/verify_deployed_site.py", deploy_runs)
 
 
 if __name__ == "__main__":

@@ -18,6 +18,7 @@ from tools.check_site import (
     SiteValidationError,
     check_site,
 )
+from tools.create_release_manifest import write_release_manifest
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -137,6 +138,46 @@ class SiteCheckerHappyPathTests(unittest.TestCase):
                 if path.is_file()
             }
             self.assertEqual(inventory, set(CURRENT_RELEASE_INVENTORY))
+
+    def test_manifest_mode_accepts_only_a_verified_root_manifest(self) -> None:
+        with TemporaryDirectory(
+            prefix=".site-checker-manifest-",
+            dir=REPOSITORY_ROOT.parent,
+        ) as directory:
+            site = Path(directory) / "site"
+            build_site(
+                REPOSITORY_ROOT / "content",
+                REPOSITORY_ROOT / "templates",
+                REPOSITORY_ROOT / "static",
+                site,
+                require_complete_curriculum=True,
+            )
+            manifest = site / "release-manifest.json"
+            write_release_manifest(
+                site,
+                manifest,
+                commit="0123456789abcdef0123456789abcdef01234567",
+            )
+            self.assertEqual(
+                check_site(
+                    site,
+                    require_current_release=True,
+                    with_release_manifest=True,
+                ),
+                [],
+            )
+            self.assertTrue(any("file type" in issue for issue in check_site(site)))
+            manifest.write_bytes(b"{}\n")
+            self.assertTrue(
+                any(
+                    "release manifest" in issue
+                    for issue in check_site(
+                        site,
+                        require_current_release=True,
+                        with_release_manifest=True,
+                    )
+                )
+            )
 
     def test_complete_release_rejects_generated_grammar_mutations(self) -> None:
         with TemporaryDirectory(

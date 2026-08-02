@@ -14,7 +14,10 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
+    container:
+      image: mcr.microsoft.com/playwright/python:v1.61.0-noble-amd64@sha256:80fd7c1aad9600ea348572dd46ca00b9ea31d890831f5838fc61319ab79900d2
+      options: --user 1001
     steps:
       - name: Check out repository without retained credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -43,6 +46,15 @@ jobs:
             LC_ALL=C find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum
           ) > /tmp/site-second.sha256
           diff -u /tmp/site-first.sha256 /tmp/site-second.sha256
+      - name: Install only verified browser archives
+        run: python tools/install_test_browsers.py --matrix tests/browser-matrix.json --cache outputs/browser-cache
+      - name: Browser-test the exact Pages candidate
+        run: python tools/run_browser_contract.py --site site-first --matrix tests/browser-matrix.json
+      - name: Bind the exact Pages candidate to this commit
+        run: |
+          python tools/create_release_manifest.py --root site-first --commit "$GITHUB_SHA" --output site-first/release-manifest.json
+          python tools/verify_release_manifest.py --root site-first --manifest site-first/release-manifest.json --expected-commit "$GITHUB_SHA"
+          python tools/check_site.py --root site-first --require-current-release --with-release-manifest
       - name: Upload verified Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9
         with:
@@ -53,12 +65,26 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
+      contents: read
       pages: write
       id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Check out repository without retained credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.13"
       - name: Deploy verified artifact
         id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128
+      - name: Verify every deployed artifact byte
+        env:
+          DEPLOYED_BASE_URL: ${{ steps.deployment.outputs.page_url }}
+          EXPECTED_COMMIT: ${{ github.sha }}
+        run: python tools/verify_deployed_site.py --base-url "$DEPLOYED_BASE_URL" --expected-commit "$EXPECTED_COMMIT"
