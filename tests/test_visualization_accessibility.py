@@ -10,6 +10,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest import mock
 from urllib.error import HTTPError
+from urllib.parse import urlsplit
 
 from tools.install_test_browsers import (
     BrowserMatrixError,
@@ -32,6 +33,8 @@ from tools.run_browser_contract import (
     SafariSessionUnavailable,
     _instrumented_harness_source,
     _webdriver_request,
+    _assemble_safari_instrumented_html,
+    _safari_instrumented_document,
     browser_run_plan,
     run_safari_smoke,
     run_browser_contract,
@@ -760,6 +763,17 @@ class BrowserContractTests(VisualizationAccessibilityTests):
                     f'<p id="browser-contract-result" data-browser-contract-result="{encoded}"></p>',
                     expected_harness_version="1.0.0",
                 )
+        failed = {
+            **result, "passed": False,
+            "violations": ["reset-restoration"],
+            "violationKinds": ["reset-restoration"],
+        }
+        failed_encoded = __import__("html").escape(json.dumps(failed), quote=True)
+        with self.assertRaisesRegex(BrowserMatrixError, "reset-restoration"):
+            parse_browser_result(
+                f'<p id="browser-contract-result" data-browser-contract-result="{failed_encoded}"></p>',
+                expected_harness_version="1.0.0",
+            )
 
     def test_requested_hybrid_state_is_traversed_before_generic_control_exploration(self) -> None:
         source = (
@@ -881,12 +895,12 @@ class BrowserContractTests(VisualizationAccessibilityTests):
             self.assertEqual(report["runs"][0]["status"], "not-run")
             self.assertFalse((evidence / ".report.json.pending").exists())
 
-    def test_safari_smoke_injects_the_pinned_harness_and_returns_its_result(self) -> None:
+    def test_safari_smoke_uses_preinstrumented_document_and_returns_its_result(self) -> None:
         process = mock.Mock()
         process.poll.return_value = None
         expected = {"passed": True, "schemaVersion": 1}
         requests = mock.Mock(side_effect=(
-            {"sessionId": "session-1"}, None, None, "published", "Lesson",
+            {"sessionId": "session-1"}, None, "published", "Lesson",
             "<html></html>",
             {"element-6066-11e4-a52e-4f735466cecf": "reset-1"}, None,
             __import__("base64").b64encode(b"png").decode("ascii"), None,
@@ -900,14 +914,16 @@ class BrowserContractTests(VisualizationAccessibilityTests):
                 safaridriver=Path("/usr/bin/safaridriver"),
                 url="http://127.0.0.1:8123/lesson.html",
                 screenshot=screenshot,
-                harness_source="/* pinned harness */",
                 harness_version="1.0.0",
             )
             screenshot_bytes = screenshot.read_bytes()
         self.assertEqual(result, expected)
-        injection = requests.call_args_list[2].args[3]
-        self.assertIn("/* pinned harness */", injection["script"])
-        self.assertIn("dispatchEvent(new Event('load'))", injection["script"])
+        execute_calls = [
+            call for call in requests.call_args_list
+            if call.args[2].endswith("/execute/sync")
+        ]
+        self.assertEqual(len(execute_calls), 1)
+        self.assertIn("browser-contract-result", execute_calls[0].args[3]["script"])
         parser.assert_called_once_with("<html></html>", expected_harness_version="1.0.0")
         self.assertEqual(screenshot_bytes, b"png")
 
@@ -925,7 +941,7 @@ class BrowserContractTests(VisualizationAccessibilityTests):
             with self.assertRaises(SafariSessionUnavailable):
                 run_safari_smoke(
                     safaridriver=Path("/usr/bin/safaridriver"), url="file:///tmp/lesson.html",
-                    screenshot=Path("unused.png"), harness_source="harness",
+                    screenshot=Path("unused.png"),
                     harness_version="1.0.0", timeout=0.5,
                 )
 
@@ -937,7 +953,7 @@ class BrowserContractTests(VisualizationAccessibilityTests):
             with self.assertRaises(BrowserMatrixError) as caught:
                 run_safari_smoke(
                     safaridriver=Path("/usr/bin/safaridriver"), url="file:///tmp/lesson.html",
-                    screenshot=Path("unused.png"), harness_source="harness",
+                    screenshot=Path("unused.png"),
                     harness_version="1.0.0", timeout=0.5,
                 )
         self.assertNotIsInstance(caught.exception, SafariSessionUnavailable)
@@ -970,6 +986,39 @@ class BrowserContractTests(VisualizationAccessibilityTests):
             self.assertEqual(
                 isinstance(caught.exception, SafariSessionUnavailable), blocked
             )
+
+    def test_safari_document_installs_harness_before_csp_and_product_runtime(self) -> None:
+        original = b"""<!doctype html><html><head>
+<meta http-equiv="Content-Security-Policy" content="script-src 'self'">
+</head><body><script src="product.js"></script></body></html>"""
+        assembled = _assemble_safari_instrumented_html(
+            original, "window.__preNavigationHarness = true;"
+        ).decode("utf-8")
+        harness = assembled.index("window.__preNavigationHarness = true")
+        self.assertLess(harness, assembled.index("Content-Security-Policy"))
+        self.assertLess(harness, assembled.index("product.js"))
+        self.assertIn("<!doctype html>", assembled)
+        runtime_harness = (
+            REPOSITORY_ROOT / "tests/browser/runtime-harness.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn("reset-restoration", runtime_harness)
+
+    def test_safari_instrumented_document_preserves_origin_and_is_always_removed(self) -> None:
+        with TemporaryDirectory() as temporary:
+            site = Path(temporary) / "site"
+            source = site / "lesson" / "index.html"
+            source.parent.mkdir(parents=True)
+            source.write_text("<!doctype html><html><head></head><body></body></html>", encoding="utf-8")
+            with _safari_instrumented_document(
+                source_document=source, target_url=source.as_uri(),
+                harness_source="window.__harness = true;",
+                approved_file_roots=(site,), requested_state="crossover",
+            ) as instrumented_url:
+                instrumented = Path(urlsplit(instrumented_url).path)
+                self.assertEqual(instrumented.parent.resolve(), source.parent.resolve())
+                self.assertTrue(instrumented.is_file())
+                self.assertIn("crossover", instrumented.read_text(encoding="utf-8"))
+            self.assertFalse(instrumented.exists())
 
     def test_accessibility_explorer_is_a_finite_manual_audit_not_an_at_emulator(self) -> None:
         path = REPOSITORY_ROOT / (

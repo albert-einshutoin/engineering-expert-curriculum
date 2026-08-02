@@ -310,6 +310,13 @@
     }
     try {
       verifyListenerInstrumentation();
+      var simulationRoots = Array.prototype.slice.call(
+        document.querySelectorAll('[data-simulation-kind]')
+      );
+      var initialStateIds = simulationRoots.map(function (root) {
+        var active = root.querySelector('[data-state-id].is-active');
+        return active ? active.getAttribute('data-state-id') : '';
+      });
       var simulationEvidence = exerciseSimulations();
       var warmups = [];
       var samples = [];
@@ -341,10 +348,17 @@
         }
       }
       for (index = 0; index < 100; index += 1) {
-        document.querySelectorAll('[data-simulation-kind]').forEach(function (root) {
+        simulationRoots.forEach(function (root) {
           click(root, 'next'); click(root, 'reset');
         });
       }
+      simulationRoots.forEach(function (root, rootIndex) {
+        var active = root.querySelector('[data-state-id].is-active');
+        var restored = active ? active.getAttribute('data-state-id') : '';
+        if (restored !== initialStateIds[rootIndex]) {
+          boundedPush(violations, 'reset-restoration', 'violations', 128);
+        }
+      });
       var gcAvailable = typeof window.gc === 'function' && baseline.heapBytes >= 0;
       if (gcAvailable) { window.gc(); window.gc(); }
       var finalCounts = {

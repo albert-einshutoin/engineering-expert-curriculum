@@ -15,7 +15,8 @@ from html.parser import HTMLParser
 import json
 import math
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+import re
 import socket
 import statistics
 import struct
@@ -25,7 +26,7 @@ import tempfile
 from threading import Thread
 import time
 from typing import Iterator, Mapping, Sequence
-from urllib.parse import quote, unquote_to_bytes, urlsplit
+from urllib.parse import quote, unquote_to_bytes, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
@@ -264,7 +265,8 @@ def _validate_success_result(result: dict[str, object]) -> None:
 
 
 def _validate_error_result(result: dict[str, object]) -> None:
-    if frozenset(result) != _ERROR_RESULT_KEYS:
+    keys = frozenset(result)
+    if keys not in {_ERROR_RESULT_KEYS, _RESULT_KEYS}:
         raise BrowserMatrixError("browser harness failure result fields drifted")
     if not _bounded_strings(result["violations"], maximum=128, length=200):
         raise BrowserMatrixError("browser harness failure violations are invalid")
@@ -277,6 +279,53 @@ def _validate_error_result(result: dict[str, object]) -> None:
         "violations", "runtimeErrors", "longTasks", "externalResources", "resourceNames"
     } or any(type(value) is not bool for value in truncated.values()):
         raise BrowserMatrixError("browser harness failure truncation evidence is invalid")
+    if keys == _ERROR_RESULT_KEYS:
+        return
+    if any(
+        type(result[name]) is not int or result[name] < 0
+        for name in ("simulationCount", "runtimeEnhancedCount", "runtimeErrorCount")
+    ) or result["resetCycles"] != 100 or type(result["requestedStateReached"]) is not bool:
+        raise BrowserMatrixError("browser harness failure counters are invalid")
+    for name, maximum, length in (
+        ("reachedStateIds", 64, 64), ("runtimeErrors", 128, 120),
+        ("resourceNames", 128, 80), ("externalResources", 128, 240),
+    ):
+        if not _bounded_strings(result[name], maximum=maximum, length=length):
+            raise BrowserMatrixError("browser harness failure string evidence is invalid")
+    measurement_lengths: list[int] = []
+    for name, allowed in (
+        ("warmupsMs", {0, 3}), ("samplesMs", {0, 20}),
+        ("longTasksMs", {0, 20}), ("workloadMutationSamples", {0, 20}),
+    ):
+        value = result[name]
+        if type(value) is not list or len(value) not in allowed or any(
+            type(item) not in (int, float) or not math.isfinite(float(item)) or float(item) < 0
+            for item in value
+        ):
+            raise BrowserMatrixError("browser harness failure measurements are invalid")
+        if name != "warmupsMs":
+            measurement_lengths.append(len(value))
+    if len(set(measurement_lengths)) != 1:
+        raise BrowserMatrixError("browser harness failure measurements are uncorrelated")
+    observed = result["observedLongTasksMs"]
+    if type(observed) is not list or len(observed) > 128 or any(
+        type(item) not in (int, float) or not math.isfinite(float(item)) or float(item) < 0
+        for item in observed
+    ):
+        raise BrowserMatrixError("browser harness failure Long Task evidence is invalid")
+    count_keys = {"domNodes", "listeners", "timers", "heapBytes"}
+    for name in ("baseline", "final"):
+        value = result[name]
+        if type(value) is not dict or set(value) != count_keys or any(
+            type(value[key]) is not int or value[key] < 0
+            for key in ("domNodes", "listeners", "timers")
+        ) or type(value["heapBytes"]) is not int or value["heapBytes"] < -1:
+            raise BrowserMatrixError("browser harness failure leak evidence is invalid")
+    instrumentation = result["instrumentation"]
+    if type(instrumentation) is not dict or set(instrumentation) != {
+        "listeners", "timers", "gc", "longTasks"
+    } or any(type(value) is not bool for value in instrumentation.values()):
+        raise BrowserMatrixError("browser harness failure instrumentation is invalid")
 
 
 def parse_browser_result(dumped_html: str, *, expected_harness_version: str) -> dict[str, object]:
@@ -305,7 +354,7 @@ def parse_browser_result(dumped_html: str, *, expected_harness_version: str) -> 
         count = len(result.get("violations", ())) if type(result.get("violations")) is list else -1
         target = result.get("requestedStateReached") is True
         kinds = result.get("violationKinds")
-        safe_kinds = tuple(item for item in kinds if item in {"csp", "error", "fetch", "XMLHttpRequest", "WebSocket", "EventSource", "window.open", "storage.setItem", "storage.removeItem", "storage.clear", "history.pushState", "history.replaceState", "navigation", "external-resource", "runtime-initialization", "harness"}) if type(kinds) is list else ()
+        safe_kinds = tuple(item for item in kinds if item in {"csp", "error", "fetch", "XMLHttpRequest", "WebSocket", "EventSource", "window.open", "storage.setItem", "storage.removeItem", "storage.clear", "history.pushState", "history.replaceState", "navigation", "external-resource", "runtime-initialization", "runtime-error", "reset-restoration", "evidence-truncated", "harness"}) if type(kinds) is list else ()
         raise BrowserMatrixError(
             f"browser harness reported {count} bounded violations {safe_kinds}; requested-state-reached={target}"
         )
@@ -832,6 +881,81 @@ def _webdriver_request(
     return inner
 
 
+def _assemble_safari_instrumented_html(
+    document: bytes, harness_source: str,
+) -> bytes:
+    if type(document) is not bytes or not document or len(document) > 1024 * 1024:
+        raise BrowserMatrixError("Safari source document is unavailable or over budget")
+    if type(harness_source) is not str or len(harness_source.encode("utf-8")) > 128 * 1024 \
+            or "</script" in harness_source.lower():
+        raise BrowserMatrixError("Safari harness cannot be embedded safely")
+    try:
+        source = document.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as error:
+        raise BrowserMatrixError("Safari source document is not UTF-8") from error
+    head = re.search(r"<head(?:\s[^>]*)?>", source, flags=re.IGNORECASE)
+    if head is None:
+        raise BrowserMatrixError("Safari source document lacks a unique head")
+    if re.search(r"<head(?:\s[^>]*)?>", source[head.end():], flags=re.IGNORECASE):
+        raise BrowserMatrixError("Safari source document has ambiguous heads")
+    instrumented = (
+        source[:head.end()] + "\n<script>\n" + harness_source
+        + "\n</script>\n" + source[head.end():]
+    )
+    return instrumented.encode("utf-8")
+
+
+@contextmanager
+def _safari_instrumented_document(
+    *, source_document: Path, target_url: str, harness_source: str,
+    approved_file_roots: Sequence[Path], requested_state: str | None,
+) -> Iterator[str]:
+    if source_document.is_symlink() or not source_document.is_file():
+        raise BrowserMatrixError("Safari source document must be a regular file")
+    parsed = urlsplit(target_url)
+    if parsed.scheme not in {"file", "http"} or parsed.query or parsed.fragment:
+        raise BrowserMatrixError("Safari target URL is not a closed local document")
+    if parsed.scheme == "file":
+        if _approved_file_path(target_url, approved_file_roots) != source_document.resolve(strict=True):
+            raise BrowserMatrixError("Safari file target does not bind to its source document")
+    elif parsed.hostname != "127.0.0.1" or parsed.port is None:
+        raise BrowserMatrixError("Safari HTTP target is not exact loopback")
+    try:
+        target_name = unquote_to_bytes(PurePosixPath(parsed.path).name).decode("utf-8", errors="strict")
+    except UnicodeDecodeError as error:
+        raise BrowserMatrixError("Safari target URL filename is invalid") from error
+    if target_name != source_document.name:
+        raise BrowserMatrixError("Safari HTTP target does not bind to its source document")
+    prefix = (
+        "window.__browserContractRequestedState=" + json.dumps(requested_state) + ";\n"
+        if requested_state is not None else ""
+    )
+    embedded_harness = prefix + _instrumented_harness_source(
+        harness_source, approved_file_roots=approved_file_roots,
+    )
+    instrumented = _assemble_safari_instrumented_html(
+        source_document.read_bytes(), embedded_harness,
+    )
+    descriptor, name = tempfile.mkstemp(
+        prefix=".browser-contract-safari-", suffix=".html",
+        dir=source_document.parent,
+    )
+    temporary = Path(name)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(instrumented)
+            stream.flush()
+            os.fsync(stream.fileno())
+        if parsed.scheme == "file":
+            instrumented_url = temporary.as_uri()
+        else:
+            instrumented_path = str(PurePosixPath(parsed.path).with_name(temporary.name))
+            instrumented_url = urlunsplit((parsed.scheme, parsed.netloc, instrumented_path, "", ""))
+        yield instrumented_url
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def _is_safari_session_transport_unavailable(error: BaseException | None) -> bool:
     if isinstance(error, URLError):
         error = error.reason
@@ -845,7 +969,6 @@ def run_safari_smoke(
     safaridriver: Path,
     url: str,
     screenshot: Path,
-    harness_source: str,
     harness_version: str,
     timeout: float = 30.0,
 ) -> dict[str, object]:
@@ -886,13 +1009,6 @@ def run_safari_smoke(
             ) from last_error
         prefix = f"/session/{quote(session_id, safe='')}"
         _webdriver_request(port, "POST", prefix + "/url", {"url": url}, timeout)
-        _webdriver_request(
-            port, "POST", prefix + "/execute/sync",
-            {
-                "script": harness_source + "\nwindow.dispatchEvent(new Event('load')); return null;",
-                "args": [],
-            }, timeout,
-        )
         deadline = time.monotonic() + timeout
         result_value: str | None = None
         while time.monotonic() < deadline:
@@ -1068,7 +1184,7 @@ def browser_run_plan(
     )
     if include_safari:
         runs.extend(
-            {"browser": "safari", "label": label, "profile": "desktop", "requestedState": None}
+            {"browser": "safari", "label": label, "profile": "desktop", "requestedState": "crossover"}
             for label in ("core-02-file", "core-02-http")
         )
     return tuple(runs)
@@ -1310,7 +1426,7 @@ def _run_browser_contract(
                 requested_state=requested_state,
                 measure_performance=measure_performance,
                 screenshot=evidence / f"{label}-chromium-{profile_name}.png",
-                approved_file_roots=(site, fixture.parent),
+                approved_file_roots=(site, fixture.parent, repository / "static"),
             )
         except BrowserMatrixError:
             journal.record(run, status="failed", reason="browser-contract-failed")
@@ -1334,7 +1450,7 @@ def _run_browser_contract(
                     harness_source=harness_source, harness_version=matrix.harness_version,
                     requested_state="crossover",
                     screenshot=evidence / f"{label}-firefox-desktop.png",
-                    approved_file_roots=(site, fixture.parent),
+                    approved_file_roots=(site, fixture.parent, repository / "static"),
                 )
             except BrowserMatrixError:
                 journal.record(run, status="failed", reason="browser-contract-failed")
@@ -1396,17 +1512,23 @@ def _run_browser_contract(
         if platform_entry.safari is not None:
             safari = platform_entry.safari
             safari_runs = (
-                ({"browser": "safari", "label": "core-02-file", "profile": "desktop", "requestedState": None}, file_url),
-                ({"browser": "safari", "label": "core-02-http", "profile": "desktop", "requestedState": None}, http_url),
+                ({"browser": "safari", "label": "core-02-file", "profile": "desktop", "requestedState": "crossover"}, file_url),
+                ({"browser": "safari", "label": "core-02-http", "profile": "desktop", "requestedState": "crossover"}, http_url),
             )
             for index, (run, url) in enumerate(safari_runs):
                 try:
-                    result = run_safari_smoke(
-                        safaridriver=Path("/usr/bin/safaridriver"), url=url,
-                        screenshot=evidence / f"{run['label']}-safari-desktop.png",
+                    with _safari_instrumented_document(
+                        source_document=core02, target_url=url,
                         harness_source=harness_source,
-                        harness_version=matrix.harness_version,
-                    )
+                        approved_file_roots=(site, fixture.parent, repository / "static"),
+                        requested_state="crossover",
+                    ) as instrumented_url:
+                        result = run_safari_smoke(
+                            safaridriver=Path("/usr/bin/safaridriver"),
+                            url=instrumented_url,
+                            screenshot=evidence / f"{run['label']}-safari-desktop.png",
+                            harness_version=matrix.harness_version,
+                        )
                 except SafariSessionUnavailable:
                     # One failed session preflight proves the host cannot execute
                     # either Safari target; both remain explicit typed blockers.

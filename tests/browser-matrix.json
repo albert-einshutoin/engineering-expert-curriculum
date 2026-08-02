@@ -102,11 +102,11 @@
   "fixtures": {
     "maximum": {
       "path": "tests/browser/runtime-fixture.html",
-        "sha256": "c3773ef9c35163614b91558e1efb455aef3caa4e2b3d88ed5c6f227664d367b3"
+        "sha256": "3636bd328a914309d0f2f5fb1037f5285d9db40686f97c688adee9e972972686"
     },
     "memoryLessonId": "core-03-architecture-memory-caches",
     "distributedLessonId": "core-13-distributed-coordination-failure",
-    "harnessSha256": "77670439acac48862a36ecb102758ad68a3c53c2f4d88d89ff4d1f072fd91380"
+    "harnessSha256": "ece8196bb17559f61e85ad0808ef5564ed473b4e382aac2a685a32b56274896d"
   },
   "measurements": {
     "warmups": 3,
