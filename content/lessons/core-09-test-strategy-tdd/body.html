@@ -237,30 +237,73 @@ MUTANT_SOURCE = REFACTOR_SOURCE.replace(
 def sha256_text(text):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
+def absolute_single_path(value, label):
+    if (
+        type(value) is not str
+        or not value
+        or "\0" in value
+        or os.pathsep in value
+    ):
+        raise RuntimeError(f"{label} is invalid")
+    path = Path(value)
+    if not path.is_absolute():
+        raise RuntimeError(f"{label} is invalid")
+    return path
+
+def leading_absolute_path(value, label):
+    if type(value) is not str or not value or "\0" in value:
+        raise RuntimeError(f"{label} is invalid")
+    leading = value.split(os.pathsep, 1)[0]
+    path = Path(leading)
+    if not leading or not path.is_absolute():
+        raise RuntimeError(f"{label} is invalid")
+    return path
+
 def isolated_environment(overrides=None):
     environment = {
         "PATH": os.environ.get("PATH", ""),
         "PYTHONHASHSEED": "0",
     }
     if sys.platform.startswith("linux"):
-        executable = sys.executable
-        if type(executable) is not str or not executable or "\0" in executable:
-            raise RuntimeError("Python runtime executable path is invalid")
-        executable_path = Path(executable)
-        try:
-            if not executable_path.is_absolute() or not executable_path.is_file():
-                raise RuntimeError("Python runtime executable path is invalid")
-            # A setup-python runtime is mounted at a different container path
-            # than its compiled sysconfig LIBDIR. Deriving from the executable's
-            # visible bin directory keeps the loader path inside that mount.
-            library_path = (
-                executable_path.parent.parent / "lib"
-            ).resolve(strict=True)
-        except OSError as error:
-            raise RuntimeError("Python runtime library path is invalid") from error
-        if not library_path.is_dir():
-            raise RuntimeError("Python runtime library path is invalid")
-        environment["LD_LIBRARY_PATH"] = str(library_path)
+        has_runtime_root = "pythonLocation" in os.environ
+        has_loader = "LD_LIBRARY_PATH" in os.environ
+        if has_runtime_root and not has_loader:
+            raise RuntimeError("setup-python runtime contract is incomplete")
+        if has_runtime_root:
+            runtime_root = absolute_single_path(
+                os.environ.get("pythonLocation"),
+                "setup-python runtime root",
+            )
+            loader_path = leading_absolute_path(
+                os.environ.get("LD_LIBRARY_PATH"),
+                "setup-python loader path",
+            )
+            executable_path = absolute_single_path(
+                sys.executable,
+                "Python runtime executable path",
+            )
+            try:
+                canonical_root = runtime_root.resolve(strict=True)
+                canonical_executable = executable_path.resolve(strict=True)
+                runtime_library = canonical_root / "lib"
+                # The three setup-python paths must describe one mounted runtime;
+                # accepting any independently valid path would reintroduce an
+                # ambient loader injection boundary.
+                if (
+                    not canonical_root.is_dir()
+                    or not canonical_executable.is_file()
+                    or canonical_executable.parent != canonical_root / "bin"
+                    or runtime_library.is_symlink()
+                    or not runtime_library.is_dir()
+                ):
+                    raise RuntimeError("setup-python runtime contract is invalid")
+                canonical_library = runtime_library.resolve(strict=True)
+                canonical_loader = loader_path.resolve(strict=True)
+            except OSError as error:
+                raise RuntimeError("setup-python runtime contract is invalid") from error
+            if canonical_loader != canonical_library:
+                raise RuntimeError("setup-python runtime contract is invalid")
+            environment["LD_LIBRARY_PATH"] = str(canonical_library)
     if overrides is not None:
         allowed = {"FIXTURE_SEED", "FIXED_CLOCK_TICK", "ORDER_MODE"}
         if (
