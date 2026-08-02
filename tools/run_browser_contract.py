@@ -383,6 +383,19 @@ def _read_exact(stream: socket.socket, count: int) -> bytes:
     return b"".join(chunks)
 
 
+class _BrowserDebuggingCommandError(BrowserMatrixError):
+    def __init__(self, method: str, code: int | None, detail: str | None) -> None:
+        self.method = method
+        self.code = code
+        self.detail = detail
+        suffix = (
+            f" ({code}: {detail})"
+            if code == -32000 and detail == "Unable to capture screenshot"
+            else ""
+        )
+        super().__init__(f"browser debugging command failed: {method}{suffix}")
+
+
 class _WebSocket:
     def __init__(self, url: str, timeout: float) -> None:
         parsed = urlsplit(url)
@@ -478,9 +491,45 @@ class _WebSocket:
                     else:
                         self.events_truncated = True
                 continue
-            if "error" in message or type(message.get("result")) is not dict:
+            if "error" in message:
+                error = message.get("error")
+                code: int | None = None
+                detail: str | None = None
+                if type(error) is dict:
+                    raw_code = error.get("code")
+                    raw_detail = error.get("message")
+                    if type(raw_code) is int:
+                        code = raw_code
+                    if (
+                        type(raw_detail) is str
+                        and len(raw_detail) <= 128
+                        and all(" " <= character <= "~" for character in raw_detail)
+                    ):
+                        detail = raw_detail
+                raise _BrowserDebuggingCommandError(method, code, detail)
+            if type(message.get("result")) is not dict:
                 raise BrowserMatrixError(f"browser debugging command failed: {method}")
             return message["result"]
+
+
+def _capture_chromium_screenshot(connection: _WebSocket) -> dict[str, object]:
+    parameters = {"format": "png", "captureBeyondViewport": False}
+    # Chromium can transiently return one empty compositor image under CI load.
+    # Two short retries cover subsequent frames without hiding a persistent or
+    # differently classified CDP failure.
+    for attempt in range(3):
+        try:
+            return connection.command("Page.captureScreenshot", parameters)
+        except _BrowserDebuggingCommandError as error:
+            transient_empty_image = (
+                error.method == "Page.captureScreenshot"
+                and error.code == -32000
+                and error.detail == "Unable to capture screenshot"
+            )
+            if not transient_empty_image or attempt == 2:
+                raise
+            time.sleep(0.1)
+    raise AssertionError("closed Chromium screenshot retry loop did not terminate")
 
 
 def _approved_file_path(url: str, approved_roots: Sequence[Path]) -> Path:
@@ -800,7 +849,7 @@ def run_chromium_page(
             if type(outer) is not str:
                 raise BrowserMatrixError("browser dumped DOM is unavailable")
             result = parse_browser_result(outer, expected_harness_version=harness_version)
-            capture = connection.command("Page.captureScreenshot", {"format": "png", "captureBeyondViewport": False})
+            capture = _capture_chromium_screenshot(connection)
             encoded = capture.get("data")
             if type(encoded) is not str or len(encoded) > 16 * 1024 * 1024:
                 raise BrowserMatrixError("browser screenshot is unavailable or over budget")

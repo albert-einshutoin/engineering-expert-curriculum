@@ -44,6 +44,9 @@ from tools.run_browser_contract import (
     _remove_browser_profile,
     _shutdown_chromium,
     _cleanup_chromium_resources,
+    _capture_chromium_screenshot,
+    _BrowserDebuggingCommandError,
+    _WebSocket,
 )
 
 from curriculum_builder.visualizations import (
@@ -848,6 +851,118 @@ class BrowserContractTests(VisualizationAccessibilityTests):
                     ):
                 _remove_browser_profile(profile)
         self.assertEqual(remove.call_count, 50)
+
+    def test_chromium_screenshot_retries_only_the_closed_empty_image_error(
+        self,
+    ) -> None:
+        transient = _BrowserDebuggingCommandError(
+            "Page.captureScreenshot", -32000, "Unable to capture screenshot"
+        )
+        connection = mock.Mock()
+        connection.command.side_effect = (
+            transient,
+            transient,
+            {"data": "cG5n"},
+        )
+        with mock.patch("tools.run_browser_contract.time.sleep") as sleep:
+            self.assertEqual(
+                _capture_chromium_screenshot(connection),
+                {"data": "cG5n"},
+            )
+        self.assertEqual(connection.command.call_count, 3)
+        self.assertEqual(sleep.call_count, 2)
+
+    def test_cdp_command_preserves_the_closed_screenshot_error_fields(self) -> None:
+        connection = _WebSocket.__new__(_WebSocket)
+        connection.identifier = 0
+        connection.events = []
+        connection.events_truncated = False
+        payload = json.dumps({
+            "id": 1,
+            "error": {"code": -32000, "message": "Unable to capture screenshot"},
+        }).encode("utf-8")
+        with mock.patch.object(connection, "_send_frame"), mock.patch.object(
+            connection, "_receive_frame", return_value=payload
+        ), self.assertRaises(_BrowserDebuggingCommandError) as caught:
+            connection.command("Page.captureScreenshot")
+        self.assertEqual(caught.exception.method, "Page.captureScreenshot")
+        self.assertEqual(caught.exception.code, -32000)
+        self.assertEqual(caught.exception.detail, "Unable to capture screenshot")
+
+    def test_cdp_command_does_not_expose_unbounded_or_control_error_data(self) -> None:
+        unsafe_messages = ("secret\ninjected", "s" * 129)
+        for unsafe_message in unsafe_messages:
+            connection = _WebSocket.__new__(_WebSocket)
+            connection.identifier = 0
+            connection.events = []
+            connection.events_truncated = False
+            payload = json.dumps({
+                "id": 1,
+                "error": {
+                    "code": -32000,
+                    "message": unsafe_message,
+                    "data": {"credential": "must-not-be-logged"},
+                },
+            }).encode("utf-8")
+            with self.subTest(message=unsafe_message[:16]), mock.patch.object(
+                connection, "_send_frame"
+            ), mock.patch.object(
+                connection, "_receive_frame", return_value=payload
+            ), self.assertRaises(_BrowserDebuggingCommandError) as caught:
+                connection.command("Page.captureScreenshot")
+            diagnostic = str(caught.exception)
+            self.assertEqual(
+                diagnostic,
+                "browser debugging command failed: Page.captureScreenshot",
+            )
+            self.assertIsNone(caught.exception.detail)
+            self.assertNotIn("secret", diagnostic)
+            self.assertNotIn("credential", diagnostic)
+
+    def test_chromium_screenshot_preserves_final_retry_diagnostic(self) -> None:
+        errors = tuple(
+            _BrowserDebuggingCommandError(
+                "Page.captureScreenshot", -32000, "Unable to capture screenshot"
+            )
+            for _ in range(3)
+        )
+        connection = mock.Mock()
+        connection.command.side_effect = errors
+        with mock.patch("tools.run_browser_contract.time.sleep") as sleep, \
+                self.assertRaisesRegex(
+                    BrowserMatrixError,
+                    r"Page\.captureScreenshot.*-32000.*Unable to capture screenshot",
+                ) as caught:
+            _capture_chromium_screenshot(connection)
+        self.assertIs(caught.exception, errors[-1])
+        self.assertEqual(connection.command.call_count, 3)
+        self.assertEqual(sleep.call_count, 2)
+
+    def test_chromium_screenshot_does_not_retry_other_cdp_errors(self) -> None:
+        errors = (
+            _BrowserDebuggingCommandError(
+                "Page.captureScreenshot", -32001, "Unable to capture screenshot"
+            ),
+            _BrowserDebuggingCommandError(
+                "Page.captureScreenshot", -32000, "Internal error"
+            ),
+            _BrowserDebuggingCommandError(
+                "Runtime.evaluate", -32000, "Unable to capture screenshot"
+            ),
+        )
+        for error in errors:
+            connection = mock.Mock()
+            connection.command.side_effect = error
+            with self.subTest(error=str(error)), mock.patch(
+                "tools.run_browser_contract.time.sleep"
+            ) as sleep, self.assertRaises(_BrowserDebuggingCommandError) as caught:
+                _capture_chromium_screenshot(connection)
+            self.assertIs(caught.exception, error)
+            connection.command.assert_called_once_with(
+                "Page.captureScreenshot",
+                {"format": "png", "captureBeyondViewport": False},
+            )
+            sleep.assert_not_called()
 
     def test_chromium_cleanup_failure_does_not_mask_the_primary_error(self) -> None:
         with TemporaryDirectory() as temporary:
