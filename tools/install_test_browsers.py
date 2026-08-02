@@ -84,6 +84,7 @@ class BrowserMatrix:
     profiles: Mapping[str, BrowserProfile]
     fixtures: Mapping[str, object]
     measurements: Mapping[str, int | float]
+    source_sha256: str
 
 
 def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -285,11 +286,13 @@ def load_browser_matrix_bytes(raw: bytes) -> BrowserMatrix:
         if (actual.viewport, actual.device_scale_factor, actual.cpu_throttle_rate, actual.reduced_motion, actual.forced_colors) != expected:
             raise BrowserMatrixError(f"matrix.profiles.{name} drifted from the release contract")
 
-    fixtures = _object(root["fixtures"], frozenset({"maximum", "memoryLessonId", "distributedLessonId"}), "matrix.fixtures")
+    fixtures = _object(root["fixtures"], frozenset({"maximum", "memoryLessonId", "distributedLessonId", "harnessSha256"}), "matrix.fixtures")
     maximum = _object(fixtures["maximum"], frozenset({"path", "sha256"}), "matrix.fixtures.maximum")
     _safe_relative(maximum["path"], "matrix.fixtures.maximum.path")
     if type(maximum["sha256"]) is not str or _HEX64.fullmatch(maximum["sha256"]) is None:
         raise BrowserMatrixError("maximum fixture digest must be exact")
+    if type(fixtures["harnessSha256"]) is not str or _HEX64.fullmatch(fixtures["harnessSha256"]) is None:
+        raise BrowserMatrixError("browser harness digest must be exact")
     for key in ("memoryLessonId", "distributedLessonId"):
         if type(fixtures[key]) is not str or not fixtures[key].startswith("core-"):
             raise BrowserMatrixError(f"matrix.fixtures.{key} must be a full lesson ID")
@@ -312,6 +315,7 @@ def load_browser_matrix_bytes(raw: bytes) -> BrowserMatrix:
         1, harness_version, image, digest,
         MappingProxyType(platforms), MappingProxyType(profiles),
         MappingProxyType(fixtures), MappingProxyType(measurements),
+        hashlib.sha256(raw).hexdigest(),
     )
 
 

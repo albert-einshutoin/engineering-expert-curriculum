@@ -180,6 +180,104 @@ class _ResultParser(HTMLParser):
             self.values.append(values["data-browser-contract-result"] or "")
 
 
+_RESULT_KEYS = frozenset({
+    "schemaVersion", "harnessVersion", "passed", "simulationCount",
+    "reachedStateIds", "requestedStateReached", "runtimeEnhancedCount",
+    "runtimeErrorCount", "runtimeErrors", "warmupsMs", "samplesMs",
+    "workloadMutationSamples", "longTasksMs", "observedLongTasksMs",
+    "resetCycles", "baseline", "final", "instrumentation", "violations",
+    "violationKinds", "externalResources", "resourceNames", "truncated",
+})
+_ERROR_RESULT_KEYS = frozenset({
+    "schemaVersion", "harnessVersion", "passed", "violations",
+    "violationKinds", "truncated",
+})
+
+
+def _bounded_strings(value: object, *, maximum: int, length: int) -> bool:
+    return type(value) is list and len(value) <= maximum and all(
+        type(item) is str and len(item) <= length for item in value
+    )
+
+
+def _validate_success_result(result: dict[str, object]) -> None:
+    if frozenset(result) != _RESULT_KEYS:
+        raise BrowserMatrixError("browser harness success result fields drifted")
+    integer_fields = ("simulationCount", "runtimeEnhancedCount", "runtimeErrorCount", "resetCycles")
+    if any(type(result[name]) is not int or result[name] < 0 for name in integer_fields):
+        raise BrowserMatrixError("browser harness integer result fields are invalid")
+    if result["runtimeErrorCount"] != 0 or result["runtimeErrors"] != []:
+        raise BrowserMatrixError("browser runtime reported an initialization error")
+    if result["requestedStateReached"] is not True:
+        raise BrowserMatrixError("browser requested-state result is invalid")
+    if result["resetCycles"] != 100 or result["runtimeEnhancedCount"] != result["simulationCount"]:
+        raise BrowserMatrixError("browser runtime enhancement or reset evidence drifted")
+    if not _bounded_strings(result["reachedStateIds"], maximum=64, length=64):
+        raise BrowserMatrixError("browser reached-state evidence is invalid")
+    if not _bounded_strings(result["resourceNames"], maximum=128, length=80):
+        raise BrowserMatrixError("browser resource-name evidence is invalid")
+    if not _bounded_strings(result["externalResources"], maximum=128, length=240):
+        raise BrowserMatrixError("browser external-resource evidence is invalid")
+    if result["violations"] != [] or result["violationKinds"] != []:
+        raise BrowserMatrixError("browser harness success contains violations")
+    for name, expected_length in (("warmupsMs", (0, 3)), ("samplesMs", (0, 20)), ("longTasksMs", (0, 20)), ("workloadMutationSamples", (0, 20))):
+        value = result[name]
+        if type(value) is not list or len(value) not in expected_length or any(
+            type(item) not in (int, float) or not math.isfinite(float(item)) or float(item) < 0
+            for item in value
+        ):
+            raise BrowserMatrixError("browser measurement result shape drifted")
+    measured_lengths = tuple(
+        len(result[name]) for name in ("samplesMs", "longTasksMs", "workloadMutationSamples")
+    )
+    if len(set(measured_lengths)) != 1 or (measured_lengths[0] == 20 and len(result["warmupsMs"]) != 3):
+        raise BrowserMatrixError("browser measurement samples are not correlated")
+    if any(type(item) is not int or item <= 0 for item in result["workloadMutationSamples"]):
+        raise BrowserMatrixError("browser workload did not mutate product runtime state")
+    observed = result["observedLongTasksMs"]
+    if type(observed) is not list or len(observed) > 128 or any(
+        type(item) not in (int, float) or not math.isfinite(float(item)) or float(item) < 0
+        for item in observed
+    ):
+        raise BrowserMatrixError("browser observed Long Task evidence is invalid")
+    count_keys = {"domNodes", "listeners", "timers", "heapBytes"}
+    for name in ("baseline", "final"):
+        value = result[name]
+        if type(value) is not dict or set(value) != count_keys or any(
+            type(value[key]) is not int or value[key] < 0
+            for key in ("domNodes", "listeners", "timers")
+        ) or type(value["heapBytes"]) is not int or value["heapBytes"] < -1:
+            raise BrowserMatrixError("browser leak count evidence is invalid")
+    if (result["baseline"]["heapBytes"] == -1) != (result["final"]["heapBytes"] == -1):
+        raise BrowserMatrixError("browser heap availability changed during measurement")
+    instrumentation = result["instrumentation"]
+    if type(instrumentation) is not dict or set(instrumentation) != {"listeners", "timers", "gc", "longTasks"} or any(
+        type(item) is not bool for item in instrumentation.values()
+    ) or instrumentation["listeners"] is not True or instrumentation["timers"] is not True or instrumentation["longTasks"] is not True:
+        raise BrowserMatrixError("browser instrumentation evidence is invalid")
+    truncated = result["truncated"]
+    if type(truncated) is not dict or set(truncated) != {"violations", "runtimeErrors", "longTasks", "externalResources", "resourceNames"} or any(
+        value is not False for value in truncated.values()
+    ):
+        raise BrowserMatrixError("browser evidence was truncated")
+
+
+def _validate_error_result(result: dict[str, object]) -> None:
+    if frozenset(result) != _ERROR_RESULT_KEYS:
+        raise BrowserMatrixError("browser harness failure result fields drifted")
+    if not _bounded_strings(result["violations"], maximum=128, length=200):
+        raise BrowserMatrixError("browser harness failure violations are invalid")
+    if not result["violations"] or not _bounded_strings(
+        result["violationKinds"], maximum=128, length=40
+    ):
+        raise BrowserMatrixError("browser harness failure kinds are invalid")
+    truncated = result["truncated"]
+    if type(truncated) is not dict or set(truncated) != {
+        "violations", "runtimeErrors", "longTasks", "externalResources", "resourceNames"
+    } or any(type(value) is not bool for value in truncated.values()):
+        raise BrowserMatrixError("browser harness failure truncation evidence is invalid")
+
+
 def parse_browser_result(dumped_html: str, *, expected_harness_version: str) -> dict[str, object]:
     if type(dumped_html) is not str or len(dumped_html.encode("utf-8")) > 1024 * 1024:
         raise BrowserMatrixError("dumped browser DOM is unavailable or over budget")
@@ -198,6 +296,10 @@ def parse_browser_result(dumped_html: str, *, expected_harness_version: str) -> 
         raise BrowserMatrixError("browser harness result schema drifted")
     if result.get("harnessVersion") != expected_harness_version:
         raise BrowserMatrixError("browser harness version drifted")
+    if result.get("passed") is True:
+        _validate_success_result(result)
+    elif result.get("passed") is False:
+        _validate_error_result(result)
     if result.get("passed") is not True or type(result.get("violations")) is not list or result["violations"]:
         count = len(result.get("violations", ())) if type(result.get("violations")) is list else -1
         target = result.get("requestedStateReached") is True
@@ -247,6 +349,8 @@ class _WebSocket:
             self.close()
             raise BrowserMatrixError("browser debugging WebSocket handshake failed")
         self.identifier = 0
+        self.events: list[dict[str, object]] = []
+        self.events_truncated = False
 
     def close(self) -> None:
         try:
@@ -304,11 +408,55 @@ class _WebSocket:
                 message = json.loads(self._receive_frame().decode("utf-8", errors="strict"))
             except (UnicodeDecodeError, json.JSONDecodeError) as error:
                 raise BrowserMatrixError("browser debugging response is invalid JSON") from error
-            if type(message) is not dict or message.get("id") != identifier:
+            if type(message) is not dict:
+                continue
+            if message.get("id") != identifier:
+                method_name = message.get("method")
+                if type(method_name) is str and method_name.startswith("Network."):
+                    if len(self.events) < 256:
+                        self.events.append(message)
+                    else:
+                        self.events_truncated = True
                 continue
             if "error" in message or type(message.get("result")) is not dict:
                 raise BrowserMatrixError(f"browser debugging command failed: {method}")
             return message["result"]
+
+
+def validate_chromium_network_events(
+    events: Sequence[Mapping[str, object]], *, target_url: str, truncated: bool,
+) -> None:
+    if truncated or len(events) > 256:
+        raise BrowserMatrixError("Chromium CDP network evidence was truncated")
+    target = urlsplit(target_url)
+    if target.scheme not in {"file", "http"}:
+        raise BrowserMatrixError("Chromium network target is not local")
+    if target.scheme == "http" and (target.hostname != "127.0.0.1" or target.port is None):
+        raise BrowserMatrixError("Chromium HTTP target is not exact loopback origin")
+    target_origin = (target.scheme, target.hostname, target.port)
+    for event in events:
+        if type(event) is not dict or type(event.get("method")) is not str or type(event.get("params")) is not dict:
+            raise BrowserMatrixError("Chromium CDP network event shape drifted")
+        method = event["method"]
+        params = event["params"]
+        candidate: object | None = None
+        if method == "Network.requestWillBeSent" and type(params.get("request")) is dict:
+            candidate = params["request"].get("url")
+        elif method == "Network.responseReceived" and type(params.get("response")) is dict:
+            candidate = params["response"].get("url")
+        else:
+            continue
+        if type(candidate) is not str or len(candidate) > 2048:
+            raise BrowserMatrixError("Chromium CDP network URL is invalid")
+        parsed = urlsplit(candidate)
+        if parsed.scheme == "data":
+            continue
+        if target.scheme == "file":
+            allowed = parsed.scheme == "file"
+        else:
+            allowed = (parsed.scheme, parsed.hostname, parsed.port) == target_origin
+        if not allowed:
+            raise BrowserMatrixError("Chromium requested a resource outside the exact target origin")
 
 
 def _wait_debugging_port(directory: Path, process: subprocess.Popen[bytes], timeout: float) -> int:
@@ -410,6 +558,10 @@ def run_chromium_page(
                 time.sleep(0.05)
             if result_value is None:
                 raise BrowserMatrixError("browser harness did not publish a result within its timeout")
+            validate_chromium_network_events(
+                connection.events, target_url=url,
+                truncated=connection.events_truncated,
+            )
             document = connection.command("DOM.getDocument", {"depth": 0})
             root = document.get("root")
             node_id = root.get("nodeId") if type(root) is dict else None
@@ -589,6 +741,8 @@ def run_safari_smoke(
     safaridriver: Path,
     url: str,
     screenshot: Path,
+    harness_source: str,
+    harness_version: str,
     timeout: float = 30.0,
 ) -> dict[str, object]:
     if safaridriver != Path("/usr/bin/safaridriver") or urlsplit(url).scheme not in {"file", "http"}:
@@ -615,16 +769,47 @@ def run_safari_smoke(
                     session_id = session["sessionId"]
                     break
             except BrowserMatrixError as error:
+                cause = error.__cause__
+                if not isinstance(cause, (OSError, URLError)):
+                    raise
                 last_error = error
                 time.sleep(0.1)
         if session_id is None:
-            raise BrowserMatrixError("Safari WebDriver session is unavailable") from last_error
+            raise SafariSessionUnavailable(
+                "Safari Remote Automation session is unavailable"
+            ) from last_error
         prefix = f"/session/{quote(session_id, safe='')}"
         _webdriver_request(port, "POST", prefix + "/url", {"url": url}, timeout)
+        _webdriver_request(
+            port, "POST", prefix + "/execute/sync",
+            {
+                "script": harness_source + "\nwindow.dispatchEvent(new Event('load')); return null;",
+                "args": [],
+            }, timeout,
+        )
+        deadline = time.monotonic() + timeout
+        result_value: str | None = None
+        while time.monotonic() < deadline:
+            candidate = _webdriver_request(
+                port, "POST", prefix + "/execute/sync",
+                {
+                    "script": "var node=document.getElementById('browser-contract-result'); return node && node.getAttribute('data-browser-contract-result');",
+                    "args": [],
+                }, min(5.0, timeout),
+            )
+            if type(candidate) is str:
+                result_value = candidate
+                break
+            time.sleep(0.05)
+        if result_value is None:
+            raise BrowserMatrixError("Safari harness did not publish a result")
         title = _webdriver_request(port, "GET", prefix + "/title", None, timeout)
         source = _webdriver_request(port, "GET", prefix + "/source", None, timeout)
         if type(title) is not str or not title or type(source) is not str or len(source.encode("utf-8")) > 1024 * 1024:
             raise BrowserMatrixError("Safari smoke did not return a bounded page")
+        harness_result = parse_browser_result(
+            source, expected_harness_version=harness_version
+        )
         element = _webdriver_request(
             port, "POST", prefix + "/element",
             {"using": "css selector", "value": "[data-action=reset]"}, timeout,
@@ -640,7 +825,7 @@ def run_safari_smoke(
             raise BrowserMatrixError("Safari screenshot is unavailable or over budget")
         screenshot.parent.mkdir(parents=True, exist_ok=True)
         screenshot.write_bytes(base64.b64decode(encoded, validate=True))
-        return {"browser": "safari", "url": url, "title": title, "nativeResetClicked": True}
+        return harness_result
     except (OSError, subprocess.SubprocessError, ValueError) as error:
         if isinstance(error, BrowserMatrixError):
             raise
@@ -747,6 +932,159 @@ def _write_report(path: Path, report: Mapping[str, object]) -> None:
         temporary.unlink(missing_ok=True)
 
 
+class SafariSessionUnavailable(BrowserMatrixError):
+    """Safari is installed but WebDriver cannot create a Remote Automation session."""
+
+    reason = "remote-automation-session-unavailable"
+
+
+def browser_run_plan(
+    inventory: EvidenceInventory, *, include_safari: bool,
+) -> tuple[dict[str, object], ...]:
+    runs: list[dict[str, object]] = [
+        {"browser": browser, "label": label, "profile": "desktop", "requestedState": "crossover"}
+        for browser in ("chromium", "firefox")
+        for label in ("core-02-file", "core-02-http")
+    ]
+    runs.extend(
+        {"browser": "chromium", "label": f"{lesson}-{state}", "profile": profile, "requestedState": state}
+        for lesson, state in inventory.regression_states
+        for profile in inventory.profiles
+    )
+    runs.extend(
+        {"browser": "chromium", "label": f"type-{kind}-{lesson}", "profile": "desktop", "requestedState": None}
+        for kind, lesson in sorted(inventory.diagram_type_lessons.items())
+    )
+    runs.extend(
+        {"browser": "chromium", "label": f"performance-{fixture}", "profile": profile, "requestedState": None}
+        for fixture in ("maximum", "memory", "distributed")
+        for profile in ("desktop", "mobile")
+    )
+    if include_safari:
+        runs.extend(
+            {"browser": "safari", "label": label, "profile": "desktop", "requestedState": None}
+            for label in ("core-02-file", "core-02-http")
+        )
+    return tuple(runs)
+
+
+class BrowserEvidenceJournal:
+    def __init__(
+        self, *, path: Path, harness_version: str, inventory: EvidenceInventory,
+        provenance: Mapping[str, object], plan: Sequence[Mapping[str, object]],
+    ) -> None:
+        if not plan or len(plan) > 166 or set(provenance) != {
+            "matrixSha256", "fixtureSha256", "harnessSha256", "platform", "browsers"
+        }:
+            raise BrowserMatrixError("browser evidence journal inputs are incomplete")
+        if any(
+            type(provenance[name]) is not str
+            or len(provenance[name]) != 64
+            or any(character not in "0123456789abcdef" for character in provenance[name])
+            for name in ("matrixSha256", "fixtureSha256", "harnessSha256")
+        ):
+            raise BrowserMatrixError("browser evidence digests are invalid")
+        platform = provenance["platform"]
+        browsers = provenance["browsers"]
+        if (
+            type(platform) is not dict or set(platform) != {"os", "architecture"}
+            or any(type(value) is not str or not value for value in platform.values())
+            or type(browsers) is not dict or set(browsers) not in (
+                {"chromium", "firefox"}, {"chromium", "firefox", "safari"}
+            )
+        ):
+            raise BrowserMatrixError("browser evidence platform provenance is invalid")
+        for browser in browsers.values():
+            if type(browser) is not dict or set(browser) != {
+                "version", "build", "verificationStatus"
+            } or type(browser["version"]) is not str or not browser["version"] \
+                    or type(browser["build"]) is not str or not browser["build"] \
+                    or browser["verificationStatus"] not in {"not-run", "verified"}:
+                raise BrowserMatrixError("browser evidence version provenance is invalid")
+        self.path = path
+        self.harness_version = harness_version
+        self.inventory = inventory
+        self.provenance = dict(provenance)
+        self.runs = [{**dict(item), "status": "not-run"} for item in plan]
+        self.failure: str | None = None
+        self._publish()
+
+    def _report(self) -> dict[str, object]:
+        statuses = {item["status"] for item in self.runs}
+        status = (
+            "failed" if self.failure is not None or "failed" in statuses
+            else "blocked" if "blocked" in statuses
+            else "passed" if statuses == {"passed"}
+            else "running"
+        )
+        report: dict[str, object] = {
+            "schemaVersion": 1, "harnessVersion": self.harness_version,
+            "status": status, "provenance": self.provenance,
+            "inventory": {
+                "dynamicLessons": len(self.inventory.dynamic_lessons),
+                "diagramTypes": len(self.inventory.diagram_type_lessons),
+                "regressionStates": len(self.inventory.regression_states),
+                "profiles": list(self.inventory.profiles),
+            },
+            "runs": self.runs,
+        }
+        if self.failure is not None:
+            report["failure"] = self.failure
+        return report
+
+    def _publish(self) -> None:
+        _write_report(self.path, self._report())
+
+    def report(self) -> dict[str, object]:
+        """Return a detached snapshot so callers cannot mutate journal state."""
+        return json.loads(json.dumps(self._report()))
+
+    def record(
+        self, run: Mapping[str, object], *, status: str,
+        result: Mapping[str, object] | None = None, reason: str | None = None,
+    ) -> None:
+        if status not in {"passed", "failed", "blocked"}:
+            raise BrowserMatrixError("browser evidence status is invalid")
+        if status == "blocked" and reason != SafariSessionUnavailable.reason:
+            raise BrowserMatrixError("only typed Safari session unavailability may block")
+        identity = {key: run.get(key) for key in ("browser", "label", "profile", "requestedState")}
+        matches = [item for item in self.runs if all(item.get(key) == value for key, value in identity.items())]
+        if len(matches) != 1:
+            raise BrowserMatrixError("browser evidence run identity is ambiguous")
+        target = matches[0]
+        if target["status"] != "not-run":
+            raise BrowserMatrixError("browser evidence run is already terminal")
+        target.pop("result", None)
+        target.pop("reason", None)
+        target["status"] = status
+        if status == "passed":
+            if result is None:
+                raise BrowserMatrixError("passed browser evidence requires its result")
+            target["result"] = dict(result)
+        else:
+            if type(reason) is not str or not reason or len(reason) > 120:
+                raise BrowserMatrixError("non-passing browser evidence requires a bounded reason")
+            target["reason"] = reason
+        self._publish()
+
+    def fail(self, reason: str) -> None:
+        if type(reason) is not str or not reason or len(reason) > 120:
+            raise BrowserMatrixError("browser evidence failure reason is invalid")
+        self.failure = reason
+        self._publish()
+
+    def verified_browser(
+        self, name: str, *, version: str, build: str | None = None,
+    ) -> None:
+        browsers = self.provenance.get("browsers")
+        if type(browsers) is not dict or name not in browsers or type(browsers[name]) is not dict:
+            raise BrowserMatrixError("browser provenance identity is invalid")
+        browsers[name]["version"] = version
+        browsers[name]["verificationStatus"] = "verified"
+        browsers[name]["build"] = version if build is None else build
+        self._publish()
+
+
 def browser_evidence_report(
     *, harness_version: str, platform_key: str, inventory: EvidenceInventory,
     successful_runs: Sequence[Mapping[str, object]], safari_blocked: bool,
@@ -797,40 +1135,82 @@ def run_browser_contract(
         raise BrowserMatrixError("browser contract inputs could not be read") from error
     if len(harness_source.encode("utf-8")) > 128 * 1024:
         raise BrowserMatrixError("browser harness exceeds its byte budget")
+    if hashlib.sha256(harness_source.encode("utf-8")).hexdigest() != matrix.fixtures["harnessSha256"]:
+        raise BrowserMatrixError("browser harness digest drifted")
     if hashlib.sha256(fixture_bytes).hexdigest() != matrix.fixtures["maximum"]["sha256"]:
         raise BrowserMatrixError("maximum browser fixture digest drifted")
 
-    chromium = install_archive(
-        platform_entry.browsers["chromium"], cache, browser_name="chromium"
-    )
-    firefox = install_archive(
-        platform_entry.browsers["firefox"], cache, browser_name="firefox"
-    )
     evidence.mkdir(parents=True, exist_ok=True)
     if evidence.is_symlink() or not evidence.is_dir():
         raise BrowserMatrixError("browser evidence directory must be a real directory")
-    results: list[dict[str, object]] = []
-    safari_blocked = False
+    include_safari = platform_entry.safari is not None
+    plan = browser_run_plan(inventory, include_safari=include_safari)
+    os_name, architecture = platform_entry.key.split("-", 1)
+    provenance: dict[str, object] = {
+        "matrixSha256": matrix.source_sha256,
+        "fixtureSha256": hashlib.sha256(fixture_bytes).hexdigest(),
+        "harnessSha256": hashlib.sha256(harness_source.encode("utf-8")).hexdigest(),
+        "platform": {"os": os_name, "architecture": architecture},
+        "browsers": {
+            "chromium": {"version": platform_entry.browsers["chromium"].version, "build": platform_entry.browsers["chromium"].version, "verificationStatus": "not-run"},
+            "firefox": {"version": platform_entry.browsers["firefox"].version, "build": platform_entry.browsers["firefox"].version, "verificationStatus": "not-run"},
+            **({"safari": {"version": platform_entry.safari.version, "build": platform_entry.safari.build, "verificationStatus": "not-run"}} if platform_entry.safari is not None else {}),
+        },
+    }
+    journal = BrowserEvidenceJournal(
+        path=evidence / "report.json", harness_version=matrix.harness_version,
+        inventory=inventory, provenance=provenance, plan=plan,
+    )
+    try:
+        chromium = install_archive(
+            platform_entry.browsers["chromium"], cache, browser_name="chromium"
+        )
+        journal.verified_browser(
+            "chromium", version=platform_entry.browsers["chromium"].version
+        )
+        firefox = install_archive(
+            platform_entry.browsers["firefox"], cache, browser_name="firefox"
+        )
+        journal.verified_browser(
+            "firefox", version=platform_entry.browsers["firefox"].version
+        )
+        if platform_entry.safari is not None:
+            verify_safari_version(
+                executable=Path(platform_entry.safari.executable),
+                expected_version=platform_entry.safari.version,
+                expected_build=platform_entry.safari.build,
+            )
+            journal.verified_browser(
+                "safari", version=platform_entry.safari.version,
+                build=platform_entry.safari.build,
+            )
+    except BrowserMatrixError:
+        journal.fail("browser-provisioning-or-version-preflight-failed")
+        raise
 
     def chromium_run(
         label: str, url: str, profile_name: str, requested_state: str | None = None,
         *, measure_performance: bool = False,
+        record: bool = True,
     ) -> dict[str, object]:
-        result = run_chromium_page(
-            executable=chromium,
-            url=url,
-            profile=_profile_mapping(matrix.profiles[profile_name]),
-            harness_source=harness_source,
-            harness_version=matrix.harness_version,
-            requested_state=requested_state,
-            measure_performance=measure_performance,
-            screenshot=evidence / f"{label}-chromium-{profile_name}.png",
-        )
-        results.append({
-            "browser": "chromium", "label": label, "profile": profile_name,
-            "requestedState": requested_state, "result": result,
-        })
-        print(f"[{len(results)}] PASS chromium {label} {profile_name}", flush=True)
+        run = {"browser": "chromium", "label": label, "profile": profile_name, "requestedState": requested_state}
+        try:
+            result = run_chromium_page(
+                executable=chromium,
+                url=url,
+                profile=_profile_mapping(matrix.profiles[profile_name]),
+                harness_source=harness_source,
+                harness_version=matrix.harness_version,
+                requested_state=requested_state,
+                measure_performance=measure_performance,
+                screenshot=evidence / f"{label}-chromium-{profile_name}.png",
+            )
+        except BrowserMatrixError:
+            journal.record(run, status="failed", reason="browser-contract-failed")
+            raise
+        if record:
+            journal.record(run, status="passed", result=result)
+        print(f"PASS chromium {label} {profile_name}", flush=True)
         return result
 
     core02 = _lesson(site, "core-02-algorithms-measurement")
@@ -839,15 +1219,20 @@ def run_browser_contract(
         chromium_run("core-02-file", file_url, "desktop", "crossover")
         chromium_run("core-02-http", http_url, "desktop", "crossover")
         for label, url in (("core-02-file", file_url), ("core-02-http", http_url)):
-            result = run_firefox_page(
-                executable=firefox, url=url,
-                profile=_profile_mapping(matrix.profiles["desktop"]),
-                harness_source=harness_source, harness_version=matrix.harness_version,
-                requested_state="crossover",
-                screenshot=evidence / f"{label}-firefox-desktop.png",
-            )
-            results.append({"browser": "firefox", "label": label, "profile": "desktop", "requestedState": "crossover", "result": result})
-            print(f"[{len(results)}] PASS firefox {label} desktop", flush=True)
+            run = {"browser": "firefox", "label": label, "profile": "desktop", "requestedState": "crossover"}
+            try:
+                result = run_firefox_page(
+                    executable=firefox, url=url,
+                    profile=_profile_mapping(matrix.profiles["desktop"]),
+                    harness_source=harness_source, harness_version=matrix.harness_version,
+                    requested_state="crossover",
+                    screenshot=evidence / f"{label}-firefox-desktop.png",
+                )
+            except BrowserMatrixError:
+                journal.record(run, status="failed", reason="browser-contract-failed")
+                raise
+            journal.record(run, status="passed", result=result)
+            print(f"PASS firefox {label} desktop", flush=True)
 
         # Every catalog regression state is rendered under every closed visual
         # profile. The state oracle drives only bounded native form actions.
@@ -872,61 +1257,72 @@ def run_browser_contract(
                 result = chromium_run(
                     f"performance-{label}", url, profile_name,
                     measure_performance=True,
+                    record=False,
                 )
-                assert_performance_contract(
-                    profile=profile_name,
-                    samples_ms=result["samplesMs"],
-                    long_tasks_ms=result["longTasksMs"],
-                    mutation_counts=result["workloadMutationSamples"],
-                    instrumentation={
-                        "longTasks": result["instrumentation"]["longTasks"]
-                    },
-                )
-                instrumentation = result["instrumentation"]
-                assert_leak_contract(
-                    baseline=result["baseline"], final=result["final"],
-                    reset_cycles=result["resetCycles"],
-                    instrumentation={
-                        "listeners": instrumentation["listeners"],
-                        "timers": instrumentation["timers"],
-                        "gc": instrumentation["gc"],
-                    },
-                )
+                run = {"browser": "chromium", "label": f"performance-{label}", "profile": profile_name, "requestedState": None}
+                try:
+                    assert_performance_contract(
+                        profile=profile_name,
+                        samples_ms=result["samplesMs"],
+                        long_tasks_ms=result["longTasksMs"],
+                        mutation_counts=result["workloadMutationSamples"],
+                        instrumentation={
+                            "longTasks": result["instrumentation"]["longTasks"]
+                        },
+                    )
+                    instrumentation = result["instrumentation"]
+                    assert_leak_contract(
+                        baseline=result["baseline"], final=result["final"],
+                        reset_cycles=result["resetCycles"],
+                        instrumentation={
+                            "listeners": instrumentation["listeners"],
+                            "timers": instrumentation["timers"],
+                            "gc": instrumentation["gc"],
+                        },
+                    )
+                except BrowserMatrixError:
+                    journal.record(run, status="failed", reason="performance-or-leak-contract-failed")
+                    raise
+                journal.record(run, status="passed", result=result)
 
         if platform_entry.safari is not None:
             safari = platform_entry.safari
-            verify_safari_version(
-                executable=Path(safari.executable), expected_version=safari.version,
-                expected_build=safari.build,
+            safari_runs = (
+                ({"browser": "safari", "label": "core-02-file", "profile": "desktop", "requestedState": None}, file_url),
+                ({"browser": "safari", "label": "core-02-http", "profile": "desktop", "requestedState": None}, http_url),
             )
-            try:
-                result = run_safari_smoke(
-                    safaridriver=Path("/usr/bin/safaridriver"), url=file_url,
-                    screenshot=evidence / "core-02-file-safari-desktop.png",
-                )
-            except BrowserMatrixError:
-                safari_blocked = True
-                print("[165-166] BLOCKED safari Remote Automation session unavailable", flush=True)
-            else:
-                results.append({"browser": "safari", "label": "core-02-file", "profile": "desktop", "requestedState": None, "result": result})
-                print(f"[{len(results)}] PASS safari core-02-file desktop", flush=True)
-                result = run_safari_smoke(
-                    safaridriver=Path("/usr/bin/safaridriver"), url=http_url,
-                    screenshot=evidence / "core-02-http-safari-desktop.png",
-                )
-                results.append({"browser": "safari", "label": "core-02-http", "profile": "desktop", "requestedState": None, "result": result})
-                print(f"[{len(results)}] PASS safari core-02-http desktop", flush=True)
+            for index, (run, url) in enumerate(safari_runs):
+                try:
+                    result = run_safari_smoke(
+                        safaridriver=Path("/usr/bin/safaridriver"), url=url,
+                        screenshot=evidence / f"{run['label']}-safari-desktop.png",
+                        harness_source=harness_source,
+                        harness_version=matrix.harness_version,
+                    )
+                except SafariSessionUnavailable:
+                    # One failed session preflight proves the host cannot execute
+                    # either Safari target; both remain explicit typed blockers.
+                    for blocked_run, _ in safari_runs[index:]:
+                        journal.record(
+                            blocked_run, status="blocked",
+                            reason=SafariSessionUnavailable.reason,
+                        )
+                    print("BLOCKED safari Remote Automation session unavailable", flush=True)
+                    break
+                except BrowserMatrixError:
+                    journal.record(run, status="failed", reason="safari-browser-contract-failed")
+                    raise
+                journal.record(run, status="passed", result=result)
+                print(f"PASS safari {run['label']} desktop", flush=True)
 
-    report = browser_evidence_report(
-        harness_version=matrix.harness_version, platform_key=platform_entry.key,
-        inventory=inventory, successful_runs=results,
-        safari_blocked=safari_blocked,
-    )
-    _write_report(evidence / "report.json", report)
-    if safari_blocked:
+    report = journal.report()
+    if report["status"] == "blocked":
         raise BrowserMatrixError(
             "Safari release smoke blocked: Remote Automation session unavailable"
         )
+    if report["status"] != "passed":
+        journal.fail("browser-contract-plan-incomplete")
+        raise BrowserMatrixError("browser contract did not complete its closed run plan")
     return report
 
 

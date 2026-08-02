@@ -24,7 +24,12 @@ from tools.run_browser_contract import (
     chromium_arguments,
     parse_browser_result,
     serve_site,
+    validate_chromium_network_events,
     _write_report,
+    BrowserEvidenceJournal,
+    SafariSessionUnavailable,
+    browser_run_plan,
+    run_safari_smoke,
 )
 
 from curriculum_builder.visualizations import (
@@ -381,6 +386,7 @@ class BrowserContractTests(VisualizationAccessibilityTests):
                 },
                 "memoryLessonId": "core-03-architecture-memory-caches",
                 "distributedLessonId": "core-13-distributed-coordination-failure",
+                "harnessSha256": "9" * 64,
             },
             "measurements": {
                 "warmups": 3,
@@ -470,6 +476,25 @@ class BrowserContractTests(VisualizationAccessibilityTests):
                 self.assertIn(
                     f"http://127.0.0.1:{server.port}/engineering-expert-curriculum/",
                     http_url,
+                )
+
+    def test_cdp_network_evidence_is_bounded_to_the_exact_target_origin(self) -> None:
+        target = "http://127.0.0.1:49152/engineering-expert-curriculum/index.html"
+        validate_chromium_network_events(
+            [
+                {"method": "Network.requestWillBeSent", "params": {"request": {"url": target}}},
+                {"method": "Network.responseReceived", "params": {"response": {"url": "http://127.0.0.1:49152/styles.css"}}},
+            ],
+            target_url=target,
+            truncated=False,
+        )
+        for events, truncated in (
+            ([{"method": "Network.requestWillBeSent", "params": {"request": {"url": "http://127.0.0.1:49153/exfil"}}}], False),
+            ([], True),
+        ):
+            with self.assertRaises(BrowserMatrixError):
+                validate_chromium_network_events(
+                    events, target_url=target, truncated=truncated
                 )
 
     def test_performance_and_leak_thresholds_fail_closed(self) -> None:
@@ -581,6 +606,12 @@ class BrowserContractTests(VisualizationAccessibilityTests):
             hashlib.sha256(fixture.read_bytes()).hexdigest(),
             matrix.fixtures["maximum"]["sha256"],
         )
+        self.assertEqual(
+            hashlib.sha256(
+                (REPOSITORY_ROOT / "tests/browser/runtime-harness.js").read_bytes()
+            ).hexdigest(),
+            matrix.fixtures["harnessSha256"],
+        )
 
     def test_outputs_ignore_is_exact_and_root_anchored(self) -> None:
         entries = (REPOSITORY_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
@@ -640,7 +671,26 @@ class BrowserContractTests(VisualizationAccessibilityTests):
             "schemaVersion": 1,
             "harnessVersion": "1.0.0",
             "passed": True,
+            "simulationCount": 1,
+            "reachedStateIds": ["initial"],
+            "requestedStateReached": True,
+            "runtimeEnhancedCount": 1,
+            "runtimeErrorCount": 0,
+            "runtimeErrors": [],
+            "warmupsMs": [],
+            "samplesMs": [],
+            "workloadMutationSamples": [],
+            "longTasksMs": [],
+            "observedLongTasksMs": [],
+            "resetCycles": 100,
+            "baseline": {"domNodes": 1, "listeners": 1, "timers": 0, "heapBytes": 1},
+            "final": {"domNodes": 1, "listeners": 1, "timers": 0, "heapBytes": 1},
+            "instrumentation": {"listeners": True, "timers": True, "gc": False, "longTasks": True},
             "violations": [],
+            "violationKinds": [],
+            "externalResources": [],
+            "resourceNames": ["visualization.js"],
+            "truncated": {"violations": False, "runtimeErrors": False, "longTasks": False, "externalResources": False, "resourceNames": False},
         }
         encoded = __import__("html").escape(json.dumps(result), quote=True)
         dumped = f'<p id="browser-contract-result" data-browser-contract-result="{encoded}"></p>'
@@ -648,6 +698,17 @@ class BrowserContractTests(VisualizationAccessibilityTests):
         for invalid in ("<p></p>", dumped + dumped, dumped.replace("1.0.0", "2.0.0")):
             with self.subTest(invalid=invalid[:30]), self.assertRaises(BrowserMatrixError):
                 parse_browser_result(invalid, expected_harness_version="1.0.0")
+        for mutation in (
+            {**result, "unexpected": True},
+            {**result, "runtimeErrorCount": 1},
+            {**result, "truncated": {**result["truncated"], "resourceNames": True}},
+        ):
+            encoded = __import__("html").escape(json.dumps(mutation), quote=True)
+            with self.assertRaises(BrowserMatrixError):
+                parse_browser_result(
+                    f'<p id="browser-contract-result" data-browser-contract-result="{encoded}"></p>',
+                    expected_harness_version="1.0.0",
+                )
 
     def test_requested_hybrid_state_is_traversed_before_generic_control_exploration(self) -> None:
         source = (
@@ -699,6 +760,109 @@ class BrowserContractTests(VisualizationAccessibilityTests):
             _write_report(path, report)
             self.assertEqual(json.loads(path.read_bytes()), report)
             self.assertFalse((path.parent / ".report.json.pending").exists())
+
+    def test_partial_report_records_each_pass_fail_block_and_not_run_with_provenance(self) -> None:
+        inventory = browser_evidence_inventory(
+            (REPOSITORY_ROOT / "content/visualization-catalog.json").read_bytes()
+        )
+        plan = browser_run_plan(inventory, include_safari=True)
+        self.assertEqual(len(plan), 166)
+        provenance = {
+            "matrixSha256": "a" * 64,
+            "fixtureSha256": "b" * 64,
+            "harnessSha256": "c" * 64,
+            "platform": {"os": "darwin", "architecture": "arm64"},
+            "browsers": {
+                "chromium": {"version": "151.0.7922.71", "build": "151.0.7922.71", "verificationStatus": "not-run"},
+                "firefox": {"version": "153.0.1", "build": "153.0.1", "verificationStatus": "not-run"},
+                "safari": {"version": "26.5", "build": "21624.2.5.11.4", "verificationStatus": "not-run"},
+            },
+        }
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "report.json"
+            journal = BrowserEvidenceJournal(
+                path=path, harness_version="1.0.0", inventory=inventory,
+                provenance=provenance, plan=plan,
+            )
+            journal.record(plan[0], status="passed", result={"passed": True})
+            journal.record(plan[1], status="failed", reason="browser-contract-failed")
+            journal.record(plan[-2], status="blocked", reason="remote-automation-session-unavailable")
+            report = json.loads(path.read_bytes())
+            self.assertEqual(report["status"], "failed")
+            self.assertEqual(report["provenance"], provenance)
+            self.assertEqual(
+                [row["status"] for row in report["runs"][:3]],
+                ["passed", "failed", "not-run"],
+            )
+            self.assertEqual(report["runs"][-2]["status"], "blocked")
+            self.assertEqual(report["runs"][-1]["status"], "not-run")
+            with self.assertRaises(BrowserMatrixError):
+                journal.record(plan[-1], status="blocked", reason="generic-webdriver-error")
+            journal.record(
+                plan[-1], status="blocked",
+                reason=SafariSessionUnavailable.reason,
+            )
+
+    def test_safari_smoke_injects_the_pinned_harness_and_returns_its_result(self) -> None:
+        process = mock.Mock()
+        process.poll.return_value = None
+        expected = {"passed": True, "schemaVersion": 1}
+        requests = mock.Mock(side_effect=(
+            {"sessionId": "session-1"}, None, None, "published", "Lesson",
+            "<html></html>",
+            {"element-6066-11e4-a52e-4f735466cecf": "reset-1"}, None,
+            __import__("base64").b64encode(b"png").decode("ascii"), None,
+        ))
+        with TemporaryDirectory() as temporary, \
+                mock.patch("tools.run_browser_contract.subprocess.Popen", return_value=process), \
+                mock.patch("tools.run_browser_contract._webdriver_request", requests), \
+                mock.patch("tools.run_browser_contract.parse_browser_result", return_value=expected) as parser:
+            screenshot = Path(temporary) / "safari.png"
+            result = run_safari_smoke(
+                safaridriver=Path("/usr/bin/safaridriver"),
+                url="http://127.0.0.1:8123/lesson.html",
+                screenshot=screenshot,
+                harness_source="/* pinned harness */",
+                harness_version="1.0.0",
+            )
+            screenshot_bytes = screenshot.read_bytes()
+        self.assertEqual(result, expected)
+        injection = requests.call_args_list[2].args[3]
+        self.assertIn("/* pinned harness */", injection["script"])
+        self.assertIn("dispatchEvent(new Event('load'))", injection["script"])
+        parser.assert_called_once_with("<html></html>", expected_harness_version="1.0.0")
+        self.assertEqual(screenshot_bytes, b"png")
+
+    def test_only_transient_safari_session_creation_failure_is_typed_blocked(self) -> None:
+        process = mock.Mock()
+        process.poll.return_value = None
+
+        def transient(*_args: object, **_kwargs: object) -> object:
+            raise BrowserMatrixError("transport") from OSError("not ready")
+
+        with mock.patch("tools.run_browser_contract.subprocess.Popen", return_value=process), \
+                mock.patch("tools.run_browser_contract._webdriver_request", side_effect=transient), \
+                mock.patch("tools.run_browser_contract.time.monotonic", side_effect=(0.0, 0.0, 1.0)), \
+                mock.patch("tools.run_browser_contract.time.sleep"):
+            with self.assertRaises(SafariSessionUnavailable):
+                run_safari_smoke(
+                    safaridriver=Path("/usr/bin/safaridriver"), url="file:///tmp/lesson.html",
+                    screenshot=Path("unused.png"), harness_source="harness",
+                    harness_version="1.0.0", timeout=0.5,
+                )
+
+        with mock.patch("tools.run_browser_contract.subprocess.Popen", return_value=process), \
+                mock.patch(
+                    "tools.run_browser_contract._webdriver_request",
+                    side_effect=BrowserMatrixError("protocol failure"),
+                ):
+            with self.assertRaises(BrowserMatrixError) as caught:
+                run_safari_smoke(
+                    safaridriver=Path("/usr/bin/safaridriver"), url="file:///tmp/lesson.html",
+                    screenshot=Path("unused.png"), harness_source="harness",
+                    harness_version="1.0.0", timeout=0.5,
+                )
+        self.assertNotIsInstance(caught.exception, SafariSessionUnavailable)
 
     def test_accessibility_explorer_is_a_finite_manual_audit_not_an_at_emulator(self) -> None:
         path = REPOSITORY_ROOT / (
