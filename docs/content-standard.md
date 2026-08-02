@@ -129,6 +129,10 @@ reasoningを証明したことにせず、学習設計reviewerが内容を判断
 runtimeはnetwork、storage、analytics、URL state、third-party dependencyを使用してはならない。JavaScriptの404、構文error、初期化error、無効化時にも完全なstatic oracleを保持することをMUSTとする。
 CSSを無効にしても読み順と依存関係が残り、色や線だけへ意味を委ねない。
 
+図解は意味、要素、関係、状態、許可操作、期待結果をstructured dataから追跡可能にし、静的oracleを先にrenderすることをMUSTとする。dynamic stateは静的説明と同じ因果関係を表し、runtimeがlayoutや教材上の結論を発明してはならない。全操作はkeyboardで完結し、reset後はDOM、listener、timer、accessible statusがbaselineへ戻ることをMUSTとする。
+
+公開前にno-JS、desktop、narrow、reduced-motion、forced-colorsをversion固定browserで確認し、performanceとleakのraw evidenceをcommitへ結び付けることをMUSTとする。browserまたはinstrumentationが利用不能な場合はrelease blockedであり、skipを合格に数えない。
+
 すべてのactive elementはkeyboardで到達・操作でき、visible focusと単独で理解できる名前を持つことをMUSTとする。
 
 全ページは日本語の文書言語、固有title、一つの`main`と`h1`、skip link、論理的な

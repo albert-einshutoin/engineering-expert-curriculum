@@ -4,9 +4,13 @@ Engineering Expert Curriculumの利用者に影響する変更を記録します
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-01
+
 ### Added
 
 - 全情報を保持するno-JS baseline上で、承認済みsimulationを操作できるdependency-free first-party progressive runtime。
+- 12レッスン・10種の図解を検証する、version固定browser、accessibility、performance、leak契約。
+- 公開commitと配信済みHTML/CSS/JavaScript bytesを結び付けるcanonical release manifest。
 
 ### Security
 
@@ -28,5 +32,6 @@ Engineering Expert Curriculumの利用者に影響する変更を記録します
 - authored HTML、structured content、path、決定的publication boundaryを検証するdependency-free build契約。
 - 脆弱性をGitHubの非公開advisoryで受け付ける報告方針。
 
-[Unreleased]: https://github.com/albert-einshutoin/engineering-expert-curriculum/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/albert-einshutoin/engineering-expert-curriculum/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/albert-einshutoin/engineering-expert-curriculum/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/albert-einshutoin/engineering-expert-curriculum/releases/tag/v0.1.0

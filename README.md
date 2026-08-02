@@ -27,6 +27,10 @@ runtimeはdependency-freeで、network、storage、analytics、URL stateを使�
 
 ブラウザ組み込み検索、意味のあるHTML、印刷可能なレイアウトを基準にしています。CSSを無効にしても読み順と依存関係が残り、色や接続線だけに意味を委ねません。
 
+承認済み12ページでは10種の図解を提供し、keyboard、reduced motion、forced colorsでも同じ因果関係と状態を追跡できます。公開候補はversion固定されたChromium・Firefoxとinstalled Safariで検証し、browserのcache、screenshot、raw performance reportは`outputs/`だけに置いて配布物へ含めません。
+
+公開時はcommit、各HTML/CSS/JavaScriptのbyte数とSHA-256をrootのrelease manifestへ記録し、GitHub Pages配信後に同じbytesを再検証します。manifestは署名やpublisherの真正性を単独で証明するものではありません。またmeta CSPでは`frame-ancestors`を強制できず、GitHub Pagesで任意response headerを設定できないため、clickjacking防止は保証しません。
+
 ## ローカルで読む
 
 Python 3.12以降を用意し、リポジトリのルートで次を実行します。ビルド時のPython以外に実行時依存はありません。

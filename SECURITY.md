@@ -4,6 +4,10 @@ Engineering Expert Curriculumのv0.1.0はHTML/CSS-onlyです。v0.2.0は完全�
 
 exact meta CSPはruntimeとinline scriptを分離し、resourceより前に配置します。ただし`frame-ancestors`はmeta CSPで強制されず、GitHub Pagesではこのrepositoryが任意response headerを設定できないため、本projectはclickjacking防止を保証しません。
 
+CIのbrowserはregistry-qualified OCI digestと公式HTTPS archive URL、version、SHA-256で固定します。checksum一致前の展開、platform間fallback、matrix外browserの自動探索を許しません。cacheと検証reportは`outputs/`へ限定し、release artifactへ混入させません。
+
+rootのrelease manifestはcommitと配信対象byteの整合性を検査します。deployed verifierはHTTPSの同一Pages origin・同一subpathだけを、redirect、retry、時間、file数、byte数の上限内で取得します。ただしSHA-256 manifestは署名ではなく、publisherやworkflowの真正性を単独で保証しません。信頼の根はreview済みcommit、branch protection、digest固定workflow/action、GitHub Pages deploymentです。
+
 ## サポート対象
 
 | 対象 | サポート |

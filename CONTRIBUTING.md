@@ -44,6 +44,10 @@ git diff --check
 
 Pull Requestには、実行したコマンド、終了結果、対象commit、既知の制限を記載してください。UIやアクセシビリティに影響する場合は、`file://`でのkeyboard、見出し、200% zoom、狭幅、high contrast、printの確認証拠も添えます。
 
+図解を変更する場合は、静的semantic oracleと操作後の状態を対応付け、意味、要素、状態、操作、期待結果を`lesson.json`から追跡できるようにします。no-JS、全keyboard操作、reset、status announcement、reduced-motion、forced-colorsを確認し、`tests/browser-matrix.json`のexact browser versionで実行した結果とperformance/leak reportのhashをPRへ記録します。browser cache、screenshot、raw reportなど`outputs/`配下のmachine-specific evidenceはcommitしません。
+
+公開候補では2回の決定的buildを比較し、CSPとsite checker、browser contract、release manifestのlocal verificationを順に実行します。未実行browser、計測不能、version drift、0件選択をpassやskipとして扱いません。
+
 ## 教材変更の基準
 
 コアレッスンの品質規範は[docs/content-standard.md](docs/content-standard.md)です。少なくとも次を守ります。

@@ -25,6 +25,10 @@ The dependency-free runtime uses no network, storage, analytics, or URL state. T
 
 The information structure remains meaningful without CSS and does not rely on color or connector lines alone. Browser Find provides catalog search, keeping the first release portable and inspectable.
 
+12 approved lessons provide ten visualization types while preserving the same causal and state trace under keyboard operation, reduced motion, and forced colors. Release candidates are exercised in pinned Chromium and Firefox builds plus the installed Safari build. Browser caches, screenshots, and raw performance reports remain local under `outputs/` and are not release artifacts.
+
+Each deployment carries a root release manifest binding the commit to the byte size and SHA-256 of every HTML, CSS, and JavaScript artifact. The Pages workflow verifies those bytes after deployment. The manifest is not, by itself, a signature or proof of publisher authenticity. Meta CSP cannot enforce `frame-ancestors`, and this repository cannot configure arbitrary GitHub Pages response headers, so it does not claim clickjacking protection.
+
 ## Build and validate
 
 Python 3.12 or later is required at build time. Readers do not need Python after the site is generated.

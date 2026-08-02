@@ -67,6 +67,8 @@
 
 - semantic HTML、keyboard、focus、読み順、見出し、link nameへの影響:
 - `file://`、200% zoom、狭幅、high contrast、printでの確認結果:
+- no-JS、全keyboard操作、reduced-motion、forced-colorsでの確認結果:
+- `tests/browser-matrix.json`のbrowser version、performance/leak report hash、未実行項目:
 - 視覚変更のbefore/after画像または、画像が不要な理由:
 
 ## 教材・出典レビュー
@@ -100,5 +102,6 @@
 
 - [ ] 変更scope外の差分や生成済み`site/`を含めていません。
 - [ ] author self-reviewを実施し、重大な修正後のcommitを再検証しました。
+- [ ] CSP、決定的double build、browser contract、release manifestを検証しました。
 - [ ] 必須CIとhuman reviewが揃うまでmergeしません。
 - [ ] Maintainerはマージ後の責任として、GitHub上の自動削除を確認し、安全を確認したマージ済みブランチをローカルとリモートの両方から削除します。
