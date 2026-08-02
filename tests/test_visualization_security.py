@@ -274,6 +274,45 @@ class BrowserProvisioningSecurityTests(unittest.TestCase):
             with self.assertRaisesRegex(BrowserMatrixError, "SHA-256"):
                 install_archive(definition, cache, downloader=lambda *_args: payload)
 
+    def test_cached_archive_open_rejects_post_stat_symlink_fifo_and_oversize_swaps(self) -> None:
+        payload = self._zip({"browser/bin/browser": b"binary"})
+        definition = self._archive(payload)
+        original_open = os.open
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for attack in ("symlink", "fifo", "oversize"):
+                with self.subTest(attack=attack):
+                    cache = root / attack
+                    install_archive(definition, cache, downloader=lambda *_args: payload)
+                    cached = cache / definition.sha256 / "archive"
+                    outside = root / f"{attack}-outside"
+                    outside.write_bytes(payload)
+                    swapped = False
+
+                    def swap_then_open(path: object, flags: int, mode: int = 0o777, *, dir_fd: int | None = None) -> int:
+                        nonlocal swapped
+                        if path == "archive" and dir_fd is not None and not swapped:
+                            swapped = True
+                            cached.unlink()
+                            if attack == "symlink":
+                                cached.symlink_to(outside)
+                            elif attack == "fifo":
+                                os.mkfifo(cached)
+                            else:
+                                cached.write_bytes(payload + b"X")
+                        return original_open(path, flags, mode, dir_fd=dir_fd)
+
+                    with mock.patch("tools.install_test_browsers.os.open", side_effect=swap_then_open):
+                        with self.assertRaisesRegex(
+                            BrowserMatrixError, "regular|link|byte ceiling|changed"
+                        ):
+                            install_archive(
+                                definition, cache,
+                                downloader=lambda *_args: (_ for _ in ()).throw(
+                                    AssertionError("cache attack must not redownload")
+                                ),
+                            )
+
     def test_linux_preflight_requires_x86_64_elf_dependencies_version_and_launch(self) -> None:
         elf = bytearray(64)
         elf[:7] = b"\x7fELF\x02\x01\x01"

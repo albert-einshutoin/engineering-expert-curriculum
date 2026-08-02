@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 from dataclasses import dataclass
 import hashlib
 import io
@@ -673,6 +674,82 @@ def _validate_cached_tree(
             raise BrowserMatrixError("existing browser cache symlink escapes its tree") from error
 
 
+def _same_file_identity(left: os.stat_result, right: os.stat_result) -> bool:
+    return (
+        left.st_dev, left.st_ino, left.st_mode, left.st_nlink,
+        left.st_size, left.st_mtime_ns,
+    ) == (
+        right.st_dev, right.st_ino, right.st_mode, right.st_nlink,
+        right.st_size, right.st_mtime_ns,
+    )
+
+
+def _read_cached_archive(
+    cache_root: Path, digest: str, max_bytes: int,
+) -> bytes | None:
+    """Read a cache hit through pinned directory descriptors.
+
+    Both directory bindings and the archive identity are checked after the
+    bounded read because pathname validation before open is vulnerable to a
+    concurrent rename or special-file substitution.
+    """
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    cache_fd = digest_fd = archive_fd = -1
+    try:
+        cache_before = os.stat(cache_root, follow_symlinks=False)
+        cache_fd = os.open(cache_root, directory_flags)
+        cache_opened = os.fstat(cache_fd)
+        if not stat.S_ISDIR(cache_opened.st_mode) or not _same_file_identity(cache_before, cache_opened):
+            raise BrowserMatrixError("browser cache parent binding changed")
+        digest_fd = os.open(digest, directory_flags, dir_fd=cache_fd)
+        digest_opened = os.fstat(digest_fd)
+        if not stat.S_ISDIR(digest_opened.st_mode):
+            raise BrowserMatrixError("browser digest cache is not a real directory")
+        try:
+            archive_fd = os.open(
+                "archive", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                dir_fd=digest_fd,
+            )
+        except FileNotFoundError:
+            return None
+        archive_before = os.fstat(archive_fd)
+        if not stat.S_ISREG(archive_before.st_mode) or archive_before.st_nlink != 1:
+            raise BrowserMatrixError("cached browser archive is not a single-link regular file")
+        if archive_before.st_size > max_bytes:
+            raise BrowserMatrixError("cached browser archive exceeds its byte ceiling")
+        chunks: list[bytes] = []
+        remaining = max_bytes + 1
+        while remaining:
+            chunk = os.read(archive_fd, min(1024 * 1024, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        payload = b"".join(chunks)
+        if len(payload) > max_bytes:
+            raise BrowserMatrixError("cached browser archive exceeds its byte ceiling")
+        archive_after = os.fstat(archive_fd)
+        digest_after = os.stat(digest, dir_fd=cache_fd, follow_symlinks=False)
+        cache_after = os.stat(cache_root, follow_symlinks=False)
+        if (
+            not _same_file_identity(archive_before, archive_after)
+            or not _same_file_identity(digest_opened, digest_after)
+            or not _same_file_identity(cache_opened, cache_after)
+        ):
+            raise BrowserMatrixError("cached browser archive or parent binding changed while reading")
+        return payload
+    except BrowserMatrixError:
+        raise
+    except OSError as error:
+        if error.errno == errno.ELOOP:
+            raise BrowserMatrixError("cached browser archive link substitution was rejected") from error
+        raise BrowserMatrixError("cached browser archive could not be read safely") from error
+    finally:
+        for descriptor in (archive_fd, digest_fd, cache_fd):
+            if descriptor >= 0:
+                os.close(descriptor)
+
+
 def install_archive(
     archive: BrowserArchive,
     cache: Path,
@@ -694,19 +771,15 @@ def install_archive(
         if destination.exists() or destination.is_symlink():
             _validate_cached_tree(destination, archive.symlinks)
         cached_archive = digest_root / "archive"
-        if cached_archive.exists():
-            if cached_archive.is_symlink() or not cached_archive.is_file():
-                raise BrowserMatrixError("cached browser archive is not a regular file")
-            if cached_archive.stat().st_size > archive.max_bytes:
-                raise BrowserMatrixError("cached browser archive exceeds its byte ceiling")
-            payload = cached_archive.read_bytes()
-        else:
+        payload = _read_cached_archive(cache_root, archive.sha256, archive.max_bytes)
+        archive_was_cached = payload is not None
+        if payload is None:
             payload = downloader(archive.url, 30.0, archive.max_bytes)
             if type(payload) is not bytes or len(payload) > archive.max_bytes:
                 raise BrowserMatrixError("browser downloader violated its byte ceiling")
         if hashlib.sha256(payload).hexdigest() != archive.sha256:
             raise BrowserMatrixError("browser archive SHA-256 mismatch")
-        if not cached_archive.exists():
+        if not archive_was_cached:
             pending_archive = digest_root / ".archive.pending"
             with pending_archive.open("xb") as stream:
                 stream.write(payload)
