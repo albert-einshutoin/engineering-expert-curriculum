@@ -488,6 +488,12 @@ def _extract_tar(payload: bytes, root: Path, expanded_limit: int) -> None:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with source, target.open("xb") as destination:
                     shutil.copyfileobj(source, destination, length=1024 * 1024)
+                if type(info.mode) is not int or not 0 <= info.mode <= 0o7777:
+                    raise BrowserMatrixError("browser tar member mode is invalid")
+                # Firefox's launcher execs sibling binaries. Preserve the
+                # archive's ordinary rwx bits, but deliberately discard
+                # setuid, setgid, sticky, ownership, and other tar metadata.
+                target.chmod(info.mode & 0o777)
     except BrowserMatrixError:
         raise
     except (OSError, tarfile.TarError) as error:
@@ -624,6 +630,7 @@ def verify_macos_browser_bundle(
 
 def verify_linux_browser_binary(
     executable: Path, *, browser_name: str, expected_version: str,
+    oci_container_no_sandbox: bool = False,
 ) -> None:
     if browser_name not in {"chromium", "firefox"}:
         raise BrowserMatrixError("Linux browser name is outside the closed set")
@@ -649,11 +656,19 @@ def verify_linux_browser_binary(
         if version.returncode != 0 or re.search(pattern, version.stdout + version.stderr) is None:
             raise BrowserMatrixError("Linux browser version does not match the matrix")
         if browser_name == "chromium":
+            launch_arguments = [
+                str(executable), "--headless=new", "--disable-gpu",
+                "--no-first-run", "--dump-dom",
+                "data:text/html,<title>browser-contract</title>",
+            ]
+            if oci_container_no_sandbox:
+                # This opt-in is supplied only by the digest-pinned, non-root
+                # CI container whose seccomp profile blocks Chromium's nested
+                # user-namespace sandbox. Local Linux keeps the sandbox.
+                launch_arguments.insert(3, "--no-sandbox")
             launch = subprocess.run(
-                [
-                    str(executable), "--headless=new", "--disable-gpu",
-                    "--no-first-run", "--dump-dom", "data:text/html,<title>browser-contract</title>",
-                ], check=False, capture_output=True, text=True, timeout=30,
+                launch_arguments,
+                check=False, capture_output=True, text=True, timeout=30,
             )
             if launch.returncode != 0 or "<title>browser-contract</title>" not in launch.stdout:
                 raise BrowserMatrixError("Linux Chromium real launch preflight failed")
@@ -927,7 +942,10 @@ def install_archive(
     *,
     downloader: Callable[[str, float, int], bytes] = _download_https,
     browser_name: str | None = None,
+    oci_container_no_sandbox: bool = False,
 ) -> Path:
+    if oci_container_no_sandbox and not sys.platform.startswith("linux"):
+        raise BrowserMatrixError("OCI no-sandbox opt-in is Linux-only")
     try:
         cache.mkdir(parents=True, exist_ok=True)
         if cache.is_symlink() or not cache.is_dir():
@@ -1012,6 +1030,7 @@ def install_archive(
                 verify_linux_browser_binary(
                     candidate, browser_name=browser_name,
                     expected_version=archive.version,
+                    oci_container_no_sandbox=oci_container_no_sandbox,
                 )
             previous = digest_root / ".extracted.previous"
             if previous.exists() or previous.is_symlink():
@@ -1060,12 +1079,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--matrix", type=Path, required=True)
     parser.add_argument("--cache", type=Path, required=True)
     parser.add_argument("--platform")
+    parser.add_argument("--oci-container-no-sandbox", action="store_true")
     args = parser.parse_args(argv)
     matrix = load_browser_matrix(args.matrix)
     entry = resolve_platform(matrix, args.platform)
+    if args.oci_container_no_sandbox and not entry.key.startswith("linux-"):
+        raise BrowserMatrixError("OCI no-sandbox opt-in is Linux-only")
     for name in ("chromium", "firefox"):
         executable = install_archive(
-            entry.browsers[name], args.cache, browser_name=name
+            entry.browsers[name], args.cache, browser_name=name,
+            oci_container_no_sandbox=args.oci_container_no_sandbox,
         )
         print(f"{name}: {executable}")
     if entry.safari is not None:

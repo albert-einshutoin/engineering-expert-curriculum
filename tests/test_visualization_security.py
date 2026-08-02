@@ -215,6 +215,7 @@ class BrowserProvisioningSecurityTests(unittest.TestCase):
                 archive.writestr(info, symlink_target)
         return output.getvalue()
 
+    @mock.patch("tools.install_test_browsers.sys.platform", "darwin")
     def test_installer_hashes_before_extracting_into_digest_named_cache(self) -> None:
         payload = self._zip({"browser/bin/browser": b"binary"})
         definition = self._archive(payload)
@@ -236,6 +237,7 @@ class BrowserProvisioningSecurityTests(unittest.TestCase):
                 completed,
             )
 
+    @mock.patch("tools.install_test_browsers.sys.platform", "darwin")
     def test_cache_hit_revalidates_archive_and_rejects_tree_parent_symlink_escape(self) -> None:
         payload = self._zip({"browser/bin/browser": b"binary"})
         definition = self._archive(payload)
@@ -267,6 +269,7 @@ class BrowserProvisioningSecurityTests(unittest.TestCase):
             with self.assertRaisesRegex(BrowserMatrixError, "symlink|escape"):
                 install_archive(definition, cache, downloader=lambda *_args: payload)
 
+    @mock.patch("tools.install_test_browsers.sys.platform", "darwin")
     def test_cache_hit_rejects_mutated_cached_archive(self) -> None:
         payload = self._zip({"browser/bin/browser": b"binary"})
         definition = self._archive(payload)
@@ -277,6 +280,7 @@ class BrowserProvisioningSecurityTests(unittest.TestCase):
             with self.assertRaisesRegex(BrowserMatrixError, "SHA-256"):
                 install_archive(definition, cache, downloader=lambda *_args: payload)
 
+    @mock.patch("tools.install_test_browsers.sys.platform", "darwin")
     def test_cached_archive_open_rejects_post_stat_symlink_fifo_and_oversize_swaps(self) -> None:
         payload = self._zip({"browser/bin/browser": b"binary"})
         definition = self._archive(payload)
@@ -487,8 +491,10 @@ class BrowserProvisioningSecurityTests(unittest.TestCase):
                     mock.Mock(returncode=0, stdout="<html><head><title>browser-contract</title></head></html>\n", stderr=""),
                 )
                 verify_linux_browser_binary(
-                    executable, browser_name="chromium", expected_version="123.0.1"
+                    executable, browser_name="chromium", expected_version="123.0.1",
+                    oci_container_no_sandbox=True,
                 )
+                self.assertIn("--no-sandbox", run.call_args_list[2].args[0])
             for mutation in (b"not-elf", bytes(elf[:18] + (183).to_bytes(2, "little") + elf[20:])):
                 executable.write_bytes(mutation)
                 with self.assertRaises(BrowserMatrixError):
@@ -496,6 +502,42 @@ class BrowserProvisioningSecurityTests(unittest.TestCase):
                         executable, browser_name="chromium", expected_version="123.0.1"
                     )
 
+    def test_linux_archive_install_requires_closed_browser_name(self) -> None:
+        payload = self._zip({"browser/bin/browser": b"archive fixture"})
+        with TemporaryDirectory() as temporary, mock.patch(
+            "tools.install_test_browsers.sys.platform", "linux"
+        ), self.assertRaisesRegex(BrowserMatrixError, "closed browser name"):
+            install_archive(
+                self._archive(payload), Path(temporary),
+                downloader=lambda *_args: payload,
+            )
+
+    def test_linux_archive_install_dispatches_closed_binary_preflight(self) -> None:
+        payload = self._zip({"browser/bin/browser": b"archive fixture"})
+        with TemporaryDirectory() as temporary, mock.patch(
+            "tools.install_test_browsers.sys.platform", "linux"
+        ), mock.patch(
+            "tools.install_test_browsers.verify_linux_browser_binary"
+        ) as verify:
+            installed = install_archive(
+                self._archive(payload), Path(temporary),
+                downloader=lambda *_args: payload,
+                browser_name="chromium",
+            )
+        verify.assert_called_once()
+        candidate = verify.call_args.args[0]
+        self.assertEqual(candidate.parts[-3:], ("browser", "bin", "browser"))
+        self.assertNotEqual(candidate, installed)
+        self.assertEqual(
+            verify.call_args.kwargs,
+            {
+                "browser_name": "chromium",
+                "expected_version": "123.0.1",
+                "oci_container_no_sandbox": False,
+            },
+        )
+
+    @mock.patch("tools.install_test_browsers.sys.platform", "darwin")
     def test_installer_rejects_hash_size_traversal_absolute_and_links(self) -> None:
         payloads = (
             self._zip({"../escape": b"x", "browser/bin/browser": b"binary"}),
@@ -524,6 +566,7 @@ class BrowserProvisioningSecurityTests(unittest.TestCase):
                     downloader=lambda *_args: valid + b"x",
                 )
 
+    @mock.patch("tools.install_test_browsers.sys.platform", "darwin")
     def test_macos_bundle_accepts_only_the_exact_internal_symlink_map(self) -> None:
         valid = self._zip(
             {"browser/bin/browser": b"binary", "browser/target": b"target"},
@@ -585,6 +628,36 @@ class BrowserProvisioningSecurityTests(unittest.TestCase):
                 Path(temporary), downloader=lambda *_args: cycle_payload,
             )
 
+    @mock.patch("tools.install_test_browsers.sys.platform", "darwin")
+    def test_tar_installer_restores_only_regular_permission_bits(self) -> None:
+        output = io.BytesIO()
+        with tarfile.open(fileobj=output, mode="w:xz") as archive:
+            for name, data, mode in (
+                ("browser/bin/browser", b"launcher", 0o755),
+                ("browser/bin/browser-bin", b"binary", 0o755),
+                ("browser/data.txt", b"data", 0o644),
+            ):
+                member = tarfile.TarInfo(name)
+                member.size = len(data)
+                member.mode = mode | stat.S_ISUID | stat.S_ISGID | stat.S_ISVTX
+                archive.addfile(member, io.BytesIO(data))
+        payload = output.getvalue()
+        with TemporaryDirectory() as temporary:
+            executable = install_archive(
+                self._archive(payload, archive_format="tar.xz"), Path(temporary),
+                downloader=lambda *_args: payload,
+            )
+            self.assertEqual(stat.S_IMODE(executable.stat().st_mode), 0o755)
+            self.assertEqual(
+                stat.S_IMODE((executable.parent / "browser-bin").stat().st_mode),
+                0o755,
+            )
+            self.assertEqual(
+                stat.S_IMODE((executable.parents[1] / "data.txt").stat().st_mode),
+                0o644,
+            )
+
+    @mock.patch("tools.install_test_browsers.sys.platform", "darwin")
     def test_tar_installer_rejects_symbolic_and_hard_links(self) -> None:
         for link_type in (tarfile.SYMTYPE, tarfile.LNKTYPE):
             output = io.BytesIO()
@@ -661,7 +734,40 @@ class BrowserProvisioningSecurityTests(unittest.TestCase):
                 [call.args[0].version for call in install.call_args_list],
                 ["151.0.7922.71", "153.0.1"],
             )
+            self.assertEqual(
+                [call.kwargs["browser_name"] for call in install.call_args_list],
+                ["chromium", "firefox"],
+            )
+            self.assertEqual(
+                [call.kwargs["oci_container_no_sandbox"] for call in install.call_args_list],
+                [False, False],
+            )
             safari.assert_called_once()
+
+    def test_installer_cli_rejects_oci_no_sandbox_outside_linux(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        with TemporaryDirectory() as temporary, mock.patch(
+            "tools.install_test_browsers.detect_host_platform", return_value="macos-arm64"
+        ), mock.patch("tools.install_test_browsers.install_archive") as install, \
+                self.assertRaisesRegex(BrowserMatrixError, "Linux-only"):
+            install_main([
+                "--matrix", str(root / "tests/browser-matrix.json"),
+                "--cache", temporary,
+                "--oci-container-no-sandbox",
+            ])
+        install.assert_not_called()
+
+    def test_archive_installer_rejects_oci_no_sandbox_outside_linux(self) -> None:
+        payload = self._zip({"browser/bin/browser": b"archive fixture"})
+        with TemporaryDirectory() as temporary, mock.patch(
+            "tools.install_test_browsers.sys.platform", "darwin"
+        ), self.assertRaisesRegex(BrowserMatrixError, "Linux-only"):
+            install_archive(
+                self._archive(payload), Path(temporary),
+                downloader=lambda *_args: payload,
+                browser_name="chromium",
+                oci_container_no_sandbox=True,
+            )
 
     def test_macos_bundle_requires_signature_gatekeeper_arm64_and_exact_version(self) -> None:
         executable = Path(

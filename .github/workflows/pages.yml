@@ -47,9 +47,9 @@ jobs:
           ) > /tmp/site-second.sha256
           diff -u /tmp/site-first.sha256 /tmp/site-second.sha256
       - name: Install only verified browser archives
-        run: python tools/install_test_browsers.py --matrix tests/browser-matrix.json --cache outputs/browser-cache
+        run: python tools/install_test_browsers.py --matrix tests/browser-matrix.json --cache outputs/browser-cache --oci-container-no-sandbox
       - name: Browser-test the exact Pages candidate
-        run: python tools/run_browser_contract.py --site site-first --matrix tests/browser-matrix.json
+        run: python tools/run_browser_contract.py --site site-first --matrix tests/browser-matrix.json --oci-container-no-sandbox
       - name: Bind the exact Pages candidate to this commit
         run: |
           python tools/create_release_manifest.py --root site-first --commit "$GITHUB_SHA" --output site-first/release-manifest.json

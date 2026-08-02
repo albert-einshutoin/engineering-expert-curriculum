@@ -719,19 +719,41 @@ class BrowserContractTests(VisualizationAccessibilityTests):
                     self.assertTrue(parser.active_edges <= parser.model_edges)
 
     def test_chromium_arguments_are_explicit_bounded_and_enable_required_instrumentation(self) -> None:
-        args = chromium_arguments(
-            Path("/cache/chrome"),
-            "file:///tmp/site/index.html",
-            self._matrix()["profiles"]["mobile"],  # type: ignore[index]
-            Path("/tmp/profile"),
-        )
+        with mock.patch("tools.run_browser_contract.sys.platform", "linux"):
+            args = chromium_arguments(
+                Path("/cache/chrome"),
+                "file:///tmp/site/index.html",
+                self._matrix()["profiles"]["mobile"],  # type: ignore[index]
+                Path("/tmp/profile"),
+                oci_container_no_sandbox=True,
+            )
         self.assertEqual(args[0], "/cache/chrome")
         self.assertIn("--headless=new", args)
+        self.assertIn("--no-sandbox", args)
         self.assertIn("--remote-debugging-port=0", args)
         self.assertIn("--enable-precise-memory-info", args)
         self.assertIn("--js-flags=--expose-gc", args)
         self.assertEqual(args[-1], "about:blank")
         self.assertFalse(any("shell" in item for item in args))
+
+        with mock.patch("tools.run_browser_contract.sys.platform", "linux"):
+            default_linux_args = chromium_arguments(
+                Path("/cache/chrome"),
+                "file:///tmp/site/index.html",
+                self._matrix()["profiles"]["mobile"],  # type: ignore[index]
+                Path("/tmp/profile"),
+            )
+        self.assertNotIn("--no-sandbox", default_linux_args)
+
+        with mock.patch("tools.run_browser_contract.sys.platform", "darwin"), \
+                self.assertRaises(BrowserMatrixError):
+            chromium_arguments(
+                Path("/cache/chrome"),
+                "file:///tmp/site/index.html",
+                self._matrix()["profiles"]["mobile"],  # type: ignore[index]
+                Path("/tmp/profile"),
+                oci_container_no_sandbox=True,
+            )
 
     def test_dumped_dom_result_is_unique_bounded_versioned_and_fail_closed(self) -> None:
         result = {
@@ -927,6 +949,21 @@ class BrowserContractTests(VisualizationAccessibilityTests):
             self.assertEqual(report["failure"], "browser-contract-aborted")
             self.assertEqual(report["runs"][0]["status"], "not-run")
             self.assertFalse((evidence / ".report.json.pending").exists())
+
+    def test_runner_propagates_explicit_oci_no_sandbox_authority(self) -> None:
+        expected = {"runs": []}
+        with TemporaryDirectory() as temporary, mock.patch(
+            "tools.run_browser_contract._run_browser_contract",
+            return_value=expected,
+        ) as run:
+            actual = run_browser_contract(
+                site=Path(temporary), matrix_path=Path("matrix.json"),
+                cache=Path(temporary) / "cache",
+                evidence=Path(temporary) / "evidence",
+                oci_container_no_sandbox=True,
+            )
+        self.assertIs(actual, expected)
+        self.assertIs(run.call_args.kwargs["oci_container_no_sandbox"], True)
 
     def test_runner_terminalizes_interrupt_and_exit_without_replacing_the_base_exception(self) -> None:
         with TemporaryDirectory() as temporary:

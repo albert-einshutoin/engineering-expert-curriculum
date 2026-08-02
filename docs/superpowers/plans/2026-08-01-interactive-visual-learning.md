@@ -961,6 +961,16 @@ runner derive one exact key from `sys.platform` plus `platform.machine()`, rejec
 an override that disagrees with the host, reject missing/extra platform keys,
 and never fall back across operating systems or architectures.
 
+The non-root Linux OCI runner cannot create Chromium's nested user-namespace
+sandbox under its default seccomp profile. Only that digest-pinned workflow
+passes `--oci-container-no-sandbox`, which makes both provisioning and execution
+add Chromium's process-level `--no-sandbox`; Linux defaults retain the browser
+sandbox and macOS rejects the opt-in. The digest-pinned ephemeral container
+remains the CI sandbox boundary, while the runner continues to reject every URL
+except `file://` and loopback HTTP. Firefox tar extraction restores only
+ordinary `rwx` bits required by its launcher and internal binaries; privileged
+mode bits, ownership, links, and special entries are never restored.
+
 Add only `/outputs/` to `.gitignore` for generated browser caches, screenshots,
 reports, and release-candidate builds. Repository tests require this exact
 root-anchored entry and continue to reject broad source-directory ignores.

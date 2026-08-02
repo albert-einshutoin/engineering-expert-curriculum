@@ -59,6 +59,6 @@ jobs:
       - name: Build browser candidate
         run: python tools/build.py --output site-browser
       - name: Install only verified browser archives
-        run: python tools/install_test_browsers.py --matrix tests/browser-matrix.json --cache outputs/browser-cache
+        run: python tools/install_test_browsers.py --matrix tests/browser-matrix.json --cache outputs/browser-cache --oci-container-no-sandbox
       - name: Run pinned real-browser contract
-        run: python tools/run_browser_contract.py --site site-browser --matrix tests/browser-matrix.json
+        run: python tools/run_browser_contract.py --site site-browser --matrix tests/browser-matrix.json --oci-container-no-sandbox

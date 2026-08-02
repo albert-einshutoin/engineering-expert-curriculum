@@ -67,6 +67,17 @@ def changelog_section(changelog: str, heading_pattern: str) -> str | None:
 
 
 class RepositoryContractTests(unittest.TestCase):
+    def test_chromium_oci_sandbox_exception_is_public_and_bounded(self) -> None:
+        security = read("SECURITY.md")
+        for phrase in (
+            "non-root OCI",
+            "--oci-container-no-sandbox",
+            "通常のlocal Linuxではbrowser sandboxを維持",
+            "file://",
+            "loopback HTTP",
+        ):
+            self.assertIn(phrase, security)
+
     def test_safari_webdriver_capability_amendment_is_public_and_explicit(self) -> None:
         readme = read("README.md") + read("README.en.md")
         security = read("SECURITY.md")

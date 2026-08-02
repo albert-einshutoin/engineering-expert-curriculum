@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 import re
+import subprocess
 import unittest
 from typing import TypeAlias
 
@@ -44,6 +45,16 @@ _ALLOWED_PERMISSION_KEYS = frozenset(
 _BROWSER_RUNNER = (
     "mcr.microsoft.com/playwright/python:v1.61.0-noble-amd64@"
     "sha256:80fd7c1aad9600ea348572dd46ca00b9ea31d890831f5838fc61319ab79900d2"
+)
+_GITLEAKS_FINGERPRINTS = (
+    "4c55aeffaa14554e581ae28492d4a4c5b03bdd2a:"
+    "tests/test_content_acceptance.py:generic-api-key:94",
+    "3f6cc01088ee058f28f2695dc04769f785d05699:"
+    "tests/test_content_acceptance.py:generic-api-key:94",
+)
+_SECRET_SHAPED_API_FIXTURE = re.compile(
+    r'(?i)api[^\n]{0,100}["\'][0-9a-f]{64}["\']',
+    re.ASCII,
 )
 
 
@@ -473,6 +484,7 @@ class RepositorySecurityTests(unittest.TestCase):
         self.assertIn("diff -u", runs)
         self.assertIn("python tools/install_test_browsers.py", runs)
         self.assertIn("python tools/run_browser_contract.py", runs)
+        self.assertEqual(runs.count("--oci-container-no-sandbox"), 2)
 
     def test_browser_runner_digest_cannot_drift_from_the_canonical_matrix(self) -> None:
         matrix = json.loads(
@@ -548,6 +560,48 @@ class RepositorySecurityTests(unittest.TestCase):
         self.assertIn("--redact", runs)
         self.assertIn('--log-opts="--all"', runs)
         self.assertNotIn("gitleaks/gitleaks-action", str(document))
+
+    def test_gitleaks_ignores_only_two_historical_contract_fingerprints(self) -> None:
+        ignore_path = REPOSITORY_ROOT / ".gitleaksignore"
+        self.assertEqual(
+            tuple(ignore_path.read_text(encoding="utf-8").splitlines()),
+            _GITLEAKS_FINGERPRINTS,
+        )
+
+        for fingerprint in _GITLEAKS_FINGERPRINTS:
+            commit, path, rule, line_number = fingerprint.split(":")
+            self.assertRegex(commit, r"\A[0-9a-f]{40}\Z")
+            self.assertEqual(path, "tests/test_content_acceptance.py")
+            self.assertEqual(rule, "generic-api-key")
+            self.assertEqual(line_number, "94")
+
+        current_fixture = (
+            REPOSITORY_ROOT / "tests" / "test_content_acceptance.py"
+        ).read_text(encoding="utf-8")
+        self.assertIsNone(_SECRET_SHAPED_API_FIXTURE.search(current_fixture))
+
+        for forbidden_config in (".gitleaks.toml", "gitleaks.toml"):
+            self.assertFalse((REPOSITORY_ROOT / forbidden_config).exists())
+        workflow = (WORKFLOWS_ROOT / "gitleaks.yml").read_text(encoding="utf-8")
+        inline_allow_marker = "gitleaks:" + "allow"
+        for broad_allowlist in (
+            "--baseline-path",
+            "--config",
+            "--gitleaks-ignore-path",
+            "GITLEAKS_CONFIG",
+            inline_allow_marker,
+        ):
+            self.assertNotIn(broad_allowlist, workflow)
+
+        tracked_inline_allows = subprocess.run(
+            ["git", "grep", "-n", "-I", "-F", inline_allow_marker, "--", "."],
+            cwd=REPOSITORY_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertIn(tracked_inline_allows.returncode, (0, 1))
+        self.assertEqual(tracked_inline_allows.stdout, "")
 
     def test_pages_deploys_only_main_after_a_verified_build(self) -> None:
         document = _workflow("pages.yml")
@@ -635,6 +689,7 @@ class RepositorySecurityTests(unittest.TestCase):
         self.assertIn("diff -u", runs)
         self.assertIn("python tools/install_test_browsers.py", runs)
         self.assertIn("python tools/run_browser_contract.py --site site-first", runs)
+        self.assertEqual(runs.count("--oci-container-no-sandbox"), 2)
         self.assertIn("python tools/create_release_manifest.py --root site-first", runs)
         self.assertIn("python tools/verify_release_manifest.py --root site-first", runs)
         self.assertIn("--with-release-manifest", runs)
@@ -676,6 +731,32 @@ class RepositorySecurityTests(unittest.TestCase):
         self.assertEqual(
             build_steps[upload_index].get("with"),
             {"path": "site-first"},
+        )
+
+    def test_oci_no_sandbox_authority_is_bound_to_pinned_browser_containers(self) -> None:
+        authorized_jobs: set[tuple[str, str]] = set()
+        for path in _workflow_files():
+            document = _load_yaml(path)
+            for job_name, job in _jobs(document).items():
+                runs = "\n".join(
+                    run
+                    for step in _steps(job, f"{path.name}.jobs.{job_name}")
+                    if isinstance((run := step.get("run")), str)
+                )
+                occurrences = runs.count("--oci-container-no-sandbox")
+                if occurrences:
+                    self.assertEqual(occurrences, 2)
+                    self.assertEqual(
+                        _mapping(
+                            job.get("container"),
+                            f"{path.name}.jobs.{job_name}.container",
+                        ),
+                        {"image": _BROWSER_RUNNER, "options": "--user 1001"},
+                    )
+                    authorized_jobs.add((path.name, job_name))
+        self.assertEqual(
+            authorized_jobs,
+            {("pages.yml", "build"), ("validate.yml", "browser-contract")},
         )
 
 

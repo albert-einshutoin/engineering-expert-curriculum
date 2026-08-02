@@ -154,6 +154,8 @@ def chromium_arguments(
     url: str,
     profile: Mapping[str, object],
     user_data_directory: Path,
+    *,
+    oci_container_no_sandbox: bool = False,
 ) -> list[str]:
     if urlsplit(url).scheme not in {"file", "http"}:
         raise BrowserMatrixError("browser URL must be local file or loopback HTTP")
@@ -162,13 +164,20 @@ def chromium_arguments(
     scale = profile.get("deviceScaleFactor")
     if type(width) is not int or type(height) is not int or type(scale) is not int:
         raise BrowserMatrixError("browser profile dimensions are invalid")
-    return [
+    arguments = [
         str(executable), "--headless=new", "--disable-gpu", "--no-first-run",
         "--no-default-browser-check", "--remote-debugging-port=0",
         f"--user-data-dir={user_data_directory}",
         f"--window-size={width},{height}", f"--force-device-scale-factor={scale}",
         "--enable-precise-memory-info", "--js-flags=--expose-gc", "about:blank",
     ]
+    if oci_container_no_sandbox:
+        if not sys.platform.startswith("linux"):
+            raise BrowserMatrixError("OCI no-sandbox opt-in is Linux-only")
+        # The explicit CI-only opt-in is valid for the matrix-pinned, non-root
+        # container. Local Linux retains Chromium's nested sandbox by default.
+        arguments.insert(3, "--no-sandbox")
+    return arguments
 
 
 class _ResultParser(HTMLParser):
@@ -611,9 +620,13 @@ def run_chromium_page(
     requested_state: str | None = None,
     measure_performance: bool = False,
     timeout: float = 30.0,
+    oci_container_no_sandbox: bool = False,
 ) -> dict[str, object]:
     with tempfile.TemporaryDirectory(prefix=".browser-profile-") as profile_directory:
-        args = chromium_arguments(executable, url, profile, Path(profile_directory))
+        args = chromium_arguments(
+            executable, url, profile, Path(profile_directory),
+            oci_container_no_sandbox=oci_container_no_sandbox,
+        )
         process = subprocess.Popen(
             args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, shell=False,
@@ -1383,9 +1396,12 @@ def browser_evidence_report(
 
 def _run_browser_contract(
     *, site: Path, matrix_path: Path, cache: Path, evidence: Path,
+    oci_container_no_sandbox: bool = False,
 ) -> dict[str, object]:
     matrix = load_browser_matrix(matrix_path)
     platform_entry = resolve_platform(matrix, None)
+    if oci_container_no_sandbox and not platform_entry.key.startswith("linux-"):
+        raise BrowserMatrixError("OCI no-sandbox opt-in is Linux-only")
     site = site.resolve(strict=True)
     if not site.is_dir():
         raise BrowserMatrixError("browser contract site must be a directory")
@@ -1429,13 +1445,15 @@ def _run_browser_contract(
     )
     try:
         chromium = install_archive(
-            platform_entry.browsers["chromium"], cache, browser_name="chromium"
+            platform_entry.browsers["chromium"], cache, browser_name="chromium",
+            oci_container_no_sandbox=oci_container_no_sandbox,
         )
         journal.verified_browser(
             "chromium", version=platform_entry.browsers["chromium"].version
         )
         firefox = install_archive(
-            platform_entry.browsers["firefox"], cache, browser_name="firefox"
+            platform_entry.browsers["firefox"], cache, browser_name="firefox",
+            oci_container_no_sandbox=oci_container_no_sandbox,
         )
         journal.verified_browser(
             "firefox", version=platform_entry.browsers["firefox"].version
@@ -1471,6 +1489,7 @@ def _run_browser_contract(
                 measure_performance=measure_performance,
                 screenshot=evidence / f"{label}-chromium-{profile_name}.png",
                 approved_file_roots=(site, fixture.parent, repository / "static"),
+                oci_container_no_sandbox=oci_container_no_sandbox,
             )
         except BrowserMatrixError:
             journal.record(run, status="failed", reason="browser-contract-failed")
@@ -1620,10 +1639,12 @@ def _terminalize_browser_report(path: Path) -> None:
 
 def run_browser_contract(
     *, site: Path, matrix_path: Path, cache: Path, evidence: Path,
+    oci_container_no_sandbox: bool = False,
 ) -> dict[str, object]:
     try:
         return _run_browser_contract(
             site=site, matrix_path=matrix_path, cache=cache, evidence=evidence,
+            oci_container_no_sandbox=oci_container_no_sandbox,
         )
     except SafariSessionUnavailable:
         raise
@@ -1645,10 +1666,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--matrix", type=Path, required=True)
     parser.add_argument("--cache", type=Path, default=Path("outputs/browser-cache"))
     parser.add_argument("--evidence", type=Path, default=Path("outputs/browser-evidence"))
+    parser.add_argument("--oci-container-no-sandbox", action="store_true")
     options = parser.parse_args(argv)
     report = run_browser_contract(
         site=options.site, matrix_path=options.matrix,
         cache=options.cache, evidence=options.evidence,
+        oci_container_no_sandbox=options.oci_container_no_sandbox,
     )
     print(f"browser contract passed: {len(report['runs'])} runs")
     return 0
