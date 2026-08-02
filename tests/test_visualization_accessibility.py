@@ -1,16 +1,38 @@
 from __future__ import annotations
 
 from html.parser import HTMLParser
+import hashlib
 import json
 from pathlib import Path
 import re
+from tempfile import TemporaryDirectory
 import unittest
+from unittest import mock
+
+from tools.install_test_browsers import (
+    BrowserMatrixError,
+    detect_host_platform,
+    load_browser_matrix_bytes,
+    resolve_platform,
+)
+from tools.run_browser_contract import (
+    assert_leak_contract,
+    assert_performance_contract,
+    browser_evidence_report,
+    browser_evidence_inventory,
+    browser_urls,
+    chromium_arguments,
+    parse_browser_result,
+    serve_site,
+    _write_report,
+)
 
 from curriculum_builder.visualizations import (
     VisualizationType,
     render_visualization,
 )
 from curriculum_builder.lessons import load_lesson_bytes
+from curriculum_builder.build import build_site
 import tests.test_visualization_rendering as visualization_rendering_tests
 
 
@@ -236,6 +258,42 @@ class _CausalStructureParser(HTMLParser):
         self.stack.pop()
 
 
+class _SimulationReferenceParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.in_simulation = False
+        self.model_nodes: set[str] = set()
+        self.model_edges: set[str] = set()
+        self.active_nodes: set[str] = set()
+        self.active_edges: set[str] = set()
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        values = dict(attrs)
+        classes = frozenset((values.get("class") or "").split())
+        if tag == "figure" and values.get("data-simulation-kind"):
+            if self.in_simulation:
+                raise AssertionError("nested simulation figure")
+            self.in_simulation = True
+        if not self.in_simulation:
+            return
+        node_id = values.get("data-node-id")
+        edge_id = values.get("data-edge-id")
+        if node_id and "visualization__model-node" in classes:
+            self.model_nodes.add(node_id)
+        if edge_id and "visualization__model-edge" in classes:
+            self.model_edges.add(edge_id)
+        if node_id and "visualization__state-node" in classes:
+            self.active_nodes.add(node_id)
+        if edge_id and "visualization__state-edge" in classes:
+            self.active_edges.add(edge_id)
+
+    def handle_endtag(self, tag: str) -> None:
+        if not self.in_simulation:
+            return
+        if tag == "figure":
+            self.in_simulation = False
+
+
 class VisualizationAccessibilityTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -243,6 +301,363 @@ class VisualizationAccessibilityTests(unittest.TestCase):
         cls.payloads = (
             visualization_rendering_tests.VisualizationRenderingTests().payloads()
         )
+
+
+class BrowserContractTests(VisualizationAccessibilityTests):
+    def _matrix(self) -> dict[str, object]:
+        archive = {
+            "version": "123.0.1",
+            "url": "https://storage.googleapis.com/browser.zip",
+            "sha256": "a" * 64,
+            "archiveFormat": "zip",
+            "maxBytes": 1048576,
+            "executable": "browser/bin/browser",
+            "signaturePolicy": "linux-pinned-archive",
+        }
+        matrix = {
+            "schemaVersion": 1,
+            "harnessVersion": "1.0.0",
+            "ciRunner": {
+                "image": "ghcr.io/example/browser-runner",
+                "digest": "sha256:" + "b" * 64,
+            },
+            "platforms": {
+                "linux-x86_64": {
+                    "browsers": {
+                        "chromium": dict(archive),
+                        "firefox": {**archive, "sha256": "c" * 64},
+                    }
+                },
+                "macos-arm64": {
+                    "browsers": {
+                        "chromium": {**archive, "sha256": "d" * 64, "signaturePolicy": "adhoc-cft", "executableSha256": "1" * 64, "symlinks": {"browser/link": "bin/browser"}},
+                        "firefox": {**archive, "sha256": "e" * 64, "signaturePolicy": "developer-id", "symlinks": {}},
+                    },
+                    "safari": {
+                        "version": "26.0",
+                        "build": "21624.2.5.11.4",
+                        "executable": "/Applications/Safari.app/Contents/MacOS/Safari",
+                    },
+                },
+            },
+            "profiles": {
+                "desktop": {
+                    "width": 1440,
+                    "height": 900,
+                    "deviceScaleFactor": 1,
+                    "cpuThrottleRate": 1,
+                    "reducedMotion": False,
+                    "forcedColors": False,
+                },
+                "mobile": {
+                    "width": 390,
+                    "height": 844,
+                    "deviceScaleFactor": 2,
+                    "cpuThrottleRate": 4,
+                    "reducedMotion": False,
+                    "forcedColors": False,
+                },
+                "reduced-motion": {
+                    "width": 1440,
+                    "height": 900,
+                    "deviceScaleFactor": 1,
+                    "cpuThrottleRate": 1,
+                    "reducedMotion": True,
+                    "forcedColors": False,
+                },
+                "forced-colors": {
+                    "width": 1440,
+                    "height": 900,
+                    "deviceScaleFactor": 1,
+                    "cpuThrottleRate": 1,
+                    "reducedMotion": False,
+                    "forcedColors": True,
+                },
+            },
+            "fixtures": {
+                "maximum": {
+                    "path": "tests/browser/runtime-fixture.html",
+                    "sha256": "f" * 64,
+                },
+                "memoryLessonId": "core-03-architecture-memory-caches",
+                "distributedLessonId": "core-13-distributed-coordination-failure",
+            },
+            "measurements": {
+                "warmups": 3,
+                "samples": 20,
+                "resetCycles": 100,
+                "desktopMedianMs": 25,
+                "desktopLongTaskMs": 50,
+                "desktopRunsWithoutLongTask": 19,
+                "mobileMedianMs": 50,
+                "mobileP95Ms": 100,
+                "maxHeapGrowthBytes": 1048576,
+                "maxHeapGrowthRatio": 0.05,
+            },
+        }
+        return matrix
+
+    def _bytes(self, value: dict[str, object]) -> bytes:
+        return (json.dumps(value, ensure_ascii=False, separators=(",", ":")) + "\n").encode()
+
+    def test_matrix_is_closed_and_pins_exact_platform_browser_profiles(self) -> None:
+        matrix = load_browser_matrix_bytes(self._bytes(self._matrix()))
+        self.assertEqual(tuple(matrix.platforms), ("linux-x86_64", "macos-arm64"))
+        self.assertEqual(matrix.profiles["desktop"].viewport, (1440, 900))
+        self.assertEqual(matrix.profiles["mobile"].viewport, (390, 844))
+        self.assertEqual(matrix.profiles["mobile"].device_scale_factor, 2)
+        self.assertEqual(matrix.profiles["mobile"].cpu_throttle_rate, 4)
+
+    def test_matrix_rejects_mutable_or_incomplete_release_authority(self) -> None:
+        mutations = []
+        no_digest = self._matrix()
+        del no_digest["ciRunner"]["digest"]  # type: ignore[index]
+        mutations.append(no_digest)
+        extra_platform = self._matrix()
+        extra_platform["platforms"]["linux-arm64"] = extra_platform["platforms"]["linux-x86_64"]  # type: ignore[index]
+        mutations.append(extra_platform)
+        missing_browser = self._matrix()
+        del missing_browser["platforms"]["macos-arm64"]["browsers"]["firefox"]  # type: ignore[index]
+        mutations.append(missing_browser)
+        insecure_url = self._matrix()
+        insecure_url["platforms"]["linux-x86_64"]["browsers"]["chromium"]["url"] = "http://example.test/browser.zip"  # type: ignore[index]
+        mutations.append(insecure_url)
+        bad_hash = self._matrix()
+        bad_hash["platforms"]["linux-x86_64"]["browsers"]["chromium"]["sha256"] = "latest"  # type: ignore[index]
+        mutations.append(bad_hash)
+        unofficial_url = self._matrix()
+        unofficial_url["platforms"]["linux-x86_64"]["browsers"]["chromium"]["url"] = "https://downloads.example.test/browser.zip"  # type: ignore[index]
+        mutations.append(unofficial_url)
+        version_drift = self._matrix()
+        version_drift["platforms"]["linux-x86_64"]["browsers"]["chromium"]["version"] = "latest"  # type: ignore[index]
+        mutations.append(version_drift)
+        policy_swap = self._matrix()
+        policy_swap["platforms"]["macos-arm64"]["browsers"]["chromium"]["signaturePolicy"] = "developer-id"  # type: ignore[index]
+        mutations.append(policy_swap)
+        missing_policy = self._matrix()
+        del missing_policy["platforms"]["linux-x86_64"]["browsers"]["firefox"]["signaturePolicy"]  # type: ignore[index]
+        mutations.append(missing_policy)
+        for value in mutations:
+            with self.subTest(value=value), self.assertRaises(BrowserMatrixError):
+                load_browser_matrix_bytes(self._bytes(value))
+
+    def test_host_key_is_exact_and_override_cannot_fallback(self) -> None:
+        with mock.patch("tools.install_test_browsers.sys.platform", "darwin"), mock.patch(
+            "tools.install_test_browsers.platform.machine", return_value="arm64"
+        ):
+            self.assertEqual(detect_host_platform(), "macos-arm64")
+            matrix = load_browser_matrix_bytes(self._bytes(self._matrix()))
+            self.assertEqual(resolve_platform(matrix, None).key, "macos-arm64")
+            with self.assertRaisesRegex(BrowserMatrixError, "host"):
+                resolve_platform(matrix, "linux-x86_64")
+        with mock.patch("tools.install_test_browsers.sys.platform", "linux"), mock.patch(
+            "tools.install_test_browsers.platform.machine", return_value="aarch64"
+        ):
+            with self.assertRaisesRegex(BrowserMatrixError, "unsupported"):
+                detect_host_platform()
+
+    def test_http_contract_uses_loopback_ephemeral_port_and_pages_subpath(self) -> None:
+        with TemporaryDirectory() as temporary:
+            site = Path(temporary)
+            lesson = site / "lessons/core-02-algorithms-measurement/index.html"
+            lesson.parent.mkdir(parents=True)
+            lesson.write_text("<!doctype html><title>fixture</title>", encoding="utf-8")
+            with serve_site(site) as server:
+                self.assertEqual(server.host, "127.0.0.1")
+                self.assertGreater(server.port, 0)
+                file_url, http_url = browser_urls(site, lesson, server.port)
+                self.assertTrue(file_url.startswith("file:///"))
+                self.assertIn(
+                    f"http://127.0.0.1:{server.port}/engineering-expert-curriculum/",
+                    http_url,
+                )
+
+    def test_performance_and_leak_thresholds_fail_closed(self) -> None:
+        assert_performance_contract(
+            profile="desktop",
+            samples_ms=[20.0] * 19 + [51.0],
+            long_tasks_ms=[0.0] * 19 + [51.0],
+            mutation_counts=[1] * 20,
+        )
+        assert_performance_contract(
+            profile="mobile",
+            samples_ms=[40.0] * 19 + [100.0],
+            long_tasks_ms=[0.0] * 20,
+            mutation_counts=[1] * 20,
+        )
+        with self.assertRaises(BrowserMatrixError):
+            assert_performance_contract(
+                profile="desktop",
+                samples_ms=[26.0] * 20,
+                long_tasks_ms=[0.0] * 20,
+                mutation_counts=[1] * 20,
+            )
+        with self.assertRaises(BrowserMatrixError):
+            assert_performance_contract(
+                profile="desktop",
+                samples_ms=[0.0] * 20,
+                long_tasks_ms=[0.0] * 20,
+                mutation_counts=[1] * 20,
+            )
+        with self.assertRaises(BrowserMatrixError):
+            assert_performance_contract(
+                profile="desktop",
+                samples_ms=[1.0] * 20,
+                long_tasks_ms=[0.0] * 20,
+                mutation_counts=[0] * 20,
+            )
+        assert_leak_contract(
+            baseline={"domNodes": 100, "listeners": 5, "timers": 0, "heapBytes": 10_000_000},
+            final={"domNodes": 100, "listeners": 5, "timers": 0, "heapBytes": 10_500_000},
+            reset_cycles=100,
+            instrumentation={"listeners": True, "timers": True, "gc": True},
+        )
+        with self.assertRaises(BrowserMatrixError):
+            assert_leak_contract(
+                baseline={"domNodes": 100, "listeners": 5, "timers": 0, "heapBytes": 10_000_000},
+                final={"domNodes": 100, "listeners": 5, "timers": 0, "heapBytes": 10_000_000},
+                reset_cycles=100,
+                instrumentation={"listeners": True, "timers": True, "gc": False},
+            )
+
+    def test_repository_browser_matrix_pins_reviewed_release_authority(self) -> None:
+        matrix = load_browser_matrix_bytes(
+            (REPOSITORY_ROOT / "tests/browser-matrix.json").read_bytes()
+        )
+        self.assertEqual(
+            (matrix.ci_image, matrix.ci_digest),
+            (
+                "mcr.microsoft.com/playwright/python",
+                "sha256:80fd7c1aad9600ea348572dd46ca00b9ea31d890831f5838fc61319ab79900d2",
+            ),
+        )
+        self.assertEqual(
+            matrix.platforms["macos-arm64"].browsers["chromium"].sha256,
+            "1c516b5d6c00a074034d5ce03dc1cc9bd2cde2a09293d9613244e0bc153cb80f",
+        )
+        fixture = REPOSITORY_ROOT / str(matrix.fixtures["maximum"]["path"])
+        self.assertEqual(
+            hashlib.sha256(fixture.read_bytes()).hexdigest(),
+            matrix.fixtures["maximum"]["sha256"],
+        )
+
+    def test_outputs_ignore_is_exact_and_root_anchored(self) -> None:
+        entries = (REPOSITORY_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(entries.count("/outputs/"), 1)
+        self.assertNotIn("outputs/", entries)
+        self.assertFalse(any(entry in {"tests/", "static/", "content/"} for entry in entries))
+
+    def test_evidence_inventory_covers_all_dynamic_types_and_regression_states(self) -> None:
+        inventory = browser_evidence_inventory(
+            (REPOSITORY_ROOT / "content/visualization-catalog.json").read_bytes()
+        )
+        self.assertEqual(len(inventory.dynamic_lessons), 12)
+        self.assertEqual(set(inventory.diagram_type_lessons), {item.value for item in VisualizationType})
+        self.assertEqual(len(inventory.regression_states), 36)
+        self.assertEqual(inventory.profiles, ("desktop", "mobile", "reduced-motion", "forced-colors"))
+
+    def test_all_real_simulation_active_references_resolve_to_rendered_model_elements(self) -> None:
+        inventory = browser_evidence_inventory(
+            (REPOSITORY_ROOT / "content/visualization-catalog.json").read_bytes()
+        )
+        with TemporaryDirectory(prefix=".browser-reference-", dir=REPOSITORY_ROOT.parent) as temporary:
+            output = Path(temporary) / "site"
+            build_site(
+                REPOSITORY_ROOT / "content",
+                REPOSITORY_ROOT / "templates",
+                REPOSITORY_ROOT / "static",
+                output,
+                require_complete_curriculum=True,
+            )
+            for lesson_id in inventory.dynamic_lessons:
+                parser = _SimulationReferenceParser()
+                parser.feed(
+                    (output / "lessons" / lesson_id / "index.html").read_text(encoding="utf-8")
+                )
+                with self.subTest(lesson_id=lesson_id):
+                    self.assertTrue(parser.model_nodes)
+                    self.assertTrue(parser.active_nodes <= parser.model_nodes)
+                    self.assertTrue(parser.active_edges <= parser.model_edges)
+
+    def test_chromium_arguments_are_explicit_bounded_and_enable_required_instrumentation(self) -> None:
+        args = chromium_arguments(
+            Path("/cache/chrome"),
+            "file:///tmp/site/index.html",
+            self._matrix()["profiles"]["mobile"],  # type: ignore[index]
+            Path("/tmp/profile"),
+        )
+        self.assertEqual(args[0], "/cache/chrome")
+        self.assertIn("--headless=new", args)
+        self.assertIn("--remote-debugging-port=0", args)
+        self.assertIn("--enable-precise-memory-info", args)
+        self.assertIn("--js-flags=--expose-gc", args)
+        self.assertEqual(args[-1], "about:blank")
+        self.assertFalse(any("shell" in item for item in args))
+
+    def test_dumped_dom_result_is_unique_bounded_versioned_and_fail_closed(self) -> None:
+        result = {
+            "schemaVersion": 1,
+            "harnessVersion": "1.0.0",
+            "passed": True,
+            "violations": [],
+        }
+        encoded = __import__("html").escape(json.dumps(result), quote=True)
+        dumped = f'<p id="browser-contract-result" data-browser-contract-result="{encoded}"></p>'
+        self.assertTrue(parse_browser_result(dumped, expected_harness_version="1.0.0")["passed"])
+        for invalid in ("<p></p>", dumped + dumped, dumped.replace("1.0.0", "2.0.0")):
+            with self.subTest(invalid=invalid[:30]), self.assertRaises(BrowserMatrixError):
+                parse_browser_result(invalid, expected_harness_version="1.0.0")
+
+    def test_requested_hybrid_state_is_traversed_before_generic_control_exploration(self) -> None:
+        source = (
+            REPOSITORY_ROOT / "tests/browser/runtime-harness.js"
+        ).read_text(encoding="utf-8")
+        apply_position = source.index("applyRequestedConditions(root);")
+        traversal_position = source.index("for (var targetStep = 0;")
+        generic_position = source.index(
+            "var controls = root.querySelectorAll(", traversal_position
+        )
+        self.assertLess(apply_position, traversal_position)
+        self.assertLess(traversal_position, generic_position)
+        self.assertIn(
+            "if (record(root)) { return; }\n      click(root, 'reset');",
+            source[traversal_position:generic_position],
+        )
+
+    def test_safari_preflight_blocker_is_atomically_reported_for_both_smokes(self) -> None:
+        inventory = browser_evidence_inventory(
+            (REPOSITORY_ROOT / "content/visualization-catalog.json").read_bytes()
+        )
+        successful = [
+            {"browser": "chromium", "label": f"run-{index}", "result": {"passed": True}}
+            for index in range(164)
+        ]
+        report = browser_evidence_report(
+            harness_version="1.0.0", platform_key="macos-arm64",
+            inventory=inventory, successful_runs=successful,
+            safari_blocked=True,
+        )
+        self.assertEqual(report["status"], "blocked")
+        self.assertEqual(len(report["runs"]), 166)
+        self.assertEqual(
+            [row["label"] for row in report["runs"][-2:]],
+            ["core-02-file", "core-02-http"],
+        )
+        self.assertTrue(all(
+            row["reason"] == "remote-automation-session-unavailable"
+            for row in report["runs"][-2:]
+        ))
+        with self.assertRaises(BrowserMatrixError):
+            browser_evidence_report(
+                harness_version="1.0.0", platform_key="macos-arm64",
+                inventory=inventory, successful_runs=successful[:-1],
+                safari_blocked=True,
+            )
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "report.json"
+            _write_report(path, report)
+            self.assertEqual(json.loads(path.read_bytes()), report)
+            self.assertFalse((path.parent / ".report.json.pending").exists())
 
     def test_accessibility_explorer_is_a_finite_manual_audit_not_an_at_emulator(self) -> None:
         path = REPOSITORY_ROOT / (

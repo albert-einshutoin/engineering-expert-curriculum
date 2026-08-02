@@ -2151,8 +2151,8 @@ def _item_description(
         if runtime_node else ""
     )
     return (
-        f"<dt{node_attribute}>{_e(item.label)}</dt>"
-        f"<dd>{_e(item.detail)}</dd>"
+        f"<dt>{_e(item.label)}</dt>"
+        f"<dd{node_attribute}>{_e(item.detail)}</dd>"
     )
 
 
@@ -2215,18 +2215,23 @@ def _render_table(
     caption: str,
     rows: tuple[Item, ...],
     columns: tuple[Item, ...],
-    values: Mapping[tuple[str, str], str],
+    values: Mapping[tuple[str, str], tuple[str, str]],
 ) -> str:
     headings = "".join(
-        f'<th scope="col">{_e(column.label)}'
+        f'<th scope="col" class="visualization__model-node" '
+        f'data-node-id="{_e(column.id, quote=True)}">{_e(column.label)}'
         f"<small>{_e(column.detail)}</small></th>"
         for column in columns
     )
     body = "".join(
         "<tr>"
-        f'<th scope="row">{_e(row.label)}<small>{_e(row.detail)}</small></th>'
+        f'<th scope="row" class="visualization__model-node" '
+        f'data-node-id="{_e(row.id, quote=True)}">{_e(row.label)}'
+        f'<small>{_e(row.detail)}</small></th>'
         + "".join(
-            f"<td>{_e(values[(row.id, column.id)])}</td>"
+            f'<td class="visualization__model-edge" '
+            f'data-edge-id="{_e(values[(row.id, column.id)][1], quote=True)}">'
+            f'{_e(values[(row.id, column.id)][0])}</td>'
             for column in columns
         )
         + "</tr>"
@@ -2249,7 +2254,7 @@ def _render_causal(payload: CausalPayload) -> str:
     )
     definitions = "".join(
         f"<dt>{label}</dt><dd><dl>"
-        + "".join(_item_description(item) for item in items)
+        + "".join(_item_description(item, runtime_node=True) for item in items)
         + "</dl></dd>"
         for label, items in groups
     )
@@ -2270,13 +2275,15 @@ def _render_timeline(payload: TimelinePayload) -> str:
         events_by_phase[event.phase_id].append(event)
     phases = "".join(
         "<li>"
-        f"<strong>{_e(phase.label)}</strong>"
+        f'<strong class="visualization__model-node" '
+        f'data-node-id="{_e(phase.id, quote=True)}">{_e(phase.label)}</strong>'
         f"<p>{_e(phase.detail)}</p>"
         + (
             '<ol class="visualization__timeline-events">'
             + "".join(
                 "<li>"
-                f"<strong>{_e(event.label)}</strong>"
+                f'<strong class="visualization__model-node" '
+                f'data-node-id="{_e(event.id, quote=True)}">{_e(event.label)}</strong>'
                 f"<p>{_e(event.detail)}</p>"
                 f"<p>順序: {event.order}</p>"
                 + (f"<p>lane: {_e(event.lane)}</p>" if event.lane else "")
@@ -2357,14 +2364,14 @@ def _render_memory(payload: MemoryPayload) -> str:
 
 def _render_state_machine(payload: StateMachinePayload) -> str:
     state_entries = "".join(
-        "<li>"
+        f'<li class="visualization__model-node" data-node-id="{_e(state.id, quote=True)}">'
         + ("<strong>初期状態: </strong>" if state.id == payload.initial_state_id else "")
         + f"{_e(state.label)}: {_e(state.detail)}</li>"
         for state in payload.states
     )
     labels = {state.id: state.label for state in payload.states}
     rows = "".join(
-        "<tr>"
+        f'<tr class="visualization__model-edge" data-edge-id="{_e(edge.id, quote=True)}">'
         f'<th scope="row">{_e(edge.event)}</th>'
         f"<td>{_e(labels[edge.from_id])}</td>"
         f"<td>{_e(labels[edge.to_id])}</td>"
@@ -2390,7 +2397,7 @@ def _render_payload(payload: VisualizationPayload) -> str:
         return _render_hierarchy(payload)
     if isinstance(payload, ComparisonPayload):
         values = {
-            (cell.alternative_id, cell.criterion_id): cell.value
+            (cell.alternative_id, cell.criterion_id): (cell.value, cell.id)
             for cell in payload.cells
         }
         return _render_table("選択肢の比較", payload.alternatives, payload.criteria, values)
@@ -2407,7 +2414,8 @@ def _render_payload(payload: VisualizationPayload) -> str:
     if isinstance(payload, MatrixPayload):
         values = {
             (cell.row_id, cell.column_id): (
-                cell.value if cell.status == "value" else f"該当なし: {cell.value}"
+                cell.value if cell.status == "value" else f"該当なし: {cell.value}",
+                cell.id,
             )
             for cell in payload.cells
         }

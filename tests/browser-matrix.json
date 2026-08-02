@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "harnessVersion": "1.0.0",
+  "ciRunner": {
+    "image": "mcr.microsoft.com/playwright/python",
+    "digest": "sha256:80fd7c1aad9600ea348572dd46ca00b9ea31d890831f5838fc61319ab79900d2"
+  },
+  "platforms": {
+    "linux-x86_64": {
+      "browsers": {
+        "chromium": {
+          "version": "151.0.7922.71",
+          "url": "https://storage.googleapis.com/chrome-for-testing-public/151.0.7922.71/linux64/chrome-linux64.zip",
+          "sha256": "6bd04aab53fba1544ce6027d9daddb24137295033124a61ecdf9840d785792e9",
+          "archiveFormat": "zip",
+          "maxBytes": 193285407,
+          "executable": "chrome-linux64/chrome",
+          "signaturePolicy": "linux-pinned-archive"
+        },
+        "firefox": {
+          "version": "153.0.1",
+          "url": "https://archive.mozilla.org/pub/firefox/releases/153.0.1/linux-x86_64/en-US/firefox-153.0.1.tar.xz",
+          "sha256": "05fb58905a90ce717c36a2ba5af0bbdc4d0e8b0eed6f50469030774c8c85b8eb",
+          "archiveFormat": "tar.xz",
+          "maxBytes": 86308292,
+          "executable": "firefox/firefox",
+          "signaturePolicy": "linux-pinned-archive"
+        }
+      }
+    },
+    "macos-arm64": {
+      "browsers": {
+        "chromium": {
+          "version": "151.0.7922.71",
+          "url": "https://storage.googleapis.com/chrome-for-testing-public/151.0.7922.71/mac-arm64/chrome-mac-arm64.zip",
+          "sha256": "1c516b5d6c00a074034d5ce03dc1cc9bd2cde2a09293d9613244e0bc153cb80f",
+          "archiveFormat": "zip",
+          "maxBytes": 187099652,
+          "executable": "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+          "signaturePolicy": "adhoc-cft",
+          "executableSha256": "473ea85af8f9fbaa045a58a08485c7de2e8cd16c67d0f2af3c3cb52fe40fac1b",
+          "symlinks": {
+            "chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Google Chrome for Testing Framework": "Versions/Current/Google Chrome for Testing Framework",
+            "chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Helpers": "Versions/Current/Helpers",
+            "chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Libraries": "Versions/Current/Libraries",
+            "chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Resources": "Versions/Current/Resources",
+            "chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/Current": "151.0.7922.71"
+          }
+        },
+        "firefox": {
+          "version": "153.0.1",
+          "url": "https://archive.mozilla.org/pub/firefox/releases/153.0.1/mac/en-US/Firefox%20153.0.1.dmg",
+          "sha256": "e5a7f8f34b16ac5d8d429a1438468f023ad7bf9099fa928db537f45e32159f78",
+          "archiveFormat": "dmg",
+          "maxBytes": 154614065,
+          "executable": "Firefox.app/Contents/MacOS/firefox",
+          "signaturePolicy": "developer-id",
+          "symlinks": {}
+        }
+      },
+      "safari": {
+        "version": "26.5",
+        "build": "21624.2.5.11.4",
+        "executable": "/Applications/Safari.app/Contents/MacOS/Safari"
+      }
+    }
+  },
+  "profiles": {
+    "desktop": {
+      "width": 1440,
+      "height": 900,
+      "deviceScaleFactor": 1,
+      "cpuThrottleRate": 1,
+      "reducedMotion": false,
+      "forcedColors": false
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "deviceScaleFactor": 2,
+      "cpuThrottleRate": 4,
+      "reducedMotion": false,
+      "forcedColors": false
+    },
+    "reduced-motion": {
+      "width": 1440,
+      "height": 900,
+      "deviceScaleFactor": 1,
+      "cpuThrottleRate": 1,
+      "reducedMotion": true,
+      "forcedColors": false
+    },
+    "forced-colors": {
+      "width": 1440,
+      "height": 900,
+      "deviceScaleFactor": 1,
+      "cpuThrottleRate": 1,
+      "reducedMotion": false,
+      "forcedColors": true
+    }
+  },
+  "fixtures": {
+    "maximum": {
+      "path": "tests/browser/runtime-fixture.html",
+        "sha256": "58df4d6b7f1e258a1c6d1d348f16d64c07ed05ac69db458b54df7589c6520469"
+    },
+    "memoryLessonId": "core-03-architecture-memory-caches",
+    "distributedLessonId": "core-13-distributed-coordination-failure"
+  },
+  "measurements": {
+    "warmups": 3,
+    "samples": 20,
+    "resetCycles": 100,
+    "desktopMedianMs": 25,
+    "desktopLongTaskMs": 50,
+    "desktopRunsWithoutLongTask": 19,
+    "mobileMedianMs": 50,
+    "mobileP95Ms": 100,
+    "maxHeapGrowthBytes": 1048576,
+    "maxHeapGrowthRatio": 0.05
+  }
+}

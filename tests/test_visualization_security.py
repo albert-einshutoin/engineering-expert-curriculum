@@ -1,13 +1,29 @@
 from __future__ import annotations
 
 from pathlib import Path
+import hashlib
+import io
+import os
+import subprocess
+import tarfile
+from tempfile import TemporaryDirectory
 import unittest
+from unittest import mock
+import zipfile
 
 from curriculum_builder.errors import CurriculumValidationError
 from curriculum_builder.javascript_safety import (
     MAX_JAVASCRIPT_BYTES,
     validate_reviewed_visualization_runtime,
     validate_javascript_bytes,
+)
+from tools.install_test_browsers import (
+    BrowserArchive,
+    BrowserMatrixError,
+    install_archive,
+    main as install_main,
+    verify_macos_browser_bundle,
+    verify_safari_version,
 )
 
 
@@ -158,6 +174,286 @@ class JavaScriptSafetyTests(unittest.TestCase):
         for source in payloads:
             with self.subTest(source=source):
                 self.assertEqual(validate_javascript_bytes(source), source.decode())
+
+
+class BrowserProvisioningSecurityTests(unittest.TestCase):
+    def _archive(
+        self,
+        payload: bytes,
+        *,
+        archive_format: str = "zip",
+        symlinks: tuple[tuple[str, str], ...] = (),
+    ) -> BrowserArchive:
+        return BrowserArchive(
+            version="123.0.1",
+            url="https://storage.googleapis.com/browser.zip",
+            sha256=hashlib.sha256(payload).hexdigest(),
+            archive_format=archive_format,
+            max_bytes=max(len(payload), 1),
+            executable="browser/bin/browser",
+            symlinks=symlinks,
+        )
+
+    def _zip(
+        self,
+        entries: dict[str, bytes],
+        *,
+        symlink: str | None = None,
+        symlink_target: str = "target",
+    ) -> bytes:
+        output = io.BytesIO()
+        with zipfile.ZipFile(output, "w") as archive:
+            for name, data in entries.items():
+                archive.writestr(name, data)
+            if symlink is not None:
+                info = zipfile.ZipInfo(symlink)
+                info.external_attr = (0o120777 << 16)
+                archive.writestr(info, symlink_target)
+        return output.getvalue()
+
+    def test_installer_hashes_before_extracting_into_digest_named_cache(self) -> None:
+        payload = self._zip({"browser/bin/browser": b"binary"})
+        definition = self._archive(payload)
+        with TemporaryDirectory() as temporary:
+            completed = install_archive(
+                definition,
+                Path(temporary),
+                downloader=lambda _url, _timeout, _limit: payload,
+            )
+            self.assertIn(definition.sha256, completed.parts)
+            self.assertEqual(completed.read_bytes(), b"binary")
+            self.assertTrue(os.access(completed, os.X_OK))
+            self.assertEqual(
+                install_archive(
+                    definition,
+                    Path(temporary),
+                    downloader=lambda *_args: (_ for _ in ()).throw(AssertionError("downloaded twice")),
+                ),
+                completed,
+            )
+
+    def test_installer_rejects_hash_size_traversal_absolute_and_links(self) -> None:
+        payloads = (
+            self._zip({"../escape": b"x", "browser/bin/browser": b"binary"}),
+            self._zip({"/absolute": b"x", "browser/bin/browser": b"binary"}),
+            self._zip({"browser/bin/browser": b"binary"}, symlink="browser/link"),
+        )
+        with TemporaryDirectory() as temporary:
+            for payload in payloads:
+                with self.subTest(payload=hashlib.sha256(payload).hexdigest()), self.assertRaises(BrowserMatrixError):
+                    install_archive(
+                        self._archive(payload), Path(temporary),
+                        downloader=lambda _url, _timeout, _limit, value=payload: value,
+                    )
+            valid = self._zip({"browser/bin/browser": b"binary"})
+            bad = BrowserArchive(
+                version="123.0.1", url="https://storage.googleapis.com/browser.zip",
+                sha256="0" * 64, archive_format="zip", max_bytes=len(valid),
+                executable="browser/bin/browser",
+                symlinks=(),
+            )
+            with self.assertRaises(BrowserMatrixError):
+                install_archive(bad, Path(temporary), downloader=lambda *_args: valid)
+            with self.assertRaises(BrowserMatrixError):
+                install_archive(
+                    self._archive(valid), Path(temporary),
+                    downloader=lambda *_args: valid + b"x",
+                )
+
+    def test_macos_bundle_accepts_only_the_exact_internal_symlink_map(self) -> None:
+        valid = self._zip(
+            {"browser/bin/browser": b"binary", "browser/target": b"target"},
+            symlink="browser/link",
+        )
+        with TemporaryDirectory() as temporary:
+            calls = 0
+
+            def download(*_args: object) -> bytes:
+                nonlocal calls
+                calls += 1
+                return valid
+
+            with self.assertRaises(BrowserMatrixError):
+                install_archive(
+                    self._archive(valid), Path(temporary), downloader=download
+                )
+            installed = install_archive(
+                self._archive(valid, symlinks=(("browser/link", "target"),)),
+                Path(temporary), downloader=download,
+            )
+            self.assertEqual(calls, 1)
+            self.assertTrue(installed.is_file())
+            self.assertEqual(os.readlink(installed.parents[1] / "link"), "target")
+
+        malicious = (
+            (("browser/link", "/absolute"),),
+            (("browser/link", "../../../escape"),),
+            (("browser/link", "missing"),),
+            (),
+        )
+        for expected in malicious:
+            with TemporaryDirectory() as temporary, self.assertRaises(BrowserMatrixError):
+                install_archive(
+                    self._archive(valid, symlinks=expected), Path(temporary),
+                    downloader=lambda *_args, value=valid: value,
+                )
+
+        cycle = self._zip(
+            {"browser/bin/browser": b"binary"},
+            symlink="browser/link-a",
+            symlink_target="link-b",
+        )
+        output = io.BytesIO(cycle)
+        rewritten = io.BytesIO()
+        with zipfile.ZipFile(output) as source, zipfile.ZipFile(rewritten, "w") as destination:
+            for info in source.infolist():
+                destination.writestr(info, source.read(info))
+            info = zipfile.ZipInfo("browser/link-b")
+            info.external_attr = (0o120777 << 16)
+            destination.writestr(info, "link-a")
+        cycle_payload = rewritten.getvalue()
+        with TemporaryDirectory() as temporary, self.assertRaises(BrowserMatrixError):
+            install_archive(
+                self._archive(
+                    cycle_payload,
+                    symlinks=(("browser/link-a", "link-b"), ("browser/link-b", "link-a")),
+                ),
+                Path(temporary), downloader=lambda *_args: cycle_payload,
+            )
+
+    def test_tar_installer_rejects_symbolic_and_hard_links(self) -> None:
+        for link_type in (tarfile.SYMTYPE, tarfile.LNKTYPE):
+            output = io.BytesIO()
+            with tarfile.open(fileobj=output, mode="w:xz") as archive:
+                executable = tarfile.TarInfo("browser/bin/browser")
+                executable.size = 6
+                archive.addfile(executable, io.BytesIO(b"binary"))
+                link = tarfile.TarInfo("browser/link")
+                link.type = link_type
+                link.linkname = "browser/bin/browser"
+                archive.addfile(link)
+            payload = output.getvalue()
+            with TemporaryDirectory() as temporary, self.assertRaises(BrowserMatrixError):
+                install_archive(
+                    self._archive(payload, archive_format="tar.xz"), Path(temporary),
+                    downloader=lambda *_args, value=payload: value,
+                )
+
+    def test_safari_preflight_requires_exact_installed_version(self) -> None:
+        with mock.patch("tools.install_test_browsers.subprocess.run") as run:
+            run.side_effect = (
+                mock.Mock(stdout="26.5\n"),
+                mock.Mock(stdout="21624.2.5.11.4\n"),
+                mock.Mock(stdout="26.5\n"),
+                mock.Mock(stdout="21624.2.5.11.4\n"),
+            )
+            verify_safari_version(
+                executable=Path("/Applications/Safari.app/Contents/MacOS/Safari"),
+                expected_version="26.5",
+                expected_build="21624.2.5.11.4",
+            )
+            self.assertEqual(
+                run.call_args_list[0].args[0][2],
+                "/Applications/Safari.app/Contents/Info",
+            )
+            with self.assertRaises(BrowserMatrixError):
+                verify_safari_version(
+                    executable=Path("/Applications/Safari.app/Contents/MacOS/Safari"),
+                    expected_version="26.4",
+                    expected_build="21624.2.5.11.4",
+                )
+
+    def test_installer_cli_provisions_only_host_archives_and_checks_safari(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        with TemporaryDirectory() as temporary, mock.patch(
+            "tools.install_test_browsers.detect_host_platform", return_value="macos-arm64"
+        ), mock.patch("tools.install_test_browsers.install_archive") as install, mock.patch(
+            "tools.install_test_browsers.verify_safari_version"
+        ) as safari:
+            install.side_effect = (
+                Path(temporary) / "chromium",
+                Path(temporary) / "firefox",
+            )
+            self.assertEqual(
+                install_main([
+                    "--matrix", str(root / "tests/browser-matrix.json"),
+                    "--cache", temporary,
+                ]),
+                0,
+            )
+            self.assertEqual(install.call_count, 2)
+            self.assertEqual(
+                [call.args[0].version for call in install.call_args_list],
+                ["151.0.7922.71", "153.0.1"],
+            )
+            safari.assert_called_once()
+
+    def test_macos_bundle_requires_signature_gatekeeper_arm64_and_exact_version(self) -> None:
+        executable = Path(
+            "/cache/Browser.app/Contents/MacOS/browser"
+        )
+        with mock.patch("tools.install_test_browsers.subprocess.run") as run:
+            run.side_effect = (
+                mock.Mock(stdout=""),
+                mock.Mock(stdout=""),
+                mock.Mock(stdout="arm64\n"),
+                mock.Mock(stdout="Browser 123.0.1\n"),
+            )
+            verify_macos_browser_bundle(
+                executable,
+                expected_version="123.0.1",
+                signature_policy="developer-id",
+                executable_sha256=None,
+            )
+            self.assertEqual(
+                [call.args[0][0] for call in run.call_args_list],
+                ["/usr/bin/codesign", "/usr/sbin/spctl", "/usr/bin/lipo", str(executable)],
+            )
+        with mock.patch(
+            "tools.install_test_browsers.subprocess.run",
+            side_effect=subprocess.CalledProcessError(1, ["codesign"]),
+        ), self.assertRaises(BrowserMatrixError):
+            verify_macos_browser_bundle(
+                executable,
+                expected_version="123.0.1",
+                signature_policy="developer-id",
+                executable_sha256=None,
+            )
+
+    def test_cft_adhoc_policy_pins_executable_and_exact_signature_metadata(self) -> None:
+        with TemporaryDirectory() as temporary:
+            bundle = Path(temporary) / "Chrome.app/Contents/MacOS"
+            bundle.mkdir(parents=True)
+            executable = bundle / "Chrome"
+            executable.write_bytes(b"exact executable")
+            digest = hashlib.sha256(executable.read_bytes()).hexdigest()
+            metadata = "Signature=adhoc\nTeamIdentifier=not set\nSealed Resources=none\n"
+            expected_failure = "code has no resources but signature indicates they must be present"
+            with mock.patch("tools.install_test_browsers.subprocess.run") as run:
+                run.side_effect = (
+                    mock.Mock(stdout="", stderr=metadata, returncode=0),
+                    mock.Mock(stdout="", stderr=expected_failure, returncode=1),
+                    mock.Mock(stdout="", stderr=expected_failure, returncode=1),
+                    mock.Mock(stdout="arm64\n", stderr="", returncode=0),
+                    mock.Mock(stdout="Google Chrome for Testing 123.0.1\n", stderr="", returncode=0),
+                )
+                verify_macos_browser_bundle(
+                    executable,
+                    expected_version="123.0.1",
+                    signature_policy="adhoc-cft",
+                    executable_sha256=digest,
+                )
+            with mock.patch("tools.install_test_browsers.subprocess.run") as run:
+                run.return_value = mock.Mock(
+                    stdout="", stderr=metadata.replace("not set", "TEAM123"), returncode=0
+                )
+                with self.assertRaises(BrowserMatrixError):
+                    verify_macos_browser_bundle(
+                        executable,
+                        expected_version="123.0.1",
+                        signature_policy="adhoc-cft",
+                        executable_sha256=digest,
+                    )
 
 
 if __name__ == "__main__":

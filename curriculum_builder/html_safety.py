@@ -193,6 +193,7 @@ _GENERATED_ATTRIBUTES = MappingProxyType(
     {
         "button": frozenset({"data-action", "disabled", "type"}),
         "code": frozenset({"data-edge-id", "data-node-id", "data-option-id", "data-parameter-id"}),
+        "dd": frozenset({"data-node-id"}),
         "div": frozenset({"hidden"}),
         "dt": frozenset({"data-node-id"}),
         "fieldset": frozenset({"disabled"}),
@@ -217,7 +218,10 @@ _GENERATED_ATTRIBUTES = MappingProxyType(
         "p": frozenset({"aria-atomic", "aria-live"}),
         "script": frozenset({"defer", "src"}),
         "select": frozenset({"data-action", "data-parameter-id", "disabled", "id"}),
-        "tr": frozenset({"data-from-state-id", "data-outcome-id", "data-state-id", "data-to-state-id", "data-transition-event", "data-transition-id"}),
+        "strong": frozenset({"data-node-id"}),
+        "td": frozenset({"data-edge-id"}),
+        "th": frozenset({"data-node-id", "scope"}),
+        "tr": frozenset({"data-edge-id", "data-from-state-id", "data-outcome-id", "data-state-id", "data-to-state-id", "data-transition-event", "data-transition-id"}),
     }
 )
 _BOOLEAN_ATTRIBUTES = frozenset({"checked", "defer", "disabled", "hidden", "selected"})
