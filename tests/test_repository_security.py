@@ -46,6 +46,11 @@ _BROWSER_RUNNER = (
     "mcr.microsoft.com/playwright/python:v1.61.0-noble-amd64@"
     "sha256:80fd7c1aad9600ea348572dd46ca00b9ea31d890831f5838fc61319ab79900d2"
 )
+_RUNNER_NODE_DIRECTORY = "/__e/node24/bin"
+_RUNNER_NODE_BINDING = (
+    f"test -x {_RUNNER_NODE_DIRECTORY}/node\n"
+    f"printf '%s\\n' {_RUNNER_NODE_DIRECTORY} >> \"$GITHUB_PATH\"\n"
+)
 _GITLEAKS_FINGERPRINTS = (
     "4c55aeffaa14554e581ae28492d4a4c5b03bdd2a:"
     "tests/test_content_acceptance.py:generic-api-key:94",
@@ -662,6 +667,31 @@ class RepositorySecurityTests(unittest.TestCase):
         self.assertEqual(
             _mapping(build.get("container"), "pages.jobs.build.container"),
             {"image": _BROWSER_RUNNER, "options": "--user 1001"},
+        )
+        self.assertEqual(
+            build_steps[2],
+            {
+                "name": "Reuse the runner-pinned Node.js runtime",
+                "run": _RUNNER_NODE_BINDING,
+            },
+        )
+        self.assertNotIn("curl", _RUNNER_NODE_BINDING)
+        self.assertNotIn("setup-node", _RUNNER_NODE_BINDING)
+        workflow_source = (WORKFLOWS_ROOT / "pages.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "Pinned JavaScript actions already use the read-only /__e/node24 runtime.",
+            workflow_source,
+        )
+        self.assertTrue(
+            str(build_steps[1].get("uses", "")).startswith(
+                "actions/setup-python@"
+            )
+        )
+        self.assertEqual(
+            build_steps[3].get("run"),
+            "python -m unittest discover -s tests -v",
         )
         runs = "\n".join(
             run
