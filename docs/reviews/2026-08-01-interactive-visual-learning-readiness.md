@@ -1,15 +1,15 @@
 # Interactive Visual Learning release readiness
 
 status: **READY / maintainer release decision pending**
-reviewed implementation parent SHA: `4a8ac5982b33729a564777c269278ec837f6e712`
-checked at JST: `2026-08-02T19:57:20+0900`
+reviewed implementation parent SHA: `47a4106977a03f609df08eb13a4de872dab798e6`
+checked at JST: `2026-08-02T20:56:10+0900`
 reviewerKind: ai-assisted
 
 この記録は、Safari WebDriverの実capabilityに合わせたreviewed contract amendmentと、そのimplementation parent上で完了したclean release gateをまとめる。自動検証はREADYだが、push、hosted CI、公開artifact検証、releaseの最終判断を済ませたことは意味しない。
 
 ## 結論
 
-- clean implementation parentでcompile、931 unit tests、curriculum map、2 fresh builds、site checks、browser provisioning、166/166 real-browser matrix、release manifestを検証した。
+- clean implementation parentでcompile、941 unit tests、curriculum map、2 fresh builds、site checks、browser provisioning、166/166 real-browser matrix、release manifestを検証した。
 - browser reportはtop-level `status=passed`、166 passed、failed 0、blocked 0、not-run 0である。
 - Safari必須2件はPages形式のloopback HTTPでdesktop `1440×900`と390px narrow `390×844`を実行し、両方でrequested `crossover`、100 reset、violations 0、runtime error 0、baseline復帰を確認した。
 - Safariの`file://`成功は主張しない。Safari WebDriver 26.5は外部file main resourceをWebKit sandbox外として拒否することを実観測したため、reviewed contractをHTTP desktop/narrowへ変更した。Chromium・Firefoxのfile+HTTP、静的no-JS/file contractは維持している。
@@ -28,6 +28,7 @@ reviewerKind: ai-assisted
 | Task13 | spec-CI | `0/0/0` |
 | Safari sandbox amendment | spec / accessibility-repository / Python-security | `0/0/0` |
 | Hosted gate remediation | Gitleaks / Linux provisioning / shallow-clone / Python-security | `0/0/0` |
+| Chromium profile cleanup | browser runtime / error precedence / cross-platform | `0/0/0` |
 
 レビュー指摘0件は実browser evidenceの代替ではないため、amendment後にfocused Safari 2件とfull 166件を新規evidence directoryで実行した。
 
@@ -63,6 +64,8 @@ PRの最初のhosted runで、Gitleaksが過去2 commitのvisual checksum fixtur
 
 CIと同じ固定OCI digest、`linux/amd64`、UID 1001でbuild、Chromium/Firefox provisioning、実Chromium smokeを実行し、exit 0、`passed=true`、requested state reached、simulation count 1を確認した。さらにdepth-1 cloneでfocused 101/101、最終commitの独立review 2件で`0/0/0`を確認した。hosted CIそのものの再成功はpush後に別途確認する。
 
+PR head `5bd305e` のhosted runではGitleaks、full-validation、CodeQL、Dependency ReviewはPASSした。browser-contractは27件の実runをPASSした後、Chromium本体の終了後もchild writerがprofileへ書き込み、Pythonの一時directory削除と競合して`Directory not empty`で失敗した。local follow-up parent `47a4106` はCDP `Browser.close`を優先し、5秒ごとのterminate/kill fallback、`ENOTEMPTY`/`EBUSY`だけを最大4.9秒再試行するprofile cleanup、primary exceptionを全secondary cleanupより優先する契約を追加した。固定Linux OCIで実Chromium 40/40、各run直後profile残存0、local macOSでfull 166/166を再実行し、独立review `0/0/0`を確認した。`47a4106`のhosted CIはまだ実行しておらず、push後にexact HEADで確認する。
+
 ## Clean gate
 
 開始時のtracked差分はなく、readiness draftだけをuntrackedで保持した。対象はreviewed implementation parent SHAである。
@@ -70,7 +73,7 @@ CIと同じ固定OCI digest、`linux/amd64`、UID 1001でbuild、Chromium/Firefo
 | Gate | 結果 |
 | --- | --- |
 | `python3.13 -m compileall -q curriculum_builder tools tests` | PASS |
-| `python3.13 -m unittest discover -s tests` | PASS — 931 tests、74.246s |
+| `python3.13 -m unittest discover -s tests` | PASS — 941 tests、64.347s |
 | `python3.13 tools/generate_curriculum_map.py --check` | PASS — generated block current |
 | Fresh build 1 + current-release site check | PASS |
 | Fresh build 2 + current-release site check | PASS |
@@ -90,15 +93,15 @@ CIと同じ固定OCI digest、`linux/amd64`、UID 1001でbuild、Chromium/Firefo
 release manifestは42 filesとreviewed implementation parent SHAを記録した。
 
 ```text
-manifest SHA-256: fe0524372c5b9aa906337ee259c8a75db9dafbf5c2ec83c7373544ab65624036
-commit: 4a8ac5982b33729a564777c269278ec837f6e712
+manifest SHA-256: a78d0c02e538d592fd7cfff3025718df25633a847b819848688978075c650f58
+commit: 47a4106977a03f609df08eb13a4de872dab798e6
 ```
 
 ## Full browser evidence
 
 ```text
-outputs/task14-final-browser-evidence.2esaXl/report.json
-SHA-256: 41de052f9cd4c6e6a98faca4f74a764883761db452430d104490acb2d6de2104
+outputs/task14-cleanup-browser-evidence.3VESud/report.json
+SHA-256: ebccd2543440207c17ad236d945ea68824e8a7352a5f271c31935307285747aa
 ```
 
 | 項目 | 結果 |
@@ -136,7 +139,7 @@ Safariではexplicit GCが利用できずheap evidenceは`-1`であるため、h
 
 ## 実行注記と残余リスク
 
-1. Linux固定OCIではprovisioningと実Chromium smokeまでを再現し、full 166件はlocal macOS hostで実行した。hosted CI成功はpush後に同一HEADで確認する。
+1. `47a4106`はlocalのLinux固定OCIで実Chromium 40/40とprofile残存0、macOSでfull 166/166を確認した。cleanup fixを含むhosted CI成功はpush後にexact HEADで確認する。
 2. local browser report schemaはcommitやsite tree hashを内包せず、reportを置く`outputs/`もversion control対象外である。したがってこのreport hash、Docker smoke、shallow-clone、AI reviewはlocal診断証拠であり、単独の第三者監査可能なrelease証明とは扱わない。最終判断はexact HEADに結び付くhosted GitHub checksと、commit・全公開byteを結ぶdeployed release manifestで行う。
 3. amendment前のblocked reportと、commit前に誤って開始して即時中断したreportは採用しない。中断reportは`browser-contract-aborted`、166 not-runとしてfail-closedしている。
 4. full evidenceはlocal macOS hostの証拠であり、hosted CI成功、push、公開Pages bytes、release完了を証明しない。
