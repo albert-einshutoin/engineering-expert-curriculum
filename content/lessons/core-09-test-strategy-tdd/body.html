@@ -46,6 +46,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import sysconfig
 from tempfile import TemporaryDirectory
 
 HARNESS = "test_strategy_lab_v1"
@@ -237,7 +238,38 @@ MUTANT_SOURCE = REFACTOR_SOURCE.replace(
 def sha256_text(text):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
+def isolated_environment(overrides=None):
+    environment = {
+        "PATH": os.environ.get("PATH", ""),
+        "PYTHONHASHSEED": "0",
+    }
+    if sys.platform.startswith("linux"):
+        library_directory = sysconfig.get_config_var("LIBDIR")
+        if type(library_directory) is str:
+            # setup-python relies on its own libpython directory. Deriving the
+            # one required loader path keeps child interpreters runnable
+            # without forwarding ambient variables or CI secrets.
+            library_path = Path(library_directory).resolve(strict=True)
+            if not library_path.is_dir():
+                raise RuntimeError("Python runtime library path is invalid")
+            environment["LD_LIBRARY_PATH"] = str(library_path)
+    if overrides is not None:
+        allowed = {"FIXTURE_SEED", "FIXED_CLOCK_TICK", "ORDER_MODE"}
+        if (
+            type(overrides) is not dict
+            or any(type(key) is not str for key in overrides)
+            or not set(overrides) &lt;= allowed
+            or any(
+                type(value) is not str or "\0" in value
+                for value in overrides.values()
+            )
+        ):
+            raise RuntimeError("subprocess environment override is invalid")
+        environment.update(overrides)
+    return environment
+
 def execute(command, workspace, environment=None):
+    environment = isolated_environment(environment)
     return subprocess.run(
         command,
         cwd=workspace,
@@ -250,11 +282,7 @@ def execute(command, workspace, environment=None):
 
 def execute_test(test_id, workspace):
     command = [sys.executable, "-m", "unittest", "-q", test_id]
-    environment = {
-        "PATH": os.environ.get("PATH", ""),
-        "PYTHONHASHSEED": "0",
-    }
-    return command, execute(command, workspace, environment)
+    return command, execute(command, workspace)
 
 def phase(name, source, workspace):
     (workspace / "order_discount.py").write_text(
@@ -311,8 +339,6 @@ raise SystemExit(0 if passed else 1)
 
 def execute_schedule(workspace, seed, tick, order_mode):
     environment = {
-        "PATH": os.environ.get("PATH", ""),
-        "PYTHONHASHSEED": "0",
         "FIXTURE_SEED": str(seed),
         "FIXED_CLOCK_TICK": str(tick),
         "ORDER_MODE": order_mode,
