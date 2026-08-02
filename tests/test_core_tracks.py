@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
@@ -3580,6 +3581,42 @@ class CoreTrackTests(unittest.TestCase):
             )
             self.assertFalse(ambient_marker.exists())
 
+    def execute_core09_runtime_contract_probe(
+        self,
+        runtime_root: Path,
+        runtime_loader: Path,
+        runtime_python: Path,
+    ) -> subprocess.CompletedProcess[str]:
+        source = self.python_harness_source(
+            "core-09-test-strategy-tdd",
+            "test_strategy_lab_v1",
+        )
+        marker = (
+            'with TemporaryDirectory(prefix="test-strategy-lab-") '
+            "as workspace_text:\n"
+        )
+        self.assertIn(marker, source)
+        checks = (
+            "original_platform = sys.platform\n"
+            "original_executable = sys.executable\n"
+            "original_environ = os.environ\n"
+            "try:\n"
+            '    sys.platform = "linux"\n'
+            f"    sys.executable = {str(runtime_python)!r}\n"
+            "    os.environ = {"
+            f"'PATH': '/usr/bin', 'pythonLocation': {str(runtime_root)!r}, "
+            f"'LD_LIBRARY_PATH': {str(runtime_loader)!r}"
+            "}\n"
+            "    isolated_environment()\n"
+            "finally:\n"
+            "    sys.platform = original_platform\n"
+            "    sys.executable = original_executable\n"
+            "    os.environ = original_environ\n"
+        )
+        instrumented = source.replace(marker, checks + marker, 1)
+        self.assertNotEqual(instrumented, source)
+        return self.execute_python_harness_source(instrumented)
+
     def test_testing_harness_derives_only_required_python_loader_environment(
         self,
     ) -> None:
@@ -3594,11 +3631,8 @@ class CoreTrackTests(unittest.TestCase):
             marker
             + "    allowed = {\"PATH\", \"PYTHONHASHSEED\", "
             "\"FIXTURE_SEED\", \"FIXED_CLOCK_TICK\", \"ORDER_MODE\"}\n"
-            "    if sys.platform.startswith(\"linux\"):\n"
+            "    if \"pythonLocation\" in os.environ:\n"
             "        allowed.add(\"LD_LIBRARY_PATH\")\n"
-            "        expected = str(Path(sysconfig.get_config_var(\"LIBDIR\"))"
-            ".resolve(strict=True))\n"
-            "        assert environment[\"LD_LIBRARY_PATH\"] == expected\n"
             "    assert set(environment) <= allowed\n",
             1,
         )
@@ -3611,6 +3645,245 @@ class CoreTrackTests(unittest.TestCase):
         self.assertEqual(
             [phase["returncode"] for phase in report["phases"]],
             [1, 0, 0],
+        )
+
+    def test_testing_harness_binds_setup_python_root_loader_and_executable(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as directory_text:
+            runtime_root = Path(directory_text) / "runtime"
+            runtime_bin = runtime_root / "bin"
+            runtime_lib = runtime_root / "lib"
+            runtime_bin.mkdir(parents=True)
+            runtime_lib.mkdir()
+            runtime_python = runtime_bin / "python"
+            shutil.copy2(sys.executable, runtime_python)
+            source = self.python_harness_source(
+                "core-09-test-strategy-tdd",
+                "test_strategy_lab_v1",
+            )
+            marker = (
+                'with TemporaryDirectory(prefix="test-strategy-lab-") '
+                "as workspace_text:\n"
+            )
+            self.assertIn(marker, source)
+            checks = (
+                "import sysconfig\n"
+                "original_platform = sys.platform\n"
+                "original_executable = sys.executable\n"
+                "original_environ = os.environ\n"
+                "original_get_config_var = sysconfig.get_config_var\n"
+                "try:\n"
+                '    sys.platform = "linux"\n'
+                f"    sys.executable = {str(runtime_python)!r}\n"
+                "    os.environ = {"
+                f"'PATH': '/usr/bin', 'pythonLocation': {str(runtime_root)!r}, "
+                f"'LD_LIBRARY_PATH': {str(runtime_lib)!r}"
+                "}\n"
+                "    sysconfig.get_config_var = lambda name: "
+                '"/opt/hostedtoolcache/Python/missing/lib"\n'
+                "    environment = isolated_environment()\n"
+                "finally:\n"
+                "    sys.platform = original_platform\n"
+                "    sys.executable = original_executable\n"
+                "    os.environ = original_environ\n"
+                "    sysconfig.get_config_var = original_get_config_var\n"
+                f'assert environment["LD_LIBRARY_PATH"] == {str(runtime_lib.resolve(strict=True))!r}\n'
+            )
+            instrumented = source.replace(marker, checks + marker, 1)
+            self.assertNotEqual(instrumented, source)
+
+            result = self.execute_python_harness_source(instrumented)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_testing_harness_omits_loader_without_setup_python_contract(
+        self,
+    ) -> None:
+        source = self.python_harness_source(
+            "core-09-test-strategy-tdd",
+            "test_strategy_lab_v1",
+        )
+        marker = (
+            'with TemporaryDirectory(prefix="test-strategy-lab-") '
+            "as workspace_text:\n"
+        )
+        checks = (
+            "original_platform = sys.platform\n"
+            "original_environ = os.environ\n"
+            "try:\n"
+            '    sys.platform = "linux"\n'
+            "    probes = (\n"
+            "        {'PATH': '/usr/bin'},\n"
+            "        {'PATH': '/usr/bin', 'LD_LIBRARY_PATH': '/tmp/ambient'},\n"
+            "    )\n"
+            "    for probe in probes:\n"
+            "        os.environ = probe\n"
+            "        environment = isolated_environment()\n"
+            '        assert "LD_LIBRARY_PATH" not in environment\n'
+            "finally:\n"
+            "    sys.platform = original_platform\n"
+            "    os.environ = original_environ\n"
+        )
+        instrumented = source.replace(marker, checks + marker, 1)
+
+        result = self.execute_python_harness_source(instrumented)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_testing_harness_keeps_only_bound_leading_loader_component(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as directory_text:
+            runtime_root = Path(directory_text) / "runtime"
+            runtime_bin = runtime_root / "bin"
+            runtime_lib = runtime_root / "lib"
+            runtime_bin.mkdir(parents=True)
+            runtime_lib.mkdir()
+            runtime_python = runtime_bin / "python"
+            shutil.copy2(sys.executable, runtime_python)
+            source = self.python_harness_source(
+                "core-09-test-strategy-tdd",
+                "test_strategy_lab_v1",
+            )
+            marker = (
+                'with TemporaryDirectory(prefix="test-strategy-lab-") '
+                "as workspace_text:\n"
+            )
+            checks = (
+                "original_platform = sys.platform\n"
+                "original_executable = sys.executable\n"
+                "original_environ = os.environ\n"
+                "try:\n"
+                '    sys.platform = "linux"\n'
+                f"    sys.executable = {str(runtime_python)!r}\n"
+                "    os.environ = {"
+                f"'PATH': '/usr/bin', 'pythonLocation': {str(runtime_root)!r}, "
+                f"'LD_LIBRARY_PATH': {str(runtime_lib) + os.pathsep + '/tmp/ambient' + os.pathsep + 'relative' + os.pathsep!r}"
+                "}\n"
+                "    environment = isolated_environment()\n"
+                "finally:\n"
+                "    sys.platform = original_platform\n"
+                "    sys.executable = original_executable\n"
+                "    os.environ = original_environ\n"
+                f'assert environment["LD_LIBRARY_PATH"] == {str(runtime_lib.resolve(strict=True))!r}\n'
+            )
+            instrumented = source.replace(marker, checks + marker, 1)
+
+            result = self.execute_python_harness_source(instrumented)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_testing_harness_rejects_partial_or_invalid_setup_python_contract(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as directory_text:
+            runtime_root = Path(directory_text) / "runtime"
+            runtime_bin = runtime_root / "bin"
+            runtime_lib = runtime_root / "lib"
+            runtime_bin.mkdir(parents=True)
+            runtime_lib.mkdir()
+            unrelated_loader = Path(directory_text) / "unrelated-lib"
+            unrelated_loader.mkdir()
+            runtime_python = runtime_bin / "python"
+            shutil.copy2(sys.executable, runtime_python)
+            invalid_environments = (
+                {"pythonLocation": str(runtime_root)},
+                {"pythonLocation": 7, "LD_LIBRARY_PATH": str(runtime_lib)},
+                {"pythonLocation": str(runtime_root), "LD_LIBRARY_PATH": 7},
+                {"pythonLocation": "", "LD_LIBRARY_PATH": str(runtime_lib)},
+                {"pythonLocation": str(runtime_root), "LD_LIBRARY_PATH": ""},
+                {"pythonLocation": "relative", "LD_LIBRARY_PATH": str(runtime_lib)},
+                {"pythonLocation": str(runtime_root), "LD_LIBRARY_PATH": "relative" + os.pathsep + str(runtime_lib)},
+                {"pythonLocation": str(runtime_root) + chr(0), "LD_LIBRARY_PATH": str(runtime_lib)},
+                {"pythonLocation": str(runtime_root), "LD_LIBRARY_PATH": str(runtime_lib) + chr(0)},
+                {"pythonLocation": str(runtime_root) + os.pathsep + "/tmp", "LD_LIBRARY_PATH": str(runtime_lib)},
+                {"pythonLocation": str(runtime_root), "LD_LIBRARY_PATH": str(unrelated_loader)},
+            )
+            source = self.python_harness_source(
+                "core-09-test-strategy-tdd",
+                "test_strategy_lab_v1",
+            )
+            marker = (
+                'with TemporaryDirectory(prefix="test-strategy-lab-") '
+                "as workspace_text:\n"
+            )
+            checks = (
+                "original_platform = sys.platform\n"
+                "original_executable = sys.executable\n"
+                "original_environ = os.environ\n"
+                "try:\n"
+                '    sys.platform = "linux"\n'
+                f"    sys.executable = {str(runtime_python)!r}\n"
+                f"    probes = {invalid_environments!r}\n"
+                "    class DerivedPath(str):\n"
+                "        pass\n"
+                "    probes += (\n"
+                f"        {{'pythonLocation': DerivedPath({str(runtime_root)!r}), 'LD_LIBRARY_PATH': {str(runtime_lib)!r}}},\n"
+                f"        {{'pythonLocation': {str(runtime_root)!r}, 'LD_LIBRARY_PATH': DerivedPath({str(runtime_lib)!r})}},\n"
+                "    )\n"
+                "    for probe in probes:\n"
+                "        os.environ = {'PATH': '/usr/bin', **probe}\n"
+                "        try:\n"
+                "            isolated_environment()\n"
+                "        except RuntimeError:\n"
+                "            pass\n"
+                "        else:\n"
+                '            raise AssertionError("invalid setup-python contract accepted")\n'
+                "finally:\n"
+                "    sys.platform = original_platform\n"
+                "    sys.executable = original_executable\n"
+                "    os.environ = original_environ\n"
+            )
+            instrumented = source.replace(marker, checks + marker, 1)
+
+            result = self.execute_python_harness_source(instrumented)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_testing_harness_rejects_executable_symlink_escape(self) -> None:
+        with TemporaryDirectory() as directory_text:
+            runtime_root = Path(directory_text) / "runtime"
+            runtime_bin = runtime_root / "bin"
+            runtime_lib = runtime_root / "lib"
+            runtime_bin.mkdir(parents=True)
+            runtime_lib.mkdir()
+            runtime_python = runtime_bin / "python"
+            os.symlink(Path(sys.executable).resolve(strict=True), runtime_python)
+            result = self.execute_core09_runtime_contract_probe(
+                runtime_root,
+                runtime_lib,
+                runtime_python,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "RuntimeError: setup-python runtime contract is invalid",
+            result.stderr,
+        )
+
+    def test_testing_harness_rejects_library_symlink_escape(self) -> None:
+        with TemporaryDirectory() as directory_text:
+            directory = Path(directory_text)
+            runtime_root = directory / "runtime"
+            runtime_bin = runtime_root / "bin"
+            escaped_lib = directory / "escaped-lib"
+            runtime_bin.mkdir(parents=True)
+            escaped_lib.mkdir()
+            runtime_python = runtime_bin / "python"
+            shutil.copy2(sys.executable, runtime_python)
+            runtime_lib = runtime_root / "lib"
+            os.symlink(escaped_lib, runtime_lib)
+            result = self.execute_core09_runtime_contract_probe(
+                runtime_root,
+                runtime_lib,
+                runtime_python,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "RuntimeError: setup-python runtime contract is invalid",
+            result.stderr,
         )
 
     def test_testing_harness_rejects_nonstring_and_nul_environment_overrides(
