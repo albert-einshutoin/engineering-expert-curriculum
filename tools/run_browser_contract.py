@@ -10,6 +10,7 @@ import base64
 import errno
 from functools import partial
 import hashlib
+from http.client import RemoteDisconnected
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from html.parser import HTMLParser
 import json
@@ -396,31 +397,70 @@ class _BrowserDebuggingCommandError(BrowserMatrixError):
         super().__init__(f"browser debugging command failed: {method}{suffix}")
 
 
+class _ChromiumTargetTransportError(BrowserMatrixError):
+    """A typed failure to exchange bytes with Chromium's loopback endpoint."""
+
+
 class _WebSocket:
-    def __init__(self, url: str, timeout: float) -> None:
+    def __init__(
+        self,
+        url: str,
+        timeout: float,
+        *,
+        deadline: float | None = None,
+    ) -> None:
         parsed = urlsplit(url)
         if parsed.scheme != "ws" or parsed.hostname != "127.0.0.1" or parsed.port is None:
             raise BrowserMatrixError("browser debugging endpoint is not loopback WebSocket")
-        self.socket = socket.create_connection((parsed.hostname, parsed.port), timeout=timeout)
-        self.socket.settimeout(timeout)
-        key = base64.b64encode(os.urandom(16)).decode("ascii")
-        path = parsed.path + (("?" + parsed.query) if parsed.query else "")
-        request = (
-            f"GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{parsed.port}\r\n"
-            f"Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {key}\r\n"
-            "Sec-WebSocket-Version: 13\r\n\r\n"
-        ).encode("ascii")
-        self.socket.sendall(request)
-        response = bytearray()
-        while b"\r\n\r\n" not in response and len(response) <= 16 * 1024:
-            response.extend(self.socket.recv(4096))
-        expected = base64.b64encode(
-            hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")).digest()
-        ).decode("ascii")
-        header = response.decode("latin-1", errors="strict")
-        if not header.startswith("HTTP/1.1 101 ") or expected.lower() not in header.lower():
+        if type(timeout) not in (int, float) or not math.isfinite(timeout) or timeout <= 0:
+            raise BrowserMatrixError("browser debugging timeout is invalid")
+        if deadline is not None and (
+            type(deadline) not in (int, float) or not math.isfinite(deadline)
+        ):
+            raise BrowserMatrixError("browser debugging deadline is invalid")
+
+        def operation_timeout() -> float:
+            if deadline is None:
+                return float(timeout)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise BrowserMatrixError(
+                    "browser debugging WebSocket startup exceeded its deadline"
+                )
+            return min(float(timeout), remaining)
+
+        self.socket = socket.create_connection(
+            (parsed.hostname, parsed.port),
+            timeout=operation_timeout(),
+        )
+        try:
+            self.socket.settimeout(operation_timeout())
+            key = base64.b64encode(os.urandom(16)).decode("ascii")
+            path = parsed.path + (("?" + parsed.query) if parsed.query else "")
+            request = (
+                f"GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{parsed.port}\r\n"
+                f"Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {key}\r\n"
+                "Sec-WebSocket-Version: 13\r\n\r\n"
+            ).encode("ascii")
+            self.socket.sendall(request)
+            response = bytearray()
+            while b"\r\n\r\n" not in response and len(response) <= 16 * 1024:
+                self.socket.settimeout(operation_timeout())
+                response.extend(self.socket.recv(4096))
+            expected = base64.b64encode(
+                hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")).digest()
+            ).decode("ascii")
+            header = response.decode("latin-1", errors="strict")
+            if not header.startswith("HTTP/1.1 101 ") or expected.lower() not in header.lower():
+                raise BrowserMatrixError("browser debugging WebSocket handshake failed")
+            # recv() may begin within the deadline and return a valid upgrade
+            # only after it. Do not let that late success escape the startup
+            # budget when restoring the ordinary per-command timeout.
+            operation_timeout()
+            self.socket.settimeout(timeout)
+        except BaseException:
             self.close()
-            raise BrowserMatrixError("browser debugging WebSocket handshake failed")
+            raise
         self.identifier = 0
         self.events: list[dict[str, object]] = []
         self.events_truncated = False
@@ -621,8 +661,12 @@ def validate_chromium_network_events(
             raise BrowserMatrixError("Chromium requested a resource outside the exact target origin")
 
 
-def _wait_debugging_port(directory: Path, process: subprocess.Popen[bytes], timeout: float) -> int:
-    deadline = time.monotonic() + timeout
+def _wait_debugging_port(
+    directory: Path,
+    process: subprocess.Popen[bytes],
+    *,
+    deadline: float,
+) -> int:
     marker = directory / "DevToolsActivePort"
     while time.monotonic() < deadline:
         if process.poll() is not None:
@@ -635,27 +679,191 @@ def _wait_debugging_port(directory: Path, process: subprocess.Popen[bytes], time
             port = int(lines[0])
             if 1 <= port <= 65535:
                 return port
-        time.sleep(0.025)
+        time.sleep(min(0.025, max(0.0, deadline - time.monotonic())))
     raise BrowserMatrixError("Chromium debugging endpoint timed out")
 
 
+def _exact_debugging_websocket(value: object, port: int, *, context: str) -> str:
+    if type(value) is not str:
+        raise BrowserMatrixError(f"{context} lacks its debugging URL")
+    try:
+        parsed = urlsplit(value)
+        exact_loopback = (
+            parsed.scheme == "ws"
+            and parsed.hostname == "127.0.0.1"
+            and parsed.port == port
+            and parsed.username is None
+            and parsed.password is None
+            and not parsed.fragment
+        )
+    except ValueError:
+        exact_loopback = False
+    if not exact_loopback:
+        raise BrowserMatrixError(f"{context} debugging URL is not exact loopback")
+    return value
+
+
+_TRANSIENT_CHROMIUM_ERRNOS = frozenset({
+    errno.ECONNREFUSED,
+    errno.ECONNRESET,
+    errno.ECONNABORTED,
+    errno.ETIMEDOUT,
+})
+
+
+def _is_transient_chromium_transport(error: OSError) -> bool:
+    reason = error.reason if isinstance(error, URLError) else error
+    return (
+        isinstance(reason, (socket.timeout, RemoteDisconnected))
+        or (
+            isinstance(reason, OSError)
+            and reason.errno in _TRANSIENT_CHROMIUM_ERRNOS
+        )
+    )
+
+
 def _new_debugging_target(port: int, timeout: float) -> str:
+    if type(port) is not int or not 1 <= port <= 65535:
+        raise BrowserMatrixError("Chromium debugging port is invalid")
+    if type(timeout) not in (int, float) or not math.isfinite(timeout) or timeout <= 0:
+        raise BrowserMatrixError("Chromium target timeout is invalid")
     request = Request(f"http://127.0.0.1:{port}/json/new?{quote('about:blank', safe='')}", method="PUT")
     try:
         with urlopen(request, timeout=timeout) as response:
             payload = response.read(64 * 1024 + 1)
+    except HTTPError as error:
+        # An HTTP response proves the endpoint is listening. Treat its status
+        # as a protocol failure instead of hiding it behind readiness retries.
+        raise BrowserMatrixError("Chromium target endpoint returned an HTTP error") from error
     except OSError as error:
-        raise BrowserMatrixError("Chromium target creation failed") from error
+        if _is_transient_chromium_transport(error):
+            raise _ChromiumTargetTransportError(
+                "Chromium target endpoint transport failed"
+            ) from error
+        raise BrowserMatrixError(
+            "Chromium target endpoint transport failed permanently"
+        ) from error
     if len(payload) > 64 * 1024:
         raise BrowserMatrixError("Chromium target response exceeds its byte budget")
     try:
         value = json.loads(payload)
-    except json.JSONDecodeError as error:
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise BrowserMatrixError("Chromium target response is invalid") from error
     websocket_url = value.get("webSocketDebuggerUrl") if type(value) is dict else None
-    if type(websocket_url) is not str:
-        raise BrowserMatrixError("Chromium target response lacks its debugging URL")
-    return websocket_url
+    return _exact_debugging_websocket(
+        websocket_url,
+        port,
+        context="Chromium target response",
+    )
+
+
+def _probe_debugging_endpoint(port: int, timeout: float) -> None:
+    if type(port) is not int or not 1 <= port <= 65535:
+        raise BrowserMatrixError("Chromium debugging port is invalid")
+    if type(timeout) not in (int, float) or not math.isfinite(timeout) or timeout <= 0:
+        raise BrowserMatrixError("Chromium readiness timeout is invalid")
+    request = Request(f"http://127.0.0.1:{port}/json/version", method="GET")
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            payload = response.read(64 * 1024 + 1)
+    except HTTPError as error:
+        raise BrowserMatrixError(
+            "Chromium readiness endpoint returned an HTTP error"
+        ) from error
+    except OSError as error:
+        if _is_transient_chromium_transport(error):
+            raise _ChromiumTargetTransportError(
+                "Chromium debugging endpoint is not ready"
+            ) from error
+        raise BrowserMatrixError(
+            "Chromium readiness transport failed permanently"
+        ) from error
+    if len(payload) > 64 * 1024:
+        raise BrowserMatrixError(
+            "Chromium readiness response exceeds its byte budget"
+        )
+    try:
+        value = json.loads(payload)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise BrowserMatrixError("Chromium readiness response is invalid") from error
+    if type(value) is not dict:
+        raise BrowserMatrixError("Chromium readiness response is invalid")
+    _exact_debugging_websocket(
+        value.get("webSocketDebuggerUrl"),
+        port,
+        context="Chromium readiness response",
+    )
+
+
+def _wait_debugging_endpoint(
+    port: int,
+    process: subprocess.Popen[bytes],
+    *,
+    deadline: float,
+) -> None:
+    """Retry only the idempotent marker-to-HTTP readiness probe."""
+    last_transport_error: _ChromiumTargetTransportError | None = None
+    while True:
+        if process.poll() is not None:
+            raise BrowserMatrixError(
+                "Chromium exited before its debugging endpoint became ready"
+            ) from last_transport_error
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise BrowserMatrixError(
+                "Chromium debugging endpoint did not become ready before its deadline"
+            ) from last_transport_error
+        try:
+            _probe_debugging_endpoint(port, min(remaining, 0.25))
+            return
+        except _ChromiumTargetTransportError as error:
+            last_transport_error = error
+        if process.poll() is not None:
+            raise BrowserMatrixError(
+                "Chromium exited before its debugging endpoint became ready"
+            ) from last_transport_error
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise BrowserMatrixError(
+                "Chromium debugging endpoint did not become ready before its deadline"
+            ) from last_transport_error
+        time.sleep(min(0.025, remaining))
+
+
+def _connect_chromium_debugging(
+    port: int,
+    process: subprocess.Popen[bytes],
+    *,
+    deadline: float,
+    timeout: float,
+) -> _WebSocket:
+    _wait_debugging_endpoint(port, process, deadline=deadline)
+    if process.poll() is not None:
+        raise BrowserMatrixError(
+            "Chromium exited before creating its debugging target"
+        )
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise BrowserMatrixError("Chromium target creation timed out")
+    try:
+        # PUT /json/new is intentionally single-shot: retrying after a lost
+        # response could create an untracked duplicate target.
+        websocket_url = _new_debugging_target(port, remaining)
+    except BrowserMatrixError as error:
+        if process.poll() is not None:
+            raise BrowserMatrixError(
+                "Chromium exited while creating its debugging target"
+            ) from error
+        raise
+    if process.poll() is not None:
+        raise BrowserMatrixError(
+            "Chromium exited after creating its debugging target"
+        )
+    return _WebSocket(
+        websocket_url,
+        timeout,
+        deadline=deadline,
+    )
 
 
 def _shutdown_chromium(
@@ -789,8 +997,18 @@ def run_chromium_page(
             stderr=subprocess.DEVNULL, shell=False,
         )
         try:
-            port = _wait_debugging_port(profile_directory, process, timeout)
-            connection = _WebSocket(_new_debugging_target(port, timeout), timeout)
+            startup_deadline = time.monotonic() + timeout
+            port = _wait_debugging_port(
+                profile_directory,
+                process,
+                deadline=startup_deadline,
+            )
+            connection = _connect_chromium_debugging(
+                port,
+                process,
+                deadline=startup_deadline,
+                timeout=timeout,
+            )
             connection.command("Page.enable")
             connection.command("Runtime.enable")
             connection.command("Network.enable")

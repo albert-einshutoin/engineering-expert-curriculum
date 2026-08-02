@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import base64
 import errno
+from http.client import RemoteDisconnected
 from html.parser import HTMLParser
 import hashlib
 import io
@@ -9,9 +11,10 @@ from pathlib import Path
 import re
 import subprocess
 from tempfile import TemporaryDirectory
+import time
 import unittest
 from unittest import mock
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 
 from tools.install_test_browsers import (
@@ -46,7 +49,12 @@ from tools.run_browser_contract import (
     _cleanup_chromium_resources,
     _capture_chromium_screenshot,
     _BrowserDebuggingCommandError,
+    _ChromiumTargetTransportError,
+    _connect_chromium_debugging,
     _WebSocket,
+    _new_debugging_target,
+    _probe_debugging_endpoint,
+    _wait_debugging_endpoint,
 )
 
 from curriculum_builder.visualizations import (
@@ -963,6 +971,355 @@ class BrowserContractTests(VisualizationAccessibilityTests):
                 {"format": "png", "captureBeyondViewport": False},
             )
             sleep.assert_not_called()
+
+    def test_chromium_debugging_readiness_retries_only_transport_failure(self) -> None:
+        process = mock.Mock()
+        process.poll.return_value = None
+        transport = _ChromiumTargetTransportError(
+            "Chromium target endpoint is not ready"
+        )
+        with mock.patch(
+            "tools.run_browser_contract._probe_debugging_endpoint",
+            side_effect=(transport, None),
+        ) as probe, mock.patch(
+            "tools.run_browser_contract.time.sleep"
+        ) as sleep:
+            _wait_debugging_endpoint(
+                9222, process, deadline=time.monotonic() + 1.0
+            )
+        self.assertEqual(probe.call_count, 2)
+        sleep.assert_called_once()
+
+    def test_chromium_debugging_readiness_fails_immediately_after_process_exit(self) -> None:
+        process = mock.Mock()
+        process.poll.return_value = 1
+        with mock.patch(
+            "tools.run_browser_contract._probe_debugging_endpoint"
+        ) as probe, self.assertRaisesRegex(
+            BrowserMatrixError,
+            "exited before its debugging endpoint became ready",
+        ):
+            _wait_debugging_endpoint(
+                9222, process, deadline=time.monotonic() + 1.0
+            )
+        probe.assert_not_called()
+
+    def test_chromium_readiness_stops_when_process_exits_after_transport_error(
+        self,
+    ) -> None:
+        process = mock.Mock()
+        process.poll.side_effect = (None, 9)
+        transport = _ChromiumTargetTransportError(
+            "Chromium target endpoint is not ready"
+        )
+        with mock.patch(
+            "tools.run_browser_contract._probe_debugging_endpoint",
+            side_effect=transport,
+        ) as probe, mock.patch(
+            "tools.run_browser_contract.time.sleep"
+        ) as sleep, self.assertRaisesRegex(
+            BrowserMatrixError,
+            "exited before its debugging endpoint became ready",
+        ) as caught:
+            _wait_debugging_endpoint(
+                9222, process, deadline=time.monotonic() + 1.0
+            )
+        probe.assert_called_once()
+        sleep.assert_not_called()
+        self.assertIs(caught.exception.__cause__, transport)
+
+    def test_chromium_readiness_preserves_last_transport_at_deadline(
+        self,
+    ) -> None:
+        process = mock.Mock()
+        process.poll.return_value = None
+        transport = _ChromiumTargetTransportError(
+            "Chromium target endpoint is not ready"
+        )
+        with mock.patch(
+            "tools.run_browser_contract._probe_debugging_endpoint",
+            side_effect=transport,
+        ) as probe, mock.patch(
+            "tools.run_browser_contract.time.monotonic",
+            side_effect=(0.0, 0.5),
+        ), mock.patch(
+            "tools.run_browser_contract.time.sleep"
+        ) as sleep, self.assertRaisesRegex(
+            BrowserMatrixError,
+            "before its deadline",
+        ) as caught:
+            _wait_debugging_endpoint(9222, process, deadline=0.25)
+        probe.assert_called_once_with(9222, 0.25)
+        sleep.assert_not_called()
+        self.assertIs(caught.exception.__cause__, transport)
+
+    def test_chromium_readiness_transport_failure_is_typed_and_exact_loopback(self) -> None:
+        with mock.patch(
+            "tools.run_browser_contract.urlopen",
+            side_effect=ConnectionRefusedError(errno.ECONNREFUSED, "not ready"),
+        ) as request, self.assertRaises(
+            _ChromiumTargetTransportError
+        ) as caught:
+            _probe_debugging_endpoint(9222, 0.25)
+        sent = request.call_args.args[0]
+        self.assertEqual(
+            sent.full_url,
+            "http://127.0.0.1:9222/json/version",
+        )
+        self.assertEqual(sent.method, "GET")
+        self.assertIsInstance(caught.exception.__cause__, ConnectionRefusedError)
+
+    def test_chromium_readiness_http_response_is_protocol_failure(self) -> None:
+        response = HTTPError(
+            "http://127.0.0.1:9222/json/version",
+            503,
+            "not ready",
+            {},
+            io.BytesIO(b"unavailable"),
+        )
+        with mock.patch(
+            "tools.run_browser_contract.urlopen",
+            side_effect=response,
+        ), self.assertRaisesRegex(
+            BrowserMatrixError,
+            "returned an HTTP error",
+        ) as caught:
+            _probe_debugging_endpoint(9222, 0.25)
+        self.assertNotIsInstance(
+            caught.exception,
+            _ChromiumTargetTransportError,
+        )
+
+    def test_chromium_readiness_does_not_retry_nontransient_os_errors(self) -> None:
+        failures = (
+            OSError(errno.EMFILE, "too many files"),
+            OSError(errno.ENFILE, "system file table full"),
+            OSError(errno.EACCES, "permission denied"),
+            OSError(errno.EINVAL, "invalid argument"),
+            URLError(OSError(errno.EACCES, "permission denied")),
+        )
+        for failure in failures:
+            with self.subTest(failure=repr(failure)), mock.patch(
+                "tools.run_browser_contract.urlopen",
+                side_effect=failure,
+            ), self.assertRaises(BrowserMatrixError) as caught:
+                _probe_debugging_endpoint(9222, 0.25)
+            self.assertNotIsInstance(
+                caught.exception,
+                _ChromiumTargetTransportError,
+            )
+
+    def test_chromium_readiness_types_only_allowlisted_transient_errors(self) -> None:
+        failures = (
+            OSError(errno.ECONNREFUSED, "refused"),
+            OSError(errno.ECONNRESET, "reset"),
+            OSError(errno.ECONNABORTED, "aborted"),
+            OSError(errno.ETIMEDOUT, "timed out"),
+            URLError(OSError(errno.ECONNREFUSED, "refused")),
+            RemoteDisconnected("remote closed"),
+        )
+        for failure in failures:
+            with self.subTest(failure=repr(failure)), mock.patch(
+                "tools.run_browser_contract.urlopen",
+                side_effect=failure,
+            ), self.assertRaises(_ChromiumTargetTransportError):
+                _probe_debugging_endpoint(9222, 0.25)
+
+    def test_chromium_websocket_handshake_uses_absolute_startup_deadline(self) -> None:
+        stream = mock.Mock()
+        with mock.patch(
+            "tools.run_browser_contract.socket.create_connection",
+            return_value=stream,
+        ) as connect, mock.patch(
+            "tools.run_browser_contract.time.monotonic",
+            side_effect=(0.0, 0.2, 1.1),
+        ), self.assertRaisesRegex(
+            BrowserMatrixError,
+            "deadline",
+        ):
+            _WebSocket(
+                "ws://127.0.0.1:9222/devtools/page/target",
+                5.0,
+                deadline=1.0,
+            )
+        connect.assert_called_once_with(("127.0.0.1", 9222), timeout=1.0)
+        stream.sendall.assert_called_once()
+        stream.recv.assert_not_called()
+        stream.close.assert_called_once()
+
+    def test_chromium_websocket_rejects_valid_handshake_completed_after_deadline(
+        self,
+    ) -> None:
+        stream = mock.Mock()
+        nonce = b"\0" * 16
+        key = base64.b64encode(nonce).decode("ascii")
+        accepted = base64.b64encode(hashlib.sha1(
+            (key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")
+        ).digest()).decode("ascii")
+        stream.recv.return_value = (
+            "HTTP/1.1 101 Switching Protocols\r\n"
+            f"Sec-WebSocket-Accept: {accepted}\r\n\r\n"
+        ).encode("ascii")
+        with mock.patch(
+            "tools.run_browser_contract.socket.create_connection",
+            return_value=stream,
+        ), mock.patch(
+            "tools.run_browser_contract.os.urandom",
+            return_value=nonce,
+        ), mock.patch(
+            "tools.run_browser_contract.time.monotonic",
+            side_effect=(0.0, 0.1, 0.2, 1.1),
+        ), self.assertRaisesRegex(
+            BrowserMatrixError,
+            "deadline",
+        ):
+            _WebSocket(
+                "ws://127.0.0.1:9222/devtools/page/target",
+                5.0,
+                deadline=1.0,
+            )
+        stream.recv.assert_called_once_with(4096)
+        stream.close.assert_called_once()
+
+    def test_chromium_debugging_orchestration_uses_one_put_and_shared_deadline(
+        self,
+    ) -> None:
+        process = mock.Mock()
+        process.poll.return_value = None
+        connection = mock.Mock()
+        with mock.patch(
+            "tools.run_browser_contract._wait_debugging_endpoint"
+        ) as readiness, mock.patch(
+            "tools.run_browser_contract._new_debugging_target",
+            return_value="ws://127.0.0.1:9222/devtools/page/target",
+        ) as target, mock.patch(
+            "tools.run_browser_contract._WebSocket",
+            return_value=connection,
+        ) as websocket, mock.patch(
+            "tools.run_browser_contract.time.monotonic",
+            return_value=0.25,
+        ):
+            result = _connect_chromium_debugging(
+                9222,
+                process,
+                deadline=1.0,
+                timeout=5.0,
+            )
+        self.assertIs(result, connection)
+        readiness.assert_called_once_with(9222, process, deadline=1.0)
+        target.assert_called_once_with(9222, 0.75)
+        websocket.assert_called_once_with(
+            "ws://127.0.0.1:9222/devtools/page/target",
+            5.0,
+            deadline=1.0,
+        )
+
+    def test_chromium_put_transport_failure_is_single_shot_and_exit_aware(self) -> None:
+        process = mock.Mock()
+        process.poll.side_effect = (None, 9)
+        transport = _ChromiumTargetTransportError(
+            "Chromium target endpoint transport failed"
+        )
+        with mock.patch(
+            "tools.run_browser_contract._wait_debugging_endpoint"
+        ), mock.patch(
+            "tools.run_browser_contract._new_debugging_target",
+            side_effect=transport,
+        ) as target, self.assertRaisesRegex(
+            BrowserMatrixError,
+            "exited while creating",
+        ) as caught:
+            _connect_chromium_debugging(
+                9222,
+                process,
+                deadline=time.monotonic() + 1.0,
+                timeout=5.0,
+            )
+        target.assert_called_once()
+        self.assertIs(caught.exception.__cause__, transport)
+
+    def test_chromium_process_exit_before_put_skips_target_creation(self) -> None:
+        process = mock.Mock()
+        process.poll.return_value = 7
+        with mock.patch(
+            "tools.run_browser_contract._wait_debugging_endpoint"
+        ), mock.patch(
+            "tools.run_browser_contract._new_debugging_target"
+        ) as target, self.assertRaisesRegex(
+            BrowserMatrixError,
+            "exited before creating",
+        ):
+            _connect_chromium_debugging(
+                9222,
+                process,
+                deadline=time.monotonic() + 1.0,
+                timeout=5.0,
+            )
+        target.assert_not_called()
+
+    def test_chromium_target_protocol_failures_are_not_retryable(self) -> None:
+        cases = (
+            (b"{" + b"x" * (64 * 1024), "byte budget"),
+            (b"not-json", "response is invalid"),
+            (b"\xff", "response is invalid"),
+            (json.dumps({"id": "target"}).encode("utf-8"), "lacks its debugging URL"),
+            (json.dumps({
+                "webSocketDebuggerUrl": "ws://localhost:9222/devtools/page/target",
+            }).encode("utf-8"), "not exact loopback"),
+            (json.dumps({
+                "webSocketDebuggerUrl": "ws://127.0.0.1:9223/devtools/page/target",
+            }).encode("utf-8"), "not exact loopback"),
+        )
+        for payload, message in cases:
+            response = mock.MagicMock()
+            response.__enter__.return_value.read.return_value = payload
+            with self.subTest(message=message), mock.patch(
+                "tools.run_browser_contract.urlopen",
+                return_value=response,
+            ), self.assertRaisesRegex(BrowserMatrixError, message) as caught:
+                _new_debugging_target(9222, 0.25)
+            self.assertNotIsInstance(
+                caught.exception,
+                _ChromiumTargetTransportError,
+            )
+
+        process = mock.Mock()
+        process.poll.return_value = None
+        protocol = BrowserMatrixError("Chromium target response is invalid")
+        with mock.patch(
+            "tools.run_browser_contract._probe_debugging_endpoint",
+            side_effect=protocol,
+        ) as probe, mock.patch(
+            "tools.run_browser_contract.time.sleep"
+        ) as sleep, self.assertRaises(BrowserMatrixError) as caught:
+            _wait_debugging_endpoint(
+                9222, process, deadline=time.monotonic() + 1.0
+            )
+        self.assertIs(caught.exception, protocol)
+        probe.assert_called_once()
+        sleep.assert_not_called()
+
+    def test_chromium_target_creation_uses_one_exact_loopback_put(self) -> None:
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps({
+            "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/page/target",
+        }).encode("utf-8")
+        with mock.patch(
+            "tools.run_browser_contract.urlopen",
+            return_value=response,
+        ) as request:
+            websocket = _new_debugging_target(9222, 0.25)
+        self.assertEqual(
+            websocket,
+            "ws://127.0.0.1:9222/devtools/page/target",
+        )
+        sent = request.call_args.args[0]
+        self.assertEqual(
+            sent.full_url,
+            "http://127.0.0.1:9222/json/new?about%3Ablank",
+        )
+        self.assertEqual(sent.method, "PUT")
+        request.assert_called_once()
 
     def test_chromium_cleanup_failure_does_not_mask_the_primary_error(self) -> None:
         with TemporaryDirectory() as temporary:
