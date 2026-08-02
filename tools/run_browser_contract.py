@@ -7,6 +7,7 @@ import argparse
 from contextlib import contextmanager
 from dataclasses import dataclass
 import base64
+import errno
 from functools import partial
 import hashlib
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -783,7 +784,28 @@ def _webdriver_request(
     try:
         with urlopen(request, timeout=timeout) as response:
             raw = response.read(4 * 1024 * 1024 + 1)
-    except (HTTPError, URLError, OSError) as error:
+    except HTTPError as error:
+        raw = error.read(4 * 1024 * 1024 + 1)
+        if len(raw) <= 4 * 1024 * 1024:
+            try:
+                failure = json.loads(raw)
+            except json.JSONDecodeError:
+                failure = None
+            value = failure.get("value") if type(failure) is dict else None
+            if (
+                method == "POST" and path == "/session" and error.code == 500
+                and type(value) is dict
+                and value.get("error") == "session not created"
+                and value.get("message") == (
+                    "Could not create a session: You must enable the 'Allow Remote Automation' "
+                    "option in Safari's Develop menu to control Safari via WebDriver."
+                )
+            ):
+                raise SafariSessionUnavailable(
+                    "Safari Remote Automation session is unavailable"
+                ) from error
+        raise BrowserMatrixError("Safari WebDriver HTTP response failed") from error
+    except (URLError, OSError) as error:
         raise BrowserMatrixError("Safari WebDriver request failed") from error
     if len(raw) > 4 * 1024 * 1024:
         raise BrowserMatrixError("Safari WebDriver response exceeds its byte budget")
@@ -795,8 +817,27 @@ def _webdriver_request(
         raise BrowserMatrixError("Safari WebDriver response shape drifted")
     inner = value["value"]
     if type(inner) is dict and "error" in inner:
+        if (
+            method == "POST" and path == "/session"
+            and inner.get("error") == "session not created"
+            and inner.get("message") == (
+                "Could not create a session: You must enable the 'Allow Remote Automation' "
+                "option in Safari's Develop menu to control Safari via WebDriver."
+            )
+        ):
+            raise SafariSessionUnavailable(
+                "Safari Remote Automation session is unavailable"
+            )
         raise BrowserMatrixError("Safari WebDriver reported an automation error")
     return inner
+
+
+def _is_safari_session_transport_unavailable(error: BaseException | None) -> bool:
+    if isinstance(error, URLError):
+        error = error.reason
+    return isinstance(error, (ConnectionRefusedError, TimeoutError, socket.timeout)) or (
+        isinstance(error, OSError) and error.errno in {errno.ECONNREFUSED, errno.ETIMEDOUT}
+    )
 
 
 def run_safari_smoke(
@@ -832,8 +873,10 @@ def run_safari_smoke(
                     session_id = session["sessionId"]
                     break
             except BrowserMatrixError as error:
+                if isinstance(error, SafariSessionUnavailable):
+                    raise
                 cause = error.__cause__
-                if not isinstance(cause, (OSError, URLError)):
+                if not _is_safari_session_transport_unavailable(cause):
                     raise
                 last_error = error
                 time.sleep(0.1)

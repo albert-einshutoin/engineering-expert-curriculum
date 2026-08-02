@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from html.parser import HTMLParser
 import hashlib
+import io
 import json
 from pathlib import Path
 import re
 from tempfile import TemporaryDirectory
 import unittest
 from unittest import mock
+from urllib.error import HTTPError
 
 from tools.install_test_browsers import (
     BrowserMatrixError,
@@ -29,6 +31,7 @@ from tools.run_browser_contract import (
     BrowserEvidenceJournal,
     SafariSessionUnavailable,
     _instrumented_harness_source,
+    _webdriver_request,
     browser_run_plan,
     run_safari_smoke,
     run_browser_contract,
@@ -913,7 +916,7 @@ class BrowserContractTests(VisualizationAccessibilityTests):
         process.poll.return_value = None
 
         def transient(*_args: object, **_kwargs: object) -> object:
-            raise BrowserMatrixError("transport") from OSError("not ready")
+            raise BrowserMatrixError("transport") from ConnectionRefusedError("not ready")
 
         with mock.patch("tools.run_browser_contract.subprocess.Popen", return_value=process), \
                 mock.patch("tools.run_browser_contract._webdriver_request", side_effect=transient), \
@@ -938,6 +941,35 @@ class BrowserContractTests(VisualizationAccessibilityTests):
                     harness_version="1.0.0", timeout=0.5,
                 )
         self.assertNotIsInstance(caught.exception, SafariSessionUnavailable)
+
+    def test_safari_http_error_blocks_only_the_exact_remote_automation_response(self) -> None:
+        exact = {
+            "value": {
+                "error": "session not created",
+                "message": "Could not create a session: You must enable the 'Allow Remote Automation' option in Safari's Develop menu to control Safari via WebDriver.",
+                "stacktrace": "",
+            }
+        }
+        generic = {
+            "value": {
+                "error": "session not created",
+                "message": "Safari crashed during startup",
+                "stacktrace": "",
+            }
+        }
+        for body, blocked in ((exact, True), (generic, False)):
+            response = HTTPError(
+                "http://127.0.0.1:8123/session", 500, "error", {},
+                io.BytesIO(json.dumps(body).encode("utf-8")),
+            )
+            with self.subTest(blocked=blocked), mock.patch(
+                "tools.run_browser_contract.urlopen", side_effect=response,
+            ):
+                with self.assertRaises(BrowserMatrixError) as caught:
+                    _webdriver_request(8123, "POST", "/session", {}, 1.0)
+            self.assertEqual(
+                isinstance(caught.exception, SafariSessionUnavailable), blocked
+            )
 
     def test_accessibility_explorer_is_a_finite_manual_audit_not_an_at_emulator(self) -> None:
         path = REPOSITORY_ROOT / (
