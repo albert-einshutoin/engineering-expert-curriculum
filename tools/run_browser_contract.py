@@ -17,6 +17,7 @@ import math
 import os
 from pathlib import Path, PurePosixPath
 import re
+import shutil
 import socket
 import statistics
 import struct
@@ -608,6 +609,109 @@ def _new_debugging_target(port: int, timeout: float) -> str:
     return websocket_url
 
 
+def _shutdown_chromium(
+    process: subprocess.Popen[bytes], connection: _WebSocket | None,
+) -> None:
+    """Stop Chromium and its profile writers before removing their directory."""
+    graceful_close_requested = False
+    connection_close_error: BaseException | None = None
+    if connection is not None:
+        try:
+            connection.socket.settimeout(5.0)
+            connection.command("Browser.close")
+            graceful_close_requested = True
+        except (OSError, BrowserMatrixError):
+            # A closed CDP socket commonly means Chromium already began exit.
+            # The bounded process fallback below still proves the parent ended.
+            graceful_close_requested = False
+        finally:
+            try:
+                # _WebSocket.close owns ordinary socket errors, but an
+                # interrupt must not skip the process shutdown below.
+                connection.close()
+            except BaseException as error:
+                connection_close_error = error
+
+    try:
+        if graceful_close_requested:
+            try:
+                process.wait(timeout=5)
+                if connection_close_error is not None:
+                    raise connection_close_error
+                return
+            except subprocess.TimeoutExpired:
+                pass
+        if process.poll() is None:
+            process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
+    except (OSError, subprocess.SubprocessError) as error:
+        failure = BrowserMatrixError("Chromium process cleanup failed")
+        if connection_close_error is not None:
+            failure.add_note(
+                "Chromium debugging connection cleanup also failed: "
+                f"{type(connection_close_error).__name__}: "
+                f"{connection_close_error}"
+            )
+        raise failure from error
+    if connection_close_error is not None:
+        raise connection_close_error
+
+
+def _remove_browser_profile(profile: Path) -> None:
+    """Remove a private browser profile after bounded writer-race retries."""
+    attempts = 50
+    for attempt in range(attempts):
+        try:
+            shutil.rmtree(profile)
+            return
+        except FileNotFoundError:
+            return
+        except OSError as error:
+            if error.errno not in {errno.ENOTEMPTY, errno.EBUSY}:
+                raise BrowserMatrixError("Chromium profile cleanup failed") from error
+            if attempt + 1 == attempts:
+                raise BrowserMatrixError(
+                    "Chromium profile cleanup remained busy after bounded retries"
+                ) from error
+            time.sleep(0.1)
+
+
+def _cleanup_chromium_resources(
+    *, process: subprocess.Popen[bytes] | None, connection: _WebSocket | None,
+    profile: Path, primary_error: BaseException | None,
+) -> None:
+    cleanup_errors: list[BaseException] = []
+    if process is not None:
+        try:
+            _shutdown_chromium(process, connection)
+        except BaseException as error:
+            cleanup_errors.append(error)
+    try:
+        _remove_browser_profile(profile)
+    except BaseException as error:
+        cleanup_errors.append(error)
+    if not cleanup_errors:
+        return
+    if primary_error is not None:
+        for error in cleanup_errors:
+            primary_error.add_note(
+                "Chromium cleanup also failed: "
+                f"{type(error).__name__}: {error}"
+            )
+        return
+    first, *remaining = cleanup_errors
+    for error in remaining:
+        first.add_note(
+            "Additional Chromium cleanup failure: "
+            f"{type(error).__name__}: {error}"
+        )
+    raise first
+
+
 def run_chromium_page(
     *,
     executable: Path,
@@ -622,18 +726,21 @@ def run_chromium_page(
     timeout: float = 30.0,
     oci_container_no_sandbox: bool = False,
 ) -> dict[str, object]:
-    with tempfile.TemporaryDirectory(prefix=".browser-profile-") as profile_directory:
+    profile_directory = Path(tempfile.mkdtemp(prefix=".browser-profile-"))
+    process: subprocess.Popen[bytes] | None = None
+    connection: _WebSocket | None = None
+    primary_error: BaseException | None = None
+    try:
         args = chromium_arguments(
-            executable, url, profile, Path(profile_directory),
+            executable, url, profile, profile_directory,
             oci_container_no_sandbox=oci_container_no_sandbox,
         )
         process = subprocess.Popen(
             args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, shell=False,
         )
-        connection: _WebSocket | None = None
         try:
-            port = _wait_debugging_port(Path(profile_directory), process, timeout)
+            port = _wait_debugging_port(profile_directory, process, timeout)
             connection = _WebSocket(_new_debugging_target(port, timeout), timeout)
             connection.command("Page.enable")
             connection.command("Runtime.enable")
@@ -704,15 +811,14 @@ def run_chromium_page(
             if isinstance(error, BrowserMatrixError):
                 raise
             raise BrowserMatrixError("Chromium browser contract failed") from error
-        finally:
-            if connection is not None:
-                connection.close()
-            process.terminate()
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=5)
+    except BaseException as error:
+        primary_error = error
+        raise
+    finally:
+        _cleanup_chromium_resources(
+            process=process, connection=connection, profile=profile_directory,
+            primary_error=primary_error,
+        )
 
 
 def _reserve_loopback_port() -> int:

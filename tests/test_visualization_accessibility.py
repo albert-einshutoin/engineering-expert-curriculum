@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import errno
 from html.parser import HTMLParser
 import hashlib
 import io
 import json
 from pathlib import Path
 import re
+import subprocess
 from tempfile import TemporaryDirectory
 import unittest
 from unittest import mock
@@ -38,6 +40,10 @@ from tools.run_browser_contract import (
     browser_run_plan,
     run_safari_smoke,
     run_browser_contract,
+    run_chromium_page,
+    _remove_browser_profile,
+    _shutdown_chromium,
+    _cleanup_chromium_resources,
 )
 
 from curriculum_builder.visualizations import (
@@ -754,6 +760,190 @@ class BrowserContractTests(VisualizationAccessibilityTests):
                 Path("/tmp/profile"),
                 oci_container_no_sandbox=True,
             )
+
+    def test_chromium_shutdown_prefers_cdp_before_process_signals(self) -> None:
+        connection = mock.Mock()
+        process = mock.Mock()
+        process.wait.return_value = 0
+
+        _shutdown_chromium(process, connection)
+
+        connection.command.assert_called_once_with("Browser.close")
+        connection.close.assert_called_once_with()
+        process.wait.assert_called_once_with(timeout=5)
+        process.terminate.assert_not_called()
+        process.kill.assert_not_called()
+
+    def test_chromium_shutdown_falls_back_when_cdp_close_fails(self) -> None:
+        connection = mock.Mock()
+        connection.command.side_effect = BrowserMatrixError("CDP closed")
+        process = mock.Mock()
+        process.poll.return_value = None
+        process.wait.return_value = 0
+
+        _shutdown_chromium(process, connection)
+
+        connection.close.assert_called_once_with()
+        process.terminate.assert_called_once_with()
+        process.wait.assert_called_once_with(timeout=5)
+        process.kill.assert_not_called()
+
+    def test_chromium_shutdown_stops_process_before_propagating_interrupt(self) -> None:
+        connection = mock.Mock()
+        connection.close.side_effect = KeyboardInterrupt("close interrupted")
+        process = mock.Mock()
+        process.wait.return_value = 0
+
+        with self.assertRaisesRegex(KeyboardInterrupt, "close interrupted"):
+            _shutdown_chromium(process, connection)
+
+        process.wait.assert_called_once_with(timeout=5)
+        process.terminate.assert_not_called()
+        process.kill.assert_not_called()
+
+    def test_chromium_shutdown_escalates_bounded_timeouts_to_kill(self) -> None:
+        connection = mock.Mock()
+        connection.command.side_effect = BrowserMatrixError("CDP closed")
+        process = mock.Mock()
+        process.poll.return_value = None
+        process.wait.side_effect = (
+            subprocess.TimeoutExpired("chrome", 5),
+            0,
+        )
+
+        _shutdown_chromium(process, connection)
+
+        self.assertEqual(process.wait.call_count, 2)
+        process.terminate.assert_called_once_with()
+        process.kill.assert_called_once_with()
+
+    def test_chromium_profile_cleanup_retries_only_transient_writer_races(self) -> None:
+        with TemporaryDirectory() as temporary:
+            profile = Path(temporary) / "profile"
+            profile.mkdir()
+            transient = OSError(
+                errno.ENOTEMPTY,
+                "Directory not empty",
+                str(profile / "Default"),
+            )
+            with mock.patch(
+                "tools.run_browser_contract.shutil.rmtree",
+                side_effect=(transient, None),
+            ) as remove, mock.patch("tools.run_browser_contract.time.sleep") as sleep:
+                _remove_browser_profile(profile)
+        self.assertEqual(remove.call_count, 2)
+        sleep.assert_called_once()
+
+    def test_chromium_profile_cleanup_fails_after_a_bounded_busy_retry(self) -> None:
+        with TemporaryDirectory() as temporary:
+            profile = Path(temporary) / "profile"
+            profile.mkdir()
+            busy = OSError(errno.EBUSY, "Device or resource busy", str(profile))
+            with mock.patch(
+                "tools.run_browser_contract.shutil.rmtree",
+                side_effect=busy,
+            ) as remove, mock.patch("tools.run_browser_contract.time.sleep"), \
+                    self.assertRaisesRegex(
+                        BrowserMatrixError, "bounded retries"
+                    ):
+                _remove_browser_profile(profile)
+        self.assertEqual(remove.call_count, 50)
+
+    def test_chromium_cleanup_failure_does_not_mask_the_primary_error(self) -> None:
+        with TemporaryDirectory() as temporary:
+            profile = Path(temporary) / "profile"
+            profile.mkdir()
+            with mock.patch(
+                "tools.run_browser_contract.tempfile.mkdtemp",
+                return_value=str(profile),
+            ), mock.patch(
+                "tools.run_browser_contract.subprocess.Popen",
+                side_effect=OSError("launch failed"),
+            ), mock.patch(
+                "tools.run_browser_contract._remove_browser_profile",
+                side_effect=BrowserMatrixError("profile cleanup failed"),
+            ), self.assertRaisesRegex(OSError, "launch failed") as caught:
+                run_chromium_page(
+                    executable=Path("/cache/chrome"),
+                    url="file:///tmp/site/index.html",
+                    profile=self._matrix()["profiles"]["mobile"],  # type: ignore[index]
+                    harness_source="",
+                    harness_version="1.0.0",
+                    screenshot=Path(temporary) / "shot.png",
+                )
+        self.assertIn(
+            "profile cleanup failed",
+            "\n".join(getattr(caught.exception, "__notes__", ())),
+        )
+
+    def test_chromium_process_cleanup_failure_does_not_mask_browser_error(self) -> None:
+        process = mock.Mock()
+        with TemporaryDirectory() as temporary, mock.patch(
+            "tools.run_browser_contract.subprocess.Popen",
+            return_value=process,
+        ), mock.patch(
+            "tools.run_browser_contract._wait_debugging_port",
+            side_effect=BrowserMatrixError("browser result failed"),
+        ), mock.patch(
+            "tools.run_browser_contract._shutdown_chromium",
+            side_effect=BrowserMatrixError("process cleanup failed"),
+        ), self.assertRaisesRegex(
+            BrowserMatrixError, "browser result failed"
+        ) as caught:
+            run_chromium_page(
+                executable=Path("/cache/chrome"),
+                url="file:///tmp/site/index.html",
+                profile=self._matrix()["profiles"]["mobile"],  # type: ignore[index]
+                harness_source="",
+                harness_version="1.0.0",
+                screenshot=Path(temporary) / "shot.png",
+            )
+        self.assertIn(
+            "process cleanup failed",
+            "\n".join(getattr(caught.exception, "__notes__", ())),
+        )
+
+    def test_chromium_cleanup_preserves_primary_and_all_secondary_failures(
+        self,
+    ) -> None:
+        primary = RuntimeError("browser result failed")
+        process = mock.Mock()
+        with TemporaryDirectory() as temporary, mock.patch(
+            "tools.run_browser_contract._shutdown_chromium",
+            side_effect=KeyboardInterrupt("shutdown interrupted"),
+        ), mock.patch(
+            "tools.run_browser_contract._remove_browser_profile",
+            side_effect=SystemExit("profile cleanup exited"),
+        ):
+            _cleanup_chromium_resources(
+                process=process, connection=None,
+                profile=Path(temporary) / "profile",
+                primary_error=primary,
+            )
+        notes = "\n".join(getattr(primary, "__notes__", ()))
+        self.assertIn("KeyboardInterrupt: shutdown interrupted", notes)
+        self.assertIn("SystemExit: profile cleanup exited", notes)
+
+    def test_chromium_cleanup_preserves_first_failure_type_without_primary(
+        self,
+    ) -> None:
+        process = mock.Mock()
+        with TemporaryDirectory() as temporary, mock.patch(
+            "tools.run_browser_contract._shutdown_chromium",
+            side_effect=KeyboardInterrupt("shutdown interrupted"),
+        ), mock.patch(
+            "tools.run_browser_contract._remove_browser_profile",
+            side_effect=SystemExit("profile cleanup exited"),
+        ), self.assertRaises(KeyboardInterrupt) as caught:
+            _cleanup_chromium_resources(
+                process=process, connection=None,
+                profile=Path(temporary) / "profile",
+                primary_error=None,
+            )
+        self.assertIn(
+            "SystemExit: profile cleanup exited",
+            "\n".join(getattr(caught.exception, "__notes__", ())),
+        )
 
     def test_dumped_dom_result_is_unique_bounded_versioned_and_fail_closed(self) -> None:
         result = {
