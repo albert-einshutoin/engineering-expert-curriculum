@@ -432,6 +432,45 @@ class BrowserProvisioningSecurityTests(unittest.TestCase):
                     )
                     self.assertFalse((renamed / "archive").exists())
 
+    def test_payload_cleanup_preserves_primary_and_continues_after_fd_close_failure(self) -> None:
+        with TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            for primary_error in (False, True):
+                with self.subTest(primary_error=primary_error):
+                    staging = parent / f"close-failure-{primary_error}"
+                    close_calls: list[int] = []
+                    original_close = os.close
+
+                    def make_staging(*_args: object, **_kwargs: object) -> str:
+                        staging.mkdir(mode=0o700)
+                        return str(staging)
+
+                    def close_once_then_fail(descriptor: int) -> None:
+                        close_calls.append(descriptor)
+                        original_close(descriptor)
+                        if len(close_calls) == 1:
+                            raise OSError("injected payload fd close failure")
+
+                    with mock.patch(
+                        "tools.install_test_browsers.tempfile.mkdtemp",
+                        side_effect=make_staging,
+                    ), mock.patch(
+                        "tools.install_test_browsers.os.close",
+                        side_effect=close_once_then_fail,
+                    ):
+                        if primary_error:
+                            with self.assertRaisesRegex(RuntimeError, "primary"):
+                                with _verified_payload_file(b"verified", 8):
+                                    raise RuntimeError("primary extraction failure")
+                        else:
+                            with self.assertRaisesRegex(
+                                BrowserMatrixError, "cleanup"
+                            ):
+                                with _verified_payload_file(b"verified", 8):
+                                    pass
+                    self.assertGreaterEqual(len(close_calls), 3)
+                    self.assertFalse(staging.exists())
+
     def test_linux_preflight_requires_x86_64_elf_dependencies_version_and_launch(self) -> None:
         elf = bytearray(64)
         elf[:7] = b"\x7fELF\x02\x01\x01"

@@ -821,18 +821,28 @@ def _verified_payload_file(payload: bytes, max_bytes: int) -> Iterator[Path]:
         raise BrowserMatrixError("browser payload could not be staged safely") from error
     finally:
         primary_error_active = sys.exc_info()[0] is not None
+        def remember_cleanup_error(message: str, error: OSError) -> None:
+            nonlocal cleanup_error
+            if cleanup_error is None:
+                cleanup_error = BrowserMatrixError(message)
+                cleanup_error.__cause__ = error
+
         if payload_fd >= 0:
-            os.close(payload_fd)
+            try:
+                os.close(payload_fd)
+            except OSError as error:
+                remember_cleanup_error(
+                    "browser payload descriptor cleanup failed", error,
+                )
         if root_fd >= 0:
             try:
                 os.unlink("archive", dir_fd=root_fd)
             except FileNotFoundError:
                 pass
             except OSError as error:
-                cleanup_error = BrowserMatrixError(
-                    "browser payload archive cleanup failed"
+                remember_cleanup_error(
+                    "browser payload archive cleanup failed", error,
                 )
-                cleanup_error.__cause__ = error
         if parent_fd >= 0 and root_fd >= 0:
             try:
                 current = os.stat(basename, dir_fd=parent_fd, follow_symlinks=False)
@@ -840,25 +850,39 @@ def _verified_payload_file(payload: bytes, max_bytes: int) -> Iterator[Path]:
                 current = None
             except OSError as error:
                 current = None
-                cleanup_error = cleanup_error or BrowserMatrixError(
-                    "browser payload root binding cleanup failed"
+                remember_cleanup_error(
+                    "browser payload root binding cleanup failed", error,
                 )
-                cleanup_error.__cause__ = error
-            opened = os.fstat(root_fd)
-            if current is not None and (
+            try:
+                opened = os.fstat(root_fd)
+            except OSError as error:
+                opened = None
+                remember_cleanup_error(
+                    "browser payload root descriptor cleanup failed", error,
+                )
+            if current is not None and opened is not None and (
                 current.st_dev, current.st_ino
             ) == (opened.st_dev, opened.st_ino):
                 try:
                     os.rmdir(basename, dir_fd=parent_fd)
                 except OSError as error:
-                    cleanup_error = cleanup_error or BrowserMatrixError(
-                        "browser payload staging directory cleanup failed"
+                    remember_cleanup_error(
+                        "browser payload staging directory cleanup failed", error,
                     )
-                    cleanup_error.__cause__ = error
         if root_fd >= 0:
-            os.close(root_fd)
+            try:
+                os.close(root_fd)
+            except OSError as error:
+                remember_cleanup_error(
+                    "browser payload root descriptor close failed", error,
+                )
         if parent_fd >= 0:
-            os.close(parent_fd)
+            try:
+                os.close(parent_fd)
+            except OSError as error:
+                remember_cleanup_error(
+                    "browser payload parent descriptor close failed", error,
+                )
         if cleanup_error is not None and not primary_error_active:
             raise cleanup_error
 
