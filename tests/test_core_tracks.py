@@ -3580,6 +3580,73 @@ class CoreTrackTests(unittest.TestCase):
             )
             self.assertFalse(ambient_marker.exists())
 
+    def test_testing_harness_derives_only_required_python_loader_environment(
+        self,
+    ) -> None:
+        source = self.python_harness_source(
+            "core-09-test-strategy-tdd",
+            "test_strategy_lab_v1",
+        )
+        marker = "    environment = isolated_environment(environment)\n"
+        self.assertIn(marker, source)
+        instrumented = source.replace(
+            marker,
+            marker
+            + "    allowed = {\"PATH\", \"PYTHONHASHSEED\", "
+            "\"FIXTURE_SEED\", \"FIXED_CLOCK_TICK\", \"ORDER_MODE\"}\n"
+            "    if sys.platform.startswith(\"linux\"):\n"
+            "        allowed.add(\"LD_LIBRARY_PATH\")\n"
+            "        expected = str(Path(sysconfig.get_config_var(\"LIBDIR\"))"
+            ".resolve(strict=True))\n"
+            "        assert environment[\"LD_LIBRARY_PATH\"] == expected\n"
+            "    assert set(environment) <= allowed\n",
+            1,
+        )
+        self.assertNotEqual(instrumented, source)
+
+        result = self.execute_python_harness_source(instrumented)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(
+            [phase["returncode"] for phase in report["phases"]],
+            [1, 0, 0],
+        )
+
+    def test_testing_harness_rejects_nonstring_and_nul_environment_overrides(
+        self,
+    ) -> None:
+        source = self.python_harness_source(
+            "core-09-test-strategy-tdd",
+            "test_strategy_lab_v1",
+        )
+        marker = (
+            'with TemporaryDirectory(prefix="test-strategy-lab-") '
+            "as workspace_text:\n"
+        )
+        self.assertIn(marker, source)
+        checks = "class DerivedKey(str):\n    pass\n"
+        probes = (
+            '{"FIXTURE_SEED": 11}',
+            '{"ORDER_MODE": "seeded" + chr(0)}',
+            '{DerivedKey("FIXTURE_SEED"): "17"}',
+        )
+        for probe in probes:
+            checks += (
+                "try:\n"
+                f"    isolated_environment({probe})\n"
+                "except RuntimeError:\n"
+                "    pass\n"
+                "else:\n"
+                "    raise AssertionError(\"unsafe environment override accepted\")\n"
+            )
+        instrumented = source.replace(marker, checks + marker, 1)
+        self.assertNotEqual(instrumented, source)
+
+        result = self.execute_python_harness_source(instrumented)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_threat_model_harness_links_assets_controls_and_verification(
         self,
     ) -> None:
