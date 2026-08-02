@@ -390,6 +390,9 @@ class RepositorySecurityTests(unittest.TestCase):
                 "pages": "write",
                 "id-token": "write",
             },
+            ("pages.yml", "verify"): {
+                "contents": "read",
+            },
         }
         observed_overrides: dict[tuple[str, str], dict[str, YamlValue]] = {}
         for path in _workflow_files():
@@ -551,7 +554,7 @@ class RepositorySecurityTests(unittest.TestCase):
         self.assertEqual(document.get("on"), {"push": {"branches": ["main"]}})
         self.assertNotIn("workflow_dispatch", _mapping(document["on"], "pages.on"))
         jobs = _jobs(document)
-        self.assertEqual(set(jobs), {"build", "deploy"})
+        self.assertEqual(set(jobs), {"build", "deploy", "verify"})
         build = _mapping(jobs["build"], "pages.jobs.build")
         self.assertNotIn("permissions", build)
         deploy = _mapping(jobs["deploy"], "pages.jobs.deploy")
@@ -565,24 +568,47 @@ class RepositorySecurityTests(unittest.TestCase):
             "pages.jobs.deploy.environment",
         )
         self.assertEqual(environment.get("name"), "github-pages")
+        self.assertEqual(
+            deploy.get("outputs"),
+            {"page_url": "${{ steps.deployment.outputs.page_url }}"},
+        )
+        deploy_steps = _steps(deploy, "pages.jobs.deploy")
+        self.assertEqual(len(deploy_steps), 1)
+        self.assertEqual(
+            deploy_steps[0].get("uses"),
+            "actions/deploy-pages@" + _ACTION_LEDGER["actions/deploy-pages"],
+        )
+        self.assertEqual(deploy_steps[0].get("id"), "deployment")
+        self.assertNotIn("run", deploy_steps[0])
+
+        verify = _mapping(jobs["verify"], "pages.jobs.verify")
+        self.assertEqual(verify.get("needs"), "deploy")
+        self.assertEqual(verify.get("permissions"), {"contents": "read"})
+        self.assertNotIn("environment", verify)
+        verify_steps = _steps(verify, "pages.jobs.verify")
+        self.assertEqual(len(verify_steps), 3)
+        self.assertTrue(
+            str(verify_steps[0].get("uses", "")).startswith("actions/checkout@")
+        )
+        self.assertTrue(
+            str(verify_steps[1].get("uses", "")).startswith("actions/setup-python@")
+        )
+        self.assertEqual(
+            verify_steps[2].get("env"),
+            {
+                "DEPLOYED_BASE_URL": "${{ needs.deploy.outputs.page_url }}",
+                "EXPECTED_COMMIT": "${{ github.sha }}",
+            },
+        )
+        self.assertIn(
+            "python tools/verify_deployed_site.py",
+            str(verify_steps[2].get("run", "")),
+        )
         build_steps = _steps(build, "pages.jobs.build")
         self.assertEqual(
             _mapping(build.get("container"), "pages.jobs.build.container"),
             {"image": _BROWSER_RUNNER, "options": "--user 1001"},
         )
-        upload_index = next(
-            index
-            for index, step in enumerate(build_steps)
-            if str(step.get("uses", "")).startswith(
-                "actions/upload-pages-artifact@"
-            )
-        )
-        checker_index = next(
-            index
-            for index, step in enumerate(build_steps)
-            if "python tools/check_site.py" in str(step.get("run", ""))
-        )
-        self.assertLess(checker_index, upload_index)
         runs = "\n".join(
             run
             for step in build_steps
@@ -612,12 +638,45 @@ class RepositorySecurityTests(unittest.TestCase):
         self.assertIn("python tools/create_release_manifest.py --root site-first", runs)
         self.assertIn("python tools/verify_release_manifest.py --root site-first", runs)
         self.assertIn("--with-release-manifest", runs)
+
+        # This is the publication trust chain. Keeping it as an exact ordered
+        # subsequence prevents a later refactor from uploading bytes that were
+        # not the ones checked by the deterministic, browser, and manifest gates.
+        ordered_build_contract = (
+            "python tools/build.py --output site-first",
+            "python tools/check_site.py --root site-first --require-current-release",
+            "> /tmp/site-first.sha256",
+            "python tools/build.py --output site-second",
+            "python tools/check_site.py --root site-second --require-current-release",
+            "> /tmp/site-second.sha256",
+            "diff -u /tmp/site-first.sha256 /tmp/site-second.sha256",
+            "python tools/run_browser_contract.py --site site-first",
+            "python tools/create_release_manifest.py --root site-first",
+            "python tools/verify_release_manifest.py --root site-first",
+            "python tools/check_site.py --root site-first --require-current-release --with-release-manifest",
+            "actions/upload-pages-artifact@",
+        )
+        build_contract = "\n".join(
+            str(step.get("run") or step.get("uses") or "") for step in build_steps
+        )
+        cursor = -1
+        for atom in ordered_build_contract:
+            with self.subTest(atom=atom):
+                position = build_contract.find(atom, cursor + 1)
+                self.assertGreater(position, cursor)
+                cursor = position
+
+        upload_index = next(
+            index
+            for index, step in enumerate(build_steps)
+            if str(step.get("uses", "")).startswith(
+                "actions/upload-pages-artifact@"
+            )
+        )
         self.assertEqual(
             build_steps[upload_index].get("with"),
             {"path": "site-first"},
         )
-        deploy_runs = "\n".join(_runs(document)[-1:])
-        self.assertIn("python tools/verify_deployed_site.py", deploy_runs)
 
 
 if __name__ == "__main__":
