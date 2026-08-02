@@ -663,7 +663,7 @@ def run_safari_smoke(
 
 def assert_performance_contract(
     *, profile: str, samples_ms: Sequence[float], long_tasks_ms: Sequence[float],
-    mutation_counts: Sequence[int],
+    mutation_counts: Sequence[int], instrumentation: Mapping[str, bool],
 ) -> None:
     if len(samples_ms) != 20 or len(long_tasks_ms) != 20 or len(mutation_counts) != 20:
         raise BrowserMatrixError("performance instrumentation must return exactly 20 samples")
@@ -675,6 +675,8 @@ def assert_performance_contract(
         raise BrowserMatrixError("performance samples must be positive and long-task samples non-negative")
     if any(type(value) is not int or value <= 0 for value in mutation_counts):
         raise BrowserMatrixError("every performance sample must mutate runtime DOM state")
+    if set(instrumentation) != {"longTasks"} or instrumentation["longTasks"] is not True:
+        raise BrowserMatrixError("Long Task PerformanceObserver instrumentation is required")
     median = statistics.median(values)
     if profile == "desktop":
         if median > 25 or sum(value <= 50 for value in tasks) < 19:
@@ -876,6 +878,9 @@ def run_browser_contract(
                     samples_ms=result["samplesMs"],
                     long_tasks_ms=result["longTasksMs"],
                     mutation_counts=result["workloadMutationSamples"],
+                    instrumentation={
+                        "longTasks": result["instrumentation"]["longTasks"]
+                    },
                 )
                 instrumentation = result["instrumentation"]
                 assert_leak_contract(

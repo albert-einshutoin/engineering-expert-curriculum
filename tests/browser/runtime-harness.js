@@ -3,7 +3,15 @@
 
   var HARNESS_VERSION = '1.0.0';
   var violations = [];
+  var truncated = {
+    violations: false, runtimeErrors: false, longTasks: false,
+    externalResources: false, resourceNames: false
+  };
+  function boundedPush(target, value, key, limit) {
+    if (target.length < limit) { target.push(value); } else { truncated[key] = true; }
+  }
   var listenerCount = 0;
+  var listenerRegistry = new WeakMap();
   var activeTimers = new Set();
   var longTasks = [];
   var initialLocation = window.location.href;
@@ -15,18 +23,57 @@
   var originalClearTimeout = window.clearTimeout;
 
   window.Error = function (message) {
-    runtimeErrors.push(String(message).slice(0, 120));
+    boundedPush(runtimeErrors, String(message).slice(0, 120), 'runtimeErrors', 128);
     return new NativeError(message);
   };
   window.Error.prototype = NativeError.prototype;
 
+  function captureOption(options) {
+    return typeof options === 'boolean' ? options : Boolean(options && options.capture);
+  }
+  function listenerRecords(target) {
+    var records = listenerRegistry.get(target);
+    if (!records) { records = []; listenerRegistry.set(target, records); }
+    return records;
+  }
+  function invokeListener(callback, target, event) {
+    if (typeof callback === 'function') { return callback.call(target, event); }
+    return callback.handleEvent.call(callback, event);
+  }
   EventTarget.prototype.addEventListener = function (type, callback, options) {
+    if (callback === null || callback === undefined) {
+      return originalAdd.call(this, type, callback, options);
+    }
+    var capture = captureOption(options);
+    var records = listenerRecords(this);
+    if (records.some(function (record) {
+      return record.type === type && record.callback === callback && record.capture === capture;
+    })) { return; }
+    var once = Boolean(options && typeof options === 'object' && options.once);
+    var target = this;
+    var record = { type: type, callback: callback, capture: capture, wrapped: callback };
+    if (once) {
+      record.wrapped = function (event) {
+        var index = records.indexOf(record);
+        if (index >= 0) { records.splice(index, 1); listenerCount -= 1; }
+        return invokeListener(callback, target, event);
+      };
+    }
+    records.push(record);
     listenerCount += 1;
-    return originalAdd.call(this, type, callback, options);
+    return originalAdd.call(this, type, record.wrapped, options);
   };
   EventTarget.prototype.removeEventListener = function (type, callback, options) {
+    var capture = captureOption(options);
+    var records = listenerRegistry.get(this) || [];
+    var index = records.findIndex(function (record) {
+      return record.type === type && record.callback === callback && record.capture === capture;
+    });
+    if (index < 0) { return originalRemove.call(this, type, callback, options); }
+    var record = records[index];
+    records.splice(index, 1);
     listenerCount -= 1;
-    return originalRemove.call(this, type, callback, options);
+    return originalRemove.call(this, type, record.wrapped, options);
   };
   window.setTimeout = function (callback, delay) {
     var identifier = originalSetTimeout.call(window, function () {
@@ -43,7 +90,7 @@
 
   function forbidden(name) {
     return function () {
-      violations.push(name);
+      boundedPush(violations, name, 'violations', 128);
       throw new Error('forbidden browser capability: ' + name);
     };
   }
@@ -62,22 +109,51 @@
     window.history.replaceState = forbidden('history.replaceState');
   }
   originalAdd.call(document, 'securitypolicyviolation', function (event) {
-    violations.push('csp:' + event.violatedDirective);
+    boundedPush(violations, 'csp:' + event.violatedDirective, 'violations', 128);
   });
   originalAdd.call(window, 'error', function (event) {
-    violations.push('error:' + String(event.message).slice(0, 160));
+    boundedPush(violations, 'error:' + String(event.message).slice(0, 160), 'violations', 128);
   });
 
   var observerAvailable = typeof window.PerformanceObserver === 'function';
+  var observer = null;
   if (observerAvailable) {
     try {
-      var observer = new window.PerformanceObserver(function (list) {
-        list.getEntries().forEach(function (entry) { longTasks.push(entry.duration); });
+      observer = new window.PerformanceObserver(function (list) {
+        list.getEntries().forEach(function (entry) {
+          boundedPush(longTasks, entry.duration, 'longTasks', 128);
+        });
       });
       observer.observe({ entryTypes: ['longtask'] });
     } catch (error) {
       observerAvailable = false;
     }
+  }
+
+  function flushObserverCallbacks() {
+    return new Promise(function (resolve) { originalSetTimeout.call(window, resolve, 0); });
+  }
+  function takeLongTasks() {
+    if (!observer) { return; }
+    observer.takeRecords().forEach(function (entry) {
+      boundedPush(longTasks, entry.duration, 'longTasks', 128);
+    });
+  }
+
+  function verifyListenerInstrumentation() {
+    var target = new EventTarget();
+    var baseline = listenerCount;
+    var calls = 0;
+    function duplicate() { calls += 1; }
+    target.addEventListener('probe', duplicate, false);
+    target.addEventListener('probe', duplicate, false);
+    target.removeEventListener('probe', duplicate, true);
+    if (listenerCount !== baseline + 1) { throw new Error('listener duplicate semantics drifted'); }
+    target.removeEventListener('probe', duplicate, false);
+    target.addEventListener('once-probe', duplicate, { once: true });
+    target.dispatchEvent(new Event('once-probe'));
+    target.dispatchEvent(new Event('once-probe'));
+    if (listenerCount !== baseline || calls !== 1) { throw new Error('listener once semantics drifted'); }
   }
 
   function click(root, action) {
@@ -160,19 +236,30 @@
   }
 
   function sampleMaximumFixture() {
-    var nodes = document.querySelectorAll('#browser-maximum-fixture [data-node-id]');
-    var edges = document.querySelectorAll('#browser-maximum-fixture [data-edge-id]');
+    var root = document.getElementById('browser-maximum-fixture');
+    var nodes = document.querySelectorAll('#browser-maximum-fixture .visualization__model-node[data-node-id]');
+    var edges = document.querySelectorAll('#browser-maximum-fixture .visualization__model-edge[data-edge-id]');
     if (nodes.length === 0 && edges.length === 0) { return 0; }
     if (nodes.length !== 64 || edges.length !== 128) {
       throw new Error('maximum fixture item or relationship count drifted');
     }
-    var all = Array.prototype.slice.call(nodes).concat(Array.prototype.slice.call(edges));
-    var start = performance.now();
-    for (var iteration = 0; iteration < 16; iteration += 1) {
-      all.forEach(function (item) { item.classList.add('is-active'); });
-      all.forEach(function (item) { item.classList.remove('is-active'); });
+    if (!root.classList.contains('is-enhanced')) {
+      throw new Error('maximum fixture was not enhanced by the product runtime');
     }
-    return { durationMs: performance.now() - start, mutations: all.length * 32 };
+    var start = performance.now();
+    var mutations = 0;
+    for (var iteration = 0; iteration < 16; iteration += 1) {
+      click(root, 'next');
+      var active = root.querySelectorAll('.visualization__model-node.is-active, .visualization__model-edge.is-active').length;
+      if (active !== 192) { throw new Error('maximum fixture native next did not activate its full model'); }
+      mutations += active;
+      click(root, 'reset');
+      if (root.querySelectorAll('.visualization__model-node.is-active, .visualization__model-edge.is-active').length !== 0) {
+        throw new Error('maximum fixture native reset did not restore its model');
+      }
+      mutations += active;
+    }
+    return { durationMs: performance.now() - start, mutations: mutations };
   }
 
   function sampleWorkload() {
@@ -213,7 +300,7 @@
     return document.getElementsByTagName('*').length;
   }
 
-  function report() {
+  async function report() {
     var resultNode = document.getElementById('browser-contract-result');
     if (!resultNode) {
       resultNode = document.createElement('p');
@@ -222,10 +309,12 @@
       document.body.appendChild(resultNode);
     }
     try {
+      verifyListenerInstrumentation();
       var simulationEvidence = exerciseSimulations();
       var warmups = [];
       var samples = [];
       var workloadMutationSamples = [];
+      var longTaskSamples = [];
       var index;
       var measurePerformance = window.__browserContractMeasurePerformance === true;
       if (measurePerformance) {
@@ -240,9 +329,15 @@
       };
       if (measurePerformance) {
         for (index = 0; index < 20; index += 1) {
+          var longTaskStart = longTasks.length;
           var sample = sampleWorkload();
+          await flushObserverCallbacks();
+          takeLongTasks();
           samples.push(sample.durationMs);
           workloadMutationSamples.push(sample.mutations);
+          longTaskSamples.push(longTasks.slice(longTaskStart).reduce(function (maximum, duration) {
+            return Math.max(maximum, duration);
+          }, 0));
         }
       }
       for (index = 0; index < 100; index += 1) {
@@ -256,18 +351,24 @@
         domNodes: countDomNodes(), listeners: listenerCount,
         timers: activeTimers.size, heapBytes: heapBytes()
       };
-      var externalResources = performance.getEntriesByType('resource').filter(function (entry) {
+      var externalResources = [];
+      var resourceNames = [];
+      performance.getEntriesByType('resource').forEach(function (entry) {
         var resource = new URL(entry.name, window.location.href);
-        return resource.protocol !== 'file:' && resource.hostname !== '127.0.0.1';
-      }).map(function (entry) { return String(entry.name).slice(0, 240); });
-      var resourceNames = performance.getEntriesByType('resource').map(function (entry) {
-        return String(entry.name).split('/').pop().slice(0, 80);
+        if (resource.protocol !== 'file:' && resource.origin !== window.location.origin) {
+          boundedPush(externalResources, String(entry.name).slice(0, 240), 'externalResources', 128);
+        }
+        boundedPush(resourceNames, String(entry.name).split('/').pop().slice(0, 80), 'resourceNames', 128);
       });
       var enhancedCount = document.querySelectorAll('[data-simulation-kind].is-enhanced').length;
       var runtimeErrorCount = document.querySelectorAll('[data-simulation-kind].has-runtime-error').length;
-      if (simulationEvidence.count !== enhancedCount) { violations.push('runtime-initialization'); }
-      if (window.location.href !== initialLocation) { violations.push('navigation'); }
-      if (externalResources.length) { violations.push('external-resource'); }
+      if (simulationEvidence.count !== enhancedCount) { boundedPush(violations, 'runtime-initialization', 'violations', 128); }
+      if (runtimeErrorCount > 0) { boundedPush(violations, 'runtime-error', 'violations', 128); }
+      if (window.location.href !== initialLocation) { boundedPush(violations, 'navigation', 'violations', 128); }
+      if (externalResources.length) { boundedPush(violations, 'external-resource', 'violations', 128); }
+      if (Object.keys(truncated).some(function (key) { return truncated[key]; })) {
+        boundedPush(violations, 'evidence-truncated', 'violations', 128);
+      }
       var result = {
         schemaVersion: 1,
         harnessVersion: HARNESS_VERSION,
@@ -281,7 +382,7 @@
         warmupsMs: warmups,
         samplesMs: samples,
         workloadMutationSamples: workloadMutationSamples,
-        longTasksMs: samples.slice(),
+        longTasksMs: longTaskSamples,
         observedLongTasksMs: longTasks,
         resetCycles: 100,
         baseline: baseline,
@@ -293,7 +394,8 @@
         violations: violations,
         violationKinds: violations.map(function (item) { return item.split(':', 1)[0]; }),
         externalResources: externalResources,
-        resourceNames: resourceNames
+        resourceNames: resourceNames,
+        truncated: truncated
       };
       resultNode.setAttribute('data-browser-contract-result', JSON.stringify(result));
       resultNode.textContent = result.passed ? 'browser contract complete' : 'browser contract failed';
@@ -301,7 +403,8 @@
       resultNode.setAttribute('data-browser-contract-result', JSON.stringify({
         schemaVersion: 1, harnessVersion: HARNESS_VERSION, passed: false,
         violations: violations.concat(['harness:' + String(error.message).slice(0, 160)]),
-        violationKinds: violations.map(function (item) { return item.split(':', 1)[0]; }).concat(['harness'])
+        violationKinds: violations.map(function (item) { return item.split(':', 1)[0]; }).concat(['harness']),
+        truncated: truncated
       }));
       resultNode.textContent = 'browser contract failed';
     }

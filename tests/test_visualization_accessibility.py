@@ -478,12 +478,14 @@ class BrowserContractTests(VisualizationAccessibilityTests):
             samples_ms=[20.0] * 19 + [51.0],
             long_tasks_ms=[0.0] * 19 + [51.0],
             mutation_counts=[1] * 20,
+            instrumentation={"longTasks": True},
         )
         assert_performance_contract(
             profile="mobile",
             samples_ms=[40.0] * 19 + [100.0],
             long_tasks_ms=[0.0] * 20,
             mutation_counts=[1] * 20,
+            instrumentation={"longTasks": True},
         )
         with self.assertRaises(BrowserMatrixError):
             assert_performance_contract(
@@ -491,6 +493,7 @@ class BrowserContractTests(VisualizationAccessibilityTests):
                 samples_ms=[26.0] * 20,
                 long_tasks_ms=[0.0] * 20,
                 mutation_counts=[1] * 20,
+                instrumentation={"longTasks": True},
             )
         with self.assertRaises(BrowserMatrixError):
             assert_performance_contract(
@@ -498,6 +501,7 @@ class BrowserContractTests(VisualizationAccessibilityTests):
                 samples_ms=[0.0] * 20,
                 long_tasks_ms=[0.0] * 20,
                 mutation_counts=[1] * 20,
+                instrumentation={"longTasks": True},
             )
         with self.assertRaises(BrowserMatrixError):
             assert_performance_contract(
@@ -505,7 +509,44 @@ class BrowserContractTests(VisualizationAccessibilityTests):
                 samples_ms=[1.0] * 20,
                 long_tasks_ms=[0.0] * 20,
                 mutation_counts=[0] * 20,
+                instrumentation={"longTasks": True},
             )
+        with self.assertRaises(BrowserMatrixError):
+            assert_performance_contract(
+                profile="desktop", samples_ms=[1.0] * 20,
+                long_tasks_ms=[0.0] * 20, mutation_counts=[1] * 20,
+                instrumentation={"longTasks": False},
+            )
+
+    def test_harness_uses_real_long_tasks_exact_listener_semantics_and_runtime_errors_fail(self) -> None:
+        source = (REPOSITORY_ROOT / "tests/browser/runtime-harness.js").read_text(
+            encoding="utf-8"
+        )
+        for required in (
+            "observer.takeRecords()", "await flushObserverCallbacks()",
+            "listenerRegistry", "captureOption(options)", "once",
+            "runtimeErrorCount > 0", "runtime-error",
+            "resource.origin !== window.location.origin", "truncated",
+        ):
+            self.assertIn(required, source)
+        self.assertNotIn("longTasksMs: samples.slice()", source)
+
+    def test_maximum_fixture_is_enhanced_by_product_runtime_and_measured_by_native_actions(self) -> None:
+        fixture = (REPOSITORY_ROOT / "tests/browser/runtime-fixture.html").read_text(
+            encoding="utf-8"
+        )
+        harness = (REPOSITORY_ROOT / "tests/browser/runtime-harness.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('data-visualization-id="browser-maximum-fixture"', fixture)
+        self.assertIn('data-interaction-mode="stepper"', fixture)
+        self.assertEqual(fixture.count('class="visualization__model-node"'), 64)
+        self.assertEqual(fixture.count('class="visualization__model-edge"'), 128)
+        for action in ("next", "previous", "reset"):
+            self.assertIn(f'data-action="{action}"', fixture)
+        self.assertIn("click(root, 'next')", harness)
+        self.assertIn("click(root, 'reset')", harness)
+        self.assertNotIn("item.classList.add('is-active')", harness)
         assert_leak_contract(
             baseline={"domNodes": 100, "listeners": 5, "timers": 0, "heapBytes": 10_000_000},
             final={"domNodes": 100, "listeners": 5, "timers": 0, "heapBytes": 10_500_000},
