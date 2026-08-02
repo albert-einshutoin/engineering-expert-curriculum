@@ -24,7 +24,7 @@ import tempfile
 from threading import Thread
 import time
 from typing import Iterator, Mapping, Sequence
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, unquote_to_bytes, urlsplit
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
@@ -423,8 +423,55 @@ class _WebSocket:
             return message["result"]
 
 
+def _approved_file_path(url: str, approved_roots: Sequence[Path]) -> Path:
+    parsed = urlsplit(url)
+    if (
+        parsed.scheme != "file" or parsed.netloc != ""
+        or parsed.query != "" or parsed.fragment != ""
+        or any(token in parsed.path.lower() for token in ("%2e", "%2f", "%5c"))
+    ):
+        raise BrowserMatrixError("file browser resource URL is ambiguous")
+    try:
+        decoded = unquote_to_bytes(parsed.path).decode("utf-8", errors="strict")
+        candidate = Path(decoded).resolve(strict=True)
+    except (OSError, UnicodeError) as error:
+        raise BrowserMatrixError("file browser resource path is unavailable") from error
+    for root in approved_roots:
+        try:
+            approved = root.resolve(strict=True)
+            candidate.relative_to(approved)
+        except (OSError, ValueError):
+            continue
+        if approved.is_dir() and not approved.is_symlink():
+            return candidate
+    raise BrowserMatrixError("file browser resource escapes approved roots")
+
+
+def _instrumented_harness_source(
+    harness_source: str, *, approved_file_roots: Sequence[Path],
+) -> str:
+    roots: list[str] = []
+    for root in approved_file_roots:
+        try:
+            resolved = root.resolve(strict=True)
+        except OSError as error:
+            raise BrowserMatrixError("approved browser file root is unavailable") from error
+        if not resolved.is_dir() or resolved.is_symlink():
+            raise BrowserMatrixError("approved browser file root must be a real directory")
+        roots.append(resolved.as_uri().rstrip("/") + "/")
+    descriptor = json.dumps(
+        {"value": roots, "writable": False, "configurable": False},
+        separators=(",", ":"),
+    )
+    return (
+        "Object.defineProperty(window, '__browserContractApprovedFileRoots', "
+        + descriptor + ");\n" + harness_source
+    )
+
+
 def validate_chromium_network_events(
     events: Sequence[Mapping[str, object]], *, target_url: str, truncated: bool,
+    approved_file_roots: Sequence[Path] = (),
 ) -> None:
     if truncated or len(events) > 256:
         raise BrowserMatrixError("Chromium CDP network evidence was truncated")
@@ -433,6 +480,8 @@ def validate_chromium_network_events(
         raise BrowserMatrixError("Chromium network target is not local")
     if target.scheme == "http" and (target.hostname != "127.0.0.1" or target.port is None):
         raise BrowserMatrixError("Chromium HTTP target is not exact loopback origin")
+    if target.scheme == "file":
+        _approved_file_path(target_url, approved_file_roots)
     target_origin = (target.scheme, target.hostname, target.port)
     for event in events:
         if type(event) is not dict or type(event.get("method")) is not str or type(event.get("params")) is not dict:
@@ -452,7 +501,11 @@ def validate_chromium_network_events(
         if parsed.scheme == "data":
             continue
         if target.scheme == "file":
-            allowed = parsed.scheme == "file"
+            if parsed.scheme == "file":
+                _approved_file_path(candidate, approved_file_roots)
+                allowed = True
+            else:
+                allowed = False
         else:
             allowed = (parsed.scheme, parsed.hostname, parsed.port) == target_origin
         if not allowed:
@@ -504,6 +557,7 @@ def run_chromium_page(
     harness_source: str,
     harness_version: str,
     screenshot: Path,
+    approved_file_roots: Sequence[Path] = (),
     requested_state: str | None = None,
     measure_performance: bool = False,
     timeout: float = 30.0,
@@ -542,7 +596,11 @@ def run_chromium_page(
             )
             if measure_performance:
                 state_prefix += "window.__browserContractMeasurePerformance=true;\n"
-            connection.command("Page.addScriptToEvaluateOnNewDocument", {"source": state_prefix + harness_source})
+            connection.command("Page.addScriptToEvaluateOnNewDocument", {
+                "source": state_prefix + _instrumented_harness_source(
+                    harness_source, approved_file_roots=approved_file_roots,
+                )
+            })
             connection.command("Page.navigate", {"url": url})
             deadline = time.monotonic() + timeout
             result_value: str | None = None
@@ -561,6 +619,7 @@ def run_chromium_page(
             validate_chromium_network_events(
                 connection.events, target_url=url,
                 truncated=connection.events_truncated,
+                approved_file_roots=approved_file_roots,
             )
             document = connection.command("DOM.getDocument", {"depth": 0})
             root = document.get("root")
@@ -621,6 +680,7 @@ def run_firefox_page(
     harness_source: str,
     harness_version: str,
     screenshot: Path,
+    approved_file_roots: Sequence[Path] = (),
     requested_state: str | None = None,
     timeout: float = 30.0,
 ) -> dict[str, object]:
@@ -654,7 +714,10 @@ def run_firefox_page(
                 if requested_state is not None else ""
             )
             connection.command("script.addPreloadScript", {
-                "functionDeclaration": "() => {\n" + state_prefix + harness_source + "\n}",
+                "functionDeclaration": "() => {\n" + state_prefix
+                + _instrumented_harness_source(
+                    harness_source, approved_file_roots=approved_file_roots,
+                ) + "\n}",
                 "contexts": [context],
             })
             connection.command("browsingContext.navigate", {
@@ -1204,6 +1267,7 @@ def run_browser_contract(
                 requested_state=requested_state,
                 measure_performance=measure_performance,
                 screenshot=evidence / f"{label}-chromium-{profile_name}.png",
+                approved_file_roots=(site, fixture.parent),
             )
         except BrowserMatrixError:
             journal.record(run, status="failed", reason="browser-contract-failed")
@@ -1227,6 +1291,7 @@ def run_browser_contract(
                     harness_source=harness_source, harness_version=matrix.harness_version,
                     requested_state="crossover",
                     screenshot=evidence / f"{label}-firefox-desktop.png",
+                    approved_file_roots=(site, fixture.parent),
                 )
             except BrowserMatrixError:
                 journal.record(run, status="failed", reason="browser-contract-failed")

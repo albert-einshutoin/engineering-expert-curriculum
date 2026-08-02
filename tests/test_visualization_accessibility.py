@@ -28,6 +28,7 @@ from tools.run_browser_contract import (
     _write_report,
     BrowserEvidenceJournal,
     SafariSessionUnavailable,
+    _instrumented_harness_source,
     browser_run_plan,
     run_safari_smoke,
 )
@@ -496,6 +497,52 @@ class BrowserContractTests(VisualizationAccessibilityTests):
                 validate_chromium_network_events(
                     events, target_url=target, truncated=truncated
                 )
+
+    def test_file_network_evidence_stays_under_approved_roots_without_url_ambiguity(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            site = root / "site"
+            fixture = root / "fixtures"
+            outside = root / "outside.js"
+            for path in (site / "index.html", site / "styles.css", fixture / "maximum.html", outside):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("fixture", encoding="utf-8")
+            target = (site / "index.html").as_uri()
+            validate_chromium_network_events(
+                [{"method": "Network.requestWillBeSent", "params": {"request": {"url": (site / "styles.css").as_uri()}}}],
+                target_url=target, truncated=False,
+                approved_file_roots=(site, fixture),
+            )
+            forbidden = (
+                outside.as_uri(),
+                "file://localhost" + (site / "styles.css").as_posix(),
+                target + "?cache=1",
+                target + "#fragment",
+                (site / "%2e%2e" / "outside.js").as_uri().replace("%252e", "%2e"),
+            )
+            for candidate in forbidden:
+                with self.subTest(candidate=candidate), self.assertRaises(BrowserMatrixError):
+                    validate_chromium_network_events(
+                        [{"method": "Network.requestWillBeSent", "params": {"request": {"url": candidate}}}],
+                        target_url=target, truncated=False,
+                        approved_file_roots=(site, fixture),
+                    )
+
+    def test_file_resource_observer_receives_only_closed_approved_root_prefixes(self) -> None:
+        with TemporaryDirectory() as temporary:
+            site = Path(temporary) / "site"
+            fixture = Path(temporary) / "fixtures"
+            site.mkdir()
+            fixture.mkdir()
+            source = _instrumented_harness_source(
+                "/* harness */", approved_file_roots=(site, fixture)
+            )
+        self.assertIn(site.resolve().as_uri() + "/", source)
+        self.assertIn(fixture.resolve().as_uri() + "/", source)
+        self.assertIn("/* harness */", source)
+        harness = (REPOSITORY_ROOT / "tests/browser/runtime-harness.js").read_text(encoding="utf-8")
+        self.assertIn("__browserContractApprovedFileRoots", harness)
+        self.assertIn("resource.protocol === 'file:'", harness)
 
     def test_performance_and_leak_thresholds_fail_closed(self) -> None:
         assert_performance_contract(

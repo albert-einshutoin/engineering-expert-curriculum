@@ -106,7 +106,7 @@
     },
     "memoryLessonId": "core-03-architecture-memory-caches",
     "distributedLessonId": "core-13-distributed-coordination-failure",
-    "harnessSha256": "952ef55be20a6ec6e19ceeddb5bfda244430d7e3deafc72fbf9eac2bb50f915b"
+    "harnessSha256": "77670439acac48862a36ecb102758ad68a3c53c2f4d88d89ff4d1f072fd91380"
   },
   "measurements": {
     "warmups": 3,

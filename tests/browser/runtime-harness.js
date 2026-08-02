@@ -355,7 +355,14 @@
       var resourceNames = [];
       performance.getEntriesByType('resource').forEach(function (entry) {
         var resource = new URL(entry.name, window.location.href);
-        if (resource.protocol !== 'file:' && resource.origin !== window.location.origin) {
+        var approvedFileRoots = Array.isArray(window.__browserContractApprovedFileRoots) ?
+          window.__browserContractApprovedFileRoots : [];
+        var approvedFile = resource.protocol === 'file:' && resource.host === '' &&
+          resource.search === '' && resource.hash === '' &&
+          !/%(?:2e|2f|5c)/i.test(resource.pathname) &&
+          approvedFileRoots.some(function (root) { return resource.href.indexOf(root) === 0; });
+        if ((resource.protocol === 'file:' && !approvedFile) ||
+            (resource.protocol !== 'file:' && resource.origin !== window.location.origin)) {
           boundedPush(externalResources, String(entry.name).slice(0, 240), 'externalResources', 128);
         }
         boundedPush(resourceNames, String(entry.name).split('/').pop().slice(0, 80), 'resourceNames', 128);
