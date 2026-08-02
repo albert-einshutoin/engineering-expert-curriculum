@@ -1579,10 +1579,15 @@ def run_browser_contract(
         )
     except SafariSessionUnavailable:
         raise
-    except Exception:
+    except BaseException:
         # A journal may already contain individually terminal runs. Preserve
         # them and make the top-level outcome terminal for every later failure.
-        _terminalize_browser_report(evidence / "report.json")
+        try:
+            _terminalize_browser_report(evidence / "report.json")
+        except Exception:
+            # Terminalization is best-effort and must never replace the
+            # original failure, interrupt, or process exit signal.
+            pass
         raise
 
 

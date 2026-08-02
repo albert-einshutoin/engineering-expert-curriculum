@@ -895,6 +895,60 @@ class BrowserContractTests(VisualizationAccessibilityTests):
             self.assertEqual(report["runs"][0]["status"], "not-run")
             self.assertFalse((evidence / ".report.json.pending").exists())
 
+    def test_runner_terminalizes_interrupt_and_exit_without_replacing_the_base_exception(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for interruption in (KeyboardInterrupt(), SystemExit(73)):
+                with self.subTest(interruption=type(interruption).__name__):
+                    evidence = root / type(interruption).__name__
+                    report_path = evidence / "report.json"
+
+                    def interrupt_after_journal(**_kwargs: object) -> dict[str, object]:
+                        _write_report(report_path, {
+                            "schemaVersion": 1, "status": "running",
+                            "runs": [
+                                {"label": "complete", "status": "passed"},
+                                {"label": "remaining", "status": "not-run"},
+                            ],
+                        })
+                        raise interruption
+
+                    with mock.patch(
+                        "tools.run_browser_contract._run_browser_contract",
+                        side_effect=interrupt_after_journal,
+                    ):
+                        with self.assertRaises(type(interruption)) as caught:
+                            run_browser_contract(
+                                site=root, matrix_path=root / "matrix.json",
+                                cache=root / "cache", evidence=evidence,
+                            )
+                    self.assertIs(caught.exception, interruption)
+                    report = json.loads(report_path.read_bytes())
+                    self.assertEqual(report["status"], "failed")
+                    self.assertEqual(report["failure"], "browser-contract-aborted")
+                    self.assertEqual(
+                        [run["status"] for run in report["runs"]],
+                        ["passed", "not-run"],
+                    )
+                    self.assertFalse((evidence / ".report.json.pending").exists())
+
+    def test_report_terminalization_failure_cannot_mask_keyboard_interrupt(self) -> None:
+        interruption = KeyboardInterrupt()
+        with TemporaryDirectory() as temporary, mock.patch(
+            "tools.run_browser_contract._run_browser_contract",
+            side_effect=interruption,
+        ), mock.patch(
+            "tools.run_browser_contract._terminalize_browser_report",
+            side_effect=OSError("injected atomic report failure"),
+        ):
+            with self.assertRaises(KeyboardInterrupt) as caught:
+                run_browser_contract(
+                    site=Path(temporary), matrix_path=Path("matrix.json"),
+                    cache=Path(temporary) / "cache",
+                    evidence=Path(temporary) / "evidence",
+                )
+        self.assertIs(caught.exception, interruption)
+
     def test_safari_smoke_uses_preinstrumented_document_and_returns_its_result(self) -> None:
         process = mock.Mock()
         process.poll.return_value = None
