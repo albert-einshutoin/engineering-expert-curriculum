@@ -6,9 +6,14 @@ from pathlib import Path
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
+import time
 import unittest
+from unittest.mock import patch
 from urllib.error import HTTPError, URLError
 
+import tools.create_release_manifest as create_module
+import tools.verify_deployed_site as deployed_module
+import tools.verify_release_manifest as verifier_module
 from tools.create_release_manifest import create_manifest_bytes, write_release_manifest
 from tools.verify_release_manifest import (
     ReleaseManifestError,
@@ -22,14 +27,19 @@ COMMIT = "0123456789abcdef0123456789abcdef01234567"
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
-def _canonical(path: str = "index.html", source: bytes = b"hello") -> bytes:
+def _canonical(
+    path: str = "index.html",
+    source: bytes = b"hello",
+    *,
+    commit: str = COMMIT,
+) -> bytes:
     import hashlib
 
     return (
         json.dumps(
             {
                 "schemaVersion": 1,
-                "commit": COMMIT,
+                "commit": commit,
                 "files": [
                     {
                         "path": path,
@@ -85,6 +95,11 @@ class ManifestSchemaTests(unittest.TestCase):
             parse_manifest_bytes(b" " * (128 * 1024 + 1))
         with self.assertRaises(ReleaseManifestError):
             parse_manifest_bytes(_canonical(), expected_commit="f" * 40)
+
+    def test_deep_json_is_normalized_to_the_typed_manifest_error(self) -> None:
+        deeply_nested = b"[" * 10_000 + b"0" + b"]" * 10_000
+        with self.assertRaises(ReleaseManifestError):
+            parse_manifest_bytes(deeply_nested)
 
 
 class LocalManifestTests(unittest.TestCase):
@@ -163,14 +178,113 @@ class LocalManifestTests(unittest.TestCase):
             with self.assertRaises(ReleaseManifestError):
                 create_manifest_bytes(root, commit=COMMIT)
 
+    def test_walk_rejects_a_nested_parent_swap_before_file_open(self) -> None:
+        with TemporaryDirectory() as directory:
+            base = Path(directory)
+            root = base / "site"
+            nested = root / "nested"
+            outside = base / "outside"
+            nested.mkdir(parents=True)
+            outside.mkdir()
+            (nested / "a.html").write_bytes(b"trusted")
+            (outside / "a.html").write_bytes(b"outside")
+            original_open = verifier_module._open_descriptor
+            swapped = False
+
+            def racing_open(path, flags, *args, **kwargs):
+                nonlocal swapped
+                candidate = os.fspath(path)
+                if not swapped and (
+                    candidate == os.fspath(nested / "a.html")
+                    or (candidate == "a.html" and kwargs.get("dir_fd") is not None)
+                ):
+                    swapped = True
+                    nested.rename(root / "old")
+                    nested.symlink_to(outside, target_is_directory=True)
+                return original_open(path, flags, *args, **kwargs)
+
+            with patch.object(
+                verifier_module,
+                "_open_descriptor",
+                side_effect=racing_open,
+            ):
+                with self.assertRaises(ReleaseManifestError):
+                    create_manifest_bytes(root, commit=COMMIT)
+
+    def test_walk_fails_closed_without_nofollow_support(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "index.html").write_bytes(b"hello")
+            with patch.object(verifier_module.os, "O_NOFOLLOW", None):
+                with self.assertRaises(ReleaseManifestError):
+                    create_manifest_bytes(root, commit=COMMIT)
+
+    def test_walk_rejects_directory_membership_change_after_scan(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "index.html").write_bytes(b"hello")
+            original_open = verifier_module._open_descriptor
+            injected = False
+
+            def racing_open(path, flags, *args, **kwargs):
+                nonlocal injected
+                if (
+                    not injected
+                    and os.fspath(path) == "index.html"
+                    and kwargs.get("dir_fd") is not None
+                ):
+                    injected = True
+                    (root / "late.css").write_bytes(b"body{}")
+                return original_open(path, flags, *args, **kwargs)
+
+            with patch.object(
+                verifier_module,
+                "_open_descriptor",
+                side_effect=racing_open,
+            ):
+                with self.assertRaises(ReleaseManifestError):
+                    create_manifest_bytes(root, commit=COMMIT)
+
+    def test_parent_fsync_failure_is_an_explicit_post_commit_error(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "index.html").write_bytes(b"hello")
+            manifest = root / "release-manifest.json"
+            original_fsync = os.fsync
+            calls = 0
+
+            def fail_parent_fsync(descriptor):
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    raise OSError("injected parent fsync failure")
+                return original_fsync(descriptor)
+
+            with patch.object(create_module.os, "fsync", side_effect=fail_parent_fsync):
+                with self.assertRaises(ReleaseManifestError) as raised:
+                    write_release_manifest(root, manifest, commit=COMMIT)
+            self.assertTrue(getattr(raised.exception, "published", False))
+            self.assertEqual(calls, 2)
+            self.assertEqual(verify_release_manifest(root, manifest).commit, COMMIT)
+
 
 class _Response:
-    def __init__(self, url: str, body: bytes, *, status: int = 200, headers=None):
+    def __init__(
+        self,
+        url: str,
+        body: bytes,
+        *,
+        status: int = 200,
+        headers=None,
+        close_error: Exception | None = None,
+    ):
         self.url = url
         self.body = body
         self.status = status
         self.headers = headers or {}
         self.offset = 0
+        self.close_error = close_error
+        self.close_count = 0
 
     def read(self, size: int = -1) -> bytes:
         if self.offset >= len(self.body):
@@ -184,7 +298,26 @@ class _Response:
         return self.url
 
     def close(self) -> None:
-        return None
+        self.close_count += 1
+        if self.close_error is not None:
+            raise self.close_error
+
+
+class _TrackedHTTPError(HTTPError):
+    def __init__(self, url: str, code: int):
+        super().__init__(url, code, "failure", {}, None)
+        self.close_count = 0
+
+    def close(self) -> None:
+        self.close_count += 1
+
+
+def _sleep_past_deadline() -> None:
+    time.sleep(2)
+
+
+def _return_before_deadline() -> str:
+    return "ok"
 
 
 class _Opener:
@@ -246,7 +379,12 @@ class DeployedManifestTests(unittest.TestCase):
             [_Response("https://attacker.invalid/release-manifest.json", _canonical())]
         )
         with self.assertRaises(DeployedSiteError):
-            verify_deployed_site(self.BASE, manifest_url, expected_commit=COMMIT, opener=opener)
+            verify_deployed_site(
+                self.BASE,
+                manifest_url,
+                expected_commit=COMMIT,
+                opener=opener,
+            )
 
     def test_rejects_oversized_partial_and_mutating_responses(self) -> None:
         manifest_url = self.BASE + "release-manifest.json"
@@ -267,7 +405,13 @@ class DeployedManifestTests(unittest.TestCase):
             ]
         )
         with self.assertRaises(DeployedSiteError):
-            verify_deployed_site(self.BASE, manifest_url, expected_commit=COMMIT, opener=opener)
+            verify_deployed_site(
+                self.BASE,
+                manifest_url,
+                expected_commit=COMMIT,
+                policy=FetchPolicy(consistency_retries=0),
+                opener=opener,
+            )
 
     def test_retries_only_transient_transport_failures_with_a_fixed_bound(self) -> None:
         manifest_url = self.BASE + "release-manifest.json"
@@ -283,11 +427,157 @@ class DeployedManifestTests(unittest.TestCase):
         verify_deployed_site(self.BASE, manifest_url, expected_commit=COMMIT, opener=opener)
         self.assertEqual(len(opener.requests), 4)
 
-    def test_does_not_retry_a_permanent_http_failure(self) -> None:
+    def test_eventual_consistency_retries_404_then_current_deployment(self) -> None:
         manifest_url = self.BASE + "release-manifest.json"
+        not_found = _TrackedHTTPError(manifest_url, 404)
         opener = _Opener(
             [
-                HTTPError(manifest_url, 404, "not found", {}, None),
+                not_found,
+                _Response(manifest_url, _canonical()),
+                _Response(self.BASE + "index.html", b"hello"),
+                _Response(manifest_url, _canonical()),
+            ]
+        )
+        policy = FetchPolicy(consistency_retries=2, backoff_seconds=0.001)
+        with patch.object(deployed_module.time, "sleep") as sleep:
+            result = verify_deployed_site(
+                self.BASE,
+                manifest_url,
+                expected_commit=COMMIT,
+                policy=policy,
+                opener=opener,
+            )
+        self.assertEqual(result.commit, COMMIT)
+        self.assertEqual(not_found.close_count, 1)
+        sleep.assert_called_once_with(0.001)
+
+    def test_eventual_consistency_retries_old_commit_and_old_asset_hash(self) -> None:
+        manifest_url = self.BASE + "release-manifest.json"
+        old_commit = "f" * 40
+        opener = _Opener(
+            [
+                _Response(manifest_url, _canonical(commit=old_commit)),
+                _Response(manifest_url, _canonical()),
+                _Response(self.BASE + "index.html", b"outdated"),
+                _Response(manifest_url, _canonical()),
+                _Response(self.BASE + "index.html", b"hello"),
+                _Response(manifest_url, _canonical()),
+            ]
+        )
+        policy = FetchPolicy(consistency_retries=3, backoff_seconds=0.001)
+        with patch.object(deployed_module.time, "sleep") as sleep:
+            result = verify_deployed_site(
+                self.BASE,
+                manifest_url,
+                expected_commit=COMMIT,
+                policy=policy,
+                opener=opener,
+            )
+        self.assertEqual(result.commit, COMMIT)
+        self.assertEqual(sleep.call_count, 2)
+
+    def test_eventual_consistency_stops_at_the_retry_and_deadline_bounds(self) -> None:
+        manifest_url = self.BASE + "release-manifest.json"
+        failures = [_TrackedHTTPError(manifest_url, 404) for _ in range(3)]
+        opener = _Opener(failures)
+        policy = FetchPolicy(consistency_retries=2, backoff_seconds=0.001)
+        with patch.object(deployed_module.time, "sleep"):
+            with self.assertRaises(DeployedSiteError):
+                verify_deployed_site(
+                    self.BASE,
+                    manifest_url,
+                    expected_commit=COMMIT,
+                    policy=policy,
+                    opener=opener,
+                )
+        self.assertEqual(len(opener.requests), 3)
+        self.assertTrue(all(error.close_count == 1 for error in failures))
+
+    def test_policy_rejects_nonfinite_fractional_and_wrong_typed_bounds(self) -> None:
+        invalid = (
+            FetchPolicy(total_seconds=float("inf")),
+            FetchPolicy(total_seconds=float("nan")),
+            FetchPolicy(max_manifest_bytes=1024.5),
+            FetchPolicy(max_file_bytes=float("inf")),
+            FetchPolicy(max_total_bytes=True),
+            FetchPolicy(consistency_retries=-1),
+        )
+        for policy in invalid:
+            with self.subTest(policy=policy), self.assertRaises(DeployedSiteError):
+                policy.validate()
+        with self.assertRaises(DeployedSiteError):
+            verify_deployed_site(
+                self.BASE,
+                self.BASE + "release-manifest.json",
+                expected_commit=123,
+                opener=_Opener([]),
+            )
+
+    def test_eof_after_deadline_is_rejected_and_hard_boundary_can_terminate(self) -> None:
+        class SlowEof(_Response):
+            def read(self, size: int = -1) -> bytes:
+                time.sleep(0.03)
+                return b""
+
+        url = self.BASE + "release-manifest.json"
+        policy = FetchPolicy(timeout_seconds=0.01, total_seconds=0.01)
+        start = time.monotonic()
+        with self.assertRaises(DeployedSiteError):
+            deployed_module._fetch(
+                url,
+                base=deployed_module._validated_base(self.BASE),
+                opener=_Opener([SlowEof(url, b"")]),
+                policy=policy,
+                maximum=1,
+                deadline=start + policy.total_seconds,
+            )
+        with self.assertRaises(DeployedSiteError):
+            deployed_module._run_with_hard_deadline(_sleep_past_deadline, 0.05)
+        self.assertEqual(
+            deployed_module._run_with_hard_deadline(_return_before_deadline, 2.0),
+            "ok",
+        )
+        self.assertLess(time.monotonic() - start, 0.75)
+
+    def test_http_and_response_close_are_exactly_once_and_preserve_primary(self) -> None:
+        manifest_url = self.BASE + "release-manifest.json"
+        transient = _TrackedHTTPError(manifest_url, 503)
+        opener = _Opener(
+            [
+                transient,
+                _Response(manifest_url, _canonical()),
+                _Response(self.BASE + "index.html", b"hello"),
+                _Response(manifest_url, _canonical()),
+            ]
+        )
+        verify_deployed_site(self.BASE, manifest_url, expected_commit=COMMIT, opener=opener)
+        self.assertEqual(transient.close_count, 1)
+
+        invalid = _Response(
+            manifest_url,
+            b"",
+            status=500,
+            close_error=OSError("secondary close failure"),
+        )
+        with self.assertRaises(DeployedSiteError):
+            try:
+                verify_deployed_site(
+                    self.BASE,
+                    manifest_url,
+                    expected_commit=COMMIT,
+                    opener=_Opener([invalid]),
+                )
+            except DeployedSiteError as error:
+                self.assertIn("non-success status", str(error))
+                raise
+        self.assertEqual(invalid.close_count, 1)
+
+    def test_does_not_retry_other_permanent_http_failures(self) -> None:
+        manifest_url = self.BASE + "release-manifest.json"
+        forbidden = _TrackedHTTPError(manifest_url, 403)
+        opener = _Opener(
+            [
+                forbidden,
                 AssertionError("a permanent failure must not be retried"),
             ]
         )
@@ -299,6 +589,7 @@ class DeployedManifestTests(unittest.TestCase):
                 opener=opener,
             )
         self.assertEqual(len(opener.requests), 1)
+        self.assertEqual(forbidden.close_count, 1)
 
 
 if __name__ == "__main__":

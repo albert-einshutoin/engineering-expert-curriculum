@@ -8,8 +8,9 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import secrets
+import stat
 import sys
-import tempfile
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 if str(REPOSITORY_ROOT) not in sys.path:
@@ -21,6 +22,12 @@ from tools.verify_release_manifest import (  # noqa: E402
     parse_manifest_bytes,
     scan_release_files,
 )
+
+
+class ReleaseManifestPostCommitError(ReleaseManifestError):
+    """The manifest was replaced, but publication durability is uncertain."""
+
+    published = True
 
 
 def create_manifest_bytes(root: Path, *, commit: str) -> bytes:
@@ -50,26 +57,125 @@ def write_release_manifest(root: Path, output: Path, *, commit: str) -> None:
         or output.name != MANIFEST_NAME
     ):
         raise ReleaseManifestError("output must be the exact release-root manifest")
-    if output.exists() and (
-        output.is_symlink()
-        or not output.is_file()
-        or output.stat().st_nlink != 1
-    ):
-        raise ReleaseManifestError("existing manifest output is unsafe")
     raw = create_manifest_bytes(root, commit=commit)
-    descriptor, temporary_name = tempfile.mkstemp(prefix=".release-manifest-", dir=root)
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    directory_flag = getattr(os, "O_DIRECTORY", None)
+    if type(nofollow) is not int or type(directory_flag) is not int:
+        raise ReleaseManifestError("safe manifest publication is unavailable")
     try:
-        with os.fdopen(descriptor, "wb", closefd=True) as stream:
-            stream.write(raw)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary_name, output)
-    except Exception:
+        root_binding = os.lstat(root)
+        root_descriptor = os.open(
+            root,
+            os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | nofollow | directory_flag,
+        )
+    except OSError as error:
+        raise ReleaseManifestError("manifest root could not be opened safely") from error
+    try:
+        opened_root = os.fstat(root_descriptor)
+    except OSError as error:
         try:
-            os.unlink(temporary_name)
+            os.close(root_descriptor)
         except OSError:
             pass
+        raise ReleaseManifestError("manifest root could not be inspected safely") from error
+    if (
+        not stat.S_ISDIR(opened_root.st_mode)
+        or (opened_root.st_dev, opened_root.st_ino)
+        != (root_binding.st_dev, root_binding.st_ino)
+    ):
+        os.close(root_descriptor)
+        raise ReleaseManifestError("manifest root binding changed before publication")
+    try:
+        existing = os.stat(
+            MANIFEST_NAME,
+            dir_fd=root_descriptor,
+            follow_symlinks=False,
+        )
+    except FileNotFoundError:
+        existing = None
+    except OSError as error:
+        os.close(root_descriptor)
+        raise ReleaseManifestError("existing manifest could not be inspected safely") from error
+    if existing is not None and (
+        not stat.S_ISREG(existing.st_mode) or existing.st_nlink != 1
+    ):
+        os.close(root_descriptor)
+        raise ReleaseManifestError("existing manifest output is unsafe")
+    temporary_name: str | None = None
+    temporary_descriptor: int | None = None
+    published = False
+    try:
+        for _attempt in range(32):
+            candidate = f".release-manifest-{secrets.token_hex(12)}"
+            try:
+                temporary_descriptor = os.open(
+                    candidate,
+                    os.O_WRONLY
+                    | os.O_CREAT
+                    | os.O_EXCL
+                    | getattr(os, "O_CLOEXEC", 0)
+                    | nofollow,
+                    0o600,
+                    dir_fd=root_descriptor,
+                )
+            except FileExistsError:
+                continue
+            temporary_name = candidate
+            break
+        if temporary_descriptor is None or temporary_name is None:
+            raise ReleaseManifestError("manifest temporary name budget was exhausted")
+        with os.fdopen(temporary_descriptor, "wb", closefd=True) as stream:
+            temporary_descriptor = None
+            if stream.write(raw) != len(raw):
+                raise ReleaseManifestError("manifest write was incomplete")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(
+            temporary_name,
+            MANIFEST_NAME,
+            src_dir_fd=root_descriptor,
+            dst_dir_fd=root_descriptor,
+        )
+        published = True
+        current_root = os.lstat(root)
+        if (current_root.st_dev, current_root.st_ino) != (
+            root_binding.st_dev,
+            root_binding.st_ino,
+        ):
+            raise ReleaseManifestPostCommitError(
+                "release manifest was replaced after its root binding changed"
+            )
+        try:
+            os.fsync(root_descriptor)
+        except OSError as error:
+            raise ReleaseManifestPostCommitError(
+                "release manifest was replaced but its directory sync failed"
+            ) from error
+    except Exception:
+        if not published and temporary_name is not None:
+            try:
+                os.unlink(temporary_name, dir_fd=root_descriptor)
+            except OSError:
+                pass
         raise
+    finally:
+        if temporary_descriptor is not None:
+            try:
+                os.close(temporary_descriptor)
+            except OSError:
+                pass
+        active_error = sys.exc_info()[0]
+        try:
+            os.close(root_descriptor)
+        except OSError as error:
+            if active_error is None:
+                if published:
+                    raise ReleaseManifestPostCommitError(
+                        "release manifest was replaced but its root close failed"
+                    ) from error
+                raise ReleaseManifestError(
+                    "manifest root could not be closed safely"
+                ) from error
 
 
 def main(arguments: list[str] | None = None) -> int:

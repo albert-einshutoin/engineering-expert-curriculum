@@ -78,7 +78,7 @@ def parse_manifest_bytes(raw: bytes, *, expected_commit: str | None = None) -> R
         raise ReleaseManifestError("release manifest is empty or over budget")
     try:
         value = json.loads(raw.decode("utf-8"), object_pairs_hook=_object_pairs)
-    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as error:
         raise ReleaseManifestError("release manifest is not canonical JSON") from error
     root = _exact_object(value, frozenset({"schemaVersion", "commit", "files"}), "manifest")
     if type(root["schemaVersion"]) is not int or root["schemaVersion"] != 1:
@@ -136,16 +136,91 @@ def parse_manifest_bytes(raw: bytes, *, expected_commit: str | None = None) -> R
     return ReleaseManifest(1, commit, tuple(parsed))
 
 
-def _read_regular(path: Path, max_bytes: int) -> bytes:
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+def _fd_flags(*, directory: bool = False) -> int:
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    directory_flag = getattr(os, "O_DIRECTORY", None)
+    if (
+        type(nofollow) is not int
+        or nofollow == 0
+        or type(directory_flag) is not int
+        or directory_flag == 0
+        or os.open not in os.supports_dir_fd
+        or os.stat not in os.supports_dir_fd
+        or os.scandir not in os.supports_fd
+    ):
+        raise ReleaseManifestError("descriptor-relative no-follow traversal is unavailable")
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | nofollow
+    return flags | directory_flag if directory else flags
+
+
+def _open_descriptor(path, flags: int, *args, **kwargs) -> int:
+    return os.open(path, flags, *args, **kwargs)
+
+
+def _binding_identity(status: os.stat_result) -> tuple[int, int, int]:
+    return (status.st_dev, status.st_ino, stat.S_IFMT(status.st_mode))
+
+
+def _directory_snapshot_identity(
+    status: os.stat_result,
+) -> tuple[int, int, int, int, int, int]:
+    return (
+        status.st_dev,
+        status.st_ino,
+        stat.S_IFMT(status.st_mode),
+        status.st_nlink,
+        status.st_mtime_ns,
+        status.st_ctime_ns,
+    )
+
+
+def _assert_same_identity(
+    actual: os.stat_result,
+    expected: os.stat_result,
+    message: str,
+) -> None:
+    if _binding_identity(actual) != _binding_identity(expected):
+        raise ReleaseManifestError(message)
+
+
+def _close_descriptor(descriptor: int) -> None:
+    active_error = sys.exc_info()[0]
     try:
-        descriptor = os.open(path, flags)
+        os.close(descriptor)
+    except OSError as error:
+        if active_error is None:
+            raise ReleaseManifestError(
+                "release descriptor could not be closed safely"
+            ) from error
+
+
+def _read_regular_at(
+    parent_descriptor: int,
+    name: str,
+    expected: os.stat_result,
+    max_bytes: int,
+) -> bytes:
+    try:
+        descriptor = _open_descriptor(
+            name,
+            _fd_flags(),
+            dir_fd=parent_descriptor,
+        )
     except OSError as error:
         raise ReleaseManifestError("release artifact could not be opened safely") from error
     close_error: OSError | None = None
     try:
         before = os.fstat(descriptor)
-        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > max_bytes:
+        _assert_same_identity(
+            before,
+            expected,
+            "release artifact binding changed before it was opened",
+        )
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_nlink != 1
+            or before.st_size > max_bytes
+        ):
             raise ReleaseManifestError("release artifact is not a bounded single-link regular file")
         chunks: list[bytes] = []
         remaining = max_bytes + 1
@@ -175,6 +250,17 @@ def _read_regular(path: Path, max_bytes: int) -> bytes:
         )
         if identity != final_identity:
             raise ReleaseManifestError("release artifact changed while it was read")
+        try:
+            bound = os.stat(name, dir_fd=parent_descriptor, follow_symlinks=False)
+        except OSError as error:
+            raise ReleaseManifestError(
+                "release artifact binding changed while it was read"
+            ) from error
+        _assert_same_identity(
+            bound,
+            before,
+            "release artifact binding changed while it was read",
+        )
         return source
     except OSError as error:
         raise ReleaseManifestError("release artifact could not be read safely") from error
@@ -189,47 +275,182 @@ def _read_regular(path: Path, max_bytes: int) -> bytes:
             ) from close_error
 
 
-def scan_release_files(root: Path) -> dict[PurePosixPath, bytes]:
-    if not isinstance(root, Path) or root.is_symlink() or not root.is_dir():
+def _scan_release_tree(
+    root: Path,
+    *,
+    read_manifest: bool,
+) -> tuple[dict[PurePosixPath, bytes], bytes | None]:
+    if not isinstance(root, Path):
         raise ReleaseManifestError("release root must be a real directory")
+    _fd_flags(directory=True)
+    try:
+        root_binding = os.lstat(root)
+    except OSError as error:
+        raise ReleaseManifestError("release root could not be inspected safely") from error
+    if not stat.S_ISDIR(root_binding.st_mode):
+        raise ReleaseManifestError("release root must be a real directory")
+    try:
+        root_descriptor = _open_descriptor(root, _fd_flags(directory=True))
+    except OSError as error:
+        raise ReleaseManifestError("release root could not be opened safely") from error
     files: dict[PurePosixPath, bytes] = {}
+    manifest_bytes: bytes | None = None
     total = 0
-    stack = [(root, PurePosixPath("."), 0)]
-    while stack:
-        directory, relative_directory, depth = stack.pop()
+
+    def revalidate_directory(
+        descriptor: int,
+        expected: os.stat_result,
+        parent: tuple[int, str, os.stat_result] | None,
+    ) -> None:
+        if _directory_snapshot_identity(os.fstat(descriptor)) != (
+            _directory_snapshot_identity(expected)
+        ):
+            raise ReleaseManifestError("release directory contents changed")
+        if parent is not None:
+            parent_descriptor, name, binding = parent
+            try:
+                current = os.stat(
+                    name,
+                    dir_fd=parent_descriptor,
+                    follow_symlinks=False,
+                )
+            except OSError as error:
+                raise ReleaseManifestError("release directory binding changed") from error
+            _assert_same_identity(
+                current,
+                binding,
+                "release directory binding changed",
+            )
+
+    def walk(
+        descriptor: int,
+        relative_directory: PurePosixPath,
+        depth: int,
+        expected_directory: os.stat_result,
+        parent: tuple[int, str, os.stat_result] | None,
+    ) -> None:
+        nonlocal total, manifest_bytes
         if depth > MAX_DEPTH:
             raise ReleaseManifestError("release tree exceeds its depth budget")
+        revalidate_directory(descriptor, expected_directory, parent)
         try:
-            children = sorted(os.scandir(directory), key=lambda item: item.name)
+            with os.scandir(descriptor) as iterator:
+                children = sorted(iterator, key=lambda item: item.name)
         except OSError as error:
             raise ReleaseManifestError("release directory cannot be scanned safely") from error
         for child in children:
+            revalidate_directory(descriptor, expected_directory, parent)
             relative = (
                 PurePosixPath(child.name)
                 if relative_directory == PurePosixPath(".")
                 else relative_directory / child.name
             )
-            if child.is_symlink():
+            try:
+                binding = os.stat(
+                    child.name,
+                    dir_fd=descriptor,
+                    follow_symlinks=False,
+                )
+            except OSError as error:
+                raise ReleaseManifestError("release entry binding changed") from error
+            if stat.S_ISLNK(binding.st_mode):
                 raise ReleaseManifestError("release tree contains a symbolic link")
-            if child.is_dir(follow_symlinks=False):
-                stack.append((Path(child.path), relative, depth + 1))
+            if stat.S_ISDIR(binding.st_mode):
+                try:
+                    child_descriptor = _open_descriptor(
+                        child.name,
+                        _fd_flags(directory=True),
+                        dir_fd=descriptor,
+                    )
+                except OSError as error:
+                    raise ReleaseManifestError(
+                        "release directory could not be opened safely"
+                    ) from error
+                try:
+                    opened = os.fstat(child_descriptor)
+                    _assert_same_identity(
+                        opened,
+                        binding,
+                        "release directory binding changed before it was opened",
+                    )
+                    walk(
+                        child_descriptor,
+                        relative,
+                        depth + 1,
+                        opened,
+                        (descriptor, child.name, binding),
+                    )
+                    revalidate_directory(descriptor, expected_directory, parent)
+                    revalidate_directory(
+                        child_descriptor,
+                        opened,
+                        (descriptor, child.name, binding),
+                    )
+                finally:
+                    _close_descriptor(child_descriptor)
                 continue
             if child.name == MANIFEST_NAME and relative.parent == PurePosixPath("."):
+                if not stat.S_ISREG(binding.st_mode) or binding.st_nlink != 1:
+                    raise ReleaseManifestError("release manifest output is unsafe")
+                if read_manifest:
+                    manifest_bytes = _read_regular_at(
+                        descriptor,
+                        child.name,
+                        binding,
+                        MAX_MANIFEST_BYTES,
+                    )
                 continue
             if (
-                not child.is_file(follow_symlinks=False)
+                not stat.S_ISREG(binding.st_mode)
                 or relative.suffix.casefold() not in _ALLOWED_SUFFIXES
             ):
                 raise ReleaseManifestError("release tree contains an unexpected artifact")
             if len(files) >= MAX_FILES:
                 raise ReleaseManifestError("release tree exceeds its file budget")
-            source = _read_regular(Path(child.path), MAX_FILE_BYTES)
+            source = _read_regular_at(
+                descriptor,
+                child.name,
+                binding,
+                MAX_FILE_BYTES,
+            )
             total += len(source)
             if total > MAX_TOTAL_BYTES:
                 raise ReleaseManifestError("release tree exceeds its aggregate byte budget")
             files[relative] = source
-    if not files:
-        raise ReleaseManifestError("release tree contains no static artifacts")
+        revalidate_directory(descriptor, expected_directory, parent)
+
+    try:
+        opened_root = os.fstat(root_descriptor)
+        _assert_same_identity(
+            opened_root,
+            root_binding,
+            "release root binding changed before it was opened",
+        )
+        walk(
+            root_descriptor,
+            PurePosixPath("."),
+            0,
+            opened_root,
+            None,
+        )
+        try:
+            final_root = os.lstat(root)
+        except OSError as error:
+            raise ReleaseManifestError("release root binding changed") from error
+        _assert_same_identity(
+            final_root,
+            root_binding,
+            "release root binding changed",
+        )
+        if not files:
+            raise ReleaseManifestError("release tree contains no static artifacts")
+        return files, manifest_bytes
+    finally:
+        _close_descriptor(root_descriptor)
+
+
+def scan_release_files(root: Path) -> dict[PurePosixPath, bytes]:
+    files, _manifest = _scan_release_tree(root, read_manifest=False)
     return files
 
 
@@ -238,10 +459,10 @@ def verify_release_manifest(
 ) -> ReleaseManifest:
     if not isinstance(manifest, Path) or manifest.parent != root or manifest.name != MANIFEST_NAME:
         raise ReleaseManifestError("manifest must be the exact release-root manifest")
-    parsed = parse_manifest_bytes(
-        _read_regular(manifest, MAX_MANIFEST_BYTES), expected_commit=expected_commit
-    )
-    files = scan_release_files(root)
+    files, manifest_bytes = _scan_release_tree(root, read_manifest=True)
+    if manifest_bytes is None:
+        raise ReleaseManifestError("release manifest is missing")
+    parsed = parse_manifest_bytes(manifest_bytes, expected_commit=expected_commit)
     expected = {entry.path: entry for entry in parsed.files}
     if set(files) != set(expected):
         raise ReleaseManifestError("manifest coverage does not match the release tree")

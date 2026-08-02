@@ -6,8 +6,11 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 import hashlib
+import math
+import multiprocessing
 from pathlib import Path
 import posixpath
+import re
 import sys
 import time
 from urllib.error import HTTPError, URLError
@@ -32,6 +35,10 @@ class DeployedSiteError(ValueError):
     """The deployed site failed its bounded verification contract."""
 
 
+class _DeploymentNotReady(DeployedSiteError):
+    """GitHub Pages still serves a bounded, recognizable previous state."""
+
+
 @dataclass(frozen=True, slots=True)
 class FetchPolicy:
     timeout_seconds: float = 10.0
@@ -41,21 +48,36 @@ class FetchPolicy:
     max_manifest_bytes: int = MAX_MANIFEST_BYTES
     max_file_bytes: int = MAX_FILE_BYTES
     max_total_bytes: int = MAX_TOTAL_BYTES
+    consistency_retries: int = 3
+    backoff_seconds: float = 0.25
 
     def validate(self) -> None:
-        values = (
+        durations = (
             self.timeout_seconds,
             self.total_seconds,
+            self.backoff_seconds,
+        )
+        if any(
+            type(value) not in {int, float}
+            or not math.isfinite(value)
+            or value <= 0
+            for value in durations
+        ):
+            raise DeployedSiteError("fetch durations must be finite positive numbers")
+        counts = (
             self.max_redirects,
             self.max_retries,
+            self.consistency_retries,
+        )
+        if any(type(value) is not int or value < 0 for value in counts):
+            raise DeployedSiteError("redirect and retry bounds must be non-negative integers")
+        byte_limits = (
             self.max_manifest_bytes,
             self.max_file_bytes,
             self.max_total_bytes,
         )
-        if any(type(value) not in {int, float} or value <= 0 for value in values):
-            raise DeployedSiteError("fetch policy must contain positive fixed bounds")
-        if type(self.max_redirects) is not int or type(self.max_retries) is not int:
-            raise DeployedSiteError("redirect and retry bounds must be integers")
+        if any(type(value) is not int or value <= 0 for value in byte_limits):
+            raise DeployedSiteError("byte budgets must be positive integers")
 
 
 def _validated_base(raw: str):
@@ -140,8 +162,15 @@ def _fetch(url: str, *, base, opener, policy: FetchPolicy, maximum: int, deadlin
             },
         )
         response = None
+        primary_error: BaseException | None = None
         try:
-            response = opener.open(request, timeout=policy.timeout_seconds)
+            remaining_time = deadline - time.monotonic()
+            if remaining_time <= 0:
+                raise DeployedSiteError("deployed verification exceeded its total deadline")
+            response = opener.open(
+                request,
+                timeout=min(policy.timeout_seconds, remaining_time),
+            )
             if getattr(response, "status", 200) != 200:
                 raise DeployedSiteError("deployed request returned a non-success status")
             _validate_scoped_url(response.geturl(), base)
@@ -161,35 +190,211 @@ def _fetch(url: str, *, base, opener, policy: FetchPolicy, maximum: int, deadlin
             remaining = maximum + 1
             while remaining:
                 chunk = response.read(min(64 * 1024, remaining))
+                if time.monotonic() >= deadline:
+                    raise DeployedSiteError(
+                        "deployed verification exceeded its total deadline"
+                    )
                 if not chunk:
                     break
                 if type(chunk) is not bytes:
                     raise DeployedSiteError("deployed response returned non-byte content")
                 chunks.append(chunk)
                 remaining -= len(chunk)
-                if time.monotonic() >= deadline:
-                    raise DeployedSiteError("deployed verification exceeded its total deadline")
             body = b"".join(chunks)
             if len(body) > maximum or (length is not None and len(body) != declared):
                 raise DeployedSiteError("deployed response was truncated or over budget")
             return body
         except HTTPError as error:
+            primary_error = error
+            response = error
+            if error.code == 404:
+                raise _DeploymentNotReady(
+                    "deployed artifact is not visible yet"
+                ) from error
             if error.code not in {502, 503, 504}:
                 raise DeployedSiteError("deployed request failed without a safe retry") from error
             last_error = error
             continue
         except (URLError, TimeoutError, ConnectionError) as error:
+            primary_error = error
             last_error = error
             continue
+        except BaseException as error:
+            primary_error = error
+            raise
         finally:
             if response is not None:
                 try:
                     response.close()
                 except Exception as error:
-                    raise DeployedSiteError(
-                        "deployed response could not be closed safely"
-                    ) from error
+                    if primary_error is None:
+                        raise DeployedSiteError(
+                            "deployed response could not be closed safely"
+                        ) from error
     raise DeployedSiteError("deployed request exhausted its retry budget") from last_error
+
+
+def _verify_once(
+    base_url: str,
+    manifest_url: str,
+    *,
+    expected_commit: str,
+    policy: FetchPolicy,
+    opener,
+    base,
+    deadline: float,
+) -> ReleaseManifest:
+    manifest_bytes = _fetch(
+        manifest_url, base=base, opener=opener, policy=policy,
+        maximum=policy.max_manifest_bytes, deadline=deadline,
+    )
+    try:
+        manifest = parse_manifest_bytes(manifest_bytes)
+    except ReleaseManifestError as error:
+        raise DeployedSiteError("deployed manifest is invalid") from error
+    if manifest.commit != expected_commit:
+        raise _DeploymentNotReady("deployed manifest still names an older commit")
+    total = 0
+    for entry in manifest.files:
+        if entry.bytes > policy.max_file_bytes:
+            raise DeployedSiteError("manifest entry exceeds the deployed file budget")
+        artifact_url = base_url + quote(entry.path.as_posix(), safe="/")
+        body = _fetch(
+            artifact_url, base=base, opener=opener, policy=policy,
+            maximum=policy.max_file_bytes, deadline=deadline,
+        )
+        total += len(body)
+        if total > policy.max_total_bytes:
+            raise DeployedSiteError("deployed site exceeded its aggregate byte budget")
+        if len(body) != entry.bytes or hashlib.sha256(body).hexdigest() != entry.sha256:
+            raise _DeploymentNotReady(
+                "deployed artifact still has bytes from another deployment"
+            )
+    final_manifest = _fetch(
+        manifest_url, base=base, opener=opener, policy=policy,
+        maximum=policy.max_manifest_bytes, deadline=deadline,
+    )
+    if final_manifest != manifest_bytes:
+        raise _DeploymentNotReady("deployed manifest changed during verification")
+    return manifest
+
+
+def _verify_in_process(
+    base_url: str,
+    manifest_url: str,
+    *,
+    expected_commit: str,
+    policy: FetchPolicy,
+    opener=None,
+) -> ReleaseManifest:
+    policy.validate()
+    if (
+        type(expected_commit) is not str
+        or re.fullmatch(r"[0-9a-f]{40}", expected_commit, re.ASCII) is None
+    ):
+        raise DeployedSiteError("expected commit is invalid")
+    base = _validated_base(base_url)
+    expected_manifest_url = base_url + "release-manifest.json"
+    if manifest_url != expected_manifest_url:
+        raise DeployedSiteError("manifest URL must be the exact release-root URL")
+    _validate_scoped_url(manifest_url, base)
+    if opener is None:
+        opener = build_opener(_ScopedRedirectHandler(base, policy.max_redirects))
+    deadline = time.monotonic() + policy.total_seconds
+    last_not_ready: _DeploymentNotReady | None = None
+    for attempt in range(policy.consistency_retries + 1):
+        try:
+            return _verify_once(
+                base_url,
+                manifest_url,
+                expected_commit=expected_commit,
+                policy=policy,
+                opener=opener,
+                base=base,
+                deadline=deadline,
+            )
+        except _DeploymentNotReady as error:
+            last_not_ready = error
+            if attempt >= policy.consistency_retries:
+                break
+            remaining = deadline - time.monotonic()
+            if remaining <= policy.backoff_seconds:
+                raise DeployedSiteError(
+                    "deployment did not converge before its deadline"
+                ) from error
+            time.sleep(policy.backoff_seconds)
+    raise DeployedSiteError(
+        "deployment did not converge within its retry budget"
+    ) from last_not_ready
+
+
+def _deadline_worker(connection, function, arguments) -> None:
+    try:
+        connection.send((True, function(*arguments)))
+    except BaseException as error:
+        connection.send((False, type(error).__name__, str(error)))
+    finally:
+        connection.close()
+
+
+def _run_with_hard_deadline(function, seconds: float, *arguments):
+    if (
+        type(seconds) not in {int, float}
+        or not math.isfinite(seconds)
+        or seconds <= 0
+    ):
+        raise DeployedSiteError("hard deadline must be a finite positive number")
+    context = multiprocessing.get_context("spawn")
+    receiver, sender = context.Pipe(duplex=False)
+    process = context.Process(
+        target=_deadline_worker,
+        args=(sender, function, arguments),
+        daemon=True,
+    )
+    try:
+        process.start()
+    except BaseException as error:
+        receiver.close()
+        sender.close()
+        process.close()
+        raise DeployedSiteError("deployed verifier worker could not start") from error
+    sender.close()
+    process.join(seconds)
+    if process.is_alive():
+        process.terminate()
+        process.join(1.0)
+        if process.is_alive():
+            process.kill()
+            process.join()
+        receiver.close()
+        process.close()
+        raise DeployedSiteError("deployed verification exceeded its hard deadline")
+    try:
+        if not receiver.poll():
+            raise DeployedSiteError("deployed verifier worker exited without a result")
+        result = receiver.recv()
+    except (EOFError, OSError) as error:
+        raise DeployedSiteError("deployed verifier worker result was unavailable") from error
+    finally:
+        receiver.close()
+        process.close()
+    if result[0] is not True:
+        raise DeployedSiteError(f"deployed verifier worker failed: {result[1]}")
+    return result[1]
+
+
+def _verify_default_worker(
+    base_url: str,
+    manifest_url: str,
+    expected_commit: str,
+    policy: FetchPolicy,
+) -> ReleaseManifest:
+    return _verify_in_process(
+        base_url,
+        manifest_url,
+        expected_commit=expected_commit,
+        policy=policy,
+    )
 
 
 def verify_deployed_site(
@@ -201,41 +406,22 @@ def verify_deployed_site(
     opener=None,
 ) -> ReleaseManifest:
     policy.validate()
-    base = _validated_base(base_url)
-    expected_manifest_url = base_url + "release-manifest.json"
-    if manifest_url != expected_manifest_url:
-        raise DeployedSiteError("manifest URL must be the exact release-root URL")
-    _validate_scoped_url(manifest_url, base)
-    if opener is None:
-        opener = build_opener(_ScopedRedirectHandler(base, policy.max_redirects))
-    deadline = time.monotonic() + policy.total_seconds
-    manifest_bytes = _fetch(
-        manifest_url, base=base, opener=opener, policy=policy,
-        maximum=policy.max_manifest_bytes, deadline=deadline,
-    )
-    try:
-        manifest = parse_manifest_bytes(manifest_bytes, expected_commit=expected_commit)
-    except ReleaseManifestError as error:
-        raise DeployedSiteError("deployed manifest is invalid") from error
-    total = 0
-    for entry in manifest.files:
-        artifact_url = base_url + quote(entry.path.as_posix(), safe="/")
-        body = _fetch(
-            artifact_url, base=base, opener=opener, policy=policy,
-            maximum=min(policy.max_file_bytes, entry.bytes), deadline=deadline,
+    if opener is not None:
+        return _verify_in_process(
+            base_url,
+            manifest_url,
+            expected_commit=expected_commit,
+            policy=policy,
+            opener=opener,
         )
-        total += len(body)
-        if total > policy.max_total_bytes:
-            raise DeployedSiteError("deployed site exceeded its aggregate byte budget")
-        if len(body) != entry.bytes or hashlib.sha256(body).hexdigest() != entry.sha256:
-            raise DeployedSiteError("deployed artifact does not match the release manifest")
-    final_manifest = _fetch(
-        manifest_url, base=base, opener=opener, policy=policy,
-        maximum=policy.max_manifest_bytes, deadline=deadline,
+    return _run_with_hard_deadline(
+        _verify_default_worker,
+        policy.total_seconds,
+        base_url,
+        manifest_url,
+        expected_commit,
+        policy,
     )
-    if final_manifest != manifest_bytes:
-        raise DeployedSiteError("deployed manifest changed during verification")
-    return manifest
 
 
 def main(arguments: list[str] | None = None) -> int:
