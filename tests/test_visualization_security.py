@@ -23,6 +23,7 @@ from tools.install_test_browsers import (
     install_archive,
     main as install_main,
     verify_macos_browser_bundle,
+    verify_linux_browser_binary,
     verify_safari_version,
 )
 
@@ -231,6 +232,71 @@ class BrowserProvisioningSecurityTests(unittest.TestCase):
                 ),
                 completed,
             )
+
+    def test_cache_hit_revalidates_archive_and_rejects_tree_parent_symlink_escape(self) -> None:
+        payload = self._zip({"browser/bin/browser": b"binary"})
+        definition = self._archive(payload)
+        with TemporaryDirectory() as temporary:
+            cache = Path(temporary) / "cache"
+            executable = install_archive(
+                definition, cache, downloader=lambda *_args: payload
+            )
+            executable.write_bytes(b"tampered")
+            self.assertEqual(
+                install_archive(
+                    definition, cache,
+                    downloader=lambda *_args: (_ for _ in ()).throw(
+                        AssertionError("cache hit downloaded again")
+                    ),
+                ).read_bytes(),
+                b"binary",
+            )
+            outside = Path(temporary) / "outside"
+            outside.mkdir()
+            browser_parent = executable.parents[1]
+            for child in sorted(browser_parent.rglob("*"), reverse=True):
+                if child.is_file() or child.is_symlink():
+                    child.unlink()
+                elif child.is_dir():
+                    child.rmdir()
+            browser_parent.rmdir()
+            browser_parent.symlink_to(outside, target_is_directory=True)
+            with self.assertRaisesRegex(BrowserMatrixError, "symlink|escape"):
+                install_archive(definition, cache, downloader=lambda *_args: payload)
+
+    def test_cache_hit_rejects_mutated_cached_archive(self) -> None:
+        payload = self._zip({"browser/bin/browser": b"binary"})
+        definition = self._archive(payload)
+        with TemporaryDirectory() as temporary:
+            cache = Path(temporary)
+            install_archive(definition, cache, downloader=lambda *_args: payload)
+            (cache / definition.sha256 / "archive").write_bytes(b"X" + payload[1:])
+            with self.assertRaisesRegex(BrowserMatrixError, "SHA-256"):
+                install_archive(definition, cache, downloader=lambda *_args: payload)
+
+    def test_linux_preflight_requires_x86_64_elf_dependencies_version_and_launch(self) -> None:
+        elf = bytearray(64)
+        elf[:7] = b"\x7fELF\x02\x01\x01"
+        elf[18:20] = (62).to_bytes(2, "little")
+        with TemporaryDirectory() as temporary:
+            executable = Path(temporary) / "chrome"
+            executable.write_bytes(elf)
+            executable.chmod(0o755)
+            with mock.patch("tools.install_test_browsers.subprocess.run") as run:
+                run.side_effect = (
+                    mock.Mock(returncode=0, stdout="libc.so => /lib/libc.so\n", stderr=""),
+                    mock.Mock(returncode=0, stdout="Chromium 123.0.1\n", stderr=""),
+                    mock.Mock(returncode=0, stdout="<html><head><title>browser-contract</title></head></html>\n", stderr=""),
+                )
+                verify_linux_browser_binary(
+                    executable, browser_name="chromium", expected_version="123.0.1"
+                )
+            for mutation in (b"not-elf", bytes(elf[:18] + (183).to_bytes(2, "little") + elf[20:])):
+                executable.write_bytes(mutation)
+                with self.assertRaises(BrowserMatrixError):
+                    verify_linux_browser_binary(
+                        executable, browser_name="chromium", expected_version="123.0.1"
+                    )
 
     def test_installer_rejects_hash_size_traversal_absolute_and_links(self) -> None:
         payloads = (

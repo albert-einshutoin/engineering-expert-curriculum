@@ -798,8 +798,12 @@ def run_browser_contract(
     if hashlib.sha256(fixture_bytes).hexdigest() != matrix.fixtures["maximum"]["sha256"]:
         raise BrowserMatrixError("maximum browser fixture digest drifted")
 
-    chromium = install_archive(platform_entry.browsers["chromium"], cache)
-    firefox = install_archive(platform_entry.browsers["firefox"], cache)
+    chromium = install_archive(
+        platform_entry.browsers["chromium"], cache, browser_name="chromium"
+    )
+    firefox = install_archive(
+        platform_entry.browsers["firefox"], cache, browser_name="firefox"
+    )
     evidence.mkdir(parents=True, exist_ok=True)
     if evidence.is_symlink() or not evidence.is_dir():
         raise BrowserMatrixError("browser evidence directory must be a real directory")

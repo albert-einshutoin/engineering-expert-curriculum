@@ -600,11 +600,81 @@ def verify_macos_browser_bundle(
         raise BrowserMatrixError("macOS browser executable version does not match the matrix")
 
 
+def verify_linux_browser_binary(
+    executable: Path, *, browser_name: str, expected_version: str,
+) -> None:
+    if browser_name not in {"chromium", "firefox"}:
+        raise BrowserMatrixError("Linux browser name is outside the closed set")
+    try:
+        header = executable.read_bytes()[:64]
+        if (
+            len(header) < 20 or header[:4] != b"\x7fELF"
+            or header[4] != 2 or header[5] != 1
+            or int.from_bytes(header[18:20], "little") != 62
+        ):
+            raise BrowserMatrixError("Linux browser executable is not x86-64 ELF")
+        dependencies = subprocess.run(
+            ["/usr/bin/ldd", str(executable)], check=False,
+            capture_output=True, text=True, timeout=30,
+        )
+        if dependencies.returncode != 0 or "not found" in dependencies.stdout + dependencies.stderr:
+            raise BrowserMatrixError("Linux browser dependencies are unavailable")
+        version = subprocess.run(
+            [str(executable), "--version"], check=False,
+            capture_output=True, text=True, timeout=20,
+        )
+        pattern = rf"(?<![0-9.]){re.escape(expected_version)}(?![0-9.])"
+        if version.returncode != 0 or re.search(pattern, version.stdout + version.stderr) is None:
+            raise BrowserMatrixError("Linux browser version does not match the matrix")
+        if browser_name == "chromium":
+            launch = subprocess.run(
+                [
+                    str(executable), "--headless=new", "--disable-gpu",
+                    "--no-first-run", "--dump-dom", "data:text/html,<title>browser-contract</title>",
+                ], check=False, capture_output=True, text=True, timeout=30,
+            )
+            if launch.returncode != 0 or "<title>browser-contract</title>" not in launch.stdout:
+                raise BrowserMatrixError("Linux Chromium real launch preflight failed")
+        else:
+            with tempfile.TemporaryDirectory(prefix=".firefox-launch-") as temporary:
+                screenshot = Path(temporary) / "launch.png"
+                launch = subprocess.run(
+                    [
+                        str(executable), "--headless", "--screenshot", str(screenshot),
+                        "data:text/html,<title>browser-contract</title>",
+                    ], check=False, capture_output=True, text=True, timeout=30,
+                )
+                if launch.returncode != 0 or not screenshot.is_file() or screenshot.stat().st_size == 0:
+                    raise BrowserMatrixError("Linux Firefox real launch preflight failed")
+    except BrowserMatrixError:
+        raise
+    except (OSError, subprocess.SubprocessError) as error:
+        raise BrowserMatrixError("Linux browser executable preflight failed") from error
+
+
+def _validate_cached_tree(
+    destination: Path, expected_symlinks: tuple[tuple[str, str], ...],
+) -> None:
+    if destination.is_symlink() or not destination.is_dir():
+        raise BrowserMatrixError("existing browser cache tree is not a real directory")
+    if _tree_symlinks(destination) != expected_symlinks:
+        raise BrowserMatrixError("existing browser cache symlink map drifted")
+    root = destination.resolve(strict=True)
+    for relative, _target in expected_symlinks:
+        link = destination.joinpath(*PurePosixPath(relative).parts)
+        try:
+            resolved = link.resolve(strict=True)
+            resolved.relative_to(root)
+        except (OSError, RuntimeError, ValueError) as error:
+            raise BrowserMatrixError("existing browser cache symlink escapes its tree") from error
+
+
 def install_archive(
     archive: BrowserArchive,
     cache: Path,
     *,
     downloader: Callable[[str, float, int], bytes] = _download_https,
+    browser_name: str | None = None,
 ) -> Path:
     try:
         cache.mkdir(parents=True, exist_ok=True)
@@ -617,10 +687,8 @@ def install_archive(
             raise BrowserMatrixError("browser digest cache must be a real directory")
         destination = digest_root / "extracted"
         executable = destination.joinpath(*PurePosixPath(archive.executable).parts)
-        if destination.exists():
-            if executable.is_file() and not executable.is_symlink():
-                return executable
-            raise BrowserMatrixError("existing browser cache is incomplete")
+        if destination.exists() or destination.is_symlink():
+            _validate_cached_tree(destination, archive.symlinks)
         cached_archive = digest_root / "archive"
         if cached_archive.exists():
             if cached_archive.is_symlink() or not cached_archive.is_file():
@@ -679,7 +747,26 @@ def install_archive(
                     signature_policy=archive.signature_policy,
                     executable_sha256=archive.executable_sha256,
                 )
-            os.replace(temporary, destination)
+            elif sys.platform.startswith("linux"):
+                if browser_name is None:
+                    raise BrowserMatrixError("Linux browser preflight requires its closed browser name")
+                verify_linux_browser_binary(
+                    candidate, browser_name=browser_name,
+                    expected_version=archive.version,
+                )
+            previous = digest_root / ".extracted.previous"
+            if previous.exists() or previous.is_symlink():
+                raise BrowserMatrixError("browser cache contains stale publication state")
+            if destination.exists():
+                os.replace(destination, previous)
+            try:
+                os.replace(temporary, destination)
+            except BaseException:
+                if previous.exists() and not destination.exists():
+                    os.replace(previous, destination)
+                raise
+            if previous.exists():
+                shutil.rmtree(previous)
             return executable
         finally:
             payload_path.unlink(missing_ok=True)
@@ -719,7 +806,9 @@ def main(argv: list[str] | None = None) -> int:
     matrix = load_browser_matrix(args.matrix)
     entry = resolve_platform(matrix, args.platform)
     for name in ("chromium", "firefox"):
-        executable = install_archive(entry.browsers[name], args.cache)
+        executable = install_archive(
+            entry.browsers[name], args.cache, browser_name=name
+        )
         print(f"{name}: {executable}")
     if entry.safari is not None:
         verify_safari_version(
