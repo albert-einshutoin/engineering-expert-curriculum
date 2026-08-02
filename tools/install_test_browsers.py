@@ -58,6 +58,8 @@ class SafariInstall:
     version: str
     build: str
     executable: str
+    smoke_transport: str
+    smoke_profiles: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -250,7 +252,14 @@ def load_browser_matrix_bytes(raw: bytes) -> BrowserMatrix:
         }
         safari = None
         if key == "macos-arm64":
-            safari_raw = _object(item["safari"], frozenset({"version", "build", "executable"}), "matrix.platforms.macos-arm64.safari")
+            safari_raw = _object(
+                item["safari"],
+                frozenset({
+                    "version", "build", "executable", "smokeTransport",
+                    "smokeProfiles",
+                }),
+                "matrix.platforms.macos-arm64.safari",
+            )
             if type(safari_raw["version"]) is not str or _VERSION.fullmatch(safari_raw["version"]) is None:
                 raise BrowserMatrixError("Safari version must be exact")
             if type(safari_raw["build"]) is not str or _VERSION.fullmatch(safari_raw["build"]) is None:
@@ -258,7 +267,14 @@ def load_browser_matrix_bytes(raw: bytes) -> BrowserMatrix:
             executable = safari_raw["executable"]
             if type(executable) is not str or not executable.startswith("/Applications/"):
                 raise BrowserMatrixError("Safari executable must be the installed application path")
-            safari = SafariInstall(safari_raw["version"], safari_raw["build"], executable)
+            if safari_raw["smokeTransport"] != "loopback-http":
+                raise BrowserMatrixError("Safari smoke transport must be exact loopback HTTP")
+            if safari_raw["smokeProfiles"] != ["desktop", "mobile"]:
+                raise BrowserMatrixError("Safari smoke profiles must be exact desktop and mobile")
+            safari = SafariInstall(
+                safari_raw["version"], safari_raw["build"], executable,
+                safari_raw["smokeTransport"], tuple(safari_raw["smokeProfiles"]),
+            )
         platforms[key] = PlatformEntry(key, MappingProxyType(parsed_browsers), safari)
 
     expected_profiles = ("desktop", "mobile", "reduced-motion", "forced-colors")

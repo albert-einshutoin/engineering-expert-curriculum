@@ -913,13 +913,9 @@ def _safari_instrumented_document(
     if source_document.is_symlink() or not source_document.is_file():
         raise BrowserMatrixError("Safari source document must be a regular file")
     parsed = urlsplit(target_url)
-    if parsed.scheme not in {"file", "http"} or parsed.query or parsed.fragment:
-        raise BrowserMatrixError("Safari target URL is not a closed local document")
-    if parsed.scheme == "file":
-        if _approved_file_path(target_url, approved_file_roots) != source_document.resolve(strict=True):
-            raise BrowserMatrixError("Safari file target does not bind to its source document")
-    elif parsed.hostname != "127.0.0.1" or parsed.port is None:
-        raise BrowserMatrixError("Safari HTTP target is not exact loopback")
+    if parsed.scheme != "http" or parsed.hostname != "127.0.0.1" \
+            or parsed.port is None or parsed.query or parsed.fragment:
+        raise BrowserMatrixError("Safari target must be exact loopback HTTP")
     try:
         target_name = unquote_to_bytes(PurePosixPath(parsed.path).name).decode("utf-8", errors="strict")
     except UnicodeDecodeError as error:
@@ -946,11 +942,8 @@ def _safari_instrumented_document(
             stream.write(instrumented)
             stream.flush()
             os.fsync(stream.fileno())
-        if parsed.scheme == "file":
-            instrumented_url = temporary.as_uri()
-        else:
-            instrumented_path = str(PurePosixPath(parsed.path).with_name(temporary.name))
-            instrumented_url = urlunsplit((parsed.scheme, parsed.netloc, instrumented_path, "", ""))
+        instrumented_path = str(PurePosixPath(parsed.path).with_name(temporary.name))
+        instrumented_url = urlunsplit((parsed.scheme, parsed.netloc, instrumented_path, "", ""))
         yield instrumented_url
     finally:
         temporary.unlink(missing_ok=True)
@@ -970,10 +963,19 @@ def run_safari_smoke(
     url: str,
     screenshot: Path,
     harness_version: str,
+    viewport: tuple[int, int],
     timeout: float = 30.0,
 ) -> dict[str, object]:
-    if safaridriver != Path("/usr/bin/safaridriver") or urlsplit(url).scheme not in {"file", "http"}:
-        raise BrowserMatrixError("Safari smoke authority is not the pinned local contract")
+    parsed_url = urlsplit(url)
+    if safaridriver != Path("/usr/bin/safaridriver") or parsed_url.scheme != "http" \
+            or parsed_url.hostname != "127.0.0.1" or parsed_url.port is None \
+            or parsed_url.username is not None or parsed_url.password is not None \
+            or parsed_url.query or parsed_url.fragment:
+        raise BrowserMatrixError("Safari smoke authority must be exact loopback HTTP")
+    if type(viewport) is not tuple or len(viewport) != 2 or any(
+        type(value) is not int or value < 320 or value > 4096 for value in viewport
+    ):
+        raise BrowserMatrixError("Safari viewport is invalid")
     port = _reserve_loopback_port()
     process = subprocess.Popen(
         [str(safaridriver), "-p", str(port)], stdin=subprocess.DEVNULL,
@@ -1008,6 +1010,42 @@ def run_safari_smoke(
                 "Safari Remote Automation session is unavailable"
             ) from last_error
         prefix = f"/session/{quote(session_id, safe='')}"
+        requested_width, requested_height = viewport
+        outer_width, outer_height = viewport
+        observed_viewport: dict[str, object] | None = None
+        for _attempt in range(3):
+            _webdriver_request(
+                port, "POST", prefix + "/window/rect",
+                {"width": outer_width, "height": outer_height}, timeout,
+            )
+            candidate = _webdriver_request(
+                port, "POST", prefix + "/execute/sync",
+                {
+                    "script": "return {width:window.innerWidth,height:window.innerHeight,devicePixelRatio:window.devicePixelRatio};",
+                    "args": [],
+                }, timeout,
+            )
+            if type(candidate) is not dict or set(candidate) != {
+                "width", "height", "devicePixelRatio"
+            } or any(
+                type(candidate[name]) is not int or candidate[name] <= 0
+                for name in ("width", "height")
+            ) or type(candidate["devicePixelRatio"]) not in (int, float) \
+                    or not math.isfinite(float(candidate["devicePixelRatio"])) \
+                    or float(candidate["devicePixelRatio"]) <= 0:
+                raise BrowserMatrixError("Safari observed viewport is invalid")
+            if candidate["width"] == requested_width \
+                    and candidate["height"] == requested_height:
+                observed_viewport = candidate
+                break
+            # WebDriver sizes the outer window. Correct the next bounded request by
+            # the observed browser chrome delta so product startup sees the matrix viewport.
+            outer_width += requested_width - candidate["width"]
+            outer_height += requested_height - candidate["height"]
+            if not 320 <= outer_width <= 4096 or not 320 <= outer_height <= 4096:
+                break
+        if observed_viewport is None:
+            raise BrowserMatrixError("Safari viewport could not be confirmed")
         _webdriver_request(port, "POST", prefix + "/url", {"url": url}, timeout)
         deadline = time.monotonic() + timeout
         result_value: str | None = None
@@ -1047,7 +1085,9 @@ def run_safari_smoke(
             raise BrowserMatrixError("Safari screenshot is unavailable or over budget")
         screenshot.parent.mkdir(parents=True, exist_ok=True)
         screenshot.write_bytes(base64.b64decode(encoded, validate=True))
-        return harness_result
+        result = dict(harness_result)
+        result["observedViewport"] = observed_viewport
+        return result
     except (OSError, subprocess.SubprocessError, ValueError) as error:
         if isinstance(error, BrowserMatrixError):
             raise
@@ -1184,8 +1224,11 @@ def browser_run_plan(
     )
     if include_safari:
         runs.extend(
-            {"browser": "safari", "label": label, "profile": "desktop", "requestedState": "crossover"}
-            for label in ("core-02-file", "core-02-http")
+            {
+                "browser": "safari", "label": f"core-02-http-{profile}",
+                "profile": profile, "requestedState": "crossover",
+            }
+            for profile in ("desktop", "mobile")
         )
     return tuple(runs)
 
@@ -1316,10 +1359,11 @@ def browser_evidence_report(
         raise BrowserMatrixError("browser evidence success count is incomplete")
     runs = [dict(item) for item in successful_runs]
     if safari_blocked:
-        for label in ("core-02-file", "core-02-http"):
+        for profile in ("desktop", "mobile"):
             runs.append({
-                "browser": "safari", "label": label, "profile": "desktop",
-                "requestedState": None, "status": "blocked",
+                "browser": "safari", "label": f"core-02-http-{profile}",
+                "profile": profile,
+                "requestedState": "crossover", "status": "blocked",
                 "reason": "remote-automation-session-unavailable",
             })
     return {
@@ -1511,11 +1555,14 @@ def _run_browser_contract(
 
         if platform_entry.safari is not None:
             safari = platform_entry.safari
-            safari_runs = (
-                ({"browser": "safari", "label": "core-02-file", "profile": "desktop", "requestedState": "crossover"}, file_url),
-                ({"browser": "safari", "label": "core-02-http", "profile": "desktop", "requestedState": "crossover"}, http_url),
+            safari_runs = tuple(
+                ({
+                    "browser": "safari", "label": f"core-02-http-{profile_name}",
+                    "profile": profile_name, "requestedState": "crossover",
+                }, http_url, matrix.profiles[profile_name])
+                for profile_name in safari.smoke_profiles
             )
-            for index, (run, url) in enumerate(safari_runs):
+            for index, (run, url, profile) in enumerate(safari_runs):
                 try:
                     with _safari_instrumented_document(
                         source_document=core02, target_url=url,
@@ -1526,13 +1573,14 @@ def _run_browser_contract(
                         result = run_safari_smoke(
                             safaridriver=Path("/usr/bin/safaridriver"),
                             url=instrumented_url,
-                            screenshot=evidence / f"{run['label']}-safari-desktop.png",
+                            screenshot=evidence / f"{run['label']}-safari.png",
                             harness_version=matrix.harness_version,
+                            viewport=profile.viewport,
                         )
                 except SafariSessionUnavailable:
                     # One failed session preflight proves the host cannot execute
-                    # either Safari target; both remain explicit typed blockers.
-                    for blocked_run, _ in safari_runs[index:]:
+                    # any remaining Safari profile; each remains an explicit blocker.
+                    for blocked_run, _, _ in safari_runs[index:]:
                         journal.record(
                             blocked_run, status="blocked",
                             reason=SafariSessionUnavailable.reason,
@@ -1543,7 +1591,7 @@ def _run_browser_contract(
                     journal.record(run, status="failed", reason="safari-browser-contract-failed")
                     raise
                 journal.record(run, status="passed", result=result)
-                print(f"PASS safari {run['label']} desktop", flush=True)
+                print(f"PASS safari {run['label']} {run['profile']}", flush=True)
 
     report = journal.report()
     if report["status"] == "blocked":

@@ -67,6 +67,20 @@ def changelog_section(changelog: str, heading_pattern: str) -> str | None:
 
 
 class RepositoryContractTests(unittest.TestCase):
+    def test_safari_webdriver_capability_amendment_is_public_and_explicit(self) -> None:
+        readme = read("README.md") + read("README.en.md")
+        security = read("SECURITY.md")
+        design = read("docs/superpowers/specs/2026-08-01-interactive-visual-learning-design.md")
+        plan = read("docs/superpowers/plans/2026-08-01-interactive-visual-learning.md")
+        for phrase in ("Safari WebDriver", "loopback HTTP"):
+            self.assertIn(phrase, readme)
+        for phrase in ("WebKit sandbox", "file://", "Safari WebDriver"):
+            self.assertIn(phrase, security)
+        for document in (design, plan):
+            self.assertIn("core-02-http-desktop", document)
+            self.assertIn("core-02-http-mobile", document)
+            self.assertIn("WebKit sandbox", document)
+
     def test_required_public_files_exist_and_are_substantial(self) -> None:
         for relative in PUBLIC_FILES:
             with self.subTest(path=relative):

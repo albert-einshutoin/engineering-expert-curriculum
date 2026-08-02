@@ -789,6 +789,16 @@ throttle, fixture hash, and harness version. The primary desktop profile is
 device scale 2 with 4x CPU throttling. Any change to the matrix is a reviewed
 test-contract change, not an implicit CI update.
 
+The Safari authority additionally pins `smokeTransport: loopback-http` and
+`smokeProfiles: [desktop, mobile]`. Safari WebDriver 26.5 was observed to reject
+an external `file://` main resource at the WebKit sandbox boundary before the
+instrumented document loaded. Its two required runs are therefore
+`core-02-http-desktop` and `core-02-http-mobile`. The runner installs the harness
+before the product runtime, confirms the real inner viewport before navigation,
+and records that viewport; the 390-pixel run is a narrow desktop-browser viewport,
+not mobile device emulation. This reviewed capability amendment does not weaken
+the Chromium/Firefox file plus HTTP runs or the static no-JS/file contract.
+
 The maximum-bound 64-item/128-relationship fixture and the heaviest real memory
 and distributed-failure simulations receive 3 warm-up runs and 20 measured
 runs. On desktop, the median transition is at most 25 ms and at least 19 of 20
@@ -860,7 +870,9 @@ is followed by the relevant focused suite before the full gate.
 
 ### 16.2 Runtime tests
 
-- Load each simulation over both `file://` and a GitHub Pages-style subpath.
+- Preserve `file://` and GitHub Pages-style runtime coverage: Chromium and
+  Firefox run the representative file plus HTTP smoke, while Safari runs the
+  HTTP smoke at desktop and 390-pixel narrow viewports.
 - Verify only the controls required by each interaction mode are rendered and
   that scenario, stepper, playback, hybrid, and explorer behaviors all work.
 - Verify reduced motion prevents autoplay.
@@ -891,10 +903,11 @@ is followed by the relevant focused suite before the full gate.
 
 Automated browser runs use the exact pinned build in
 `tests/browser-matrix.json`. Before release, `file://` and Pages-style subpath
-smoke tests also run in the then-current stable Chromium, Firefox, and Safari on
-macOS, with exact OS/browser versions recorded. An unavailable or unexecuted
-required browser is a blocked release, not a pass or skip. A browser may be
-removed only through a reviewed specification change with a documented reason.
+smoke tests run in the pinned Chromium and Firefox builds. The then-current
+stable Safari runs the two required Pages-style HTTP profiles described above,
+with exact OS/browser versions recorded. An unavailable or unexecuted required
+browser is a blocked release, not a pass or skip. A browser may be removed only
+through a reviewed specification change with a documented reason.
 
 Browser automation is evidence, not the only oracle. Semantic assertions,
 checker assertions, and human visual review all remain required.

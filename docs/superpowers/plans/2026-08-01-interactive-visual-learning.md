@@ -988,6 +988,16 @@ file:///absolute/build/site/lessons/core-02-algorithms-measurement/index.html
 http://127.0.0.1:49152/engineering-expert-curriculum/lessons/core-02-algorithms-measurement/index.html
 ```
 
+Chromium and Firefox retain both transports. Safari WebDriver 26.5 rejects the
+external file main resource at the WebKit sandbox boundary, so its reviewed
+closed contract instead runs `core-02-http-desktop` and
+`core-02-http-mobile`. Both runs install the harness before the product runtime,
+request `crossover`, execute 100 resets, require zero violations/runtime errors,
+and restore DOM/listener/timer baselines. The runner confirms the desktop or
+390-pixel narrow inner viewport before navigation; the narrow profile is not
+mobile device emulation. The static no-JS/file contract remains independently
+required.
+
 The harness instruments forbidden APIs before loading the runtime, performs
 native `.click()`/`.change()` actions, records console/CSP/network/storage/
 navigation violations, and writes one bounded JSON result into the dumped DOM.
@@ -1005,7 +1015,8 @@ MiB, 5%). Unavailable instrumentation is failure.
 Exercise all 12 pages, all 10 types, and the three catalog regression states
 under desktop, narrow, reduced-motion, and forced-colors profiles. Keep generated
 screenshots/reports under ignored `outputs/`; do not commit machine-specific
-artifacts. Run current stable Chromium, Firefox, and Safari on macOS for release
+artifacts. Run current stable Chromium and Firefox over file plus HTTP, and run
+Safari over the two matrix-pinned HTTP desktop/narrow profiles, for macOS release
 smoke evidence; an unavailable required browser blocks release.
 
 - [ ] **Step 6: Verify and commit**

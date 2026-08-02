@@ -61,7 +61,12 @@
       "safari": {
         "version": "26.5",
         "build": "21624.2.5.11.4",
-        "executable": "/Applications/Safari.app/Contents/MacOS/Safari"
+        "executable": "/Applications/Safari.app/Contents/MacOS/Safari",
+        "smokeTransport": "loopback-http",
+        "smokeProfiles": [
+          "desktop",
+          "mobile"
+        ]
       }
     }
   },

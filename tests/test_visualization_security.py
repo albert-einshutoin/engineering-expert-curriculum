@@ -22,6 +22,7 @@ from tools.install_test_browsers import (
     BrowserArchive,
     BrowserMatrixError,
     install_archive,
+    load_browser_matrix,
     main as install_main,
     verify_macos_browser_bundle,
     verify_linux_browser_binary,
@@ -625,6 +626,17 @@ class BrowserProvisioningSecurityTests(unittest.TestCase):
                     expected_version="26.4",
                     expected_build="21624.2.5.11.4",
                 )
+
+    def test_safari_release_smoke_authority_is_closed_to_loopback_profiles(self) -> None:
+        matrix = load_browser_matrix(
+            Path(__file__).resolve().parents[1] / "tests/browser-matrix.json"
+        )
+        safari = matrix.platforms["macos-arm64"].safari
+        self.assertIsNotNone(safari)
+        assert safari is not None
+        self.assertEqual(safari.smoke_transport, "loopback-http")
+        self.assertEqual(safari.smoke_profiles, ("desktop", "mobile"))
+        self.assertNotIn("file", safari.smoke_transport)
 
     def test_installer_cli_provisions_only_host_archives_and_checks_safari(self) -> None:
         root = Path(__file__).resolve().parents[1]

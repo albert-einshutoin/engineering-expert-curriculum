@@ -350,6 +350,8 @@ class BrowserContractTests(VisualizationAccessibilityTests):
                         "version": "26.0",
                         "build": "21624.2.5.11.4",
                         "executable": "/Applications/Safari.app/Contents/MacOS/Safari",
+                        "smokeTransport": "loopback-http",
+                        "smokeProfiles": ["desktop", "mobile"],
                     },
                 },
             },
@@ -421,6 +423,11 @@ class BrowserContractTests(VisualizationAccessibilityTests):
         self.assertEqual(matrix.profiles["mobile"].viewport, (390, 844))
         self.assertEqual(matrix.profiles["mobile"].device_scale_factor, 2)
         self.assertEqual(matrix.profiles["mobile"].cpu_throttle_rate, 4)
+        safari = matrix.platforms["macos-arm64"].safari
+        self.assertIsNotNone(safari)
+        assert safari is not None
+        self.assertEqual(safari.smoke_transport, "loopback-http")
+        self.assertEqual(safari.smoke_profiles, ("desktop", "mobile"))
 
     def test_matrix_rejects_mutable_or_incomplete_release_authority(self) -> None:
         mutations = []
@@ -433,6 +440,12 @@ class BrowserContractTests(VisualizationAccessibilityTests):
         missing_browser = self._matrix()
         del missing_browser["platforms"]["macos-arm64"]["browsers"]["firefox"]  # type: ignore[index]
         mutations.append(missing_browser)
+        safari_file = self._matrix()
+        safari_file["platforms"]["macos-arm64"]["safari"]["smokeTransport"] = "file"  # type: ignore[index]
+        mutations.append(safari_file)
+        safari_missing_mobile = self._matrix()
+        safari_missing_mobile["platforms"]["macos-arm64"]["safari"]["smokeProfiles"] = ["desktop"]  # type: ignore[index]
+        mutations.append(safari_missing_mobile)
         insecure_url = self._matrix()
         insecure_url["platforms"]["linux-x86_64"]["browsers"]["chromium"]["url"] = "http://example.test/browser.zip"  # type: ignore[index]
         mutations.append(insecure_url)
@@ -808,7 +821,11 @@ class BrowserContractTests(VisualizationAccessibilityTests):
         self.assertEqual(len(report["runs"]), 166)
         self.assertEqual(
             [row["label"] for row in report["runs"][-2:]],
-            ["core-02-file", "core-02-http"],
+            ["core-02-http-desktop", "core-02-http-mobile"],
+        )
+        self.assertEqual(
+            [row["profile"] for row in report["runs"][-2:]],
+            ["desktop", "mobile"],
         )
         self.assertTrue(all(
             row["reason"] == "remote-automation-session-unavailable"
@@ -832,6 +849,22 @@ class BrowserContractTests(VisualizationAccessibilityTests):
         )
         plan = browser_run_plan(inventory, include_safari=True)
         self.assertEqual(len(plan), 166)
+        self.assertEqual(
+            [(run["browser"], run["label"], run["profile"]) for run in plan[:4]],
+            [
+                ("chromium", "core-02-file", "desktop"),
+                ("chromium", "core-02-http", "desktop"),
+                ("firefox", "core-02-file", "desktop"),
+                ("firefox", "core-02-http", "desktop"),
+            ],
+        )
+        self.assertEqual(
+            [(run["browser"], run["label"], run["profile"]) for run in plan[-2:]],
+            [
+                ("safari", "core-02-http-desktop", "desktop"),
+                ("safari", "core-02-http-mobile", "mobile"),
+            ],
+        )
         provenance = {
             "matrixSha256": "a" * 64,
             "fixtureSha256": "b" * 64,
@@ -954,7 +987,10 @@ class BrowserContractTests(VisualizationAccessibilityTests):
         process.poll.return_value = None
         expected = {"passed": True, "schemaVersion": 1}
         requests = mock.Mock(side_effect=(
-            {"sessionId": "session-1"}, None, "published", "Lesson",
+            {"sessionId": "session-1"},
+            {"x": 0, "y": 0, "width": 1440, "height": 952},
+            {"width": 1440, "height": 900, "devicePixelRatio": 1},
+            None, "published", "Lesson",
             "<html></html>",
             {"element-6066-11e4-a52e-4f735466cecf": "reset-1"}, None,
             __import__("base64").b64encode(b"png").decode("ascii"), None,
@@ -969,17 +1005,63 @@ class BrowserContractTests(VisualizationAccessibilityTests):
                 url="http://127.0.0.1:8123/lesson.html",
                 screenshot=screenshot,
                 harness_version="1.0.0",
+                viewport=(1440, 900),
             )
             screenshot_bytes = screenshot.read_bytes()
-        self.assertEqual(result, expected)
+        self.assertEqual(result, {
+            **expected,
+            "observedViewport": {
+                "width": 1440, "height": 900, "devicePixelRatio": 1,
+            },
+        })
         execute_calls = [
             call for call in requests.call_args_list
             if call.args[2].endswith("/execute/sync")
         ]
-        self.assertEqual(len(execute_calls), 1)
-        self.assertIn("browser-contract-result", execute_calls[0].args[3]["script"])
+        self.assertEqual(len(execute_calls), 2)
+        self.assertIn("window.innerWidth", execute_calls[0].args[3]["script"])
+        self.assertIn("browser-contract-result", execute_calls[1].args[3]["script"])
+        rect_calls = [
+            call for call in requests.call_args_list
+            if call.args[2].endswith("/window/rect")
+        ]
+        self.assertEqual([call.args[1] for call in rect_calls], ["POST"])
+        self.assertEqual(rect_calls[0].args[3], {"width": 1440, "height": 900})
         parser.assert_called_once_with("<html></html>", expected_harness_version="1.0.0")
         self.assertEqual(screenshot_bytes, b"png")
+
+    def test_safari_smoke_rejects_file_authority_and_unconfirmed_viewport(self) -> None:
+        for url in (
+            "file:///tmp/lesson.html",
+            "http://localhost:8123/lesson.html",
+            "http://127.0.0.1:8123/lesson.html?mutable=1",
+            "http://user@127.0.0.1:8123/lesson.html",
+        ):
+            with self.subTest(url=url), self.assertRaisesRegex(
+                BrowserMatrixError, "loopback HTTP"
+            ):
+                run_safari_smoke(
+                    safaridriver=Path("/usr/bin/safaridriver"), url=url,
+                    screenshot=Path("unused.png"), harness_version="1.0.0",
+                    viewport=(1440, 900),
+                )
+        process = mock.Mock()
+        process.poll.return_value = None
+        requests = mock.Mock(side_effect=(
+            {"sessionId": "session-1"},
+            {"x": 0, "y": 0, "width": 1280, "height": 720},
+            {"width": "unknown", "height": 720, "devicePixelRatio": 1},
+            None,
+        ))
+        with mock.patch("tools.run_browser_contract.subprocess.Popen", return_value=process), \
+                mock.patch("tools.run_browser_contract._webdriver_request", requests), \
+                self.assertRaisesRegex(BrowserMatrixError, "viewport"):
+            run_safari_smoke(
+                safaridriver=Path("/usr/bin/safaridriver"),
+                url="http://127.0.0.1:8123/lesson.html",
+                screenshot=Path("unused.png"), harness_version="1.0.0",
+                viewport=(1440, 900),
+            )
 
     def test_only_transient_safari_session_creation_failure_is_typed_blocked(self) -> None:
         process = mock.Mock()
@@ -994,9 +1076,9 @@ class BrowserContractTests(VisualizationAccessibilityTests):
                 mock.patch("tools.run_browser_contract.time.sleep"):
             with self.assertRaises(SafariSessionUnavailable):
                 run_safari_smoke(
-                    safaridriver=Path("/usr/bin/safaridriver"), url="file:///tmp/lesson.html",
+                    safaridriver=Path("/usr/bin/safaridriver"), url="http://127.0.0.1:8123/lesson.html",
                     screenshot=Path("unused.png"),
-                    harness_version="1.0.0", timeout=0.5,
+                    harness_version="1.0.0", viewport=(1440, 900), timeout=0.5,
                 )
 
         with mock.patch("tools.run_browser_contract.subprocess.Popen", return_value=process), \
@@ -1006,9 +1088,9 @@ class BrowserContractTests(VisualizationAccessibilityTests):
                 ):
             with self.assertRaises(BrowserMatrixError) as caught:
                 run_safari_smoke(
-                    safaridriver=Path("/usr/bin/safaridriver"), url="file:///tmp/lesson.html",
+                    safaridriver=Path("/usr/bin/safaridriver"), url="http://127.0.0.1:8123/lesson.html",
                     screenshot=Path("unused.png"),
-                    harness_version="1.0.0", timeout=0.5,
+                    harness_version="1.0.0", viewport=(1440, 900), timeout=0.5,
                 )
         self.assertNotIsInstance(caught.exception, SafariSessionUnavailable)
 
@@ -1057,18 +1139,21 @@ class BrowserContractTests(VisualizationAccessibilityTests):
         ).read_text(encoding="utf-8")
         self.assertIn("reset-restoration", runtime_harness)
 
-    def test_safari_instrumented_document_preserves_origin_and_is_always_removed(self) -> None:
+    def test_safari_instrumented_document_preserves_http_origin_and_is_always_removed(self) -> None:
         with TemporaryDirectory() as temporary:
             site = Path(temporary) / "site"
             source = site / "lesson" / "index.html"
             source.parent.mkdir(parents=True)
             source.write_text("<!doctype html><html><head></head><body></body></html>", encoding="utf-8")
             with _safari_instrumented_document(
-                source_document=source, target_url=source.as_uri(),
+                source_document=source,
+                target_url="http://127.0.0.1:8123/lesson/index.html",
                 harness_source="window.__harness = true;",
                 approved_file_roots=(site,), requested_state="crossover",
             ) as instrumented_url:
-                instrumented = Path(urlsplit(instrumented_url).path)
+                parsed = urlsplit(instrumented_url)
+                self.assertEqual((parsed.scheme, parsed.hostname, parsed.port), ("http", "127.0.0.1", 8123))
+                instrumented = source.parent / Path(parsed.path).name
                 self.assertEqual(instrumented.parent.resolve(), source.parent.resolve())
                 self.assertTrue(instrumented.is_file())
                 self.assertIn("crossover", instrumented.read_text(encoding="utf-8"))

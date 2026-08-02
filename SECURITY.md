@@ -6,6 +6,8 @@ exact meta CSPはruntimeとinline scriptを分離し、resourceより前に配�
 
 CIのbrowserはregistry-qualified OCI digestと公式HTTPS archive URL、version、SHA-256で固定します。checksum一致前の展開、platform間fallback、matrix外browserの自動探索を許しません。cacheと検証reportは`outputs/`へ限定し、release artifactへ混入させません。
 
+Safari WebDriver 26.5では、外部`file://` main resourceがWebKit sandboxの外側として拒否されることを実機で確認しています。Safariの必須runtime smokeはmatrixで`loopback-http`へ閉じ、desktopと390px narrow viewportの2 profileをpre-product harnessで検証します。これはSafariのfile成功やmobile device emulationを意味しません。Chromium・Firefoxのfile/HTTP runtime contractと、静的no-JS/file checker contractは削除せず維持します。
+
 rootのrelease manifestはcommitと配信対象byteの整合性を検査します。deployed verifierはHTTPSの同一Pages origin・同一subpathだけを、redirect、retry、時間、file数、byte数の上限内で取得します。ただしSHA-256 manifestは署名ではなく、publisherやworkflowの真正性を単独で保証しません。信頼の根はreview済みcommit、branch protection、digest固定workflow/action、GitHub Pages deploymentです。
 
 ## サポート対象
