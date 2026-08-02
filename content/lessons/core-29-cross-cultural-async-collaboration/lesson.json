@@ -15,17 +15,26 @@
     {
       "id": "obj-async-context",
       "statement": "timezone、language、前提、応答期限をRFCへ埋め込み、非同期レビューのcontextを完成できる",
-      "evidenceIds": ["async-rfc", "assessment"]
+      "evidenceIds": [
+        "async-rfc",
+        "assessment"
+      ]
     },
     {
       "id": "obj-dissent",
       "statement": "異論を人格から分離して記録し、根拠あるresolutionをdecision logへ残せる",
-      "evidenceIds": ["decision-log", "teach-back"]
+      "evidenceIds": [
+        "decision-log",
+        "teach-back"
+      ]
     },
     {
       "id": "obj-zero-overlap",
       "statement": "timezone overlapだけを変え、同じproposal evidenceでmeetingなしのレビュー可能性を再評価できる",
-      "evidenceIds": ["async-rfc", "transfer"]
+      "evidenceIds": [
+        "async-rfc",
+        "transfer"
+      ]
     }
   ],
   "evidence": [
@@ -59,27 +68,38 @@
     {
       "level": "recognize",
       "criterion": "timezone、language、context、authorityの非対称性を識別できる",
-      "evidenceIds": ["async-rfc"]
+      "evidenceIds": [
+        "async-rfc"
+      ]
     },
     {
       "level": "explain",
       "criterion": "consensus、投票、全員一致、沈黙の違いを説明できる",
-      "evidenceIds": ["teach-back"]
+      "evidenceIds": [
+        "teach-back"
+      ]
     },
     {
       "level": "apply",
       "criterion": "RFC section、応答期限、dissent responseを再現可能なdecision logへ組み立てられる",
-      "evidenceIds": ["async-rfc", "decision-log"]
+      "evidenceIds": [
+        "async-rfc",
+        "decision-log"
+      ]
     },
     {
       "level": "diagnose",
       "criterion": "meeting依存、暗黙context、言語によるstatus差、異論の消去を反証できる",
-      "evidenceIds": ["assessment"]
+      "evidenceIds": [
+        "assessment"
+      ]
     },
     {
       "level": "lead",
       "criterion": "zero-overlapでも別のcontributorが判断根拠を再検証できる協働境界を運営できる",
-      "evidenceIds": ["transfer"]
+      "evidenceIds": [
+        "transfer"
+      ]
     }
   ],
   "lab": {
@@ -145,28 +165,125 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "RFC 7282: On Consensus and Humming in the IETF",
       "url": "https://www.rfc-editor.org/info/rfc7282/",
       "kind": "standard"
     },
     {
+      "id": "src-02",
       "title": "RFC 7322: RFC Style Guide",
       "url": "https://www.rfc-editor.org/info/rfc7322/",
       "kind": "standard"
     },
     {
+      "id": "src-03",
       "title": "W3C Process Document, 18 August 2025",
       "url": "https://www.w3.org/policies/process/",
       "kind": "standard"
     },
     {
+      "id": "src-04",
       "title": "The Art of Consensus (W3C Guidebook, accessed 2026-07-31)",
       "url": "https://www.w3.org/guide/",
       "kind": "primary"
     }
   ],
+  "visualizations": [
+    {
+      "id": "async-review-timeline",
+      "type": "timeline",
+      "caption": "proposal contextからreasoned decisionへ進む非同期review chain",
+      "question": "timezone overlapがなくてもdissentと採否理由を第三者が再評価できる記録は何か。",
+      "afterSection": "mentalModel",
+      "objectiveIds": [
+        "obj-async-context",
+        "obj-dissent",
+        "obj-zero-overlap"
+      ],
+      "evidenceIds": [
+        "async-rfc",
+        "decision-log"
+      ],
+      "sourceIds": [
+        "src-01",
+        "src-02",
+        "src-03"
+      ],
+      "expectedObservation": "decision rights、evidence、参加条件、response window、異論への応答を再生可能なdecision logへ結べる。",
+      "notes": [],
+      "payload": {
+        "phases": [
+          {
+            "id": "context",
+            "label": "文脈",
+            "detail": "判断範囲、代替案、参加条件を文書へ揃える。"
+          },
+          {
+            "id": "review",
+            "label": "レビュー",
+            "detail": "安全なresponse windowで異論と応答を追跡する。"
+          },
+          {
+            "id": "decision-phase",
+            "label": "決定",
+            "detail": "第三者がmeetingなしで再評価できる形にする。"
+          }
+        ],
+        "events": [
+          {
+            "id": "frame",
+            "label": "Frame",
+            "detail": "problem、decision rights、対象外を固定する。",
+            "phaseId": "context",
+            "order": 0
+          },
+          {
+            "id": "expose",
+            "label": "Expose",
+            "detail": "alternatives、evidence、uncertaintyを同じ文書に置く。",
+            "phaseId": "context",
+            "order": 1
+          },
+          {
+            "id": "include",
+            "label": "Include",
+            "detail": "timezone、working language、用語、UTC期限を示す。",
+            "phaseId": "context",
+            "order": 2
+          },
+          {
+            "id": "invite",
+            "label": "Invite",
+            "detail": "dissentを安全に記録するresponse-windowを開く。",
+            "phaseId": "review",
+            "order": 3
+          },
+          {
+            "id": "resolve",
+            "label": "Resolve",
+            "detail": "異論ごとのresponseと採否理由を残す。",
+            "phaseId": "review",
+            "order": 4
+          },
+          {
+            "id": "replay",
+            "label": "Replay",
+            "detail": "meeting unnecessaryな状態で第三者が判断を再評価する。",
+            "phaseId": "decision-phase",
+            "order": 5
+          }
+        ]
+      }
+    }
+  ],
   "review": {
-    "intervalDays": [1, 7, 30, 90],
+    "intervalDays": [
+      1,
+      7,
+      30,
+      90
+    ],
     "prompts": [
       "meetingを開かずにcontext completenessを判定する最小証拠は何か",
       "dissentを記録しただけではaddressedにならない理由は何か",

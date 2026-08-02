@@ -108,7 +108,7 @@ EXPECTED_CHECKLIST = (
     "Transferが重要制約を変え、同じ判断のコピーになっていない。",
     "Rubricの4観点×4段階が観測可能で、proficient境界が明確である。",
     "Source hierarchy、version、関連性、断定範囲、異なる2件以上のHTTPS URLを確認した。",
-    "Semantic HTML、keyboard、zoom、contrast、print、JS0を確認した。",
+    "Semantic HTML、keyboard、zoom、contrast、print、JavaScript無効時の完全性を確認した。",
     "4 review dimensions、reviewerKind、author fix、再確認結果を記録した。",
     "v0.1.0以後のreviewerKindを開示し、AI reviewをhuman approvalに数えていない。",
     "Generated map、full tests、2回build、local link、安全性、accessibility検査と認証済みmaintainer decisionが揃った。",

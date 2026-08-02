@@ -140,26 +140,67 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "On the Criteria To Be Used in Decomposing Systems into Modules",
       "url": "https://doi.org/10.1145/361598.361623",
       "kind": "primary"
     },
     {
+      "id": "src-02",
       "title": "ISO/IEC/IEEE 42010:2022 - Software, systems and enterprise — Architecture description",
       "url": "https://www.iso.org/standard/74393.html",
       "kind": "standard"
     },
     {
+      "id": "src-03",
       "title": "Documenting Software Architectures: Views and Beyond, Second Edition",
       "url": "https://www.sei.cmu.edu/library/documenting-software-architectures-views-and-beyond-second-edition/",
       "kind": "primary"
     },
     {
+      "id": "src-04",
       "title": "MADR 4.0.0 — The Markdown Architectural Decision Records",
       "url": "https://adr.github.io/madr/",
       "kind": "primary"
     }
   ],
+  "visualizations": [{
+    "id": "module-dependency-network", "type": "network", "caption": "変更理由を内側へ隠蔽する三層の依存graph",
+    "question": "変更理由を守る source dependency と運用時の request flow をどう区別するか。", "afterSection": "mentalModel",
+    "objectiveIds": ["obj-boundary", "obj-direction"], "evidenceIds": ["module-adr"], "sourceIds": ["src-01", "src-02"],
+    "expectedObservation": "source dependencyはadapterからdomainへ、runtime request flowはdomain portからadapter実装へ進む逆向きのviewとして区別し、独立したreporting境界も指し示せる。",
+    "notes": [
+      "この注記は旧図の読み順を保持する補助です。",
+      "pricing-domain: 料金規則と不変条件。UIやDB形式を知らない。",
+      "pricing-application: use caseを順序付け、domainのportを使う。",
+      "pricing-adapters: HTTP、DB、batch形式をdomainの語彙へ変換する。",
+      "reporting: 料金計算の変更対象外となる独立module。impact計算のfalse positiveを検出する基準にする。",
+      "source dependencyはadaptersからapplication、applicationからdomainへ向ける。",
+      "運用viewでは逆向きのrequest flowを別の矢印として記述し、意味を混ぜない。"
+    ],
+    "payload": {
+      "components": [
+        {"id": "source-dependency-view", "label": "source dependency view", "detail": "source dependencyはadaptersからapplication、applicationからdomainへ向ける。"},
+        {"id": "runtime-request-flow-view", "label": "runtime request flow view", "detail": "運用viewでは逆向きのrequest flowを別の矢印として記述し、意味を混ぜない。"},
+        {"id": "independent-reporting", "label": "変更対象外のreporting境界", "detail": "pricingの依存graphから隔離し、impact計算のfalse positiveを検出する基準にする。"}
+      ],
+      "nodes": [
+        {"id": "source-domain", "label": "pricing-domain", "detail": "料金規則と不変条件。UIやDB形式を知らない。", "componentId": "source-dependency-view"},
+        {"id": "source-application", "label": "pricing-application", "detail": "use caseを順序付け、domainのportを使う。", "componentId": "source-dependency-view"},
+        {"id": "source-adapters", "label": "pricing-adapters", "detail": "HTTP、DB、batch形式をdomainの語彙へ変換する。", "componentId": "source-dependency-view"},
+        {"id": "runtime-domain", "label": "pricing-domain", "detail": "runtime viewでdomain portから外側の実装を呼び出す起点。", "componentId": "runtime-request-flow-view"},
+        {"id": "runtime-application", "label": "pricing-application", "detail": "runtime viewでuse caseとdomain portの呼出しを中継する。", "componentId": "runtime-request-flow-view"},
+        {"id": "runtime-adapters", "label": "pricing-adapters", "detail": "runtime viewでHTTP、DB、batchのadapter実装を実行する。", "componentId": "runtime-request-flow-view"},
+        {"id": "reporting", "label": "reporting", "detail": "料金計算の変更対象外となる独立module。impact計算のfalse positiveを検出する基準にする。", "componentId": "independent-reporting"}
+      ],
+      "connections": [
+        {"id": "source-adapters-to-application", "from": "source-adapters", "to": "source-application", "label": "source dependency: adaptersからapplicationへ向ける"},
+        {"id": "source-application-to-domain", "from": "source-application", "to": "source-domain", "label": "source dependency: applicationからdomain portへ向ける"},
+        {"id": "runtime-domain-to-application", "from": "runtime-domain", "to": "runtime-application", "label": "runtime request flow: domain portからapplicationへ戻る"},
+        {"id": "runtime-application-to-adapters", "from": "runtime-application", "to": "runtime-adapters", "label": "runtime request flow: applicationからadapter実装を呼ぶ"}
+      ]
+    }
+  }],
   "review": {
     "intervalDays": [1, 7, 30, 90],
     "prompts": [

@@ -141,26 +141,61 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "DORA Capability: Loosely coupled teams (accessed 2026-07-31)",
       "url": "https://dora.dev/capabilities/loosely-coupled-teams/",
       "kind": "primary"
     },
     {
+      "id": "src-02",
       "title": "How Do Committees Invent? (1968)",
       "url": "https://www.melconway.com/Home/Committees_Paper.html",
       "kind": "primary"
     },
     {
+      "id": "src-03",
       "title": "Team Topologies: Key concepts (accessed 2026-07-31)",
       "url": "https://teamtopologies.com/key-concepts",
       "kind": "primary"
     },
     {
+      "id": "src-04",
       "title": "ISO/IEC/IEEE 42010:2022 - Software, systems and enterprise — Architecture description",
       "url": "https://www.iso.org/standard/74393.html",
       "kind": "standard"
     }
   ],
+  "visualizations": [{
+    "id": "team-interface-network", "type": "network", "caption": "team ownershipからdependency SLOとcontributor enablementへ至る社会技術interface",
+    "question": "ownershipとdependencyの設計は、認知負荷とdelivery SLOへどう現れるか。", "afterSection": "mentalModel",
+    "objectiveIds": ["obj-team-interface", "obj-cognitive-load"], "evidenceIds": ["team-interface"], "sourceIds": ["src-01", "src-02", "src-03"],
+    "expectedObservation": "checkoutとplatformの依存を、decision right、認知負荷、dependency latency、enablement判断まで結んで説明できる。",
+    "notes": [
+      "この注記は旧図の読み順を保持する補助です。",
+      "Ownership: checkout teamがcheckout capabilityのdecision rightを持つ。",
+      "Dependency: checkoutはplatform capabilityへ依存する。",
+      "Cognitive load: assigned領域をcapacityと比較し、過負荷を個人努力へ隠さない。",
+      "SLO: dependency latencyのtargetとobservedを同じ単位で評価する。",
+      "Enablement: 各interface snapshotから判断を再計算し、healthyならmonitor、breachedならescalateとしてcheckoutの自律判断を増やす。"
+    ],
+    "payload": {
+      "components": [{"id": "delivery-interface", "label": "delivery interface", "detail": "team境界とsoftware dependencyを同じsnapshotで評価する社会技術範囲。"}],
+      "nodes": [
+        {"id": "ownership", "label": "Ownership", "detail": "checkout teamがcheckout capabilityのdecision rightを持つ。", "componentId": "delivery-interface"},
+        {"id": "dependency", "label": "Dependency", "detail": "checkoutはplatform capabilityへ依存する。", "componentId": "delivery-interface"},
+        {"id": "cognitive-load", "label": "Cognitive load", "detail": "assigned領域をcapacityと比較し、過負荷を個人努力へ隠さない。", "componentId": "delivery-interface"},
+        {"id": "slo", "label": "SLO", "detail": "dependency latencyのtargetとobservedを同じ単位で評価する。", "componentId": "delivery-interface"},
+        {"id": "enablement", "label": "Enablement", "detail": "各interface snapshotから判断を再計算し、healthyならmonitor、breachedならescalateとしてcheckoutの自律判断を増やす。", "componentId": "delivery-interface"}
+      ],
+      "connections": [
+        {"id": "ownership-declares-dependency", "from": "ownership", "to": "dependency", "label": "checkout capabilityのdecision rightとplatform依存を分ける"},
+        {"id": "ownership-bounds-cognitive-load", "from": "ownership", "to": "cognitive-load", "label": "assigned領域をcapacityと比較する"},
+        {"id": "dependency-defines-slo", "from": "dependency", "to": "slo", "label": "dependency latencyのtargetとobservedを比較する"},
+        {"id": "cognitive-load-guides-enablement", "from": "cognitive-load", "to": "enablement", "label": "capacity内かをenablement判断へ渡す"},
+        {"id": "slo-guides-enablement", "from": "slo", "to": "enablement", "label": "dependency SLO statusをenablement判断へ渡す"}
+      ]
+    }
+  }],
   "review": {
     "intervalDays": [1, 7, 30, 90],
     "prompts": [

@@ -1,0 +1,311 @@
+.visualization {
+  display: grid;
+  gap: var(--space-4, 1.5rem);
+  margin-block: var(--space-5, 2rem);
+  padding-block: var(--space-4, 1.5rem);
+  padding-inline: var(--space-4, 1.5rem);
+  border: var(--border-strong, 2px solid currentColor);
+  border-radius: 0.75rem;
+  background: var(--color-surface, Canvas);
+  color: var(--color-ink, CanvasText);
+}
+
+.visualization :is(button, input, select):focus-visible {
+  outline: 3px solid var(--color-focus, currentColor);
+  outline-offset: 3px;
+}
+
+.visualization :is(button, input, select) {
+  min-inline-size: 24px;
+  min-block-size: 24px;
+}
+
+.visualization__components,
+.visualization__nodes,
+.visualization__states,
+.visualization__ordered-model,
+.visualization__causal-model,
+.visualization__relationships,
+.visualization__timeline-phases,
+.visualization__timeline-events,
+.visualization__simulation-states {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr));
+  gap: var(--space-3, 1rem);
+  padding-inline-start: 0;
+}
+
+.visualization__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2, 0.75rem);
+  align-items: center;
+}
+
+.visualization.is-enhanced .visualization__controls:not([hidden]) {
+  border-block-start: 2px solid currentColor;
+  padding-block-start: var(--space-3, 1rem);
+}
+
+.visualization__model-node.is-active,
+.visualization__model-edge.is-active {
+  border-block-end: 3px double currentColor;
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-thickness: 0.12em;
+}
+
+.visualization.is-complete {
+  border-style: double;
+  border-width: 4px;
+}
+
+.visualization.has-runtime-error {
+  border-style: dashed;
+}
+
+.visualization.has-runtime-error .visualization__current-status {
+  text-decoration: underline;
+  text-decoration-thickness: 0.12em;
+}
+
+.visualization__table {
+  inline-size: 100%;
+  border-collapse: collapse;
+}
+
+.visualization__table :is(th, td) {
+  padding-block: var(--space-2, 0.75rem);
+  padding-inline: var(--space-2, 0.75rem);
+  border-block-end: 1px solid var(--color-border, currentColor);
+  text-align: start;
+}
+
+.visualization__current-status,
+.visualization [aria-current="step"] {
+  border: 3px double currentColor;
+  font-weight: 700;
+}
+
+.visualization__announcement {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.visualization [aria-current="step"]::before {
+  content: "";
+  display: inline-block;
+  inline-size: 0.65em;
+  block-size: 0.65em;
+  margin-inline-end: 0.45em;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+}
+
+.visualization__nodes > *,
+.visualization__states > *,
+.visualization__ordered-model > *,
+.visualization__components > *,
+.visualization__timeline-phases > *,
+.visualization__timeline-events > * {
+  position: relative;
+  padding-block: var(--space-2, 0.75rem);
+  padding-inline: var(--space-3, 1rem);
+  border: 1px solid var(--color-border, currentColor);
+  border-radius: 0.5rem;
+}
+
+.visualization--flow,
+.visualization--hierarchy,
+.visualization--comparison,
+.visualization--state-loop,
+.visualization--causal,
+.visualization--timeline,
+.visualization--network,
+.visualization--memory,
+.visualization--matrix,
+.visualization--state-machine {
+  container-type: inline-size;
+}
+
+.visualization :is(dt, dd, li, th, td) {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.visualization--comparison .visualization__table,
+.visualization--matrix .visualization__table {
+  inline-size: 100%;
+}
+
+.visualization--causal .visualization__causal-model {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  grid-auto-flow: row;
+  gap: var(--space-3, 1rem);
+}
+
+.visualization--hierarchy .visualization__hierarchy {
+  display: block;
+}
+
+.visualization--hierarchy .visualization__hierarchy > ul {
+  margin-block: 0;
+  padding-inline-start: var(--space-3, 1rem);
+  border-inline-start: 3px solid currentColor;
+  list-style-type: disc;
+}
+
+.visualization--hierarchy .visualization__hierarchy > ul > li,
+.visualization--hierarchy .visualization__hierarchy li > ul > li {
+  margin-block: var(--space-2, 0.75rem);
+  padding-block: var(--space-2, 0.75rem);
+  padding-inline-start: var(--space-2, 0.75rem);
+  border-inline-start: 2px solid currentColor;
+}
+
+.visualization--hierarchy .visualization__hierarchy li > ul {
+  margin-block-start: var(--space-2, 0.75rem);
+  margin-inline-start: var(--space-2, 0.75rem);
+  padding-inline-start: var(--space-3, 1rem);
+  border-inline-start: 2px solid currentColor;
+  list-style-type: circle;
+}
+
+.visualization--flow .visualization__ordered-model,
+.visualization--state-loop .visualization__nodes,
+.visualization--state-machine .visualization__states,
+.visualization--timeline .visualization__timeline-phases,
+.visualization--network .visualization__components,
+.visualization--network .visualization__nodes,
+.visualization--memory .visualization__nodes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr));
+  grid-auto-flow: row;
+  gap: var(--space-3, 1rem);
+  /* Auto-fit can wrap between any DOM siblings, so a pseudo connector can
+     point across a row boundary. Semantic markup already carries the meaning. */
+}
+
+@media (max-width: 20rem) {
+  .visualization--flow .visualization__ordered-model,
+  .visualization--state-loop .visualization__nodes,
+  .visualization--causal .visualization__causal-model,
+  .visualization--timeline .visualization__timeline-phases,
+  .visualization--network .visualization__components,
+  .visualization--network .visualization__nodes,
+  .visualization--memory .visualization__nodes,
+  .visualization--state-machine .visualization__states {
+    grid-template-columns: 1fr;
+    grid-auto-flow: row;
+  }
+
+  .visualization--hierarchy .visualization__hierarchy > ul {
+    padding-inline-start: var(--space-2, 0.75rem);
+  }
+
+  .visualization--hierarchy .visualization__hierarchy > ul > li,
+  .visualization--hierarchy .visualization__hierarchy li > ul > li {
+    padding-inline-start: var(--space-1, 0.5rem);
+  }
+
+  .visualization--hierarchy .visualization__hierarchy li > ul {
+    margin-inline-start: 0;
+    padding-inline-start: var(--space-2, 0.75rem);
+  }
+
+}
+
+@container (max-width: 20rem) {
+  .visualization--flow .visualization__ordered-model,
+  .visualization--state-loop .visualization__nodes,
+  .visualization--causal .visualization__causal-model,
+  .visualization--timeline .visualization__timeline-phases,
+  .visualization--network .visualization__components,
+  .visualization--network .visualization__nodes,
+  .visualization--memory .visualization__nodes,
+  .visualization--state-machine .visualization__states {
+    grid-template-columns: 1fr;
+    grid-auto-flow: row;
+  }
+
+  .visualization--hierarchy .visualization__hierarchy > ul {
+    padding-inline-start: var(--space-2, 0.75rem);
+  }
+
+  .visualization--hierarchy .visualization__hierarchy > ul > li,
+  .visualization--hierarchy .visualization__hierarchy li > ul > li {
+    padding-inline-start: var(--space-1, 0.5rem);
+  }
+
+  .visualization--hierarchy .visualization__hierarchy li > ul {
+    margin-inline-start: 0;
+    padding-inline-start: var(--space-2, 0.75rem);
+  }
+
+}
+
+@media (forced-colors: active) {
+  .visualization,
+  .visualization__nodes > *,
+  .visualization__states > *,
+  .visualization__components > *,
+  .visualization__timeline-events > * {
+    color: CanvasText;
+    background: Canvas;
+    border-color: currentColor;
+  }
+
+  .visualization :is(button, input, select):focus-visible {
+    outline-color: Highlight;
+  }
+
+  .visualization__model-node.is-active,
+  .visualization__model-edge.is-active,
+  .visualization.is-complete,
+  .visualization.has-runtime-error {
+    border-color: currentColor;
+  }
+
+  .visualization--hierarchy .visualization__hierarchy > ul,
+  .visualization--hierarchy .visualization__hierarchy > ul > li,
+  .visualization--hierarchy .visualization__hierarchy li > ul > li,
+  .visualization--hierarchy .visualization__hierarchy li > ul {
+    border-color: currentColor;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .visualization,
+  .visualization * {
+    scroll-behavior: auto;
+    transition-duration: 0.01ms;
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+  }
+}
+
+@media print {
+  .visualization__simulation-oracle,
+  .visualization__simulation-oracle[hidden] {
+    display: block !important;
+  }
+
+  .visualization__controls {
+    display: none !important;
+  }
+
+  .visualization {
+    break-inside: avoid;
+    box-shadow: none;
+  }
+
+  .visualization--hierarchy .visualization__hierarchy > ul > li,
+  .visualization--hierarchy .visualization__hierarchy li > ul > li {
+    break-inside: avoid;
+  }
+}

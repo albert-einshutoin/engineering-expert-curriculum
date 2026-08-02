@@ -9,17 +9,6 @@
 <section id="mental-model">
   <h2>メンタルモデル</h2>
   <p>ロード命令がデータへ到達するまでを「変換」と「転送」に分ける。次の図は診断用の論理段階であり、普遍的な逐次時系列ではない。たとえばVIPT方式では、TLBのアドレス変換とL1 cacheのindex lookupが並行し得る。物理tagの照合を含む具体的な重なり方は実装依存なので、実機資料とcounterで仮説を絞る。</p>
-  <figure>
-    <figcaption>一つのロードを診断する論理段階</figcaption>
-    <ol>
-      <li><strong>命令:</strong> 仮想アドレスAの値を要求する。</li>
-      <li><strong>TLB:</strong> Aのページ変換を検索する。missならページテーブルwalkが必要になる。</li>
-      <li><strong>L1 cache:</strong> Aを含むcache lineを検索する。hitなら近い階層で返る。</li>
-      <li><strong>L2と最終レベルcache:</strong> L1 miss後の候補を調べる。L2やLLCがcore-privateか複数coreでsharedかというprivate/shared範囲は機種依存である。</li>
-      <li><strong>memory controller:</strong> 全cacheでmissなら主記憶からline単位で転送する。</li>
-      <li><strong>再利用:</strong> 同じline内の次要素を使えば空間的局所性、短時間に同じ値を使えば時間的局所性を得る。</li>
-    </ol>
-  </figure>
   <p>データ構造の選択では、オブジェクト数だけでなく、hot pathで同時に読むfieldを考える。Array of Structuresは一要素の全fieldを同時に使う処理に向き、Structure of Arraysは同じfieldを多数要素から読む処理に向き得る。ただし更新の一貫性と可読性の費用も比較する。</p>
 </section>
 <section id="worked-example">

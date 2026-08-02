@@ -13,12 +13,32 @@ import unittest
 
 import curriculum_builder.render as render_module
 from curriculum_builder.errors import CurriculumValidationError
-from curriculum_builder.html_safety import SafeHtml, validate_fragment
+from curriculum_builder.html_safety import (
+    SafeHtml,
+    validate_fragment,
+    validate_generated_fragment,
+)
 from curriculum_builder.render import (
     MAX_PLACEHOLDERS,
     MAX_STRUCTURED_TEXT_CHARS,
     MAX_TEMPLATE_BYTES,
     Renderer,
+)
+from curriculum_builder.visualizations import (
+    FlowPayload,
+    InteractionMode,
+    Item,
+    LessonSectionRole,
+    ParameterOption,
+    Relationship,
+    Simulation,
+    SimulationKind,
+    SimulationOutcome,
+    SimulationParameter,
+    SimulationState,
+    Visualization,
+    VisualizationType,
+    render_visualization,
 )
 
 
@@ -241,8 +261,8 @@ class RendererTests(unittest.TestCase):
 
     def test_from_template_bytes_reuses_base_policy_validation(self) -> None:
         base = (TEMPLATE_ROOT / "base.html").read_bytes().replace(
-            b"script-src 'none'",
             b"script-src 'self'",
+            b"script-src 'none'",
         )
         self.assert_validation_error(
             "base template CSP is incomplete",
@@ -317,7 +337,8 @@ class RendererTests(unittest.TestCase):
         self.assertIn('<html lang="ja">', html)
         self.assertIn('class="skip-link" href="#main"', html)
         self.assertIn('<nav aria-label="主要ナビゲーション">', html)
-        self.assertIn("script-src 'none'", html)
+        self.assertIn("script-src 'self'", html)
+        self.assertIn("script-src-attr 'none'", html)
         self.assertNotIn("frame-ancestors", html)
         self.assertNotIn("<script", html.casefold())
 
@@ -332,6 +353,119 @@ class RendererTests(unittest.TestCase):
 
         self.assertIn("&lt;1140&gt;", fragment.value)
         self.assertIn("<section>安全</section>", fragment.value)
+
+    def test_renderer_revalidates_generated_simulation_capability_and_document(self) -> None:
+        simulation = Simulation(
+            SimulationKind.REQUEST_PATH,
+            InteractionMode.SCENARIO,
+            (SimulationParameter(
+                "fault", "障害", "select",
+                (ParameterOption("none", "なし"), ParameterOption("drop", "破棄")),
+                "none",
+            ),),
+            "ready",
+            (SimulationState("ready", "準備", "待機", {}, ("a",), ()),),
+            (),
+            (SimulationOutcome("ready-outcome", "ready", "準備完了"),),
+            None,
+        )
+        visual = Visualization(
+            "request", VisualizationType.FLOW, "要求", "どこで待つか",
+            LessonSectionRole.MENTAL_MODEL, ("obj-1",), ("evidence",),
+            ("source",), "待機点を説明する",
+            FlowPayload((Item("a", "開始", "送る"),), ()), (), simulation,
+        )
+        generated = render_visualization("core-01-systems-tradeoffs", visual)
+        renderer = self.renderer_with_fragment(
+            "simulation.html",
+            '<article class="lesson">$body</article>',
+        )
+        fragment = renderer.fragment(
+            "simulation.html",
+            text_values={},
+            html_values={"body": generated},
+        )
+
+        html = renderer.page(
+            output_path=Path("lesson.html"),
+            title="教材",
+            description="説明",
+            content=fragment,
+        )
+
+        self.assertIn("visualization__controls", html)
+        self.assertIn("<button", html)
+        self.assertIn(
+            '<script src="static/visualization.js" defer></script>',
+            html,
+        )
+        object.__setattr__(generated, "value", generated.value.replace(
+            "<button", '<button onclick="run()"', 1
+        ))
+        self.assert_validation_error(
+            "disallowed HTML attribute on button",
+            renderer.page,
+            output_path=Path("lesson.html"),
+            title="教材",
+            description="説明",
+            content=generated,
+        )
+
+        forged = validate_generated_fragment(
+            '<div class="visualization__controls" hidden>'
+            '<button type="button" disabled>実行</button></div>'
+        )
+        object.__setattr__(forged, "value", "<unknown>forged</unknown>")
+        self.assert_validation_error(
+            "disallowed HTML element",
+            renderer.page,
+            output_path=Path("lesson.html"),
+            title="教材",
+            description="説明",
+            content=forged,
+        )
+        object.__setattr__(forged, "value", "<p>forged</p>")
+        object.__setattr__(forged, "provenance", "generated")
+        self.assert_validation_error(
+            "raw HTML has invalid provenance",
+            renderer.page,
+            output_path=Path("lesson.html"),
+            title="教材",
+            description="説明",
+            content=forged,
+        )
+
+    def test_renderer_rejects_forged_generated_control_relationships(self) -> None:
+        valid = (
+            '<div class="visualization__controls" hidden>'
+            '<label for="choice">選択</label><select id="choice" disabled>'
+            '<option value="one" selected>一つ</option>'
+            '<option value="two">二つ</option></select>'
+            '<label for="mode-one"><input id="mode-one" type="radio" '
+            'name="mode" value="one" disabled checked>一つ</label>'
+            '<label for="mode-two"><input id="mode-two" type="radio" '
+            'name="mode" value="two" disabled>二つ</label></div>'
+        )
+        generated = validate_generated_fragment(valid)
+        mutations = (
+            valid.replace('for="choice"', 'for="missing"', 1),
+            valid.replace('value="two">二つ', 'value="two" selected>二つ', 1),
+            valid.replace(" disabled>二つ", " disabled checked>二つ", 1),
+        )
+
+        for mutation in mutations:
+            with self.subTest(mutation=mutation[-120:]):
+                object.__setattr__(generated, "value", mutation)
+                with self.assertRaisesRegex(
+                    CurriculumValidationError,
+                    "generated",
+                ):
+                    self.renderer.page(
+                        output_path=Path("lesson.html"),
+                        title="教材",
+                        description="説明",
+                        content=generated,
+                    )
 
     def test_fragment_supports_braced_placeholders_in_safe_contexts(self) -> None:
         renderer = self.renderer_with_fragment(
@@ -732,6 +866,16 @@ class RendererTests(unittest.TestCase):
         exact_root = "../" * render_module.MAX_OUTPUT_DEPTH
         self.assertEqual(len(exact_root), 96)
         self.assertIn(f'href="{exact_root}styles.css"', exact_depth_html)
+        self.assertIn(
+            f'href="{exact_root}static/visualizations.css"',
+            exact_depth_html,
+        )
+        self.assertLess(
+            exact_depth_html.index(f'href="{exact_root}styles.css"'),
+            exact_depth_html.index(
+                f'href="{exact_root}static/visualizations.css"'
+            ),
+        )
 
         exact_length = path_with_exact_length(
             render_module.MAX_OUTPUT_PATH_CHARS
@@ -1090,6 +1234,10 @@ class RendererTests(unittest.TestCase):
         stylesheet = (
             '  <link rel="stylesheet" href="${root}styles.css">\n'
         )
+        visualization_stylesheet = (
+            '  <link rel="stylesheet" '
+            'href="${root}static/visualizations.css">\n'
+        )
         skip = '  <a class="skip-link" href="#main">本文へ移動</a>\n'
         brand = (
             '    <a class="brand" href="${root}index.html">'
@@ -1157,27 +1305,27 @@ class RendererTests(unittest.TestCase):
                 "base template placeholders do not match required counts",
             ),
             (
-                base.replace("script-src 'none'; ", ""),
+                base.replace("script-src 'self'; ", ""),
                 "base template CSP is incomplete",
             ),
             (
                 base.replace(
-                    "script-src 'none';",
-                    "script-src 'none'; script-src-elem 'self';",
+                    "script-src 'self';",
+                    "script-src 'self'; script-src-elem 'self';",
                 ),
                 "base template CSP is incomplete",
             ),
             (
                 base.replace(
-                    "script-src 'none';",
-                    "script-src 'none'; script-src-attr 'unsafe-inline';",
+                    "script-src-attr 'none';",
+                    "script-src-attr 'unsafe-inline';",
                 ),
                 "base template CSP is incomplete",
             ),
             (
                 base.replace(
-                    "script-src 'none';",
-                    "script-src 'none'; script-src 'self';",
+                    "script-src 'self';",
+                    "script-src 'self'; script-src 'self';",
                 ),
                 "base template CSP is incomplete",
             ),
@@ -1236,7 +1384,19 @@ class RendererTests(unittest.TestCase):
                 "base template markup is invalid",
             ),
             (
-                base.replace(title + stylesheet, stylesheet + title, 1),
+                base.replace(
+                    title + stylesheet,
+                    stylesheet + title,
+                    1,
+                ),
+                "base template markup is invalid",
+            ),
+            (
+                base.replace(
+                    stylesheet + visualization_stylesheet,
+                    visualization_stylesheet + stylesheet,
+                    1,
+                ),
                 "base template markup is invalid",
             ),
             (

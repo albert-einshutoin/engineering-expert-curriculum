@@ -1,6 +1,16 @@
 # Security Policy
 
-Engineering Expert Curriculumは、HTMLとCSSだけの公開サイトと、Python標準ライブラリによるbuild/validation処理で構成されます。サイトには認証、server API、database、analyticsがなく、learner dataを保存しません。ただし、build処理、template escaping、リンク、GitHub Actions、配信設定には脆弱性が入り得ます。
+Engineering Expert Curriculumのv0.1.0はHTML/CSS-onlyです。v0.2.0は完全なsemantic HTMLをbaselineとし、simulation lessonだけで単一のdependency-free first-party runtimeを任意に読み込みます。このruntimeはnetwork、storage、analytics、URL state、third-party codeを使わず、learner dataを収集・保存・送信しません。つまりlearner dataを保存しません。ただし、build処理、JavaScript source/DOM境界、template escaping、リンク、GitHub Actions、配信設定には脆弱性が入り得ます。
+
+exact meta CSPはruntimeとinline scriptを分離し、resourceより前に配置します。ただし`frame-ancestors`はmeta CSPで強制されず、GitHub Pagesではこのrepositoryが任意response headerを設定できないため、本projectはclickjacking防止を保証しません。
+
+CIのbrowserはregistry-qualified OCI digestと公式HTTPS archive URL、version、SHA-256で固定します。checksum一致前の展開、platform間fallback、matrix外browserの自動探索を許しません。cacheと検証reportは`outputs/`へ限定し、release artifactへ混入させません。
+
+固定digestかつnon-root OCIのbrowser jobは、既定seccompがChromiumの内側のuser-namespace sandboxを許可しないため、installerとrunnerの両方へ明示的に`--oci-container-no-sandbox`を渡します。このopt-inだけがChromiumへ`--no-sandbox`を追加し、通常のlocal Linuxではbrowser sandboxを維持し、macOSではopt-inを拒否します。CIでprocess-level sandboxを外しても、隔離された一時OCI container、固定browser archive、`file://`またはloopback HTTPだけに閉じたURL authorityは維持します。
+
+Safari WebDriver 26.5では、外部`file://` main resourceがWebKit sandboxの外側として拒否されることを実機で確認しています。Safariの必須runtime smokeはmatrixで`loopback-http`へ閉じ、desktopと390px narrow viewportの2 profileをpre-product harnessで検証します。これはSafariのfile成功やmobile device emulationを意味しません。Chromium・Firefoxのfile/HTTP runtime contractと、静的no-JS/file checker contractは削除せず維持します。
+
+rootのrelease manifestはcommitと配信対象byteの整合性を検査します。deployed verifierはHTTPSの同一Pages origin・同一subpathだけを、redirect、retry、時間、file数、byte数の上限内で取得します。ただしSHA-256 manifestは署名ではなく、publisherやworkflowの真正性を単独で保証しません。信頼の根はreview済みcommit、branch protection、digest固定workflow/action、GitHub Pages deploymentです。
 
 ## サポート対象
 
@@ -42,6 +52,7 @@ Maintainerは通常5営業日以内に受領を確認し、その後は通常10�
 
 - path traversal、symlink race、生成先逸脱、任意file overwrite。
 - authored HTMLやstructured contentからのscript実行、unsafe URL、escape回避。
+- first-party runtimeのDOM allowlist逸脱、network/storage利用、timerや状態のfigure間漏洩。
 - CI権限の過大付与、secret露出、untrusted contributionの危険な実行。
 - 配布物の完全性を偽る決定性、検証、publication boundaryの欠陥。
 

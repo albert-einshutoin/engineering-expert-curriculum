@@ -147,31 +147,47 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "OpenSSF Scorecard (accessed 2026-07-31)",
       "url": "https://www.scorecard.dev/",
       "kind": "primary"
     },
     {
+      "id": "src-02",
       "title": "Contributor Covenant Code of Conduct Version 2.1",
       "url": "https://www.contributor-covenant.org/version/2/1/code_of_conduct/",
       "kind": "standard"
     },
     {
+      "id": "src-03",
       "title": "SLSA v1.2 Source: Requirements for producing source",
       "url": "https://slsa.dev/spec/v1.2/source-requirements",
       "kind": "standard"
     },
     {
+      "id": "src-04",
       "title": "Setting up your project for healthy contributions",
       "url": "https://docs.github.com/en/communities/setting-up-your-project-for-healthy-contributions",
       "kind": "primary"
     },
     {
+      "id": "src-05",
       "title": "Best Practices for Maintainers",
       "url": "https://opensource.guide/best-practices/",
       "kind": "primary"
     }
   ],
+  "visualizations": [{
+    "id": "contribution-governance-flow", "type": "flow", "caption": "第三者contributionをmaintainerのreview・merge・release evidenceへ安全に接続するgovernance chain",
+    "question": "第三者のopen contributionとmaintainerのwrite権限を分離したままrelease evidenceへどう接続するか。", "afterSection": "mentalModel",
+    "objectiveIds": ["obj-readiness", "obj-journey", "obj-transfer"], "evidenceIds": ["stewardship-repository", "repository-audit", "transfer"], "sourceIds": ["src-01", "src-02", "src-03", "src-04", "src-05"],
+    "expectedObservation": "discoverからrelease evidenceまでの順序、第三者とmaintainerの権限境界、command successと公開artifactのsystem outcomeの差を説明できる。",
+    "notes": ["discover:", "prepare:", "submit:", "review:", "maintainer-merge:", "release-evidence:"],
+    "payload": {
+      "steps": [{"id": "discover", "label": "discover", "detail": "第三者がlicense、community rule、security窓口、contribution手順を見つける。"}, {"id": "prepare", "label": "prepare", "detail": "forkまたは同等のread-only境界で変更と検証証拠を作る。"}, {"id": "submit", "label": "submit", "detail": "変更理由、scope、test結果をreview可能な単位で提示する。"}, {"id": "review", "label": "review", "detail": "maintainerが品質、security、policy、互換性を証拠で判断する。"}, {"id": "maintainer-merge", "label": "maintainer-merge", "detail": "write権限を第三者へ移さず、承認済み変更だけを統合する。"}, {"id": "release-evidence", "label": "release-evidence", "detail": "CI結果、provenance、承認、公開artifactを対応付ける。"}],
+      "transitions": [{"id": "discover-to-prepare", "from": "discover", "to": "prepare", "label": "公開policyを理解"}, {"id": "prepare-to-submit", "from": "prepare", "to": "submit", "label": "変更と検証証拠"}, {"id": "submit-to-review", "from": "submit", "to": "review", "label": "review可能なscope"}, {"id": "review-to-merge", "from": "review", "to": "maintainer-merge", "label": "maintainer承認"}, {"id": "merge-to-release", "from": "maintainer-merge", "to": "release-evidence", "label": "統合commitをartifactへ追跡"}]
+    }
+  }],
   "review": {
     "intervalDays": [1, 7, 30, 90],
     "prompts": [

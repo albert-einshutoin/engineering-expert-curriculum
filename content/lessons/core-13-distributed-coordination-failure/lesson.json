@@ -15,17 +15,26 @@
     {
       "id": "obj-failure-model",
       "statement": "delay、duplicate、reorder、network partition、recoveryを、model assumptionと観測可能なevent traceへ分解できる",
-      "evidenceIds": ["coordination-simulation", "teach-back"]
+      "evidenceIds": [
+        "coordination-simulation",
+        "teach-back"
+      ]
     },
     {
       "id": "obj-idempotency",
       "statement": "stableなdedupe key、永続結果、許可された状態遷移を結び、at-least-once retryで副作用を一度だけ適用して結果を再利用できる",
-      "evidenceIds": ["coordination-simulation", "assessment"]
+      "evidenceIds": [
+        "coordination-simulation",
+        "assessment"
+      ]
     },
     {
       "id": "obj-recovery",
       "statement": "分断期間を変更してreplayし、回復deadline、残留message、dedupe保持、利用者へ返す結果を再評価できる",
-      "evidenceIds": ["assessment", "transfer"]
+      "evidenceIds": [
+        "assessment",
+        "transfer"
+      ]
     }
   ],
   "evidence": [
@@ -54,27 +63,37 @@
     {
       "level": "recognize",
       "criterion": "message loss、delay、duplicate、reorder、partition、process recoveryを異なるfailure modeとして識別できる",
-      "evidenceIds": ["coordination-simulation"]
+      "evidenceIds": [
+        "coordination-simulation"
+      ]
     },
     {
       "level": "explain",
       "criterion": "FLPが扱う非同期consensusのscopeと、timeout・leader・quorumを使う実用protocolの仮定を区別して説明できる",
-      "evidenceIds": ["teach-back"]
+      "evidenceIds": [
+        "teach-back"
+      ]
     },
     {
       "level": "apply",
       "criterion": "stable dedupe key、永続結果、冪等な状態遷移によりat-least-once retryを安全に処理できる",
-      "evidenceIds": ["coordination-simulation"]
+      "evidenceIds": [
+        "coordination-simulation"
+      ]
     },
     {
       "level": "diagnose",
       "criterion": "同じ固定seedでevent traceをreplayし、duplicate effect、順序依存、分断中の不確実な結果を切り分けられる",
-      "evidenceIds": ["assessment"]
+      "evidenceIds": [
+        "assessment"
+      ]
     },
     {
       "level": "lead",
       "criterion": "failure model、復旧deadline、dedupe retention、reconciliation、利用者契約を合意するreviewを主導できる",
-      "evidenceIds": ["transfer"]
+      "evidenceIds": [
+        "transfer"
+      ]
     }
   ],
   "lab": {
@@ -140,28 +159,230 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "Impossibility of Distributed Consensus with One Faulty Process",
       "url": "https://doi.org/10.1145/3149.214121",
       "kind": "peer-reviewed"
     },
     {
+      "id": "src-02",
       "title": "In Search of an Understandable Consensus Algorithm",
       "url": "https://raft.github.io/raft.pdf",
       "kind": "primary"
     },
     {
+      "id": "src-03",
       "title": "RFC 9110: HTTP Semantics",
       "url": "https://www.rfc-editor.org/rfc/rfc9110.html",
       "kind": "standard"
     },
     {
+      "id": "src-04",
       "title": "FoundationDB: A Distributed Unbundled Transactional Key Value Store",
       "url": "https://doi.org/10.1145/3448016.3457559",
       "kind": "peer-reviewed"
     }
   ],
+  "visualizations": [
+    {
+      "id": "distributed-failure-static",
+      "type": "timeline",
+      "caption": "at-least-once commandを永続dedupeと回復へ接続するmechanism",
+      "question": "response lossと再配送があっても副作用を一度だけ進めるdedupeの耐久境界はどこか。",
+      "afterSection": "mentalModel",
+      "objectiveIds": [
+        "obj-idempotency",
+        "obj-recovery"
+      ],
+      "evidenceIds": [
+        "coordination-simulation"
+      ],
+      "sourceIds": [
+        "src-01",
+        "src-03",
+        "src-04"
+      ],
+      "expectedObservation": "stable keyとfingerprintの照合、stateとresultのatomic commit、partition回復後の再評価を説明できる。",
+      "notes": [],
+      "payload": {
+        "phases": [
+          {
+            "id": "dedupe",
+            "label": "重複排除",
+            "detail": "stable keyと入力fingerprintで再配送を識別する。"
+          },
+          {
+            "id": "durability",
+            "label": "耐久化",
+            "detail": "状態遷移と再利用resultを同じ境界で保存する。"
+          },
+          {
+            "id": "recovery",
+            "label": "回復",
+            "detail": "partition後の順序差と期限超過を再評価する。"
+          },
+          {
+            "id": "fixture-log",
+            "label": "固定6 event log",
+            "detail": "seed 20260731の同じ完全logをduplicate、reorder、partition、recoveryの各観点で読む。"
+          }
+        ],
+        "events": [
+          {
+            "id": "receive",
+            "label": "receive",
+            "detail": "tenant、resource、operationを含むstable keyと入力fingerprintを受け取る。",
+            "phaseId": "dedupe",
+            "order": 0
+          },
+          {
+            "id": "lookup",
+            "label": "lookup",
+            "detail": "永続dedupe storeにkeyがあれば入力fingerprintを照合し、一致時だけ状態遷移を再実行せず最初のresultを再利用する。不一致はkey衝突として拒否する。",
+            "phaseId": "dedupe",
+            "order": 1
+          },
+          {
+            "id": "apply",
+            "label": "apply",
+            "detail": "keyがなければ現在stateから許可された次stateへ一度だけ遷移する。",
+            "phaseId": "durability",
+            "order": 2
+          },
+          {
+            "id": "commit",
+            "label": "commit",
+            "detail": "state、fingerprint、resultを同じdurability境界で保存する。response lossはcommitを取り消さない。",
+            "phaseId": "durability",
+            "order": 3
+          },
+          {
+            "id": "recover",
+            "label": "recover",
+            "detail": "partition中のmessageを再開後に処理し、logical sequenceとdelivery orderの差を検査する。",
+            "phaseId": "recovery",
+            "order": 4
+          },
+          {
+            "id": "reevaluate",
+            "label": "re-evaluate",
+            "detail": "partitionがdeadlineを越えたら、queue、retention、stale command、reconciliation、利用者結果を更新する。",
+            "phaseId": "recovery",
+            "order": 5
+          },
+          {
+            "id": "e1-confirm",
+            "label": "e1 confirm",
+            "detail": "tick=1、kind=deliver、logical_sequence=2、delivery_priority=0。immediateにpending→confirmedを1回applyし、state・fingerprint・result=confirmed-onceをatomic commitする。",
+            "phaseId": "fixture-log",
+            "order": 6
+          },
+          {
+            "id": "e2-partition-start",
+            "label": "e2 partition start",
+            "detail": "tick=2、kind=partition_start。partitionをactiveにし、e1の永続commitを保持したまま以後のmessageをbufferする。",
+            "phaseId": "fixture-log",
+            "order": 7
+          },
+          {
+            "id": "e3-status-read",
+            "label": "e3 status read",
+            "detail": "tick=3、kind=deliver、logical_sequence=4、delivery_priority=1。partition中なのでstatus readはapplyせずbufferし、利用者結果を未確定のまま保つ。",
+            "phaseId": "fixture-log",
+            "order": 8
+          },
+          {
+            "id": "e4-confirm-retry",
+            "label": "e4 confirm retry",
+            "detail": "tick=4、kind=duplicate、logical_sequence=2、delivery_priority=2。同じkeyとfingerprintのretryをbufferし、回復時もeffectを再applyせず保存済みresultを再利用する。",
+            "phaseId": "fixture-log",
+            "order": 9
+          },
+          {
+            "id": "e5-reconcile-read",
+            "label": "e5 reconcile read",
+            "detail": "tick=5、kind=deliver、logical_sequence=3、delivery_priority=0。partition中にbufferし、回復時はe3のsequence=4より先にgapを埋めるread-only resultを得る。",
+            "phaseId": "fixture-log",
+            "order": 10
+          },
+          {
+            "id": "e6-partition-end",
+            "label": "e6 partition end",
+            "detail": "tick=6、kind=partition_end。deadline=8以内にrecoveryし、priority順e5→e3→e4で解放する。最終state=confirmed、apply=1、result reuse=1として順序差と残留messageを再評価する。",
+            "phaseId": "fixture-log",
+            "order": 11
+          }
+        ]
+      },
+      "simulation": {
+        "kind": "distributed-failure",
+        "interactionMode": "hybrid",
+        "parameters": [
+          {
+            "id": "event-case",
+            "label": "event traceの観測点",
+            "control": "select",
+            "options": [
+              {"id": "duplicate", "label": "duplicate delivery"},
+              {"id": "reorder", "label": "reordered delivery"},
+              {"id": "partition", "label": "partition中のbuffer"},
+              {"id": "recovery", "label": "tick 6で回復"}
+            ],
+            "defaultOptionId": "duplicate"
+          }
+        ],
+        "initialStateId": "event-log-start",
+        "defaultIntervalMs": 1000,
+        "states": [
+          {"id": "event-log-start", "label": "e1 deliver・apply・commit", "status": "e1-confirmをimmediate処理し、pending→confirmedを1回applyしてresult=confirmed-onceをatomic commitする。", "activeNodeIds": ["e1-confirm"], "activeEdgeIds": []},
+          {"id": "partition-detected", "label": "partition lens: e2〜e5", "status": "partition lens: e2〜e5でpartition active。e3・e4・e5の3 messageをbufferしbuffer=3、e1 commitを保持する。", "activeNodeIds": ["e2-partition-start", "e3-status-read", "e4-confirm-retry", "e5-reconcile-read"], "activeEdgeIds": []},
+          {"id": "partition-buffered", "label": "e3 status readをbuffer", "status": "e3はsequence=4・priority=1。partition中なのでapplyせず、利用者結果を未確定のままbufferする。", "activeNodeIds": ["e3-status-read"], "activeEdgeIds": []},
+          {"id": "duplicate-received", "label": "duplicate lens: e4", "status": "duplicate lens: e4 retryは保存済みresultを再利用してresult reuse=1、effect=1のまま再applyしない。", "activeNodeIds": ["e4-confirm-retry"], "activeEdgeIds": []},
+          {"id": "reorder-gap-filled", "label": "reorder lens: e5", "status": "reorder lens: e5がsequence gapを埋め、recovery release=e5→e3→e4としてdelivery順との差を示す。", "activeNodeIds": ["e5-reconcile-read"], "activeEdgeIds": []},
+          {"id": "recovery-converged", "label": "recovery lens: e6", "status": "recovery lens: e6はtick=6、deadline=8以内にe5→e3→e4を解放し、final=confirmed、apply=1へ収束する。", "activeNodeIds": ["e6-partition-end"], "activeEdgeIds": []}
+        ],
+        "transitions": [
+          {"id": "apply-duplicate", "from": "event-log-start", "to": "duplicate-received", "event": "parameter-change", "when": {"event-case": "duplicate"}},
+          {"id": "apply-reorder", "from": "event-log-start", "to": "reorder-gap-filled", "event": "parameter-change", "when": {"event-case": "reorder"}},
+          {"id": "apply-partition", "from": "event-log-start", "to": "partition-detected", "event": "parameter-change", "when": {"event-case": "partition"}},
+          {"id": "apply-recovery", "from": "event-log-start", "to": "recovery-converged", "event": "parameter-change", "when": {"event-case": "recovery"}},
+          {"id": "partition-next", "from": "event-log-start", "to": "partition-detected", "event": "next"},
+          {"id": "partition-timer", "from": "event-log-start", "to": "partition-detected", "event": "timer"},
+          {"id": "partition-previous", "from": "partition-detected", "to": "event-log-start", "event": "previous"},
+          {"id": "partition-reset", "from": "partition-detected", "to": "event-log-start", "event": "reset"},
+          {"id": "buffer-next", "from": "partition-detected", "to": "partition-buffered", "event": "next"},
+          {"id": "buffer-timer", "from": "partition-detected", "to": "partition-buffered", "event": "timer"},
+          {"id": "buffer-previous", "from": "partition-buffered", "to": "partition-detected", "event": "previous"},
+          {"id": "buffer-reset", "from": "partition-buffered", "to": "event-log-start", "event": "reset"},
+          {"id": "duplicate-next", "from": "partition-buffered", "to": "duplicate-received", "event": "next"},
+          {"id": "duplicate-timer", "from": "partition-buffered", "to": "duplicate-received", "event": "timer"},
+          {"id": "duplicate-previous", "from": "duplicate-received", "to": "partition-buffered", "event": "previous"},
+          {"id": "duplicate-reset", "from": "duplicate-received", "to": "event-log-start", "event": "reset"},
+          {"id": "reorder-next", "from": "duplicate-received", "to": "reorder-gap-filled", "event": "next"},
+          {"id": "reorder-timer", "from": "duplicate-received", "to": "reorder-gap-filled", "event": "timer"},
+          {"id": "reorder-previous", "from": "reorder-gap-filled", "to": "duplicate-received", "event": "previous"},
+          {"id": "reorder-reset", "from": "reorder-gap-filled", "to": "event-log-start", "event": "reset"},
+          {"id": "recovery-next", "from": "reorder-gap-filled", "to": "recovery-converged", "event": "next"},
+          {"id": "recovery-timer", "from": "reorder-gap-filled", "to": "recovery-converged", "event": "timer"},
+          {"id": "recovery-previous", "from": "recovery-converged", "to": "reorder-gap-filled", "event": "previous"},
+          {"id": "recovery-reset", "from": "recovery-converged", "to": "event-log-start", "event": "reset"}
+        ],
+        "outcomes": [
+          {"id": "duplicate-effect-once", "stateId": "duplicate-received", "label": "duplicateは届くがstate transitionは1回、保存済みresultを1回再利用する。"},
+          {"id": "reorder-detected", "stateId": "reorder-gap-filled", "label": "logical sequenceとdelivery orderの差を検出し、gapを埋めてから再評価する。"},
+          {"id": "partition-buffers-three", "stateId": "partition-detected", "label": "partition中の3 messageをbufferし、未確定結果を成功へ広げない。"},
+          {"id": "recovery-before-deadline", "stateId": "recovery-converged", "label": "tick 6はdeadline 8以内。confirmedへ収束し、tick 11ならdeadline超過へ分岐する。"}
+        ]
+      }
+    }
+  ],
   "review": {
-    "intervalDays": [1, 7, 30, 90],
+    "intervalDays": [
+      1,
+      7,
+      30,
+      90
+    ],
     "prompts": [
       "timeout後retryで同じresultを返すために永続化する情報を列挙する",
       "FLPのmodel assumptionと実用consensus protocolが追加する仮定を区別する",

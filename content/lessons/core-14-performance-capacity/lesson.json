@@ -141,31 +141,114 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "Diagnostics",
       "url": "https://go.dev/doc/diagnostics",
       "kind": "primary"
     },
     {
+      "id": "src-02",
       "title": "Handling Overload",
       "url": "https://sre.google/sre-book/handling-overload/",
       "kind": "primary"
     },
     {
+      "id": "src-03",
       "title": "A Proof for the Queuing Formula: L = λW",
       "url": "https://doi.org/10.1287/opre.9.3.383",
       "kind": "peer-reviewed"
     },
     {
+      "id": "src-04",
       "title": "The Tail at Scale",
       "url": "https://doi.org/10.1145/2408776.2408794",
       "kind": "peer-reviewed"
     },
     {
+      "id": "src-05",
       "title": "The Python Profilers",
       "url": "https://docs.python.org/3.13/library/profile.html",
       "kind": "primary"
     }
   ],
+  "visualizations": [{
+    "id": "queue-capacity-static", "type": "causal", "caption": "負荷を証拠へ変えて安全容量を更新する循環",
+    "question": "固定した負荷条件から、どの証拠を経て安全容量を決めるか。", "afterSection": "mentalModel",
+    "objectiveIds": ["obj-load-curve", "obj-profile"], "evidenceIds": ["performance-report"], "sourceIds": ["src-01", "src-02", "src-03"],
+    "expectedObservation": "負荷曲線のknee、tail、queue、局所profileを結び、headroomを引いた容量と再測定条件を示せる。",
+    "notes": [
+      "この注記は旧図の読み順を保持する補助です。",
+      "Fixture: request mix、payload、依存、処理上限、環境を固定する。",
+      "Curve: 低負荷、限界付近、超過、回復を同じ列で記録する。",
+      "Diagnose: plateau、tail、error、queue、resource、downstreamを結ぶ。",
+      "Profile: 仮説に合う実processの局所証拠を別に採取する。",
+      "Capacity: observed kneeからheadroomを引き、再測定条件を残す。"
+    ],
+    "payload": {
+      "causes": [{"id": "fixture", "label": "Fixture（負荷条件）", "detail": "request mix、payload、依存、処理上限、環境を固定する。"}],
+      "mechanisms": [
+        {"id": "bottleneck-mechanism", "label": "Bottleneck mechanism", "detail": "resource上限、queue蓄積、downstream待機が処理率を制限し、tail latencyとerrorを増幅する。"}
+      ],
+      "outcomes": [
+        {"id": "curve", "label": "Curve", "detail": "低負荷、限界付近、超過、回復を同じ列で記録する。"},
+        {"id": "profile", "label": "Profile", "detail": "仮説に合う実processの局所証拠を別に採取する。"}
+      ],
+      "mitigations": [{"id": "capacity", "label": "Capacity", "detail": "observed kneeからheadroomを引き、再測定条件を残す。"}],
+      "relations": [
+        {"id": "fixture-exposes-mechanism", "from": "fixture", "to": "bottleneck-mechanism", "label": "固定条件でresource、queue、downstreamの飽和を起こす"},
+        {"id": "mechanism-shapes-curve", "from": "bottleneck-mechanism", "to": "curve", "label": "plateau、tail、error、queueとして現れる"},
+        {"id": "mechanism-guides-profile", "from": "bottleneck-mechanism", "to": "profile", "label": "仮説に合う局所証拠を採る"},
+        {"id": "curve-bounds-capacity", "from": "curve", "to": "capacity", "label": "observed kneeからheadroomを引く"},
+        {"id": "profile-bounds-capacity", "from": "profile", "to": "capacity", "label": "局所証拠を再測定条件へ反映する"}
+      ]
+    },
+    "simulation": {
+      "kind": "queue-capacity",
+      "interactionMode": "scenario",
+      "parameters": [
+        {
+          "id": "load-band", "label": "負荷帯", "control": "select",
+          "options": [
+            {"id": "low", "label": "低負荷"},
+            {"id": "near", "label": "限界付近"},
+            {"id": "overload", "label": "超過"},
+            {"id": "recovery", "label": "負荷を戻した回復区間"}
+          ],
+          "defaultOptionId": "low"
+        },
+        {
+          "id": "workers", "label": "worker処理枠とrequest mix", "control": "radio",
+          "options": [
+            {"id": "baseline", "label": "read 80%・capacity 100 RPS"},
+            {"id": "write", "label": "write 70%・capacity 80 RPS"}
+          ],
+          "defaultOptionId": "baseline"
+        }
+      ],
+      "initialStateId": "stable-load",
+      "states": [
+        {"id": "stable-load", "label": "baseline低負荷", "status": "Δt=1s;Qstart=0req;arrivals=40req;admitted=40req;immediate=40req;backlogDone=0req;completed=40req;Qend=0req;rejected=0req;failed=0req;p99=70ms.", "when": {"load-band": "low", "workers": "baseline"}, "activeNodeIds": ["fixture", "curve"], "activeEdgeIds": ["fixture-exposes-mechanism", "mechanism-shapes-curve"]},
+        {"id": "near-capacity", "label": "baseline限界付近", "status": "Δt=1s;Qstart=0req;arrivals=100req;admitted=100req;immediate=100req;backlogDone=0req;completed=100req;Qend=0req;rejected=0req;failed=0req;p99=100ms.", "when": {"load-band": "near", "workers": "baseline"}, "activeNodeIds": ["curve", "capacity"], "activeEdgeIds": ["curve-bounds-capacity"]},
+        {"id": "saturation", "label": "baseline飽和", "status": "Δt=1s;Qstart=0req;arrivals=150req;admitted=130req;immediate=100req;backlogDone=0req;completed=100req;Qend=30req;rejected=20req;failed=20req;p99=450ms.", "when": {"load-band": "overload", "workers": "baseline"}, "activeNodeIds": ["bottleneck-mechanism", "curve", "capacity"], "activeEdgeIds": ["mechanism-shapes-curve", "curve-bounds-capacity"]},
+        {"id": "capacity-recovered", "label": "baseline回復hysteresis", "status": "Δt=1s;Qstart=30req;arrivals=50req;admitted=50req;immediate=50req;backlogDone=30req;completed=80req;Qend=0req;rejected=0req;failed=0req;p99=180ms.", "when": {"load-band": "recovery", "workers": "baseline"}, "activeNodeIds": ["curve", "capacity"], "activeEdgeIds": ["curve-bounds-capacity"]},
+        {"id": "write-stable-load", "label": "write中心低負荷", "status": "Δt=1s;Qstart=0req;arrivals=40req;admitted=40req;immediate=40req;backlogDone=0req;completed=40req;Qend=0req;rejected=0req;failed=0req;p99=90ms.", "when": {"load-band": "low", "workers": "write"}, "activeNodeIds": ["fixture", "curve"], "activeEdgeIds": ["fixture-exposes-mechanism", "mechanism-shapes-curve"]},
+        {"id": "write-near-capacity", "label": "write中心限界付近", "status": "Δt=1s;Qstart=0req;arrivals=80req;admitted=80req;immediate=80req;backlogDone=0req;completed=80req;Qend=0req;rejected=0req;failed=0req;p99=190ms.", "when": {"load-band": "near", "workers": "write"}, "activeNodeIds": ["curve", "capacity"], "activeEdgeIds": ["curve-bounds-capacity"]},
+        {"id": "write-saturation", "label": "write中心飽和", "status": "Δt=1s;Qstart=0req;arrivals=120req;admitted=110req;immediate=80req;backlogDone=0req;completed=80req;Qend=30req;rejected=10req;failed=10req;p99=900ms.", "when": {"load-band": "overload", "workers": "write"}, "activeNodeIds": ["bottleneck-mechanism", "curve", "capacity"], "activeEdgeIds": ["mechanism-shapes-curve", "curve-bounds-capacity"]},
+        {"id": "write-capacity-recovered", "label": "write中心回復hysteresis", "status": "Δt=1s;Qstart=30req;arrivals=50req;admitted=50req;immediate=50req;backlogDone=30req;completed=80req;Qend=0req;rejected=0req;failed=0req;p99=360ms.", "when": {"load-band": "recovery", "workers": "write"}, "activeNodeIds": ["curve", "capacity"], "activeEdgeIds": ["curve-bounds-capacity"]}
+      ],
+      "transitions": [],
+      "outcomes": [
+        {"id": "baseline-low-result", "stateId": "stable-load", "label": "baseline 40 arrivalsを全件admit・completeし、Qend=0で保存則が成立する。"},
+        {"id": "baseline-near-result", "stateId": "near-capacity", "label": "baseline 100 arrivalsを全件即時completeするkneeで、safe capacityは20% headroom後の80 RPS。"},
+        {"id": "baseline-overload-result", "stateId": "saturation", "label": "baseline超過では130 admit、100 complete、Qend=30、20 reject/failedとなる。"},
+        {"id": "baseline-recovery-result", "stateId": "capacity-recovered", "label": "baseline回復は30 backlogをdrainしてQend=0に戻すが、p99=180 msのhysteresisが残る。"},
+        {"id": "write-low-result", "stateId": "write-stable-load", "label": "write中心40 arrivalsを全件admit・completeし、Qend=0で保存則が成立する。"},
+        {"id": "write-near-result", "stateId": "write-near-capacity", "label": "write中心80 arrivalsを全件即時completeするkneeで、safe capacityは20% headroom後の64 RPS。"},
+        {"id": "write-overload-result", "stateId": "write-saturation", "label": "write中心超過では110 admit、80 complete、Qend=30、10 reject/failedとなる。"},
+        {"id": "write-recovery-result", "stateId": "write-capacity-recovered", "label": "write中心回復は30 backlogをdrainしてQend=0に戻すが、p99=360 msのhysteresisが残る。"}
+      ]
+    }
+  }],
   "review": {
     "intervalDays": [1, 7, 30, 90],
     "prompts": [

@@ -9,16 +9,6 @@
 <section id="mental-model">
   <h2>メンタルモデル</h2>
   <p>監査を「基準を選ぶ、範囲を固定する、期待を操作可能なcheckへ落とす、実測する、差分を修正へ結ぶ」の循環として扱う。規範へのconformanceと、特定の人が目的を達成できるusabilityは重なるが同義ではない。</p>
-  <figure>
-    <figcaption>生成サイトの監査を適合主張と利用者タスクへ結ぶ証拠flow</figcaption>
-    <ol>
-      <li><strong>Scope:</strong> ページfixture、利用者、入力方式、環境、除外を固定する。</li>
-      <li><strong>Target:</strong> WCAG 2.2 Level AAの規範的targetと版を記録する。</li>
-      <li><strong>Observe:</strong> keyboard、200% zoom、reading order、usabilityを期待値と比較する。</li>
-      <li><strong>Review:</strong> 自動化で判定できない意味、順序、タスク成功を人が確認する。</li>
-      <li><strong>Claim:</strong> 合否、未確認、残余リスクを分け、範囲を限定して報告する。</li>
-    </ol>
-  </figure>
   <p>一つのcheckは、対象、操作、期待、actual、passed、証拠を持つ。failedを消すのではなく、利用者影響、修正、再試験へ追跡する。入力方式だけを変えるtransferでは、ページと期待結果を固定し、どのcheckが変わるかを観測する。</p>
 </section>
 <section id="worked-example">

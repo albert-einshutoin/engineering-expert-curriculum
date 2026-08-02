@@ -14,6 +14,7 @@ from curriculum_builder.errors import CurriculumValidationError
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 STYLESHEET_PATH = REPOSITORY_ROOT / "static" / "styles.css"
+VISUALIZATION_STYLESHEET_PATH = REPOSITORY_ROOT / "static" / "visualizations.css"
 TEMPLATE_ROOT = REPOSITORY_ROOT / "templates"
 FOUNDATION_PLAN_PATH = (
     REPOSITORY_ROOT
@@ -312,6 +313,11 @@ class StyleContractTests(unittest.TestCase):
             validate_stylesheet_bytes(
                 b"a" * (MAX_STYLESHEET_BYTES + 1)
             )
+
+    def test_visualization_stylesheet_is_local_utf8_and_within_80_kib(self) -> None:
+        raw = VISUALIZATION_STYLESHEET_PATH.read_bytes()
+        self.assertLessEqual(len(raw), 80 * 1024)
+        self.assertEqual(validate_stylesheet_bytes(raw), raw.decode("utf-8"))
 
     def test_has_balanced_comments_and_braces(self) -> None:
         _scan_css_structure(self.css)

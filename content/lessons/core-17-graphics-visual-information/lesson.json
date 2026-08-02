@@ -140,31 +140,47 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "The OpenGL Graphics System: A Specification, Version 4.6 (Core Profile), May 5, 2022",
       "url": "https://registry.khronos.org/OpenGL/specs/gl/glspec46.core.pdf",
       "kind": "standard"
     },
     {
+      "id": "src-02",
       "title": "Scalable Vector Graphics (SVG) 2",
       "url": "https://www.w3.org/TR/SVG2/",
       "kind": "standard"
     },
     {
+      "id": "src-03",
       "title": "Graphical Perception: Theory, Experimentation, and Application to the Development of Graphical Methods",
       "url": "https://doi.org/10.1080/01621459.1984.10478080",
       "kind": "peer-reviewed"
     },
     {
+      "id": "src-04",
       "title": "Visualization Analysis and Design",
       "url": "https://www.routledge.com/Visualization-Analysis-and-Design/Munzner/p/book/9781466508910",
       "kind": "primary"
     },
     {
+      "id": "src-05",
       "title": "Complex Images",
       "url": "https://www.w3.org/WAI/tutorials/images/complex/",
       "kind": "primary"
     }
   ],
+  "visualizations": [{
+    "id": "semantic-rendering-flow", "type": "flow", "caption": "一つのdata modelから視覚と同等textへ分岐するrendering pipeline",
+    "question": "一つのdata modelから視覚表現と同等textを作り、どの不変条件を照合するか。", "afterSection": "mentalModel",
+    "objectiveIds": ["obj-pipeline", "obj-equivalence", "obj-encoding"], "evidenceIds": ["semantic-visual", "assessment"], "sourceIds": ["src-01", "src-02", "src-03", "src-04", "src-05"],
+    "expectedObservation": "Data、Transform、Visual、Equivalent、Verifyの順序を説明し、別目的の0–100% worked-example chartを二重計上しない。",
+    "notes": ["Data:", "Transform:", "Visual:", "Equivalent:", "Verify:"],
+    "payload": {
+      "steps": [{"id": "data", "label": "Data", "detail": "roadmapのnodeとedge、chartのlabelとvalueをID付きで定義する。"}, {"id": "transform", "label": "Transform", "detail": "並び、scale、minimum、maximumを決定的に計算する。"}, {"id": "visual", "label": "Visual", "detail": "semantic HTMLとCSSでroadmapとquantitative chartを配置する。"}, {"id": "equivalent", "label": "Equivalent", "detail": "node関係list、caption付きtable、summaryを同じdataから導出する。"}, {"id": "verify", "label": "Verify", "detail": "ID、edge、row、値、集約、display modeの不変条件を照合する。"}],
+      "transitions": [{"id": "data-to-transform", "from": "data", "to": "transform", "label": "typed values"}, {"id": "transform-to-visual", "from": "transform", "to": "visual", "label": "同じtransformから決定的layout"}, {"id": "transform-to-equivalent", "from": "transform", "to": "equivalent", "label": "同じtransformから同等text"}, {"id": "visual-to-verify", "from": "visual", "to": "verify", "label": "視覚側のID・値を照合"}, {"id": "equivalent-to-verify", "from": "equivalent", "to": "verify", "label": "text側のID・値を照合"}]
+    }
+  }],
   "review": {
     "intervalDays": [1, 7, 30, 90],
     "prompts": [

@@ -25,6 +25,7 @@ from curriculum_builder.build import (
     BuildStagingCleanupError,
     MAX_ROADMAP_BYTES,
     MAX_STYLESHEET_BYTES,
+    MAX_VISUALIZATION_STYLESHEET_BYTES,
     _open_trusted_directory,
     _publish_directory,
     _read_stable_regular_file,
@@ -40,6 +41,35 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 _CANONICAL_LESSON_DIRECTORY = re.compile(
     r"core-(0[1-9]|[12][0-9]|30)-[a-z0-9]+(?:-[a-z0-9]+)*\Z",
     re.ASCII,
+)
+TASK9_SCRIPTED_LESSONS = frozenset(
+    {
+        "core-02-algorithms-measurement",
+        "core-03-architecture-memory-caches",
+        "core-04-os-processes-concurrency",
+        "core-05-networks-latency-failure",
+        "core-07-api-contract-design",
+    }
+)
+TASK10_SCRIPTED_LESSONS = frozenset(
+    {
+        "core-02-algorithms-measurement",
+        "core-03-architecture-memory-caches",
+        "core-04-os-processes-concurrency",
+        "core-05-networks-latency-failure",
+        "core-07-api-contract-design",
+        "core-12-transactions-isolation-consistency",
+        "core-13-distributed-coordination-failure",
+        "core-14-performance-capacity",
+        "core-15-reliability-observability-slo",
+    }
+)
+TASK11_SCRIPTED_LESSONS = TASK10_SCRIPTED_LESSONS | frozenset(
+    {
+        "core-16-hci-usability-accessibility",
+        "core-22-evolution-safe-migrations",
+        "core-24-delivery-ci-release-safety",
+    }
 )
 
 
@@ -105,7 +135,7 @@ def _repository_lesson_source_counts(
         for source in sources:
             if (
                 type(source) is not dict
-                or set(source) != {"title", "url", "kind"}
+                or set(source) != {"id", "title", "url", "kind"}
                 or any(
                     type(value) is not str or not value
                     for value in source.values()
@@ -234,12 +264,21 @@ def _fixture(
         (static_root / "styles.css").write_bytes(
             (REPOSITORY_ROOT / "static" / "styles.css").read_bytes()
         )
+        (static_root / "visualizations.css").write_bytes(
+            (REPOSITORY_ROOT / "static" / "visualizations.css").read_bytes()
+        )
+        (static_root / "visualization.js").write_bytes(
+            (REPOSITORY_ROOT / "static" / "visualization.js").read_bytes()
+        )
         (content / "catalog.json").write_bytes(
             serialize_catalog_document(
                 catalog_items or [_catalog_item()],
                 "test fixture",
                 source_sha256="0" * 64,
             )
+        )
+        (content / "visualization-catalog.json").write_bytes(
+            (REPOSITORY_ROOT / "content/visualization-catalog.json").read_bytes()
         )
         if roadmap is None:
             roadmap = _roadmap()
@@ -308,11 +347,14 @@ def _assert_static_site(
     output: Path,
     lesson_source_counts: dict[str, int] | None = None,
     competency_source_count: int = 0,
+    scripted_lesson_ids: frozenset[str] = frozenset(),
 ) -> dict[Path, bytes]:
     source_counts = lesson_source_counts or {}
     expected = {
         Path("index.html"),
         Path("styles.css"),
+        Path("static/visualizations.css"),
+        Path("static/visualization.js"),
         Path("catalog/index.html"),
         Path("capstones/index.html"),
         Path("competencies/index.html"),
@@ -338,7 +380,15 @@ def _assert_static_site(
         if path.is_file()
     }
     test.assertEqual(actual, expected)
-    test.assertEqual(list(output.rglob("*.js")), [])
+    test.assertEqual(list(output.rglob("*.js")), [output / "static/visualization.js"])
+    test.assertEqual(
+        (output / "static/visualizations.css").read_bytes(),
+        (REPOSITORY_ROOT / "static/visualizations.css").read_bytes(),
+    )
+    test.assertEqual(
+        (output / "static/visualization.js").read_bytes(),
+        (REPOSITORY_ROOT / "static/visualization.js").read_bytes(),
+    )
 
     ids_by_page: dict[Path, set[str]] = {}
     links_by_page: dict[Path, list[str]] = {}
@@ -348,15 +398,15 @@ def _assert_static_site(
         parser.feed(document)
         parser.close()
         test.assertTrue(parser.has_csp, relative)
-        test.assertFalse(parser.has_script, relative)
-        test.assertEqual(parser.event_attributes, [], relative)
-        test.assertEqual(parser.remote_attributes, [], relative)
         lesson_id = (
             relative.parts[1]
             if len(relative.parts) == 3
             and relative.parts[0] == "lessons"
             else None
         )
+        test.assertEqual(parser.has_script, lesson_id in scripted_lesson_ids, relative)
+        test.assertEqual(parser.event_attributes, [], relative)
+        test.assertEqual(parser.remote_attributes, [], relative)
         expected_source_count = source_counts.get(lesson_id or "", 0)
         if relative == Path("competencies/index.html"):
             expected_source_count = competency_source_count
@@ -397,6 +447,51 @@ def _assert_static_site(
 
 
 class BuildAcceptanceTests(unittest.TestCase):
+    def test_generated_deferred_script_is_empty_and_a_direct_body_child(self) -> None:
+        script = '<script src="static/visualization.js" defer>{}</script>'
+        documents = (
+            f"<html><body>{script.format('alert(1)')}</body></html>",
+            f"<html><body>{script.format('&amp;')}</body></html>",
+            f"<html><body>{script.format('<!--hidden-->')}</body></html>",
+            f"<html><body><main>{script.format('')}</main></body></html>",
+        )
+        for document in documents:
+            with self.subTest(document=document):
+                parser = build_module._SiteDocumentParser()
+                with self.assertRaises(CurriculumValidationError):
+                    parser.feed(document)
+
+    def test_generated_deferred_script_requires_paired_non_void_markup(self) -> None:
+        parser = build_module._SiteDocumentParser()
+        parser.feed(
+            '<html><body><script src="static/visualization.js" defer></script></body></html>'
+        )
+        self.assertEqual(parser.script_sources, ["static/visualization.js"])
+
+        parser = build_module._SiteDocumentParser()
+        with self.assertRaises(CurriculumValidationError):
+            parser.feed(
+                '<html><body><script src="static/visualization.js" defer /></body></html>'
+            )
+
+    def test_complete_build_binds_all_lessons_to_visualization_catalog(self) -> None:
+        with TemporaryDirectory() as directory, patch(
+            "curriculum_builder.build.validate_visualization_assignments",
+            wraps=build_module.validate_visualization_assignments,
+        ) as validate:
+            build_site(
+                content_root=REPOSITORY_ROOT / "content",
+                template_root=REPOSITORY_ROOT / "templates",
+                static_root=REPOSITORY_ROOT / "static",
+                output_root=Path(directory).resolve(strict=True) / "site",
+                require_complete_curriculum=True,
+            )
+
+        validate.assert_called_once()
+        catalog, assignments = validate.call_args.args
+        self.assertEqual(len(catalog.lessons), 30)
+        self.assertEqual(set(assignments), set(_repository_lesson_source_counts()))
+
     def test_repository_lesson_oracle_is_independent_of_production_loader(
         self,
     ) -> None:
@@ -443,6 +538,7 @@ class BuildAcceptanceTests(unittest.TestCase):
                 self,
                 output,
                 _repository_lesson_source_counts(),
+                scripted_lesson_ids=TASK11_SCRIPTED_LESSONS,
             )
             catalog = (output / "catalog/index.html").read_text(
                 encoding="utf-8"
@@ -503,6 +599,7 @@ class BuildAcceptanceTests(unittest.TestCase):
                 self,
                 output,
                 _repository_lesson_source_counts(),
+                scripted_lesson_ids=TASK11_SCRIPTED_LESSONS,
             )
             first_metadata = {
                 path.relative_to(output): (
@@ -522,6 +619,7 @@ class BuildAcceptanceTests(unittest.TestCase):
                 self,
                 output,
                 _repository_lesson_source_counts(),
+                scripted_lesson_ids=TASK11_SCRIPTED_LESSONS,
             )
             second_metadata = {
                 path.relative_to(output): (
@@ -586,6 +684,7 @@ class BuildAcceptanceTests(unittest.TestCase):
                 output,
                 _repository_lesson_source_counts(),
                 competency_source_count=3,
+                scripted_lesson_ids=TASK11_SCRIPTED_LESSONS,
             )
 
     def test_cli_rejects_control_characters_without_log_injection(
@@ -623,6 +722,16 @@ class BuildAcceptanceTests(unittest.TestCase):
 
 
 class BuildInputValidationTests(unittest.TestCase):
+    def test_build_rejects_unreviewed_runtime_source_bytes(self) -> None:
+        with _fixture() as (root, content, templates, static_root):
+            runtime = static_root / "visualization.js"
+            runtime.write_bytes(runtime.read_bytes() + b"\n")
+            with self.assertRaisesRegex(
+                CurriculumValidationError,
+                "reviewed SHA-256",
+            ):
+                build_site(content, templates, static_root, root / "site")
+
     def test_fixture_nests_overlap_root_below_owned_temporary_directory(
         self,
     ) -> None:
@@ -690,6 +799,8 @@ class BuildInputValidationTests(unittest.TestCase):
                 directory: object,
                 name: str,
                 maximum_bytes: int,
+                *,
+                require_single_link: bool = False,
             ) -> bytes:
                 nonlocal catalog_reads
                 if name != "catalog.json":
@@ -697,6 +808,7 @@ class BuildInputValidationTests(unittest.TestCase):
                         directory,  # type: ignore[arg-type]
                         name,
                         maximum_bytes,
+                        require_single_link=require_single_link,
                     )
                 catalog_reads += 1
                 if catalog_reads == 1:
@@ -726,6 +838,38 @@ class BuildInputValidationTests(unittest.TestCase):
             self.assertEqual(catalog_reads, 2)
             self.assertIn("Pinned title", catalog)
             self.assertNotIn("Raced title", catalog)
+
+    def test_visualization_catalog_is_revalidated_before_atomic_publication(
+        self,
+    ) -> None:
+        with _fixture() as (root, content, templates, static_root):
+            output = root / "site"
+            output.mkdir()
+            (output / "sentinel.txt").write_text("previous", encoding="utf-8")
+            catalog_path = content / "visualization-catalog.json"
+            original_render = build_module._render_artifacts
+
+            def racing_render(*args: object, **kwargs: object) -> object:
+                result = original_render(*args, **kwargs)  # type: ignore[arg-type]
+                document = json.loads(catalog_path.read_bytes())
+                document["lessons"][0]["primaryType"] = "flow"
+                _write_json(catalog_path, document)
+                return result
+
+            with patch(
+                "curriculum_builder.build._render_artifacts",
+                side_effect=racing_render,
+            ), self.assertRaisesRegex(
+                CurriculumValidationError,
+                "visualization-catalog.json changed during build",
+            ):
+                build_site(content, templates, static_root, output)
+
+            self.assertEqual(
+                (output / "sentinel.txt").read_text(encoding="utf-8"),
+                "previous",
+            )
+            self.assertEqual(list(root.glob(".site.staging-*")), [])
 
     def test_template_rendering_uses_pinned_bytes_during_root_swap(
         self,
@@ -759,7 +903,7 @@ class BuildInputValidationTests(unittest.TestCase):
                 items: object,
                 roadmap: object,
                 template_source: object,
-                stylesheet: bytes,
+                static_assets: object,
                 lessons: object,
                 competencies: object,
                 capstones: object,
@@ -772,7 +916,7 @@ class BuildInputValidationTests(unittest.TestCase):
                         items,  # type: ignore[arg-type]
                         roadmap,  # type: ignore[arg-type]
                         template_source,  # type: ignore[arg-type]
-                        stylesheet,
+                        static_assets,  # type: ignore[arg-type]
                         lessons,  # type: ignore[arg-type]
                         competencies,  # type: ignore[arg-type]
                         capstones,  # type: ignore[arg-type]
@@ -970,6 +1114,96 @@ class BuildInputValidationTests(unittest.TestCase):
                             "styles.css",
                             MAX_STYLESHEET_BYTES,
                         )
+
+    def test_visualization_stylesheet_is_regular_bounded_and_rechecked(self) -> None:
+        with _fixture() as (root, content, templates, static_root):
+            stylesheet = static_root / "visualizations.css"
+            external_link = root / "external-visualizations.css"
+            os.link(stylesheet, external_link)
+            with self.assertRaisesRegex(
+                CurriculumValidationError,
+                "visualizations.css must have exactly one link",
+            ) as caught:
+                build_site(content, templates, static_root, root / "site")
+            self.assertNotIn(str(root), str(caught.exception))
+
+        with _fixture() as (root, content, templates, static_root):
+            stylesheet = static_root / "visualizations.css"
+            stylesheet.unlink()
+            stylesheet.symlink_to(REPOSITORY_ROOT / "static/visualizations.css")
+            with self.assertRaisesRegex(
+                CurriculumValidationError,
+                "visualizations.css must be a regular file",
+            ):
+                build_site(content, templates, static_root, root / "site")
+
+        with _fixture() as (root, content, templates, static_root):
+            (static_root / "visualizations.css").write_bytes(
+                b"x" * (MAX_VISUALIZATION_STYLESHEET_BYTES + 1)
+            )
+            with self.assertRaisesRegex(
+                CurriculumValidationError,
+                "visualizations.css exceeds maximum byte count",
+            ):
+                build_site(content, templates, static_root, root / "site")
+
+        with _fixture() as (root, content, templates, static_root):
+            original_render = build_module._render_artifacts
+
+            def racing_render(*args: object, **kwargs: object) -> object:
+                result = original_render(*args, **kwargs)  # type: ignore[arg-type]
+                (static_root / "visualizations.css").write_bytes(b"changed")
+                return result
+
+            with patch(
+                "curriculum_builder.build._render_artifacts",
+                side_effect=racing_render,
+            ), self.assertRaisesRegex(
+                CurriculumValidationError,
+                "visualizations.css changed during build",
+            ):
+                build_site(content, templates, static_root, root / "site")
+
+        with _fixture() as (root, content, templates, static_root):
+            original_render = build_module._render_artifacts
+
+            stylesheet = static_root / "visualizations.css"
+            original_source = stylesheet.read_bytes()
+
+            def restoring_render(*args: object, **kwargs: object) -> object:
+                result = original_render(*args, **kwargs)  # type: ignore[arg-type]
+                stylesheet.write_bytes(b"temporarily changed")
+                stylesheet.write_bytes(original_source)
+                return result
+
+            with patch(
+                "curriculum_builder.build._render_artifacts",
+                side_effect=restoring_render,
+            ), self.assertRaisesRegex(
+                CurriculumValidationError,
+                "visualizations.css changed during build",
+            ):
+                build_site(content, templates, static_root, root / "site")
+
+        with _fixture() as (root, content, templates, static_root):
+            original_render = build_module._render_artifacts
+
+            def replacing_render(*args: object, **kwargs: object) -> object:
+                result = original_render(*args, **kwargs)  # type: ignore[arg-type]
+                stylesheet = static_root / "visualizations.css"
+                replacement = static_root / "visualizations.replacement"
+                replacement.write_bytes(stylesheet.read_bytes())
+                os.replace(replacement, stylesheet)
+                return result
+
+            with patch(
+                "curriculum_builder.build._render_artifacts",
+                side_effect=replacing_render,
+            ), self.assertRaisesRegex(
+                CurriculumValidationError,
+                "visualizations.css changed during build",
+            ):
+                build_site(content, templates, static_root, root / "site")
 
     def test_roots_and_output_boundaries_reject_symlinks_permissions_and_overlap(
         self,

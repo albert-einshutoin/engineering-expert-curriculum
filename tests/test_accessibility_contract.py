@@ -11,6 +11,35 @@ from tools.check_site import check_site
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+TASK9_SCRIPTED_LESSONS = frozenset(
+    {
+        "core-02-algorithms-measurement",
+        "core-03-architecture-memory-caches",
+        "core-04-os-processes-concurrency",
+        "core-05-networks-latency-failure",
+        "core-07-api-contract-design",
+    }
+)
+TASK10_SCRIPTED_LESSONS = frozenset(
+    {
+        "core-02-algorithms-measurement",
+        "core-03-architecture-memory-caches",
+        "core-04-os-processes-concurrency",
+        "core-05-networks-latency-failure",
+        "core-07-api-contract-design",
+        "core-12-transactions-isolation-consistency",
+        "core-13-distributed-coordination-failure",
+        "core-14-performance-capacity",
+        "core-15-reliability-observability-slo",
+    }
+)
+TASK11_SCRIPTED_LESSONS = TASK10_SCRIPTED_LESSONS | frozenset(
+    {
+        "core-16-hci-usability-accessibility",
+        "core-22-evolution-safe-migrations",
+        "core-24-delivery-ci-release-safety",
+    }
+)
 _ACTIVE_CONTENT = frozenset(
     {
         "audio",
@@ -129,17 +158,45 @@ class AccessibilityContractTests(unittest.TestCase):
                 self.assertEqual(parser.h1_count, 1)
                 self.assertEqual(parser.skip_links, 1)
 
-    def test_generated_pages_contain_no_active_or_inline_executable_content(
+    def test_task10_has_exactly_nine_scripted_lesson_pages_and_preserves_task9(
         self,
     ) -> None:
+        self.assertEqual(
+            tuple(
+                path.relative_to(self.site).as_posix()
+                for path in self.site.rglob("*.js")
+            ),
+            ("static/visualization.js",),
+        )
+        scripted_lessons: set[str] = set()
         for page in sorted(self.site.rglob("*.html")):
             relative = page.relative_to(self.site)
             with self.subTest(page=relative):
                 parser = _LandmarkParser()
                 parser.feed(page.read_text(encoding="utf-8"))
                 parser.close()
-                self.assertEqual(parser.active_content, [])
+                scripts = parser.active_content.count("script")
+                if scripts:
+                    self.assertEqual(relative.parts[:1], ("lessons",))
+                    self.assertEqual(len(relative.parts), 3)
+                    scripted_lessons.add(relative.parts[1])
+                    self.assertEqual(scripts, 1)
+                    self.assertTrue(
+                        set(parser.active_content)
+                        <= {"button", "input", "script", "select"}
+                    )
+                else:
+                    self.assertEqual(parser.active_content, [])
                 self.assertEqual(parser.event_attributes, [])
+        self.assertEqual(
+            scripted_lessons & TASK9_SCRIPTED_LESSONS,
+            TASK9_SCRIPTED_LESSONS,
+        )
+        self.assertEqual(
+            scripted_lessons & TASK10_SCRIPTED_LESSONS,
+            TASK10_SCRIPTED_LESSONS,
+        )
+        self.assertEqual(scripted_lessons, TASK11_SCRIPTED_LESSONS)
 
     def test_release_checker_rejects_semantics_hidden_in_template(self) -> None:
         page = next(iter(sorted(self.site.rglob("*.html"))))
@@ -174,6 +231,24 @@ class AccessibilityContractTests(unittest.TestCase):
                 print_rules,
                 rf"(?m)^\s*{content_selector}\s*\{{[^}}]*display:\s*none",
             )
+
+    def test_runtime_states_have_non_color_css_markers_and_keep_static_oracle(self) -> None:
+        stylesheet = (self.site / "static/visualizations.css").read_text(
+            encoding="utf-8"
+        )
+        for selector in (
+            ".visualization.is-enhanced",
+            ".visualization__model-node.is-active",
+            ".visualization__model-edge.is-active",
+            ".visualization.is-complete",
+            ".visualization.has-runtime-error",
+        ):
+            with self.subTest(selector=selector):
+                self.assertIn(selector, stylesheet)
+        self.assertNotRegex(
+            stylesheet,
+            r"(?s)\.visualization[^{}]*::(?:before|after)\s*\{[^}]*content:\s*['\"][^'\"]",
+        )
 
 
 if __name__ == "__main__":

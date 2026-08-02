@@ -20,16 +20,27 @@ from curriculum_builder.errors import (
     IncompleteLessonReleaseError,
 )
 from curriculum_builder.html_safety import MAX_FRAGMENT_BYTES
+from curriculum_builder.lesson_rendering import parse_lesson_body
+from curriculum_builder.visualizations import LessonSectionRole
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 COMPLETE = REPOSITORY_ROOT / "tests/fixtures/complete-lesson.json"
-BODY = (
-    '<section id="mechanism">'
-    "<h2>判断を構成する機構</h2>"
-    "<p>制約、証拠、再評価条件を結び付けます。</p>"
-    "</section>"
+BODY = "".join(
+    f'<section id="{section_id}"><h2>{section_id}</h2><p>本文</p></section>'
+    for section_id in (
+        "why",
+        "mental-model",
+        "worked-example",
+        "tradeoffs",
+        "knowledge-check",
+        "sources-next",
+    )
 )
+
+
+def _body_with_text(text: str) -> str:
+    return BODY.replace("本文", text, 1)
 
 
 class _SyntheticDirEntry:
@@ -135,6 +146,64 @@ def _complete_document(
     return loaded
 
 
+def _maximum_id_visualization() -> dict[str, object]:
+    visual_id = "v" * 64
+    parameter_id = "p" * 64
+    first_option = "a" * 64
+    second_option = "b" * 64
+    return {
+        "id": visual_id,
+        "type": "flow",
+        "caption": "上限IDの図",
+        "question": "上限長でも描画できるか",
+        "afterSection": "mentalModel",
+        "objectiveIds": ["obj-1"],
+        "evidenceIds": ["lab-map"],
+        "sourceIds": ["src-nasa-handbook"],
+        "expectedObservation": "生成DOM IDは短く一意になる",
+        "payload": {
+            "steps": [
+                {"id": "start", "label": "開始", "detail": "始める"},
+                {"id": "finish", "label": "終了", "detail": "終える"},
+            ],
+            "transitions": [{
+                "id": "advance", "from": "start", "to": "finish",
+                "label": "進む",
+            }],
+        },
+        "simulation": {
+            "kind": "request-path",
+            "interactionMode": "scenario",
+            "parameters": [{
+                "id": parameter_id, "label": "方式", "control": "select",
+                "options": [
+                    {"id": first_option, "label": "第一"},
+                    {"id": second_option, "label": "第二"},
+                ],
+                "defaultOptionId": first_option,
+            }],
+            "initialStateId": "first-state",
+            "states": [
+                {
+                    "id": "first-state", "label": "第一", "status": "待機",
+                    "when": {parameter_id: first_option},
+                    "activeNodeIds": ["start"], "activeEdgeIds": [],
+                },
+                {
+                    "id": "second-state", "label": "第二", "status": "完了",
+                    "when": {parameter_id: second_option},
+                    "activeNodeIds": ["finish"], "activeEdgeIds": ["advance"],
+                },
+            ],
+            "transitions": [],
+            "outcomes": [
+                {"id": "first-result", "stateId": "first-state", "label": "第一"},
+                {"id": "second-result", "stateId": "second-state", "label": "第二"},
+            ],
+        },
+    }
+
+
 @contextmanager
 def _site_fixture():
     with TemporaryDirectory() as directory:
@@ -178,6 +247,63 @@ def _add_lesson(
 
 
 class LessonRenderingTests(unittest.TestCase):
+    def test_lesson_body_maps_generic_and_prefixed_sections_by_order(self) -> None:
+        prefixed_sequences = (
+            ("review-why", "review-mental-model", "worked-example",
+             "review-tradeoffs", "review-knowledge-check", "review-sources-next"),
+            ("team-why", "team-mental-model", "worked-example",
+             "team-tradeoffs", "team-knowledge-check", "team-sources-next"),
+            ("oss-why", "oss-mental-model", "worked-example",
+             "oss-tradeoffs", "oss-knowledge-check", "oss-sources-next"),
+            ("async-why", "async-mental-model", "worked-example",
+             "async-tradeoffs", "async-check", "async-sources"),
+            ("leadership-why", "leadership-mental-model", "worked-example",
+             "leadership-tradeoffs", "leadership-check", "leadership-sources"),
+        )
+        fragments = (BODY,) + tuple(
+            "".join(
+                f'<section id="{section_id}"><h2>{section_id}</h2><p>本文</p></section>'
+                for section_id in section_ids
+            )
+            for section_ids in prefixed_sequences
+        )
+        for fragment in fragments:
+            with self.subTest(fragment=fragment[:40]):
+                body = parse_lesson_body(fragment)
+                self.assertEqual(
+                    tuple(section.role for section in body.sections),
+                    tuple(LessonSectionRole),
+                )
+                self.assertEqual(
+                    "".join(section.html.value for section in body.sections),
+                    fragment,
+                )
+
+    def test_lesson_body_rejects_invalid_top_level_section_contracts(self) -> None:
+        sections = [
+            '<section id="why"><h2>why</h2></section>',
+            '<section id="mental-model"><h2>mental</h2></section>',
+            '<section id="worked-example"><h2>worked</h2></section>',
+            '<section id="tradeoffs"><h2>tradeoffs</h2></section>',
+            '<section id="knowledge-check"><h2>check</h2></section>',
+            '<section id="sources-next"><h2>sources</h2></section>',
+        ]
+        cases = {
+            "missing": "".join(sections[:-1]),
+            "reordered": "".join((sections[1], sections[0], *sections[2:])),
+            "duplicated": "".join((*sections[:-1], sections[0])),
+            "seventh": "".join((*sections, '<section id="extra"><h2>x</h2></section>')),
+            "unclosed": "".join(sections)[:-10],
+            "nested impersonation": sections[0].replace(
+                "</section>",
+                '<section id="mental-model"><h2>fake</h2></section></section>',
+            ) + "".join(sections[1:]),
+        }
+        for label, fragment in cases.items():
+            with self.subTest(label=label):
+                with self.assertRaises(CurriculumValidationError):
+                    parse_lesson_body(fragment)
+
     def test_draft_lesson_has_a_typed_structural_completion_failure(
         self,
     ) -> None:
@@ -221,7 +347,12 @@ class LessonRenderingTests(unittest.TestCase):
                 "review-schedule",
                 "rubric",
                 "sources",
-                "mechanism",
+                "why",
+                "mental-model",
+                "worked-example",
+                "tradeoffs",
+                "knowledge-check",
+                "sources-next",
             ):
                 self.assertIn(f'id="{section_id}"', html)
             for level in ("recognize", "explain", "apply", "diagnose", "lead"):
@@ -247,6 +378,19 @@ class LessonRenderingTests(unittest.TestCase):
             )
             self.assertEqual(parser.scripts, 0)
             self.assertEqual(parser.remote_dependencies, [])
+
+    def test_build_accepts_schema_maximum_visual_and_parameter_ids(self) -> None:
+        with _site_fixture() as (root, content, templates, static_root):
+            lesson = _complete_document()
+            lesson["visualizations"] = [_maximum_id_visualization()]
+            _add_lesson(content, lesson)
+
+            build_site(content, templates, static_root, root / "site")
+
+            page = root / "site/lessons/core-01-systems-tradeoffs/index.html"
+            html = page.read_text(encoding="utf-8")
+            self.assertTrue(page.is_file())
+            self.assertNotIn('id="' + "v" * 64, html)
 
     def test_index_is_topological_and_empty_state_is_meaningful(self) -> None:
         with _site_fixture() as (root, content, templates, static_root):
@@ -333,6 +477,21 @@ class LessonRenderingTests(unittest.TestCase):
             ),
             "invalid UTF-8": b"<p>\xff</p>",
             "oversized": b"x" * (MAX_FRAGMENT_BYTES + 1),
+            "button": BODY.replace(
+                "<p>本文</p>",
+                '<button type="button" disabled>unsafe</button>',
+                1,
+            ),
+            "select": BODY.replace(
+                "<p>本文</p>",
+                '<select disabled><option value="one">unsafe</option></select>',
+                1,
+            ),
+            "input": BODY.replace(
+                "<p>本文</p>",
+                '<input type="radio" name="choice" value="one" disabled>',
+                1,
+            ),
         }
         for label, body in body_cases.items():
             with self.subTest(label=label), _site_fixture() as (
@@ -533,7 +692,7 @@ class LessonRenderingTests(unittest.TestCase):
             first = _add_lesson(
                 content,
                 _complete_document(title="PRIVATE-FIRST-TITLE"),
-                body="<p>PRIVATE-FIRST-BODY</p>",
+                body=_body_with_text("PRIVATE-FIRST-BODY"),
             )
             second = _add_lesson(
                 content,
@@ -541,7 +700,7 @@ class LessonRenderingTests(unittest.TestCase):
                     lesson_id="core-02-aggregate-boundary",
                     title="PRIVATE-SECOND-TITLE",
                 ),
-                body="<p>PRIVATE-SECOND-BODY</p>",
+                body=_body_with_text("PRIVATE-SECOND-BODY"),
             )
             lesson_bytes = tuple(
                 sum(
@@ -602,7 +761,7 @@ class LessonRenderingTests(unittest.TestCase):
             _add_lesson(
                 content,
                 _complete_document(title="PRIVATE-ARTIFACT-TITLE"),
-                body="<p>PRIVATE-ARTIFACT-BODY</p>",
+                body=_body_with_text("PRIVATE-ARTIFACT-BODY"),
             )
             baseline = root / "baseline"
             build_site(content, templates, static_root, baseline)
@@ -735,7 +894,7 @@ class LessonRenderingTests(unittest.TestCase):
                 _add_lesson(
                     content,
                     _complete_document(title="PRIVATE-TITLE-CONTENT"),
-                    body="<p>PRIVATE-BODY-CONTENT</p>",
+                    body=_body_with_text("PRIVATE-BODY-CONTENT"),
                 )
                 real_open = os.open
                 real_close = os.close
@@ -1037,6 +1196,8 @@ class LessonRenderingTests(unittest.TestCase):
             expected = {
                 Path("index.html"),
                 Path("styles.css"),
+                Path("static/visualizations.css"),
+                Path("static/visualization.js"),
                 Path("catalog/index.html"),
                 Path("capstones/index.html"),
                 Path("competencies/index.html"),
@@ -1052,6 +1213,12 @@ class LessonRenderingTests(unittest.TestCase):
                 if path.is_file()
             }
             self.assertEqual(actual, expected)
+            scripted_pages = tuple(
+                path.relative_to(output)
+                for path in output.rglob("*.html")
+                if "<script " in path.read_text(encoding="utf-8")
+            )
+            self.assertEqual(scripted_pages, ())
             first = {
                 path.relative_to(output): (
                     path.read_bytes(),

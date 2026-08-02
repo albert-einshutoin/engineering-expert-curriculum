@@ -18,15 +18,16 @@ from tools.check_site import (
     SiteValidationError,
     check_site,
 )
+from tools.create_release_manifest import write_release_manifest
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CHECKER = REPOSITORY_ROOT / "tools" / "check_site.py"
 CSP = (
-    "default-src 'none'; script-src 'none'; style-src 'self'; "
+    "default-src 'none'; script-src 'self'; script-src-attr 'none'; style-src 'self'; "
     "img-src 'self' data:; font-src 'self'; connect-src 'none'; "
-    "base-uri 'none'; form-action 'none'; object-src 'none'; "
-    "frame-src 'none'"
+    "worker-src 'none'; media-src 'none'; object-src 'none'; "
+    "frame-src 'none'; base-uri 'none'; form-action 'none'"
 )
 
 
@@ -45,6 +46,7 @@ def _page(
   <meta http-equiv="Content-Security-Policy" content="{csp}">
   <title>検証ページ</title>
   <link rel="stylesheet" href="{root}styles.css">
+  <link rel="stylesheet" href="{root}static/visualizations.css">
   {head}
 </head>
 <body>
@@ -63,6 +65,14 @@ def _fixture():
         (root / "styles.css").write_text(
             "body { color: #123456; }\n",
             encoding="utf-8",
+        )
+        (root / "static").mkdir()
+        (root / "static" / "visualizations.css").write_text(
+            ".visualization { display: grid; }\n",
+            encoding="utf-8",
+        )
+        (root / "static" / "visualization.js").write_bytes(
+            (REPOSITORY_ROOT / "static" / "visualization.js").read_bytes()
         )
         (root / "index.html").write_text(
             _page(
@@ -97,6 +107,8 @@ class SiteCheckerHappyPathTests(unittest.TestCase):
                         "index.html",
                         "guide/index.html",
                         "styles.css",
+                        "static/visualizations.css",
+                        "static/visualization.js",
                     },
                 ),
                 [],
@@ -126,6 +138,84 @@ class SiteCheckerHappyPathTests(unittest.TestCase):
                 if path.is_file()
             }
             self.assertEqual(inventory, set(CURRENT_RELEASE_INVENTORY))
+
+    def test_manifest_mode_accepts_only_a_verified_root_manifest(self) -> None:
+        with TemporaryDirectory(
+            prefix=".site-checker-manifest-",
+            dir=REPOSITORY_ROOT.parent,
+        ) as directory:
+            site = Path(directory) / "site"
+            build_site(
+                REPOSITORY_ROOT / "content",
+                REPOSITORY_ROOT / "templates",
+                REPOSITORY_ROOT / "static",
+                site,
+                require_complete_curriculum=True,
+            )
+            manifest = site / "release-manifest.json"
+            write_release_manifest(
+                site,
+                manifest,
+                commit="0123456789abcdef0123456789abcdef01234567",
+            )
+            self.assertEqual(
+                check_site(
+                    site,
+                    require_current_release=True,
+                    with_release_manifest=True,
+                ),
+                [],
+            )
+            self.assertTrue(any("file type" in issue for issue in check_site(site)))
+            manifest.write_bytes(b"{}\n")
+            self.assertTrue(
+                any(
+                    "release manifest" in issue
+                    for issue in check_site(
+                        site,
+                        require_current_release=True,
+                        with_release_manifest=True,
+                    )
+                )
+            )
+
+    def test_complete_release_rejects_generated_grammar_mutations(self) -> None:
+        with TemporaryDirectory(
+            prefix=".site-checker-grammar-",
+            dir=REPOSITORY_ROOT.parent,
+        ) as directory:
+            site = Path(directory) / "site"
+            build_site(
+                REPOSITORY_ROOT / "content",
+                REPOSITORY_ROOT / "templates",
+                REPOSITORY_ROOT / "static",
+                site,
+                require_complete_curriculum=True,
+            )
+            index = site / "index.html"
+            original = index.read_text(encoding="utf-8")
+            mutations = (
+                original.replace(
+                    '<meta charset="utf-8">',
+                    '<img src="pixel.png"><meta charset="utf-8">',
+                    1,
+                ),
+                original.replace("</main>", "<svg></svg></main>", 1),
+                original.replace(
+                    "</main>",
+                    '<video src="forged.mp4"></video></main>',
+                    1,
+                ),
+            )
+            for document in mutations:
+                index.write_text(document, encoding="utf-8")
+                with self.subTest(document=document[:80]):
+                    self.assertTrue(any(
+                        "generated document grammar" in issue
+                        for issue in check_site(site, require_current_release=True)
+                    ))
+            index.write_text(original, encoding="utf-8")
+            self.assertEqual(check_site(site, require_current_release=True), [])
 
 
 class SiteCheckerFilesystemTests(unittest.TestCase):
@@ -369,6 +459,70 @@ class SiteCheckerHtmlTests(unittest.TestCase):
                     )
                 )
 
+    def test_rejects_elements_outside_the_generated_document_grammar(self) -> None:
+        image_before_csp = _page().replace(
+            '<meta charset="utf-8">',
+            '<img src="pixel.png"><meta charset="utf-8">',
+        )
+        image_issues = self._issues_for(image_before_csp)
+        self.assertTrue(any(
+            "CSP must precede resource-bearing elements" in issue
+            for issue in image_issues
+        ))
+        mutations = (
+            image_before_csp,
+            _page(body='<svg><title>forged</title></svg>'),
+            _page(body='<video src="forged.mp4"></video>'),
+        )
+        for document in mutations:
+            with self.subTest(document=document[:80]):
+                self.assertTrue(any(
+                    "generated document grammar" in issue
+                    for issue in self._issues_for(document)
+                ))
+
+    def test_deferred_script_rejects_inline_data_entities_and_comments(self) -> None:
+        figure = '<figure data-visualization-id="v" data-simulation-kind="request-path" data-interaction-mode="stepper"></figure>'
+        for inline in ("alert(1)", "&amp;", "<!--hidden-->"):
+            document = _page(body=figure).replace(
+                "</body>",
+                f'<script src="static/visualization.js" defer>{inline}</script></body>',
+            )
+            with self.subTest(inline=inline):
+                self.assertTrue(any(
+                    "inline script" in issue
+                    for issue in self._issues_for(document)
+                ))
+
+    def test_deferred_script_requires_paired_non_void_markup(self) -> None:
+        figure = (
+            '<figure data-visualization-id="v" '
+            'data-simulation-kind="request-path" '
+            'data-interaction-mode="stepper"></figure>'
+        )
+        paired = _page(body=figure).replace(
+            "</body>",
+            '<script src="static/visualization.js" defer></script></body>',
+        )
+        self.assertFalse(any(
+            "malformed HTML" in issue
+            for issue in self._issues_for(paired)
+        ))
+        self_closing = paired.replace("></script>", " />")
+        self.assertTrue(any(
+            "malformed HTML" in issue
+            for issue in self._issues_for(self_closing)
+        ))
+
+    def test_rejects_unreviewed_runtime_artifact_bytes(self) -> None:
+        with _fixture() as root:
+            runtime = root / "static/visualization.js"
+            runtime.write_bytes(runtime.read_bytes() + b"\n")
+            self.assertTrue(any(
+                "reviewed runtime digest" in issue
+                for issue in check_site(root)
+            ))
+
     def test_requires_ja_nonempty_title_exactly_one_main_h1_and_skip_link(self) -> None:
         mutations = {
             "lang": _page(lang="en"),
@@ -554,19 +708,45 @@ class SiteCheckerHtmlTests(unittest.TestCase):
                     )
                 )
 
-    def test_allows_only_one_local_stylesheet(self) -> None:
+    def test_requires_exactly_two_ordered_local_stylesheets(self) -> None:
+        links = (
+            '  <link rel="stylesheet" href="styles.css">\n'
+            '  <link rel="stylesheet" href="static/visualizations.css">'
+        )
+        without_links = _page().replace(links, "")
+        nested_stylesheets = tuple(
+            _page().replace(links, f"  <{container}>\n{links}\n  </{container}>")
+            for container in ("noscript", "template")
+        )
         mutations = (
             _page().replace("styles.css", "https://example.com/styles.css", 1),
             _page(head='<link rel="stylesheet" href="styles.css">'),
             _page().replace('rel="stylesheet"', 'rel="preload"', 1),
+            _page().replace(
+                '  <link rel="stylesheet" href="styles.css">\n'
+                '  <link rel="stylesheet" href="static/visualizations.css">',
+                '  <link rel="stylesheet" href="static/visualizations.css">\n'
+                '  <link rel="stylesheet" href="styles.css">',
+            ),
+            without_links.replace("<body>", f"<body>\n{links}"),
+            without_links.replace("</head>", f"</head>\n{links}"),
+            *nested_stylesheets,
         )
         for document in mutations:
             issues = self._issues_for(document)
             self.assertTrue(any("stylesheet" in issue for issue in issues))
 
+        for document in (*mutations[-4:-2], *nested_stylesheets):
+            self.assertTrue(
+                any(
+                    "stylesheet must be a direct child of head" in issue
+                    for issue in self._issues_for(document)
+                )
+            )
+
     def test_requires_exact_csp_contract(self) -> None:
         mutations = (
-            _page(csp=CSP.replace("script-src 'none'; ", "")),
+            _page(csp=CSP.replace("script-src 'self'; ", "")),
             _page(csp=CSP + "; media-src https:"),
             _page(csp=CSP.replace("; ", ";  ", 1)),
             _page().replace("Content-Security-Policy", "content-security-policy", 1)
@@ -577,6 +757,21 @@ class SiteCheckerHtmlTests(unittest.TestCase):
 
 
 class SiteCheckerCssAndCliTests(unittest.TestCase):
+    def test_visualization_css_has_an_80_kib_deployed_budget(self) -> None:
+        with _fixture() as root:
+            (root / "static/visualizations.css").write_bytes(
+                b"a" * ((80 * 1024) + 1)
+            )
+            issues = check_site(root)
+            self.assertTrue(
+                any(
+                    "static/visualizations.css" in issue
+                    and "too large" in issue
+                    for issue in issues
+                ),
+                issues,
+            )
+
     def test_css_must_be_nonempty_utf8_and_local_only(self) -> None:
         payloads = (
             b"",

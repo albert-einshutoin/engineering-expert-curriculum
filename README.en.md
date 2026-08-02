@@ -19,9 +19,15 @@ The learning loop is intentionally cumulative. Learners study a mechanism and it
 
 ## Static delivery contract
 
-The published runtime uses HTML and CSS with no JavaScript. After building, open `site/index.html` directly over `file://` or publish the same output on GitHub Pages. There are no accounts, analytics, server APIs, databases, or stored learner data.
+v0.1.0 is the immutable HTML/CSS-only release. In v0.2.0, every lesson remains complete and understandable with HTML and CSS and no JavaScript; approved simulation lessons may progressively load the single repository-owned `static/visualization.js` asset. After building, open `site/index.html` directly over `file://` or publish the same output on GitHub Pages. Disabled, blocked, or failed JavaScript never removes lesson information.
+
+The dependency-free runtime uses no network, storage, analytics, or URL state. There are no accounts, server APIs, databases, or collected, retained, or transmitted learner data.
 
 The information structure remains meaningful without CSS and does not rely on color or connector lines alone. Browser Find provides catalog search, keeping the first release portable and inspectable.
+
+12 approved lessons provide ten visualization types while preserving the same causal and state trace under keyboard operation, reduced motion, and forced colors. Release candidates are exercised in pinned Chromium and Firefox builds plus the installed Safari build. Browser caches, screenshots, and raw performance reports remain local under `outputs/` and are not release artifacts. Chromium and Firefox cover both `file://` and Pages-style loopback HTTP. Because Safari WebDriver rejects an external file main resource at its WebKit sandbox boundary, the same pre-product harness runs over loopback HTTP at desktop width and a 390px narrow viewport. This is not a claim of mobile device emulation; separate browser and checker evidence retains the static no-JS/file contract.
+
+Each deployment carries a root release manifest binding the commit to the byte size and SHA-256 of every HTML, CSS, and JavaScript artifact. The Pages workflow verifies those bytes after deployment. The manifest is not, by itself, a signature or proof of publisher authenticity. Meta CSP cannot enforce `frame-ancestors`, and this repository cannot configure arbitrary GitHub Pages response headers, so it does not claim clickjacking protection.
 
 ## Build and validate
 
@@ -51,7 +57,7 @@ Review is recorded independently for technical accuracy, learning design and evi
 
 ## Repository map
 
-Canonical content lives under `content/`; the prerequisite graph is `content/roadmap.json`; competency mappings are in `content/competencies.json`; the standard-library builder is under `curriculum_builder/`; templates and CSS are under `templates/` and `static/`; and executable contracts live in `tests/`. Generated `site/` output is intentionally not version controlled.
+Canonical content lives under `content/`; the prerequisite graph is `content/roadmap.json`; competency mappings are in `content/competencies.json`; the standard-library builder is under `curriculum_builder/`; templates, CSS, and the optional first-party progressive runtime are under `templates/` and `static/`; and executable contracts live in `tests/`. Generated `site/` output is intentionally not version controlled.
 
 ## Contributing and reporting
 

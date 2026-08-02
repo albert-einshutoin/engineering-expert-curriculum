@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass
+import json
 from pathlib import Path
 import re
+import subprocess
 import unittest
 from typing import TypeAlias
 
@@ -39,6 +41,20 @@ _ACTION_REFERENCE = re.compile(
 _ALLOWED_PERMISSION_VALUES = frozenset({"read", "write", "none"})
 _ALLOWED_PERMISSION_KEYS = frozenset(
     {"contents", "security-events", "pages", "id-token"}
+)
+_BROWSER_RUNNER = (
+    "mcr.microsoft.com/playwright/python:v1.61.0-noble-amd64@"
+    "sha256:80fd7c1aad9600ea348572dd46ca00b9ea31d890831f5838fc61319ab79900d2"
+)
+_GITLEAKS_FINGERPRINTS = (
+    "4c55aeffaa14554e581ae28492d4a4c5b03bdd2a:"
+    "tests/test_content_acceptance.py:generic-api-key:94",
+    "3f6cc01088ee058f28f2695dc04769f785d05699:"
+    "tests/test_content_acceptance.py:generic-api-key:94",
+)
+_SECRET_SHAPED_API_FIXTURE = re.compile(
+    r'(?i)api[^\n]{0,100}["\'][0-9a-f]{64}["\']',
+    re.ASCII,
 )
 
 
@@ -381,8 +397,12 @@ class RepositorySecurityTests(unittest.TestCase):
                 "security-events": "write",
             },
             ("pages.yml", "deploy"): {
+                "contents": "read",
                 "pages": "write",
                 "id-token": "write",
+            },
+            ("pages.yml", "verify"): {
+                "contents": "read",
             },
         }
         observed_overrides: dict[tuple[str, str], dict[str, YamlValue]] = {}
@@ -444,11 +464,16 @@ class RepositorySecurityTests(unittest.TestCase):
             document.get("on"),
             {"pull_request": {}, "push": {"branches": ["main"]}},
         )
-        self.assertEqual(set(_jobs(document)), {"full-validation"})
+        self.assertEqual(set(_jobs(document)), {"full-validation", "browser-contract"})
+        browser = _mapping(_jobs(document)["browser-contract"], "validate.browser-contract")
+        self.assertEqual(
+            _mapping(browser.get("container"), "validate.browser-contract.container"),
+            {"image": _BROWSER_RUNNER, "options": "--user 1001"},
+        )
         runs = "\n".join(_runs(document))
         self.assertIn("python -m unittest discover -s tests -v", runs)
         self.assertIn("python tools/generate_curriculum_map.py --check", runs)
-        self.assertEqual(runs.count("python tools/build.py"), 2)
+        self.assertEqual(runs.count("python tools/build.py"), 3)
         self.assertEqual(
             runs.count(
                 "python tools/check_site.py --root site --require-current-release"
@@ -457,6 +482,24 @@ class RepositorySecurityTests(unittest.TestCase):
         )
         self.assertIn("sha256sum", runs)
         self.assertIn("diff -u", runs)
+        self.assertIn("python tools/install_test_browsers.py", runs)
+        self.assertIn("python tools/run_browser_contract.py", runs)
+        self.assertEqual(runs.count("--oci-container-no-sandbox"), 2)
+
+    def test_browser_runner_digest_cannot_drift_from_the_canonical_matrix(self) -> None:
+        matrix = json.loads(
+            (REPOSITORY_ROOT / "tests" / "browser-matrix.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        runner = matrix["ciRunner"]
+        image, separator, digest = _BROWSER_RUNNER.partition("@")
+        self.assertEqual(separator, "@")
+        self.assertEqual(
+            image,
+            runner["image"] + ":v1.61.0-noble-amd64",
+        )
+        self.assertEqual(digest, runner["digest"])
 
     def test_dependency_review_is_pull_request_only_and_read_only(self) -> None:
         document = _workflow("dependency-review.yml")
@@ -464,7 +507,7 @@ class RepositorySecurityTests(unittest.TestCase):
         self.assertEqual(document.get("permissions"), {"contents": "read"})
         self.assertNotIn("permissions", _mapping(_jobs(document)["review"], "review"))
 
-    def test_codeql_analyzes_python_on_pr_main_and_a_weekly_schedule(self) -> None:
+    def test_codeql_analyzes_python_and_javascript_on_pr_main_and_schedule(self) -> None:
         document = _workflow("codeql.yml")
         trigger = _mapping(document.get("on"), "codeql.on")
         self.assertEqual(set(trigger), {"pull_request", "push", "schedule"})
@@ -486,7 +529,10 @@ class RepositorySecurityTests(unittest.TestCase):
             for step in steps
             if str(step.get("uses", "")).startswith("github/codeql-action/init@")
         )
-        self.assertEqual(init.get("with"), {"languages": "python"})
+        self.assertEqual(
+            init.get("with"),
+            {"languages": "python,javascript-typescript"},
+        )
 
     def test_gitleaks_verifies_official_cli_and_scans_redacted_history(self) -> None:
         document = _workflow("gitleaks.yml")
@@ -515,39 +561,108 @@ class RepositorySecurityTests(unittest.TestCase):
         self.assertIn('--log-opts="--all"', runs)
         self.assertNotIn("gitleaks/gitleaks-action", str(document))
 
+    def test_gitleaks_ignores_only_two_historical_contract_fingerprints(self) -> None:
+        ignore_path = REPOSITORY_ROOT / ".gitleaksignore"
+        self.assertEqual(
+            tuple(ignore_path.read_text(encoding="utf-8").splitlines()),
+            _GITLEAKS_FINGERPRINTS,
+        )
+
+        for fingerprint in _GITLEAKS_FINGERPRINTS:
+            commit, path, rule, line_number = fingerprint.split(":")
+            self.assertRegex(commit, r"\A[0-9a-f]{40}\Z")
+            self.assertEqual(path, "tests/test_content_acceptance.py")
+            self.assertEqual(rule, "generic-api-key")
+            self.assertEqual(line_number, "94")
+
+        current_fixture = (
+            REPOSITORY_ROOT / "tests" / "test_content_acceptance.py"
+        ).read_text(encoding="utf-8")
+        self.assertIsNone(_SECRET_SHAPED_API_FIXTURE.search(current_fixture))
+
+        for forbidden_config in (".gitleaks.toml", "gitleaks.toml"):
+            self.assertFalse((REPOSITORY_ROOT / forbidden_config).exists())
+        workflow = (WORKFLOWS_ROOT / "gitleaks.yml").read_text(encoding="utf-8")
+        inline_allow_marker = "gitleaks:" + "allow"
+        for broad_allowlist in (
+            "--baseline-path",
+            "--config",
+            "--gitleaks-ignore-path",
+            "GITLEAKS_CONFIG",
+            inline_allow_marker,
+        ):
+            self.assertNotIn(broad_allowlist, workflow)
+
+        tracked_inline_allows = subprocess.run(
+            ["git", "grep", "-n", "-I", "-F", inline_allow_marker, "--", "."],
+            cwd=REPOSITORY_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertIn(tracked_inline_allows.returncode, (0, 1))
+        self.assertEqual(tracked_inline_allows.stdout, "")
+
     def test_pages_deploys_only_main_after_a_verified_build(self) -> None:
         document = _workflow("pages.yml")
         self.assertEqual(document.get("on"), {"push": {"branches": ["main"]}})
         self.assertNotIn("workflow_dispatch", _mapping(document["on"], "pages.on"))
         jobs = _jobs(document)
-        self.assertEqual(set(jobs), {"build", "deploy"})
+        self.assertEqual(set(jobs), {"build", "deploy", "verify"})
         build = _mapping(jobs["build"], "pages.jobs.build")
         self.assertNotIn("permissions", build)
         deploy = _mapping(jobs["deploy"], "pages.jobs.deploy")
         self.assertEqual(deploy.get("needs"), "build")
         self.assertEqual(
             deploy.get("permissions"),
-            {"pages": "write", "id-token": "write"},
+            {"contents": "read", "pages": "write", "id-token": "write"},
         )
         environment = _mapping(
             deploy.get("environment"),
             "pages.jobs.deploy.environment",
         )
         self.assertEqual(environment.get("name"), "github-pages")
+        self.assertEqual(
+            deploy.get("outputs"),
+            {"page_url": "${{ steps.deployment.outputs.page_url }}"},
+        )
+        deploy_steps = _steps(deploy, "pages.jobs.deploy")
+        self.assertEqual(len(deploy_steps), 1)
+        self.assertEqual(
+            deploy_steps[0].get("uses"),
+            "actions/deploy-pages@" + _ACTION_LEDGER["actions/deploy-pages"],
+        )
+        self.assertEqual(deploy_steps[0].get("id"), "deployment")
+        self.assertNotIn("run", deploy_steps[0])
+
+        verify = _mapping(jobs["verify"], "pages.jobs.verify")
+        self.assertEqual(verify.get("needs"), "deploy")
+        self.assertEqual(verify.get("permissions"), {"contents": "read"})
+        self.assertNotIn("environment", verify)
+        verify_steps = _steps(verify, "pages.jobs.verify")
+        self.assertEqual(len(verify_steps), 3)
+        self.assertTrue(
+            str(verify_steps[0].get("uses", "")).startswith("actions/checkout@")
+        )
+        self.assertTrue(
+            str(verify_steps[1].get("uses", "")).startswith("actions/setup-python@")
+        )
+        self.assertEqual(
+            verify_steps[2].get("env"),
+            {
+                "DEPLOYED_BASE_URL": "${{ needs.deploy.outputs.page_url }}",
+                "EXPECTED_COMMIT": "${{ github.sha }}",
+            },
+        )
+        self.assertIn(
+            "python tools/verify_deployed_site.py",
+            str(verify_steps[2].get("run", "")),
+        )
         build_steps = _steps(build, "pages.jobs.build")
-        upload_index = next(
-            index
-            for index, step in enumerate(build_steps)
-            if str(step.get("uses", "")).startswith(
-                "actions/upload-pages-artifact@"
-            )
+        self.assertEqual(
+            _mapping(build.get("container"), "pages.jobs.build.container"),
+            {"image": _BROWSER_RUNNER, "options": "--user 1001"},
         )
-        checker_index = next(
-            index
-            for index, step in enumerate(build_steps)
-            if "python tools/check_site.py" in str(step.get("run", ""))
-        )
-        self.assertLess(checker_index, upload_index)
         runs = "\n".join(
             run
             for step in build_steps
@@ -556,7 +671,7 @@ class RepositorySecurityTests(unittest.TestCase):
         self.assertEqual(runs.count("python tools/build.py --output"), 2)
         self.assertEqual(
             runs.count("python tools/check_site.py --root "),
-            2,
+            3,
         )
         for output in ("site-first", "site-second"):
             with self.subTest(output=output):
@@ -572,9 +687,76 @@ class RepositorySecurityTests(unittest.TestCase):
                 self.assertIn(f"cd {output}", runs)
         self.assertIn("sha256sum", runs)
         self.assertIn("diff -u", runs)
+        self.assertIn("python tools/install_test_browsers.py", runs)
+        self.assertIn("python tools/run_browser_contract.py --site site-first", runs)
+        self.assertEqual(runs.count("--oci-container-no-sandbox"), 2)
+        self.assertIn("python tools/create_release_manifest.py --root site-first", runs)
+        self.assertIn("python tools/verify_release_manifest.py --root site-first", runs)
+        self.assertIn("--with-release-manifest", runs)
+
+        # This is the publication trust chain. Keeping it as an exact ordered
+        # subsequence prevents a later refactor from uploading bytes that were
+        # not the ones checked by the deterministic, browser, and manifest gates.
+        ordered_build_contract = (
+            "python tools/build.py --output site-first",
+            "python tools/check_site.py --root site-first --require-current-release",
+            "> /tmp/site-first.sha256",
+            "python tools/build.py --output site-second",
+            "python tools/check_site.py --root site-second --require-current-release",
+            "> /tmp/site-second.sha256",
+            "diff -u /tmp/site-first.sha256 /tmp/site-second.sha256",
+            "python tools/run_browser_contract.py --site site-first",
+            "python tools/create_release_manifest.py --root site-first",
+            "python tools/verify_release_manifest.py --root site-first",
+            "python tools/check_site.py --root site-first --require-current-release --with-release-manifest",
+            "actions/upload-pages-artifact@",
+        )
+        build_contract = "\n".join(
+            str(step.get("run") or step.get("uses") or "") for step in build_steps
+        )
+        cursor = -1
+        for atom in ordered_build_contract:
+            with self.subTest(atom=atom):
+                position = build_contract.find(atom, cursor + 1)
+                self.assertGreater(position, cursor)
+                cursor = position
+
+        upload_index = next(
+            index
+            for index, step in enumerate(build_steps)
+            if str(step.get("uses", "")).startswith(
+                "actions/upload-pages-artifact@"
+            )
+        )
         self.assertEqual(
             build_steps[upload_index].get("with"),
             {"path": "site-first"},
+        )
+
+    def test_oci_no_sandbox_authority_is_bound_to_pinned_browser_containers(self) -> None:
+        authorized_jobs: set[tuple[str, str]] = set()
+        for path in _workflow_files():
+            document = _load_yaml(path)
+            for job_name, job in _jobs(document).items():
+                runs = "\n".join(
+                    run
+                    for step in _steps(job, f"{path.name}.jobs.{job_name}")
+                    if isinstance((run := step.get("run")), str)
+                )
+                occurrences = runs.count("--oci-container-no-sandbox")
+                if occurrences:
+                    self.assertEqual(occurrences, 2)
+                    self.assertEqual(
+                        _mapping(
+                            job.get("container"),
+                            f"{path.name}.jobs.{job_name}.container",
+                        ),
+                        {"image": _BROWSER_RUNNER, "options": "--user 1001"},
+                    )
+                    authorized_jobs.add((path.name, job_name))
+        self.assertEqual(
+            authorized_jobs,
+            {("pages.yml", "build"), ("validate.yml", "browser-contract")},
         )
 
 

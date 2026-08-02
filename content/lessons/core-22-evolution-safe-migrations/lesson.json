@@ -16,17 +16,26 @@
     {
       "id": "obj-state-machine",
       "statement": "schema changeを互換なexpand-contract phaseと明示的な遷移条件へ分解できる",
-      "evidenceIds": ["migration-plan", "teach-back"]
+      "evidenceIds": [
+        "migration-plan",
+        "teach-back"
+      ]
     },
     {
       "id": "obj-observation",
       "statement": "dual write、backfill、dual readの観測から停止とrollbackを判断できる",
-      "evidenceIds": ["migration-plan", "assessment"]
+      "evidenceIds": [
+        "migration-plan",
+        "assessment"
+      ]
     },
     {
       "id": "obj-transfer",
       "statement": "backfill error rateだけが変わる条件で同じ計画の継続判断を再評価できる",
-      "evidenceIds": ["assessment", "transfer"]
+      "evidenceIds": [
+        "assessment",
+        "transfer"
+      ]
     }
   ],
   "evidence": [
@@ -55,27 +64,37 @@
     {
       "level": "recognize",
       "criterion": "expand、dual write、backfill、dual read、contractの責務を区別できる",
-      "evidenceIds": ["migration-plan"]
+      "evidenceIds": [
+        "migration-plan"
+      ]
     },
     {
       "level": "explain",
       "criterion": "old readerとnew readerを同時に支える期間が必要な理由を説明できる",
-      "evidenceIds": ["teach-back"]
+      "evidenceIds": [
+        "teach-back"
+      ]
     },
     {
       "level": "apply",
       "criterion": "各phaseへ観測、停止条件、rollback、compatibilityを割り当てられる",
-      "evidenceIds": ["migration-plan"]
+      "evidenceIds": [
+        "migration-plan"
+      ]
     },
     {
       "level": "diagnose",
       "criterion": "backfill成功件数だけに隠れたerror、drift、reader incompatibilityを反証できる",
-      "evidenceIds": ["assessment"]
+      "evidenceIds": [
+        "assessment"
+      ]
     },
     {
       "level": "lead",
       "criterion": "application、database、operationsのownerと停止権限を含む段階移行を主導できる",
-      "evidenceIds": ["transfer"]
+      "evidenceIds": [
+        "transfer"
+      ]
     }
   ],
   "lab": {
@@ -139,23 +158,260 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "DORA Capability: Database change management (accessed 2026-07-31)",
       "url": "https://dora.dev/capabilities/database-change-management/",
       "kind": "primary"
     },
     {
+      "id": "src-02",
       "title": "PostgreSQL 18 Documentation: ALTER TABLE",
       "url": "https://www.postgresql.org/docs/18/sql-altertable.html",
       "kind": "primary"
     },
     {
+      "id": "src-03",
       "title": "PostgreSQL 18 Documentation: Restrictions",
       "url": "https://www.postgresql.org/docs/18/logical-replication-restrictions.html",
       "kind": "primary"
     }
   ],
+  "visualizations": [
+    {
+      "id": "migration-phase-static",
+      "type": "state-machine",
+      "caption": "互換性と観測gateを持つexpand-contract state machine",
+      "question": "dual write、backfill、dual readの各phaseで互換性gateが失敗した時、どの安全状態へ戻すか。",
+      "afterSection": "mentalModel",
+      "objectiveIds": [
+        "obj-state-machine",
+        "obj-observation"
+      ],
+      "evidenceIds": [
+        "migration-plan"
+      ],
+      "sourceIds": [
+        "src-01",
+        "src-02",
+        "src-03"
+      ],
+      "expectedObservation": "phase別の停止・rollback先、旧reader互換性、復旧観測、contractへの拒否条件を説明できる。",
+      "notes": [
+        "この注記は旧図の読み順を保持する補助です。",
+        "expand: old readerを壊さないnullable構造を追加する。",
+        "dual write: 新旧fieldへ書き、成功率と値のparityを観測する。",
+        "backfill: bounded batchで既存rowを移しerror rateとlagを測る。",
+        "dual read: 新旧readerの結果差を比較しfallbackを保持する。",
+        "contract: 利用停止の証拠を確認してから旧構造を除く。",
+        "rollback: 各stateで戻す対象と回復確認を先に定義する。"
+      ],
+      "payload": {
+        "states": [
+          {
+            "id": "expand",
+            "label": "expand",
+            "detail": "old readerを壊さないnullable構造を追加する。"
+          },
+          {
+            "id": "dual-write",
+            "label": "dual write",
+            "detail": "新旧fieldへ書き、成功率と値のparityを観測する。"
+          },
+          {
+            "id": "backfill",
+            "label": "backfill",
+            "detail": "bounded batchで既存rowを移しerror rateとlagを測る。"
+          },
+          {
+            "id": "dual-read",
+            "label": "dual read",
+            "detail": "新旧readerの結果差を比較しfallbackを保持する。"
+          },
+          {
+            "id": "contract",
+            "label": "contract",
+            "detail": "利用停止の証拠を確認してから旧構造を除く。"
+          },
+          {
+            "id": "dual-write-compatible",
+            "label": "dual write停止・旧構造互換",
+            "detail": "新fieldへのwriteを停止し、old readerが旧fieldから正しい値を読める状態へ戻す。"
+          },
+          {
+            "id": "backfill-compatible",
+            "label": "backfill停止・旧構造互換",
+            "detail": "bounded batchを停止し、dual writeと旧fieldを維持して未移行rowを安全に残す。"
+          },
+          {
+            "id": "dual-read-compatible",
+            "label": "old readへfallback",
+            "detail": "新readerを停止し、old readerの結果へfallbackして利用者結果を回復する。"
+          },
+          {
+            "id": "restoration-verified",
+            "label": "互換性回復を検証済み",
+            "detail": "old reader成功率、値のparity、error rate、利用者結果を再観測して安全状態を確認する。"
+          }
+        ],
+        "initialStateId": "expand",
+        "transitions": [
+          {
+            "id": "expand-to-dual-write",
+            "from": "expand",
+            "to": "dual-write",
+            "event": "next",
+            "status": "allowed"
+          },
+          {
+            "id": "dual-write-to-backfill",
+            "from": "dual-write",
+            "to": "backfill",
+            "event": "next",
+            "status": "allowed"
+          },
+          {
+            "id": "backfill-to-dual-read",
+            "from": "backfill",
+            "to": "dual-read",
+            "event": "next",
+            "status": "allowed"
+          },
+          {
+            "id": "dual-read-to-contract",
+            "from": "dual-read",
+            "to": "contract",
+            "event": "next",
+            "status": "allowed"
+          },
+          {
+            "id": "dual-write-stop",
+            "from": "dual-write",
+            "to": "dual-write-compatible",
+            "event": "reset",
+            "status": "allowed"
+          },
+          {
+            "id": "backfill-stop",
+            "from": "backfill",
+            "to": "backfill-compatible",
+            "event": "reset",
+            "status": "allowed"
+          },
+          {
+            "id": "dual-read-rollback",
+            "from": "dual-read",
+            "to": "dual-read-compatible",
+            "event": "reset",
+            "status": "allowed"
+          },
+          {
+            "id": "dual-write-verify",
+            "from": "dual-write-compatible",
+            "to": "restoration-verified",
+            "event": "next",
+            "status": "allowed"
+          },
+          {
+            "id": "backfill-verify",
+            "from": "backfill-compatible",
+            "to": "restoration-verified",
+            "event": "next",
+            "status": "allowed"
+          },
+          {
+            "id": "dual-read-verify",
+            "from": "dual-read-compatible",
+            "to": "restoration-verified",
+            "event": "next",
+            "status": "allowed"
+          },
+          {
+            "id": "parity-forward-rejected",
+            "from": "dual-write",
+            "to": "backfill",
+            "event": "timer",
+            "status": "rejected",
+            "reason": "成功率または値のparityがgateを満たさない間はbackfillへ進まない。"
+          },
+          {
+            "id": "backfill-forward-rejected",
+            "from": "backfill",
+            "to": "dual-read",
+            "event": "timer",
+            "status": "rejected",
+            "reason": "backfillのerror rateまたはlagがgateを満たさない間はdual readへ進まない。"
+          },
+          {
+            "id": "contract-forward-rejected",
+            "from": "dual-read",
+            "to": "contract",
+            "event": "timer",
+            "status": "rejected",
+            "reason": "旧構造の利用停止証拠が揃うまでcontractを開始しない。"
+          }
+        ]
+      },
+      "simulation": {
+        "kind": "migration-phase",
+        "interactionMode": "playback",
+        "parameters": [],
+        "initialStateId": "expand-ready",
+        "defaultIntervalMs": 1200,
+        "states": [
+          {"id": "expand-ready", "label": "expand ready", "status": "expandでold/new readerが共存できるnullable構造を用意し、compatibilityを確認する。", "activeNodeIds": ["expand"], "activeEdgeIds": []},
+          {"id": "dual-write-compatible", "label": "dual write compatible", "status": "新旧fieldへのwrite parityを観測し、old reader compatibilityを維持する。", "activeNodeIds": ["dual-write"], "activeEdgeIds": ["expand-to-dual-write"]},
+          {"id": "migration-running", "label": "migrate running", "status": "migrate phaseでbounded backfillを実行し、error rateとlagを観測する。", "activeNodeIds": ["backfill"], "activeEdgeIds": ["dual-write-to-backfill"]},
+          {"id": "backfill-paused", "label": "backfill paused", "status": "threshold超過で停止し、compatibility証拠がないunsafe contractをblockedにする。", "activeNodeIds": ["backfill", "backfill-compatible"], "activeEdgeIds": ["backfill-stop"]},
+          {"id": "rollback-complete", "label": "rollback complete", "status": "rollback後も旧fieldとdual writeを維持し、old readerの結果を回復確認する。", "activeNodeIds": ["backfill-compatible", "restoration-verified"], "activeEdgeIds": ["backfill-verify"]},
+          {"id": "migration-retried", "label": "migrate retried", "status": "原因解消後にbounded migrateを再開し、error rateとlagを再観測する。", "activeNodeIds": ["backfill"], "activeEdgeIds": ["dual-write-to-backfill"]},
+          {"id": "compatibility-verified", "label": "compatibility verified", "status": "新旧readerの同値性と旧構造の利用停止を確認してcontract gateを開く。", "activeNodeIds": ["dual-read"], "activeEdgeIds": ["backfill-to-dual-read"]},
+          {"id": "contract-complete", "label": "contract complete", "status": "compatibility証拠が揃った後だけ旧構造をcontractし、移行結果を再観測する。", "activeNodeIds": ["contract"], "activeEdgeIds": ["dual-read-to-contract"]}
+        ],
+        "transitions": [
+          {"id": "expand-next", "from": "expand-ready", "to": "dual-write-compatible", "event": "next"},
+          {"id": "expand-timer", "from": "expand-ready", "to": "dual-write-compatible", "event": "timer"},
+          {"id": "dual-write-next", "from": "dual-write-compatible", "to": "migration-running", "event": "next"},
+          {"id": "dual-write-timer", "from": "dual-write-compatible", "to": "migration-running", "event": "timer"},
+          {"id": "migration-next", "from": "migration-running", "to": "backfill-paused", "event": "next"},
+          {"id": "migration-timer", "from": "migration-running", "to": "backfill-paused", "event": "timer"},
+          {"id": "paused-next", "from": "backfill-paused", "to": "rollback-complete", "event": "next"},
+          {"id": "paused-timer", "from": "backfill-paused", "to": "rollback-complete", "event": "timer"},
+          {"id": "rollback-next", "from": "rollback-complete", "to": "migration-retried", "event": "next"},
+          {"id": "rollback-timer", "from": "rollback-complete", "to": "migration-retried", "event": "timer"},
+          {"id": "retry-next", "from": "migration-retried", "to": "compatibility-verified", "event": "next"},
+          {"id": "retry-timer", "from": "migration-retried", "to": "compatibility-verified", "event": "timer"},
+          {"id": "compatibility-next", "from": "compatibility-verified", "to": "contract-complete", "event": "next"},
+          {"id": "compatibility-timer", "from": "compatibility-verified", "to": "contract-complete", "event": "timer"},
+          {"id": "dual-write-previous", "from": "dual-write-compatible", "to": "expand-ready", "event": "previous"},
+          {"id": "migration-previous", "from": "migration-running", "to": "dual-write-compatible", "event": "previous"},
+          {"id": "paused-previous", "from": "backfill-paused", "to": "migration-running", "event": "previous"},
+          {"id": "rollback-previous", "from": "rollback-complete", "to": "backfill-paused", "event": "previous"},
+          {"id": "retry-previous", "from": "migration-retried", "to": "rollback-complete", "event": "previous"},
+          {"id": "compatibility-previous", "from": "compatibility-verified", "to": "migration-retried", "event": "previous"},
+          {"id": "contract-previous", "from": "contract-complete", "to": "compatibility-verified", "event": "previous"},
+          {"id": "dual-write-reset", "from": "dual-write-compatible", "to": "expand-ready", "event": "reset"},
+          {"id": "migration-reset", "from": "migration-running", "to": "expand-ready", "event": "reset"},
+          {"id": "paused-reset", "from": "backfill-paused", "to": "expand-ready", "event": "reset"},
+          {"id": "rollback-reset", "from": "rollback-complete", "to": "expand-ready", "event": "reset"},
+          {"id": "retry-reset", "from": "migration-retried", "to": "expand-ready", "event": "reset"},
+          {"id": "compatibility-reset", "from": "compatibility-verified", "to": "expand-ready", "event": "reset"},
+          {"id": "contract-reset", "from": "contract-complete", "to": "expand-ready", "event": "reset"}
+        ],
+        "outcomes": [
+          {"id": "unsafe-contract-blocked", "stateId": "backfill-paused", "label": "unsafe contractをblockedにして停止する"},
+          {"id": "compatibility-restored", "stateId": "rollback-complete", "label": "rollback後のcompatibilityを再観測する"},
+          {"id": "contract-after-evidence", "stateId": "contract-complete", "label": "互換性証拠の後だけcontractを完了する"}
+        ]
+      }
+    }
+  ],
   "review": {
-    "intervalDays": [1, 7, 30, 90],
+    "intervalDays": [
+      1,
+      7,
+      30,
+      90
+    ],
     "prompts": [
       "expandとcontractの間にold readerを支える理由は何か",
       "backfillで件数以外に観測すべき結果は何か",

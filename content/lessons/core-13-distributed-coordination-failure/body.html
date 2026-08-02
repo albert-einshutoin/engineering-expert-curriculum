@@ -9,17 +9,6 @@
 <section id="mental-model">
   <h2>メンタルモデル</h2>
   <p>safetyは悪い状態へ到達しない性質、livenessは望む処理が最終的に進む性質である。分断中に安全を守るため処理を保留すると可用性やlatencyへ影響し、応答を優先すると後でconflict resolutionが必要になる。保証はnetwork model、fault model、clock、storage durability、quorum assumptionと一緒に読む。</p>
-  <figure>
-    <figcaption>at-least-once commandを永続dedupeと回復へ接続するmechanism</figcaption>
-    <ol>
-      <li><strong>receive:</strong> tenant、resource、operationを含むstable keyと入力fingerprintを受け取る。</li>
-      <li><strong>lookup:</strong> 永続dedupe storeにkeyがあれば入力fingerprintを照合し、一致時だけ状態遷移を再実行せず最初のresultを再利用する。不一致はkey衝突として拒否する。</li>
-      <li><strong>apply:</strong> keyがなければ現在stateから許可された次stateへ一度だけ遷移する。</li>
-      <li><strong>commit:</strong> state、fingerprint、resultを同じdurability境界で保存する。response lossはcommitを取り消さない。</li>
-      <li><strong>recover:</strong> partition中のmessageを再開後に処理し、logical sequenceとdelivery orderの差を検査する。</li>
-      <li><strong>re-evaluate:</strong> partitionがdeadlineを越えたら、queue、retention、stale command、reconciliation、利用者結果を更新する。</li>
-    </ol>
-  </figure>
   <table>
     <caption>部分障害時のcommand処理を選ぶdecision table</caption>
     <thead>

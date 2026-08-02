@@ -16,17 +16,26 @@
     {
       "id": "obj-sli-slo",
       "statement": "利用者journeyのvalid eventとgood eventを定義し、window、target、error budgetを計算できる",
-      "evidenceIds": ["slo-runbook", "assessment"]
+      "evidenceIds": [
+        "slo-runbook",
+        "assessment"
+      ]
     },
     {
       "id": "obj-alert",
       "statement": "error budget burnをmulti-windowで評価し、pageとticketを行動可能性で分けられる",
-      "evidenceIds": ["slo-runbook", "teach-back"]
+      "evidenceIds": [
+        "slo-runbook",
+        "teach-back"
+      ]
     },
     {
       "id": "obj-telemetry",
       "statement": "telemetryのversion、stability、correlation、PII、cardinality、samplingを運用契約として管理できる",
-      "evidenceIds": ["assessment", "transfer"]
+      "evidenceIds": [
+        "assessment",
+        "transfer"
+      ]
     }
   ],
   "evidence": [
@@ -55,27 +64,37 @@
     {
       "level": "recognize",
       "criterion": "SLI、SLO、SLA、error budget、burn rate、page、ticketを区別できる",
-      "evidenceIds": ["slo-runbook"]
+      "evidenceIds": [
+        "slo-runbook"
+      ]
     },
     {
       "level": "explain",
       "criterion": "100%目標とtelemetry量の最大化が信頼性を保証しない理由を説明できる",
-      "evidenceIds": ["teach-back"]
+      "evidenceIds": [
+        "teach-back"
+      ]
     },
     {
       "level": "apply",
       "criterion": "固定eventからgoodとvalidを分類し、window targetとmulti-window alertを計算できる",
-      "evidenceIds": ["slo-runbook"]
+      "evidenceIds": [
+        "slo-runbook"
+      ]
     },
     {
       "level": "diagnose",
       "criterion": "利用者impactからtrace、metric、logへ相関し、samplingと欠測の限界を示せる",
-      "evidenceIds": ["assessment"]
+      "evidenceIds": [
+        "assessment"
+      ]
     },
     {
       "level": "lead",
       "criterion": "error budget方針、on-call action、PIIとcardinalityの境界を関係者と更新できる",
-      "evidenceIds": ["transfer"]
+      "evidenceIds": [
+        "transfer"
+      ]
     }
   ],
   "lab": {
@@ -141,33 +160,210 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "Service Level Objectives",
       "url": "https://sre.google/sre-book/service-level-objectives/",
       "kind": "primary"
     },
     {
+      "id": "src-02",
       "title": "Alerting on SLOs",
       "url": "https://sre.google/workbook/alerting-on-slos/",
       "kind": "primary"
     },
     {
+      "id": "src-03",
       "title": "On-Call",
       "url": "https://sre.google/workbook/on-call/",
       "kind": "primary"
     },
     {
+      "id": "src-04",
       "title": "OpenTelemetry Specification 1.59.0",
       "url": "https://opentelemetry.io/docs/specs/otel/",
       "kind": "standard"
     },
     {
+      "id": "src-05",
       "title": "OpenTelemetry semantic conventions 1.43.0",
       "url": "https://opentelemetry.io/docs/specs/semconv/",
       "kind": "standard"
     }
   ],
+  "visualizations": [
+    {
+      "id": "slo-burn-static",
+      "type": "state-loop",
+      "caption": "利用者結果からon-call actionまでを閉じるflow",
+      "question": "どのSLIとburn evidenceがpageを起動し、mitigation後の何を確認してloopを終了するか。",
+      "afterSection": "mentalModel",
+      "objectiveIds": [
+        "obj-sli-slo",
+        "obj-alert",
+        "obj-telemetry"
+      ],
+      "evidenceIds": [
+        "slo-runbook"
+      ],
+      "sourceIds": [
+        "src-01",
+        "src-02",
+        "src-04"
+      ],
+      "expectedObservation": "JourneyからSLI・SLO・telemetry・alert・runbookへ進み、復旧証拠が揃ったterminal stateを示せる。",
+      "notes": [
+        "この注記は旧図の読み順を保持する補助です。",
+        "Journey: 利用者が達成したい結果とvalidな試行を定める。",
+        "SLI: goodの結果とlatency境界をevent単位で計算する。",
+        "SLO: window、target、error budget、例外を合意する。",
+        "Alert: 短窓と長窓のburnをpageとticketへ分ける。",
+        "Runbook: impact確認、mitigation、rollback、escalationを結ぶ。",
+        "Telemetry: traceで原因へ相関し、意味とprivacyを検証する。"
+      ],
+      "payload": {
+        "states": [
+          {
+            "id": "journey",
+            "label": "Journey",
+            "detail": "利用者が達成したい結果とvalidな試行を定める。"
+          },
+          {
+            "id": "sli",
+            "label": "SLI",
+            "detail": "goodの結果とlatency境界をevent単位で計算する。"
+          },
+          {
+            "id": "slo",
+            "label": "SLO",
+            "detail": "window、target、error budget、例外を合意する。"
+          },
+          {
+            "id": "telemetry",
+            "label": "Telemetry",
+            "detail": "traceで原因へ相関し、意味とprivacyを検証する。"
+          },
+          {
+            "id": "alert",
+            "label": "Alert",
+            "detail": "短窓と長窓のburnをpageとticketへ分ける。"
+          },
+          {
+            "id": "runbook",
+            "label": "Runbook",
+            "detail": "impact確認、mitigation、rollback、escalationを結ぶ。"
+          },
+          {
+            "id": "evidence-ready",
+            "label": "復旧証拠成立",
+            "detail": "利用者結果、burn rate、mitigation後のservice状態を再観測し、pageを閉じられる。"
+          }
+        ],
+        "transitions": [
+          {
+            "id": "journey-to-sli",
+            "from": "journey",
+            "to": "sli",
+            "label": "valid eventからgoodを計算する"
+          },
+          {
+            "id": "sli-to-slo",
+            "from": "sli",
+            "to": "slo",
+            "label": "windowとtargetを合意する"
+          },
+          {
+            "id": "slo-to-telemetry",
+            "from": "slo",
+            "to": "telemetry",
+            "label": "SLIを安定したsignalとして収集する"
+          },
+          {
+            "id": "telemetry-to-alert",
+            "from": "telemetry",
+            "to": "alert",
+            "label": "短窓と長窓のburnを評価する"
+          },
+          {
+            "id": "alert-to-runbook",
+            "from": "alert",
+            "to": "runbook",
+            "label": "pageからmitigationへ進む"
+          },
+          {
+            "id": "runbook-feedback",
+            "from": "runbook",
+            "to": "telemetry",
+            "label": "mitigation後の利用者結果を再観測する"
+          },
+          {
+            "id": "runbook-to-evidence",
+            "from": "runbook",
+            "to": "evidence-ready",
+            "label": "復旧とburn正常化を確認してpageを閉じる"
+          }
+        ],
+        "exitStateId": "evidence-ready",
+        "recoveryStateId": "alert"
+      },
+      "simulation": {
+        "kind": "slo-burn",
+        "interactionMode": "scenario",
+        "parameters": [
+          {
+            "id": "error-window",
+            "label": "error-window scenario",
+            "control": "radio",
+            "options": [
+              {"id": "normal", "label": "normal: failureなし"},
+              {"id": "short-only", "label": "直近5分に1 failure"},
+              {"id": "both", "label": "直近12分がfailure"}
+            ],
+            "defaultOptionId": "normal"
+          }
+        ],
+        "initialStateId": "budget-healthy",
+        "states": [
+          {
+            "id": "budget-healthy",
+            "label": "budget healthy",
+            "status": "28日、target=90%、error budget=10%。60/60 good、SLI=100%、5分/60分のburn=0、page=false。",
+            "when": {"error-window": "normal"},
+            "activeNodeIds": ["journey", "sli", "slo"],
+            "activeEdgeIds": ["journey-to-sli", "sli-to-slo"]
+          },
+          {
+            "id": "fast-burn",
+            "label": "短窓だけfast burn",
+            "status": "28日、target=90%、error budget=10%。5分は1/5 badでshort burn=2、60分は1/60 badでlong burn=0.1667、page=false。",
+            "when": {"error-window": "short-only"},
+            "activeNodeIds": ["slo", "telemetry", "alert"],
+            "activeEdgeIds": ["slo-to-telemetry", "telemetry-to-alert"]
+          },
+          {
+            "id": "page-triggered",
+            "label": "multi-window page",
+            "status": "28日、target=90%、error budget=10%。5分は5/5 badでshort burn=10、60分は12/60 badでlong burn=2、page=true。",
+            "when": {"error-window": "both"},
+            "activeNodeIds": ["alert", "runbook"],
+            "activeEdgeIds": ["alert-to-runbook"]
+          }
+        ],
+        "transitions": [],
+        "outcomes": [
+          {"id": "healthy-no-action", "stateId": "budget-healthy", "label": "両windowがthreshold未満なのでpageせず、通常観測を続ける。"},
+          {"id": "short-window-only", "stateId": "fast-burn", "label": "short burn=2でもlong burn=0.1667のためAND条件はfalse。pageしない。"},
+          {"id": "multi-window-page", "stateId": "page-triggered", "label": "short burn=10かつlong burn=2。購入impactを確認しcheckoutを縮退する。"}
+        ]
+      }
+    }
+  ],
   "review": {
-    "intervalDays": [1, 7, 30, 90],
+    "intervalDays": [
+      1,
+      7,
+      30,
+      90
+    ],
     "prompts": [
       "利用者journeyのvalid eventから除外する条件を一つ説明する",
       "短窓pageと長窓ticketを分ける理由は何か",

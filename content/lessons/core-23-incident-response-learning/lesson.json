@@ -15,17 +15,26 @@
     {
       "id": "obj-evidence",
       "statement": "複数signalを時刻順のevidence timelineへ揃え、影響と意思決定を根拠へ結べる",
-      "evidenceIds": ["incident-review", "teach-back"]
+      "evidenceIds": [
+        "incident-review",
+        "teach-back"
+      ]
     },
     {
       "id": "obj-learning",
       "statement": "個人の性質ではなくsystem conditionとして複数のcontributing factorを分析できる",
-      "evidenceIds": ["incident-review", "assessment"]
+      "evidenceIds": [
+        "incident-review",
+        "assessment"
+      ]
     },
     {
       "id": "obj-action",
       "statement": "検知条件が変わる時に影響を再計算し、対策のowner、期限、検証を更新できる",
-      "evidenceIds": ["assessment", "transfer"]
+      "evidenceIds": [
+        "assessment",
+        "transfer"
+      ]
     }
   ],
   "evidence": [
@@ -54,27 +63,37 @@
     {
       "level": "recognize",
       "criterion": "観測事実、解釈、意思決定、contributing factor、actionを区別できる",
-      "evidenceIds": ["incident-review"]
+      "evidenceIds": [
+        "incident-review"
+      ]
     },
     {
       "level": "explain",
       "criterion": "non-blaming reviewが責任をなくすのではなくsystem改善を可能にする理由を説明できる",
-      "evidenceIds": ["teach-back"]
+      "evidenceIds": [
+        "teach-back"
+      ]
     },
     {
       "level": "apply",
       "criterion": "evidence timelineから影響と意思決定を再構成し対策へ追跡できる",
-      "evidenceIds": ["incident-review"]
+      "evidenceIds": [
+        "incident-review"
+      ]
     },
     {
       "level": "diagnose",
       "criterion": "後知恵、単一原因、個人非難、action itemの曖昧さを反証できる",
-      "evidenceIds": ["assessment"]
+      "evidenceIds": [
+        "assessment"
+      ]
     },
     {
       "level": "lead",
       "criterion": "incident response、学習review、対策検証、再発時の更新を職能横断で主導できる",
-      "evidenceIds": ["transfer"]
+      "evidenceIds": [
+        "transfer"
+      ]
     }
   ],
   "lab": {
@@ -138,23 +157,118 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "NIST SP 800-61 Rev. 3: Incident Response Recommendations and Considerations for Cybersecurity Risk Management (April 2025)",
       "url": "https://doi.org/10.6028/NIST.SP.800-61r3",
       "kind": "standard"
     },
     {
+      "id": "src-02",
       "title": "Google SRE Workbook: Incident Response",
       "url": "https://sre.google/workbook/incident-response/",
       "kind": "primary"
     },
     {
+      "id": "src-03",
       "title": "Google SRE Workbook: Postmortem Culture — Learning from Failure",
       "url": "https://sre.google/workbook/postmortem-culture/",
       "kind": "primary"
     }
   ],
+  "visualizations": [
+    {
+      "id": "incident-review-timeline",
+      "type": "timeline",
+      "caption": "incident evidenceを検証可能な学習へ変えるreview chain",
+      "question": "incident当時利用可能だったevidenceから、検知遅延のimpactとdecisionをどう再構成するか。",
+      "afterSection": "mentalModel",
+      "objectiveIds": [
+        "obj-evidence",
+        "obj-learning",
+        "obj-action"
+      ],
+      "evidenceIds": [
+        "incident-review"
+      ],
+      "sourceIds": [
+        "src-01",
+        "src-02",
+        "src-03"
+      ],
+      "expectedObservation": "clockを揃えたtimeline、影響計算、当時の判断、system factor、検証可能なactionを追跡できる。",
+      "notes": [],
+      "payload": {
+        "phases": [
+          {
+            "id": "reconstruct",
+            "label": "再構成",
+            "detail": "観測事実とclockを揃える。"
+          },
+          {
+            "id": "analyze",
+            "label": "分析",
+            "detail": "影響、当時の判断、system conditionを証拠へ結ぶ。"
+          },
+          {
+            "id": "learn",
+            "label": "学習",
+            "detail": "検証可能なactionとして完了条件を固定する。"
+          }
+        ],
+        "events": [
+          {
+            "id": "evidence",
+            "label": "Evidence",
+            "detail": "timestamp、source、観測値、evidence IDを固定する。",
+            "phaseId": "reconstruct",
+            "order": 0
+          },
+          {
+            "id": "timeline",
+            "label": "Timeline",
+            "detail": "clockを揃えて観測事実を時刻順に並べる。",
+            "phaseId": "reconstruct",
+            "order": 1
+          },
+          {
+            "id": "impact",
+            "label": "Impact",
+            "detail": "incident startからdetectionまでの未緩和時間とaffected rateから検知遅延の影響を導く。",
+            "phaseId": "analyze",
+            "order": 2
+          },
+          {
+            "id": "decision",
+            "label": "Decision",
+            "detail": "当時利用可能だったevidenceと判断を結ぶ。",
+            "phaseId": "analyze",
+            "order": 3
+          },
+          {
+            "id": "factor",
+            "label": "Factor",
+            "detail": "複数のsystem conditionと反証可能な仮説を残す。",
+            "phaseId": "analyze",
+            "order": 4
+          },
+          {
+            "id": "action",
+            "label": "Action",
+            "detail": "owner、due、verification、evidenceで完了を定義する。",
+            "phaseId": "learn",
+            "order": 5
+          }
+        ]
+      }
+    }
+  ],
   "review": {
-    "intervalDays": [1, 7, 30, 90],
+    "intervalDays": [
+      1,
+      7,
+      30,
+      90
+    ],
     "prompts": [
       "evidence timelineで観測事実と解釈を分ける方法は何か",
       "non-blamingとaccountabilityを両立するsystem conditionの書き方は何か",

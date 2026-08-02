@@ -141,31 +141,66 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "ACM Code of Ethics and Professional Conduct (2018)",
       "url": "https://www.acm.org/code-of-ethics",
       "kind": "standard"
     },
     {
+      "id": "src-02",
       "title": "NIST Privacy Framework: A Tool for Improving Privacy through Enterprise Risk Management, Version 1.0",
       "url": "https://doi.org/10.6028/NIST.CSWP.01162020",
       "kind": "standard"
     },
     {
+      "id": "src-03",
       "title": "RFC 6973: Privacy Considerations for Internet Protocols",
       "url": "https://www.rfc-editor.org/info/rfc6973/",
       "kind": "standard"
     },
     {
+      "id": "src-04",
       "title": "RFC 9620: Guidelines for Human Rights Protocol and Architecture Considerations",
       "url": "https://www.rfc-editor.org/rfc/rfc9620.html",
       "kind": "primary"
     },
     {
+      "id": "src-05",
       "title": "Artificial Intelligence Risk Management Framework (AI RMF 1.0)",
       "url": "https://doi.org/10.6028/NIST.AI.100-1",
       "kind": "standard"
     }
   ],
+  "visualizations": [{
+    "id": "impact-causal-chain", "type": "causal", "caption": "affected peopleから残余riskの意思決定へ至るimpact chain",
+    "question": "誰にどの害が残り、誰がどの条件で停止を判断するか。", "afterSection": "mentalModel",
+    "objectiveIds": ["obj-impact", "obj-residual"], "evidenceIds": ["assessment"], "sourceIds": ["src-01", "src-02", "src-04"],
+    "expectedObservation": "affected peopleとdata lifecycleから害を具体化し、軽減前risk、軽減策、unevenな残余riskまで追跡できる。",
+    "notes": [
+      "この注記は旧図の読み順を保持する補助です。",
+      "People: 利益、害、権力、退出可能性が異なる集団を列挙する。",
+      "Lifecycle: collect、use、share、retain、deleteの目的とownerを追う。",
+      "Harm: privacy、security、accessibility、人権、労働への害を具体化する。",
+      "Inherent risk: likelihood、severity、exposureを軽減前に評価する。",
+      "Mitigation: 回避、最小化、検知、救済、退出を設計する。",
+      "Residual risk: 残る害、uneven harm、owner、期限、停止条件を記録する。"
+    ],
+    "payload": {
+      "causes": [{"id": "lifecycle", "label": "Lifecycle", "detail": "collect、use、share、retain、deleteの目的とownerを追う。"}],
+      "mechanisms": [{"id": "exposure-mechanism", "label": "Exposure mechanism", "detail": "収集、利用、共有、保持が、権力差や退出困難を通じて人とdataを害へ曝露する。"}],
+      "outcomes": [
+        {"id": "harm", "label": "Harm", "detail": "privacy、security、accessibility、人権、労働への害を具体化する。"},
+        {"id": "residual-risk", "label": "Residual risk", "detail": "残る害、uneven harm、owner、期限、停止条件を記録する。"}
+      ],
+      "mitigations": [{"id": "mitigation", "label": "Mitigation", "detail": "回避、最小化、検知、救済、退出を設計する。"}],
+      "relations": [
+        {"id": "lifecycle-creates-exposure", "from": "lifecycle", "to": "exposure-mechanism", "label": "collect、use、share、retainが人とdataを害へ曝露する"},
+        {"id": "exposure-produces-harm", "from": "exposure-mechanism", "to": "harm", "label": "権力差と退出困難を通じ具体的な害として現れる"},
+        {"id": "harm-leaves-residual", "from": "harm", "to": "residual-risk", "label": "軽減後も残る害を明示する"},
+        {"id": "mitigation-reduces-residual", "from": "mitigation", "to": "residual-risk", "label": "回避、最小化、検知、救済、退出で低減する"}
+      ]
+    }
+  }],
   "review": {
     "intervalDays": [1, 7, 30, 90],
     "prompts": [

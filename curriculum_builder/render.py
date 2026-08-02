@@ -15,7 +15,14 @@ from string import Template
 from types import MappingProxyType
 
 from .errors import CurriculumValidationError
-from .html_safety import SafeHtml, validate_fragment
+from .html_safety import (
+    HtmlProvenance,
+    SafeHtml,
+    revalidate_safe_html,
+    validate_fragment,
+    validate_generated_document,
+    validate_generated_fragment,
+)
 
 
 MAX_TEMPLATE_BYTES = 262_144
@@ -59,18 +66,21 @@ _BASE_PLACEHOLDER_COUNTS = MappingProxyType(
     {
         "title": 1,
         "description": 1,
-        "root": 7,
+        "root": 8,
         "content": 1,
     }
 )
 _REQUIRED_CSP = MappingProxyType(
     {
         "default-src": ("'none'",),
-        "script-src": ("'none'",),
+        "script-src": ("'self'",),
+        "script-src-attr": ("'none'",),
         "style-src": ("'self'",),
         "img-src": ("'self'", "data:"),
         "font-src": ("'self'",),
         "connect-src": ("'none'",),
+        "worker-src": ("'none'",),
+        "media-src": ("'none'",),
         "base-uri": ("'none'",),
         "form-action": ("'none'",),
         "object-src": ("'none'",),
@@ -86,7 +96,8 @@ _BASE_CHILDREN = MappingProxyType(
             "meta:description",
             "meta:csp",
             "title",
-            "link:stylesheet",
+            "link:stylesheet-base",
+            "link:stylesheet-visualizations",
         ),
         "body": ("a:skip", "header", "main", "footer"),
         "header": ("a:brand", "nav"),
@@ -122,6 +133,7 @@ _REQUIRED_BASE_HREFS = MappingProxyType(
     {
         "#main": 1,
         "${root}styles.css": 1,
+        "${root}static/visualizations.css": 1,
         "${root}index.html": 1,
         "${root}roadmap/index.html": 1,
         "${root}lessons/index.html": 1,
@@ -475,15 +487,17 @@ def _validate_structured_text(value: object, *, label: str) -> str:
 def _require_exact_safe_html(value: object) -> SafeHtml:
     if type(value) is not SafeHtml:
         raise CurriculumValidationError("raw HTML requires exact SafeHtml")
-    # A frozen capability can still be forged with low-level Python APIs. Issue
-    # a fresh capability so the inserted bytes are exactly those just validated.
     try:
-        fragment = value.value
+        # A frozen capability can still be forged with low-level Python APIs.
+        # Provenance selects the issuing grammar and fresh validation binds the
+        # exact bytes immediately before template substitution.
+        return revalidate_safe_html(value)
+    except CurriculumValidationError:
+        raise
     except Exception:
         raise CurriculumValidationError(
             "raw HTML could not be revalidated"
         ) from None
-    return validate_fragment(fragment)
 
 
 def _validate_output_path(output_path: object) -> tuple[Path, int]:
@@ -692,7 +706,7 @@ class _BasePolicyParser(HTMLParser):
             self.csp_values.append(content)
         if role == "meta:description":
             self.description_placeholder_count += 1
-        if role == "link:stylesheet":
+        if role.startswith("link:stylesheet-"):
             self.stylesheet_count += 1
 
         for attribute_name in ("href", "src"):
@@ -786,14 +800,25 @@ class _BasePolicyParser(HTMLParser):
         if tag == "meta":
             return self._classify_meta(attributes)
         if tag == "link":
-            if attributes != {
-                "rel": "stylesheet",
-                "href": "${root}styles.css",
+            roles = {
+                "${root}styles.css": "link:stylesheet-base",
+                "${root}static/visualizations.css": (
+                    "link:stylesheet-visualizations"
+                ),
+            }
+            if attributes.get("rel") != "stylesheet" or set(attributes) != {
+                "rel",
+                "href",
             }:
                 raise CurriculumValidationError(
                     "base template markup is invalid"
                 )
-            return "link:stylesheet"
+            role = roles.get(attributes["href"])
+            if role is None:
+                raise CurriculumValidationError(
+                    "base template markup is invalid"
+                )
+            return role
         if tag == "a":
             roles = {
                 (("class", "skip-link"), ("href", "#main")): "a:skip",
@@ -901,7 +926,7 @@ def _validate_base_policy(source: str) -> None:
         or parser.nav_count != 1
         or parser.description_placeholder_count != 1
         or parser.title_placeholder_count != 1
-        or parser.stylesheet_count != 1
+        or parser.stylesheet_count != 2
         or parser.meta_counts
         != Counter(
             {
@@ -1057,8 +1082,11 @@ class Renderer:
             raise CurriculumValidationError(
                 "base template substitution failed"
             ) from None
+        if ' data-simulation-kind="' in safe_content.value:
+            script = f'<script src="{root}static/visualization.js" defer></script>'
+            document = document.replace("</body>", f"  {script}\n</body>", 1)
         _reject_duplicate_document_ids(document)
-        return document
+        return validate_generated_document(document).value
 
     def fragment(
         self,
@@ -1111,18 +1139,22 @@ class Renderer:
         }
         # Revalidation happens after template analysis and immediately before
         # substitution, minimizing the stale-capability window.
-        values.update(
-            {
-                key: _require_exact_safe_html(value).value
-                for key, value in html_entries
-            }
-        )
+        safe_values = {
+            key: _require_exact_safe_html(value)
+            for key, value in html_entries
+        }
+        values.update({key: value.value for key, value in safe_values.items()})
         try:
             rendered = Template(source).substitute(values)
         except (KeyError, ValueError):
             raise CurriculumValidationError(
                 "template substitution failed"
             ) from None
+        if any(
+            value.provenance is HtmlProvenance.GENERATED
+            for value in safe_values.values()
+        ):
+            return validate_generated_fragment(rendered)
         return validate_fragment(rendered)
 
     def _read_template(self, name: str) -> str:

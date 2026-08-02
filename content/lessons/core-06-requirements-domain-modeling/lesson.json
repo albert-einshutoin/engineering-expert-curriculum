@@ -138,21 +138,57 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "ISO/IEC/IEEE 29148:2018 - Systems and software engineering — Life cycle processes — Requirements engineering",
       "url": "https://www.iso.org/standard/72089.html",
       "kind": "standard"
     },
     {
+      "id": "src-02",
       "title": "Appendix C: How to Write a Good Requirement",
       "url": "https://www.nasa.gov/reference/appendix-c-how-to-write-a-good-requirement/",
       "kind": "primary"
     },
     {
+      "id": "src-03",
       "title": "Domain-Driven Design Reference: Definitions and Pattern Summaries",
       "url": "https://www.domainlanguage.com/wp-content/uploads/2016/05/DDD_Reference_2015-03.pdf",
       "kind": "primary"
     }
   ],
+  "visualizations": [{
+    "id": "domain-model-network", "type": "network", "caption": "発言を検証可能なドメインモデルへ変換する循環",
+    "question": "利害関係者の発言は、どの境界と関係を経て検証可能になるか。", "afterSection": "mentalModel",
+    "objectiveIds": ["obj-language", "obj-boundary"], "evidenceIds": ["domain-model"], "sourceIds": ["src-01", "src-03"],
+    "expectedObservation": "発言から用語、境界、振る舞い、例外、検証までの接続と、次の確認質問が生まれる位置を説明できる。",
+    "notes": [
+      "この注記は旧図の読み順を保持する補助です。",
+      "発言: 利害関係者の目的、困り事、制約を発言者と状況付きで記録する。",
+      "用語: 語ごとに定義、具体例、反例、所有する文脈を置く。",
+      "境界: 同じ語と不変条件が一貫する範囲を決め、境界間の翻訳を示す。",
+      "振る舞い: 意図をコマンド、起きた事実をイベント、許される状態変化を不変条件で表す。",
+      "例外: 時間切れ、在庫不足、権限不足、外部決済失敗を通常経路と同じ粒度で置く。",
+      "検証: 要求から観測までを追跡し、空欄と矛盾を次の質問へ戻す。"
+    ],
+    "payload": {
+      "components": [{"id": "requirements-model", "label": "要求とドメインモデル", "detail": "発言を追跡可能なモデルと観測へ接続する範囲。"}],
+      "nodes": [
+        {"id": "statement", "label": "発言", "detail": "利害関係者の目的、困り事、制約を発言者と状況付きで記録する。", "componentId": "requirements-model"},
+        {"id": "language", "label": "用語", "detail": "語ごとに定義、具体例、反例、所有する文脈を置く。", "componentId": "requirements-model"},
+        {"id": "boundary", "label": "境界", "detail": "同じ語と不変条件が一貫する範囲を決め、境界間の翻訳を示す。", "componentId": "requirements-model"},
+        {"id": "behavior", "label": "振る舞い", "detail": "意図をコマンド、起きた事実をイベント、許される状態変化を不変条件で表す。", "componentId": "requirements-model"},
+        {"id": "exceptions", "label": "例外", "detail": "時間切れ、在庫不足、権限不足、外部決済失敗を通常経路と同じ粒度で置く。", "componentId": "requirements-model"},
+        {"id": "verification", "label": "検証", "detail": "要求から観測までを追跡し、空欄と矛盾を次の質問へ戻す。", "componentId": "requirements-model"}
+      ],
+      "connections": [
+        {"id": "statement-defines-language", "from": "statement", "to": "language", "label": "例と反例で語を定義する"},
+        {"id": "language-locates-boundary", "from": "language", "to": "boundary", "label": "用語の一貫する範囲を決める"},
+        {"id": "boundary-owns-behavior", "from": "boundary", "to": "behavior", "label": "状態変化の責任を置く"},
+        {"id": "behavior-exposes-exceptions", "from": "behavior", "to": "exceptions", "label": "通常経路と失敗経路を揃える"},
+        {"id": "exceptions-drive-verification", "from": "exceptions", "to": "verification", "label": "観測と確認質問へ接続する"}
+      ]
+    }
+  }],
   "review": {
     "intervalDays": [1, 7, 30, 90],
     "prompts": [

@@ -9,18 +9,20 @@
 <section id="mental-model">
   <h2>メンタルモデル</h2>
   <p>migrationを五つのstateへ分ける。expandで互換な構造を追加し、dual writeで新旧表現を同時更新し、backfillで既存rowを移す。dual readで新旧読取結果を比較し、十分な観測後にだけcontractで旧構造を除く。次phaseへの遷移は時刻ではなく検証済みのguardから導く。</p>
-  <figure>
-    <figcaption>互換性と観測gateを持つexpand-contract state machine</figcaption>
-    <ol>
-      <li><strong>expand:</strong> old readerを壊さないnullable構造を追加する。</li>
-      <li><strong>dual write:</strong> 新旧fieldへ書き、成功率と値のparityを観測する。</li>
-      <li><strong>backfill:</strong> bounded batchで既存rowを移しerror rateとlagを測る。</li>
-      <li><strong>dual read:</strong> 新旧readerの結果差を比較しfallbackを保持する。</li>
-      <li><strong>contract:</strong> 利用停止の証拠を確認してから旧構造を除く。</li>
-      <li><strong>rollback:</strong> 各stateで戻す対象と回復確認を先に定義する。</li>
-    </ol>
-  </figure>
   <p>rollbackは必ずしもDDLの逆操作ではない。feature flagでold readへ戻す、dual writeを止める、backfill checkpointへ戻る、contractを延期するなど、各phaseで安全な回復形が異なる。不可逆なcontractには、旧利用者がいないことを示す観測gateが必要である。</p>
+  <table id="migration-compatibility-matrix">
+    <caption>expand-contract phaseごとの静的compatibility matrix</caption>
+    <thead>
+      <tr><th scope="col">phase</th><th scope="col">old reader</th><th scope="col">new reader</th><th scope="col">old writer</th><th scope="col">new writer</th><th scope="col">backfill / recovery</th></tr>
+    </thead>
+    <tbody>
+      <tr><th scope="row">expand</th><td>allowed — old reader remains valid</td><td>blocked — new reader is not deployed</td><td>allowed — old writer remains valid</td><td>blocked — dual write is not enabled</td><td>stop — backfill has not started</td></tr>
+      <tr><th scope="row">dual-write</th><td>allowed — old reader remains valid</td><td>fallback — new reader may use old field</td><td>allowed — old writer remains valid</td><td>required — dual write begins</td><td>stop — parity failure disables new-field write</td></tr>
+      <tr><th scope="row">backfill</th><td>allowed — old reader remains valid</td><td>fallback — new reader retains old field</td><td>allowed — old writer remains valid</td><td>required — dual write continues</td><td>rollback — pause at checkpoint on error or lag</td></tr>
+      <tr><th scope="row">dual-read</th><td>allowed — old reader remains valid</td><td>required — compare new result with fallback</td><td>allowed — old writer remains valid</td><td>required — dual write continues</td><td>fallback — route reads to old field on mismatch</td></tr>
+      <tr><th scope="row">contract</th><td>blocked — old reader usage must be zero</td><td>required — new reader is verified</td><td>blocked — old writer usage must be zero</td><td>required — new writer is verified</td><td>rollback — defer contract if any old usage returns</td></tr>
+    </tbody>
+  </table>
 </section>
 <section id="worked-example">
   <h2>動く例で考える</h2>

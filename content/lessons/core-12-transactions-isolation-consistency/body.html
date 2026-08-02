@@ -9,16 +9,6 @@
 <section id="mental-model">
   <h2>メンタルモデル</h2>
   <p>transactionを、開始時点の観測、読み集合、判断、書き集合、commitまたはabortからなる履歴として見る。最終値だけでなく、どの値を根拠に各書込みを決めたかをevent traceへ残す。</p>
-  <figure>
-    <figcaption>snapshotから依存関係、commit判定、retryへ進む分離異常の因果経路</figcaption>
-    <ol>
-      <li><strong>不変条件:</strong> 「aliceまたはbobの少なくとも一人が当直」をdatabaseのrowとは別に明示する。</li>
-      <li><strong>snapshot:</strong> T1とT2が同じ開始状態 <code>{alice: on, bob: on}</code> を読む。</li>
-      <li><strong>局所判断:</strong> T1はbobが当直なのでaliceを外し、T2はaliceが当直なのでbobを外す。</li>
-      <li><strong>検証:</strong> Snapshot Isolationでは別rowへのwriteが双方commitし得る。Serializableでは危険な依存を検出して一方をabortする。</li>
-      <li><strong>retry:</strong> abortされたT2は古い判断を再利用せず、transaction開始から読み直す。aliceが外れているためbobを当直に残す。</li>
-    </ol>
-  </figure>
   <table>
     <caption>業務不変条件から分離とretryを選ぶdecision table</caption>
     <thead>

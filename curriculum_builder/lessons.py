@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 from .catalog import strict_json_loads
 from .errors import CurriculumValidationError
 from .lesson_io import read_stable_lesson_file
+from .visualizations import Visualization, parse_visualizations
 
 
 MAX_LESSON_BYTES = 512 * 1024
@@ -90,7 +91,9 @@ _COMPLETE_FIELDS = (
     "sources",
     "review",
 )
-_ROOT_FIELDS = _ROOT_REQUIRED_FIELDS | frozenset(_COMPLETE_FIELDS)
+_ROOT_FIELDS = _ROOT_REQUIRED_FIELDS | frozenset(_COMPLETE_FIELDS) | frozenset(
+    {"visualizations"}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,6 +146,7 @@ class Rubric:
 
 @dataclass(frozen=True, slots=True)
 class Source:
+    id: str | None
     title: str
     url: str
     kind: str
@@ -174,6 +178,7 @@ class Lesson:
     transfer_task: str | None
     rubric: tuple[Rubric, ...]
     sources: tuple[Source, ...]
+    visualizations: tuple[Visualization, ...]
     review: Review | None
     updated_at: str
     status: str
@@ -314,6 +319,31 @@ def _parse_lesson(raw: dict[str, object]) -> Lesson:
     sources = _parse_sources(
         raw.get("sources"), complete=status == "complete"
     )
+    objective_evidence = {
+        objective.id: frozenset(objective.evidence_ids)
+        for objective in objectives
+    }
+    authored_visualizations = raw.get("visualizations")
+    if (
+        type(authored_visualizations) is list
+        and authored_visualizations
+        and any(
+            source.id is None for source in sources
+        )
+    ):
+        raise CurriculumValidationError(
+            "every source requires an id when visualizations exist"
+        )
+    visualizations = parse_visualizations(
+        raw.get("visualizations"),
+        lesson_id=lesson_id,
+        complete=status == "complete",
+        objective_evidence=objective_evidence,
+        evidence_ids=frozenset(item.id for item in evidence),
+        source_ids=frozenset(
+            source.id for source in sources if source.id is not None
+        ),
+    )
     review = _parse_review(
         raw.get("review"), complete=status == "complete"
     )
@@ -370,6 +400,7 @@ def _parse_lesson(raw: dict[str, object]) -> Lesson:
         transfer_task=transfer_task,
         rubric=rubric,
         sources=sources,
+        visualizations=visualizations,
         review=review,
         updated_at=_require_date(raw["updatedAt"]),
         status=status,
@@ -938,17 +969,28 @@ def _parse_sources(
         raise CurriculumValidationError(
             "complete lessons need at least two sources"
         )
-    fields = frozenset({"title", "url", "kind"})
+    required_fields = frozenset({"title", "url", "kind"})
+    allowed_fields = required_fields | frozenset({"id"})
     sources: list[Source] = []
     identities: list[tuple[str, str, int | None, str, str]] = []
     for index, item in enumerate(items):
         raw = _require_exact_object(
-            item, fields, fields, f"source {index + 1}"
+            item, required_fields, allowed_fields, f"source {index + 1}"
         )
         url, identity = _require_https_url(raw["url"])
         identities.append(identity)
         sources.append(
             Source(
+                id=(
+                    None
+                    if "id" not in raw
+                    else _require_identifier(
+                        raw["id"],
+                        f"source {index + 1} id",
+                        _EVIDENCE_ID_PATTERN,
+                        maximum=64,
+                    )
+                ),
                 title=_require_text(
                     raw["title"],
                     f"source {index + 1} title",
@@ -962,6 +1004,9 @@ def _parse_sources(
         )
     if len(set(identities)) != len(identities):
         raise CurriculumValidationError("duplicate source URL")
+    source_ids = tuple(source.id for source in sources if source.id is not None)
+    if len(set(source_ids)) != len(source_ids):
+        raise CurriculumValidationError("duplicate source id")
     return tuple(sources)
 
 

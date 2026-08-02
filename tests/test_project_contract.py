@@ -9,7 +9,7 @@ import unittest
 class ProjectContractTests(unittest.TestCase):
     def test_package_exposes_version(self) -> None:
         package = importlib.import_module("curriculum_builder")
-        self.assertEqual(package.__version__, "0.1.0")
+        self.assertEqual(package.__version__, "0.2.0")
 
     def test_project_metadata_matches_package_contract(self) -> None:
         package = importlib.import_module("curriculum_builder")

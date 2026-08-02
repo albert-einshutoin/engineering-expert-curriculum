@@ -15,9 +15,23 @@ from urllib.parse import urlsplit
 
 from .errors import CurriculumValidationError, IncompleteLessonReleaseError
 from .graph import topological_stages
-from .html_safety import MAX_FRAGMENT_BYTES, SafeHtml, validate_fragment
+from .html_safety import (
+    HtmlProvenance,
+    MAX_FRAGMENT_BYTES,
+    SafeHtml,
+    revalidate_safe_html,
+    validate_fragment,
+    validate_generated_fragment,
+)
 from .lessons import Lesson, MAX_LESSON_BYTES, load_lesson_bytes
 from .render import Renderer
+from .visualizations import (
+    _render_validated_visualization,
+    _validate_visualization_for_rendering,
+    LessonSectionRole,
+    Visualization,
+    visualization_dom_namespace,
+)
 
 
 _LESSON_ID: Final = re.compile(
@@ -47,11 +61,26 @@ _CLOSE_FAILURE_NOTE: Final = "lesson descriptor also failed to close"
 
 
 @dataclass(frozen=True, slots=True)
+class LessonSection:
+    """One validated authored section assigned to a logical production role."""
+
+    role: LessonSectionRole
+    html: SafeHtml
+
+
+@dataclass(frozen=True, slots=True)
+class LessonBody:
+    """The exact six-section authored body snapshot."""
+
+    sections: tuple[LessonSection, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class LoadedLesson:
     """One immutable metadata/body snapshot bound to a lesson directory."""
 
     lesson: Lesson
-    body: SafeHtml
+    body: LessonBody
     metadata_bytes: bytes
     body_bytes: bytes
 
@@ -328,8 +357,7 @@ def _load_lesson_directory(
                 f"lesson {name}/body.html is not valid UTF-8"
             ) from None
         lesson = load_lesson_bytes(metadata, "lesson.json")
-        body = validate_fragment(body_text)
-        _reject_authored_external_links(body_text)
+        body = parse_lesson_body(body_text)
         return LoadedLesson(
             lesson=lesson,
             body=body,
@@ -555,6 +583,194 @@ def _reject_authored_external_links(body: str) -> None:
         ) from None
 
 
+_SECTION_ID_PATTERNS: Final = (
+    re.compile(r"(?:[a-z][a-z0-9-]*-)?why\Z", re.ASCII),
+    re.compile(r"(?:[a-z][a-z0-9-]*-)?mental-model\Z", re.ASCII),
+    re.compile(r"(?:[a-z][a-z0-9-]*-)?worked-example\Z", re.ASCII),
+    re.compile(r"(?:[a-z][a-z0-9-]*-)?tradeoffs\Z", re.ASCII),
+    re.compile(r"(?:knowledge-|[a-z][a-z0-9-]*-)?check\Z", re.ASCII),
+    re.compile(r"(?:sources-next|[a-z][a-z0-9-]*-sources(?:-next)?)\Z", re.ASCII),
+)
+
+
+class _LessonBodyParser(_AuthoredBodyLinkParser):
+    def __init__(self, source: str) -> None:
+        super().__init__(convert_charrefs=True)
+        self._source = source
+        self._line_offsets: list[int] = [0]
+        self._line_offsets.extend(
+            index + 1 for index, character in enumerate(source) if character == "\n"
+        )
+        self._stack: list[str] = []
+        self._section_start: int | None = None
+        self.sections: list[str] = []
+
+    def _offset(self) -> int:
+        line, column = self.getpos()
+        return self._line_offsets[line - 1] + column
+
+    def handle_starttag(
+        self, tag: str, attrs: list[tuple[str, str | None]]
+    ) -> None:
+        super().handle_starttag(tag, attrs)
+        normalized = tag.casefold()
+        if normalized == "section":
+            if self._stack:
+                nested_id = {
+                    name.casefold(): value for name, value in attrs
+                }.get("id")
+                if nested_id is not None and any(
+                    pattern.fullmatch(nested_id)
+                    for pattern in _SECTION_ID_PATTERNS
+                ):
+                    raise CurriculumValidationError(
+                        "lesson body contains nested-section impersonation"
+                    )
+            else:
+                if len(self.sections) >= len(LessonSectionRole):
+                    raise CurriculumValidationError(
+                        "lesson body must contain exactly six top-level sections"
+                    )
+                values = {name.casefold(): value for name, value in attrs}
+                section_id = values.get("id")
+                if (
+                    section_id is None
+                    or _SECTION_ID_PATTERNS[len(self.sections)].fullmatch(section_id)
+                    is None
+                ):
+                    raise CurriculumValidationError(
+                        "lesson body sections are not in the required order"
+                    )
+                self._section_start = self._offset()
+        elif not self._stack:
+            raise CurriculumValidationError(
+                "lesson body may contain only top-level sections"
+            )
+        self._stack.append(normalized)
+
+    def handle_startendtag(
+        self, tag: str, attrs: list[tuple[str, str | None]]
+    ) -> None:
+        if tag.casefold() == "section" or not self._stack:
+            raise CurriculumValidationError(
+                "lesson body may contain only complete top-level sections"
+            )
+        super().handle_starttag(tag, attrs)
+
+    def handle_endtag(self, tag: str) -> None:
+        normalized = tag.casefold()
+        if not self._stack or self._stack[-1] != normalized:
+            raise CurriculumValidationError("lesson body has unbalanced markup")
+        self._stack.pop()
+        if normalized == "section" and not self._stack:
+            assert self._section_start is not None
+            closing = self._source.find(">", self._offset())
+            if closing < 0:
+                raise CurriculumValidationError("lesson body has malformed markup")
+            self.sections.append(self._source[self._section_start : closing + 1])
+            self._section_start = None
+
+    def handle_data(self, data: str) -> None:
+        if not self._stack and data.strip():
+            raise CurriculumValidationError(
+                "lesson body contains text outside a section"
+            )
+
+    def handle_comment(self, data: str) -> None:
+        if not self._stack:
+            raise CurriculumValidationError(
+                "lesson body contains a top-level comment"
+            )
+
+
+def parse_lesson_body(fragment: str) -> LessonBody:
+    """Validate and split a body once, assigning roles only by fixed order."""
+    if type(fragment) is not str:
+        raise CurriculumValidationError("lesson body must be exact text")
+    validate_fragment(fragment)
+    parser = _LessonBodyParser(fragment)
+    try:
+        parser.feed(fragment)
+        parser.close()
+    except CurriculumValidationError:
+        raise
+    except Exception:
+        raise CurriculumValidationError("lesson body cannot be parsed") from None
+    if parser._stack or len(parser.sections) != len(LessonSectionRole):
+        raise CurriculumValidationError(
+            "lesson body must contain exactly six complete top-level sections"
+        )
+    return LessonBody(
+        tuple(
+            LessonSection(role, validate_fragment(section))
+            for role, section in zip(
+                LessonSectionRole, parser.sections, strict=True
+            )
+        )
+    )
+
+
+def render_lesson_body(
+    lesson_id: str,
+    body: LessonBody,
+    visualizations: tuple[Visualization, ...],
+) -> SafeHtml:
+    """Interleave visuals after complete typed sections, never by DOM ID."""
+    if type(body) is not LessonBody or type(visualizations) is not tuple:
+        raise CurriculumValidationError("lesson body rendering input is invalid")
+    if len(visualizations) > 2:
+        raise CurriculumValidationError(
+            "lesson body accepts at most two visualizations"
+        )
+    if (
+        type(body.sections) is not tuple
+        or len(body.sections) != len(LessonSectionRole)
+    ):
+        raise CurriculumValidationError("lesson body sections are invalid")
+    safe_sections: list[tuple[LessonSectionRole, SafeHtml]] = []
+    for expected_role, section in zip(
+        LessonSectionRole,
+        body.sections,
+        strict=True,
+    ):
+        if type(section) is not LessonSection or section.role is not expected_role:
+            raise CurriculumValidationError("lesson body sections are invalid")
+        safe_section = revalidate_safe_html(section.html)
+        if safe_section.provenance is not HtmlProvenance.AUTHORED:
+            raise CurriculumValidationError(
+                "lesson body sections require authored HTML provenance"
+            )
+        safe_sections.append((section.role, safe_section))
+    by_role: dict[LessonSectionRole, list[Visualization]] = {
+        role: [] for role in LessonSectionRole
+    }
+    validated_visualizations = tuple(
+        _validate_visualization_for_rendering(lesson_id, visual)[1]
+        for visual in visualizations
+    )
+    for visual in validated_visualizations:
+        by_role[visual.after_section].append(visual)
+    namespaces = tuple(
+        visualization_dom_namespace(lesson_id, visual.id)
+        for visual in validated_visualizations
+    )
+    if len(namespaces) != len(set(namespaces)):
+        raise CurriculumValidationError(
+            "generated visual namespace collision"
+        )
+    rendered = "".join(
+        section_html.value
+        + "".join(
+            _render_validated_visualization(lesson_id, visual).value
+            for visual in by_role[role]
+        )
+        for role, section_html in safe_sections
+    )
+    # Authored sections were strict-validated during parsing; this second,
+    # generated-grammar pass validates their typed interleaving with controls.
+    return validate_generated_fragment(rendered)
+
+
 def render_lesson_artifacts(
     renderer: Renderer,
     loaded: tuple[LoadedLesson, ...],
@@ -614,7 +830,9 @@ def render_lesson_artifacts(
             html_values={
                 "objectives": _render_objectives(lesson),
                 "capabilities": _render_capabilities(lesson),
-                "body": item.body,
+                "body": render_lesson_body(
+                    lesson.id, item.body, lesson.visualizations
+                ),
                 "lab": _render_lab(lesson),
                 "assessment": _render_assessment(lesson),
                 "teach_back": _paragraph(lesson.teach_back),

@@ -42,6 +42,10 @@ from .css_safety import (
     MAX_STYLESHEET_BYTES,
     validate_stylesheet_bytes,
 )
+from .javascript_safety import (
+    MAX_JAVASCRIPT_BYTES,
+    validate_reviewed_visualization_runtime,
+)
 from .errors import CurriculumValidationError
 from .graph import topological_stages
 from .html_safety import SafeHtml, validate_fragment
@@ -53,9 +57,16 @@ from .lesson_rendering import (
 from .lessons import LESSON_TRACKS, Lesson
 from .models import CatalogItem
 from .render import MAX_TEMPLATE_BYTES, Renderer
+from .visualizations import (
+    MAX_VISUALIZATION_CATALOG_BYTES,
+    VisualizationCatalog,
+    parse_visualization_catalog_bytes,
+    validate_visualization_assignments,
+)
 
 
 MAX_CATALOG_BYTES: Final = 8 * 1024 * 1024
+MAX_VISUALIZATION_STYLESHEET_BYTES: Final = 80 * 1024
 MAX_ROADMAP_BYTES: Final = 256 * 1024
 MAX_ROADMAP_SOURCE_NAME_CHARS: Final = 255
 MAX_ROADMAP_NODES: Final = 4096
@@ -95,12 +106,48 @@ _BASE_ARTIFACTS = frozenset(
     {
         PurePosixPath("index.html"),
         PurePosixPath("styles.css"),
+        PurePosixPath("static/visualizations.css"),
+        PurePosixPath("static/visualization.js"),
         PurePosixPath("catalog/index.html"),
         PurePosixPath("competencies/index.html"),
         PurePosixPath("capstones/index.html"),
         PurePosixPath("roadmap/index.html"),
         PurePosixPath("lessons/index.html"),
     }
+)
+
+
+@dataclass(frozen=True, slots=True)
+class _StaticAsset:
+    source_name: str
+    output_path: PurePosixPath
+    maximum_bytes: int
+
+
+@dataclass(frozen=True, slots=True)
+class _StaticAssetSnapshot:
+    source: bytes
+    signature: tuple[int, int, int, int, int, int]
+
+
+# This closed table is a security boundary: new repository files are never
+# published merely because they happen to appear beneath static/.
+_STATIC_ASSETS: Final = (
+    _StaticAsset(
+        source_name="styles.css",
+        output_path=PurePosixPath("styles.css"),
+        maximum_bytes=MAX_STYLESHEET_BYTES,
+    ),
+    _StaticAsset(
+        source_name="visualizations.css",
+        output_path=PurePosixPath("static/visualizations.css"),
+        maximum_bytes=MAX_VISUALIZATION_STYLESHEET_BYTES,
+    ),
+    _StaticAsset(
+        source_name="visualization.js",
+        output_path=PurePosixPath("static/visualization.js"),
+        maximum_bytes=MAX_JAVASCRIPT_BYTES,
+    ),
 )
 
 
@@ -313,6 +360,13 @@ def _require_owned_safe_node(
         raise _validation(f"{label} must not be group/world writable")
 
 
+def _require_single_link(value: os.stat_result, name: str) -> None:
+    # A second pathname lets another actor mutate the same inode outside the
+    # validated directory, so stable reads require exclusive inode naming.
+    if value.st_nlink != 1:
+        raise _validation(f"{name} must have exactly one link")
+
+
 @contextmanager
 def _open_trusted_directory(
     path: Path,
@@ -461,6 +515,8 @@ def _read_stable_regular_file(
     directory: _DirectoryHandle,
     name: str,
     maximum_bytes: int,
+    *,
+    require_single_link: bool = False,
 ) -> bytes:
     if (
         not name
@@ -484,6 +540,8 @@ def _read_stable_regular_file(
             follow_symlinks=False,
         )
         _require_owned_safe_node(before, label, directory=False)
+        if require_single_link:
+            _require_single_link(before, name)
         if before.st_size > maximum_bytes:
             raise _validation(f"{name} exceeds maximum byte count")
         descriptor = os.open(
@@ -492,6 +550,8 @@ def _read_stable_regular_file(
             dir_fd=directory.descriptor,
         )
         opened = os.fstat(descriptor)
+        if require_single_link:
+            _require_single_link(opened, name)
         _require_owned_safe_node(opened, label, directory=False)
         if _stat_signature(opened) != _stat_signature(before):
             raise _validation(f"{name} changed during read")
@@ -509,6 +569,8 @@ def _read_stable_regular_file(
         if os.read(descriptor, 1):
             raise _validation(f"{name} changed during read")
         after = os.fstat(descriptor)
+        if require_single_link:
+            _require_single_link(after, name)
         if _stat_signature(after) != _stat_signature(opened):
             raise _validation(f"{name} changed during read")
         current = os.stat(
@@ -516,6 +578,8 @@ def _read_stable_regular_file(
             dir_fd=directory.descriptor,
             follow_symlinks=False,
         )
+        if require_single_link:
+            _require_single_link(current, name)
         if _stat_signature(current) != _stat_signature(opened):
             raise _validation(f"{name} changed during read")
         return b"".join(chunks)
@@ -536,6 +600,39 @@ def _read_stable_regular_file(
                 raise RuntimeError(
                     f"{name} descriptor close failed: {close_error}"
                 ) from active
+
+
+def _read_static_asset_snapshot(
+    directory: _DirectoryHandle,
+    asset: _StaticAsset,
+) -> _StaticAssetSnapshot:
+    """Bind copied bytes to one source inode across the complete build."""
+    try:
+        before = os.stat(
+            asset.source_name,
+            dir_fd=directory.descriptor,
+            follow_symlinks=False,
+        )
+        source = _read_stable_regular_file(
+            directory,
+            asset.source_name,
+            asset.maximum_bytes,
+            require_single_link=True,
+        )
+        after = os.stat(
+            asset.source_name,
+            dir_fd=directory.descriptor,
+            follow_symlinks=False,
+        )
+    except CurriculumValidationError:
+        raise
+    except OSError:
+        raise _validation(
+            f"{asset.source_name} cannot be read safely"
+        ) from None
+    if _stat_signature(before) != _stat_signature(after):
+        raise _validation(f"{asset.source_name} changed during build")
+    return _StaticAssetSnapshot(source=source, signature=_stat_signature(after))
 
 
 def _load_catalog_from_root(
@@ -559,6 +656,31 @@ def _load_catalog_from_root(
     if before != after:
         raise _validation("catalog.json changed during build")
     return items
+
+
+def _load_visualization_catalog_from_root(
+    content: _DirectoryHandle,
+) -> tuple[VisualizationCatalog, bytes]:
+    """Bind visual assignments to one descriptor-pinned build snapshot."""
+    before = _read_stable_regular_file(
+        content,
+        "visualization-catalog.json",
+        MAX_VISUALIZATION_CATALOG_BYTES,
+    )
+    catalog = parse_visualization_catalog_bytes(
+        before,
+        "visualization-catalog.json",
+    )
+    after = _read_stable_regular_file(
+        content,
+        "visualization-catalog.json",
+        MAX_VISUALIZATION_CATALOG_BYTES,
+    )
+    if before != after:
+        raise _validation(
+            "visualization-catalog.json changed during build"
+        )
+    return catalog, before
 
 
 def _load_competencies_from_root(
@@ -1446,13 +1568,25 @@ def _capstone_content(
     )
 
 
+_SITE_VOID_ELEMENTS: Final = frozenset(
+    {
+        "area", "base", "br", "col", "embed", "hr", "img", "input",
+        "link", "meta", "param", "source", "track", "wbr",
+    }
+)
+
+
 class _SiteDocumentParser(HTMLParser):
     def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
+        super().__init__(convert_charrefs=False)
         self.ids: set[str] = set()
         self.links: list[str] = []
         self.external_links: list[str] = []
         self.has_csp = False
+        self.script_sources: list[str] = []
+        self.simulation_roots = 0
+        self.open_elements: list[str] = []
+        self.script_depth = 0
 
     def handle_starttag(
         self,
@@ -1460,12 +1594,21 @@ class _SiteDocumentParser(HTMLParser):
         attrs: list[tuple[str, str | None]],
     ) -> None:
         lowered_tag = tag.casefold()
-        if lowered_tag == "script":
-            raise _validation("generated site must not contain scripts")
         normalized = {
             name.casefold(): value
             for name, value in attrs
         }
+        if lowered_tag == "script":
+            if set(normalized) != {"src", "defer"} or normalized["defer"] is not None:
+                raise _validation("generated scripts must use the fixed deferred classic contract")
+            if not self.open_elements or self.open_elements[-1] != "body":
+                raise _validation("generated scripts must be direct children of body")
+            self.script_sources.append(normalized["src"] or "")
+            self.script_depth += 1
+        if lowered_tag == "figure" and {
+            "data-visualization-id", "data-simulation-kind", "data-interaction-mode"
+        } <= set(normalized):
+            self.simulation_roots += 1
         for name, value in attrs:
             lowered_name = name.casefold()
             if lowered_name.startswith("on"):
@@ -1502,8 +1645,43 @@ class _SiteDocumentParser(HTMLParser):
             == "content-security-policy"
         ):
             self.has_csp = True
+        if lowered_tag not in {
+            "area", "base", "br", "col", "embed", "hr", "img", "input",
+            "link", "meta", "param", "source", "track", "wbr",
+        }:
+            self.open_elements.append(lowered_tag)
 
-    handle_startendtag = handle_starttag
+    def handle_startendtag(
+        self, tag: str, attrs: list[tuple[str, str | None]]
+    ) -> None:
+        if tag.casefold() not in _SITE_VOID_ELEMENTS:
+            raise _validation("generated non-void elements must use paired tags")
+        self.handle_starttag(tag, attrs)
+
+    def handle_endtag(self, tag: str) -> None:
+        lowered = tag.casefold()
+        if not self.open_elements or self.open_elements[-1] != lowered:
+            raise _validation("generated HTML nesting is invalid")
+        self.open_elements.pop()
+        if lowered == "script":
+            self.script_depth -= 1
+
+    def _reject_script_content(self, value: str) -> None:
+        if self.script_depth and value.strip():
+            raise _validation("generated deferred scripts must be empty")
+
+    def handle_data(self, data: str) -> None:
+        self._reject_script_content(data)
+
+    def handle_entityref(self, name: str) -> None:
+        self._reject_script_content(name)
+
+    def handle_charref(self, name: str) -> None:
+        self._reject_script_content(name)
+
+    def handle_comment(self, data: str) -> None:
+        if self.script_depth:
+            raise _validation("generated deferred scripts must be empty")
 
 
 def _is_external_url(candidate: str) -> bool:
@@ -1623,6 +1801,12 @@ def _validate_site_artifacts(
             raise _validation("generated HTML cannot be parsed") from None
         if not parser.has_csp:
             raise _validation("generated page is missing CSP")
+        root = "../" * len(path.parent.parts)
+        expected_scripts = (
+            [f"{root}static/visualization.js"] if parser.simulation_roots else []
+        )
+        if parser.script_sources != expected_scripts:
+            raise _validation("generated script assets do not match lesson simulations")
         ids_by_page[path] = parser.ids
         links_by_page[path] = parser.links
         external_links_by_page[path] = tuple(parser.external_links)
@@ -1663,7 +1847,7 @@ def _render_artifacts(
     items: tuple[CatalogItem, ...],
     roadmap: Roadmap,
     template_sources: Mapping[str, bytes],
-    stylesheet: bytes,
+    static_assets: Mapping[PurePosixPath, bytes],
     lessons: tuple[LoadedLesson, ...],
     competencies: CompetencyMatrix | None,
     capstones: tuple[Capstone, ...],
@@ -1734,7 +1918,7 @@ def _render_artifacts(
         path: document.encode("utf-8")
         for path, document in pages.items()
     }
-    artifacts[PurePosixPath("styles.css")] = stylesheet
+    artifacts.update(static_assets)
     artifacts.update(render_lesson_artifacts(renderer, lessons))
     lesson_titles = {
         item.lesson.id: item.lesson.title
@@ -2807,6 +2991,9 @@ def build_site(
             (content.path, templates.path, static_files.path),
         )
         items = _load_catalog_from_root(content)
+        visualization_catalog, visualization_catalog_snapshot = (
+            _load_visualization_catalog_from_root(content)
+        )
         roadmap = _load_roadmap(
             content,
             require_complete=require_complete_curriculum,
@@ -2821,6 +3008,10 @@ def build_site(
                 roadmap,
                 tuple(item.lesson for item in lessons),
             )
+            validate_visualization_assignments(
+                visualization_catalog,
+                {item.lesson.id: item.lesson.visualizations for item in lessons},
+            )
             competencies, competency_snapshot = _load_competencies_from_root(
                 content,
                 frozenset(item.lesson.id for item in lessons),
@@ -2831,12 +3022,21 @@ def build_site(
                     item.lesson.id for item in lessons
                 ),
             )
-        stylesheet = _read_stable_regular_file(
-            static_files,
-            "styles.css",
-            MAX_STYLESHEET_BYTES,
-        )
-        validate_stylesheet_bytes(stylesheet)
+        static_asset_snapshots = {
+            asset.output_path: _read_static_asset_snapshot(
+                static_files, asset
+            )
+            for asset in _STATIC_ASSETS
+        }
+        static_assets = {
+            path: snapshot.source
+            for path, snapshot in static_asset_snapshots.items()
+        }
+        for path, snapshot in static_asset_snapshots.items():
+            if path.suffix == ".css":
+                validate_stylesheet_bytes(snapshot.source)
+            else:
+                validate_reviewed_visualization_runtime(snapshot.source)
         before_templates = {
             name: _read_stable_regular_file(
                 templates,
@@ -2849,7 +3049,7 @@ def build_site(
             items,
             roadmap,
             before_templates,
-            stylesheet,
+            static_assets,
             lessons,
             competencies,
             capstones,
@@ -2864,14 +3064,33 @@ def build_site(
         }
         if before_templates != after_templates:
             raise _validation("templates changed during build")
-        if stylesheet != _read_stable_regular_file(
-            static_files,
-            "styles.css",
-            MAX_STYLESHEET_BYTES,
-        ):
-            raise _validation("styles.css changed during build")
+        after_static_asset_snapshots = {
+            asset.output_path: _read_static_asset_snapshot(
+                static_files, asset
+            )
+            for asset in _STATIC_ASSETS
+        }
+        for asset in _STATIC_ASSETS:
+            if (
+                static_asset_snapshots[asset.output_path]
+                != after_static_asset_snapshots[asset.output_path]
+            ):
+                raise _validation(f"{asset.source_name} changed during build")
         if lesson_snapshot != load_lessons_from_root(content.descriptor):
             raise _validation("lessons changed during build")
+        final_visualization_catalog = _read_stable_regular_file(
+            content,
+            "visualization-catalog.json",
+            MAX_VISUALIZATION_CATALOG_BYTES,
+        )
+        if final_visualization_catalog != visualization_catalog_snapshot:
+            raise _validation(
+                "visualization-catalog.json changed during build"
+            )
+        parse_visualization_catalog_bytes(
+            final_visualization_catalog,
+            "visualization-catalog.json",
+        )
         if (
             competency_snapshot is not None
             and competency_snapshot

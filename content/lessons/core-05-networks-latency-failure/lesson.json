@@ -7,22 +7,33 @@
   "stage": 1,
   "difficulty": "foundation",
   "estimatedMinutes": 270,
-  "prerequisiteIds": ["core-04-os-processes-concurrency"],
+  "prerequisiteIds": [
+    "core-04-os-processes-concurrency"
+  ],
   "objectives": [
     {
       "id": "obj-timeline",
       "statement": "DNS問い合わせからHTTP応答完了までを少なくとも六イベントの時系列として図示できる",
-      "evidenceIds": ["trace-budget", "teach-back"]
+      "evidenceIds": [
+        "trace-budget",
+        "teach-back"
+      ]
     },
     {
       "id": "obj-budget",
       "statement": "利用者期限から接続、TLS、応答、再試行へ時間を配分し、最悪時の合計を計算できる",
-      "evidenceIds": ["trace-budget", "assessment"]
+      "evidenceIds": [
+        "trace-budget",
+        "assessment"
+      ]
     },
     {
       "id": "obj-diagnose",
       "statement": "パケット損失と依存サービス遅延の仮説を層別の時刻と再送観測で反証し、未知経路へ診断を移せる",
-      "evidenceIds": ["assessment", "transfer"]
+      "evidenceIds": [
+        "assessment",
+        "transfer"
+      ]
     }
   ],
   "evidence": [
@@ -51,27 +62,37 @@
     {
       "level": "recognize",
       "criterion": "DNS、TCP、TLS、HTTPの開始・完了イベントと各層の失敗を時系列上で識別できる",
-      "evidenceIds": ["trace-budget"]
+      "evidenceIds": [
+        "trace-budget"
+      ]
     },
     {
       "level": "explain",
       "criterion": "TCP到達、TLS認証、HTTP応答、業務処理成功が別の契約である理由を説明できる",
-      "evidenceIds": ["teach-back"]
+      "evidenceIds": [
+        "teach-back"
+      ]
     },
     {
       "level": "apply",
       "criterion": "総期限から各段の予算と再試行回数を逆算し、合計が期限を超えないトレースを作成できる",
-      "evidenceIds": ["trace-budget"]
+      "evidenceIds": [
+        "trace-budget"
+      ]
     },
     {
       "level": "diagnose",
       "criterion": "DNS時間、接続時間、再送、server timingを比較し、損失と依存遅延を反証できる",
-      "evidenceIds": ["assessment"]
+      "evidenceIds": [
+        "assessment"
+      ]
     },
     {
       "level": "lead",
       "criterion": "冪等性、deadline伝播、retry stormを含む障害レビューを未知の依存グラフで主導できる",
-      "evidenceIds": ["transfer"]
+      "evidenceIds": [
+        "transfer"
+      ]
     }
   ],
   "lab": {
@@ -137,33 +158,358 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "RFC 1035: Domain Names - Implementation and Specification",
       "url": "https://www.rfc-editor.org/rfc/rfc1035.html",
       "kind": "standard"
     },
     {
+      "id": "src-02",
       "title": "RFC 9293: Transmission Control Protocol (TCP)",
       "url": "https://www.rfc-editor.org/rfc/rfc9293.html",
       "kind": "standard"
     },
     {
+      "id": "src-03",
       "title": "RFC 6298: Computing TCP's Retransmission Timer",
       "url": "https://www.rfc-editor.org/rfc/rfc6298.html",
       "kind": "standard"
     },
     {
+      "id": "src-04",
       "title": "RFC 8446: The Transport Layer Security (TLS) Protocol Version 1.3",
       "url": "https://www.rfc-editor.org/rfc/rfc8446.html",
       "kind": "standard"
     },
     {
+      "id": "src-05",
       "title": "RFC 9110: HTTP Semantics",
       "url": "https://www.rfc-editor.org/rfc/rfc9110.html",
       "kind": "standard"
     }
   ],
+  "visualizations": [
+    {
+      "id": "request-path-timeline",
+      "type": "timeline",
+      "caption": "DNSから業務結果までの時系列",
+      "question": "説明用の総deadline 300msで、どのeventが最初の超過点となり、残りbudgetはどう変化したか。",
+      "afterSection": "mentalModel",
+      "objectiveIds": [
+        "obj-timeline",
+        "obj-budget"
+      ],
+      "evidenceIds": [
+        "trace-budget"
+      ],
+      "sourceIds": [
+        "src-01",
+        "src-02",
+        "src-04",
+        "src-05"
+      ],
+      "expectedObservation": "各eventのbudgetと累積observedを追い、first-byteの310msを最初の超過点として説明できる。これは普遍的なlatency値ではない。",
+      "notes": [],
+      "payload": {
+        "phases": [
+          {
+            "id": "connection",
+            "label": "接続準備 budget 120ms",
+            "detail": "説明用の総deadline 300msのうちDNS 30ms、TCP 40ms、TLS 50msを割り当てる。observed合計105ms。普遍値ではない。"
+          },
+          {
+            "id": "exchange",
+            "label": "HTTP交換 budget 160ms",
+            "detail": "request 10ms、server 100ms、first-byte 20ms、body 30ms。first-byte observedで総deadlineを初めて超える。"
+          },
+          {
+            "id": "business-result",
+            "label": "業務結果 budget 20ms",
+            "detail": "transport完了後の結果永続化へ20msを割り当てる。数値はtraceの読み方を示す説明用。"
+          }
+        ],
+        "events": [
+          {
+            "id": "dns",
+            "label": "名前解決（説明用budget）",
+          "detail": "DNS queryを送り、候補addressとTTLを得る。budget 30ms、observed 25ms、累積25ms・残り275ms。",
+            "phaseId": "connection",
+            "order": 0
+          },
+          {
+            "id": "tcp",
+            "label": "輸送接続（説明用budget）",
+          "detail": "TCP SYN、SYN-ACK、ACKで接続状態を確立する。budget 40ms、observed 35ms、累積60ms・残り240ms。",
+            "phaseId": "connection",
+            "order": 1
+          },
+          {
+            "id": "tls",
+            "label": "暗号接続（説明用budget）",
+          "detail": "TLSでversion、鍵、相手のidentityを検証する。budget 50ms、observed 45ms、累積105ms・残り195ms。",
+            "phaseId": "connection",
+            "order": 2
+          },
+          {
+            "id": "request",
+            "label": "request送信（説明用budget）",
+            "detail": "HTTP method、target、header、bodyを送る。budget 10ms、observed 10ms、累積115ms・残り185ms。",
+            "phaseId": "exchange",
+            "order": 3
+          },
+          {
+            "id": "server",
+            "label": "server処理（説明用budget）",
+            "detail": "handlerと依存serviceが状態を読み書きする。budget 100ms、observed 120ms、累積235ms・残り65ms。",
+            "phaseId": "exchange",
+            "order": 4
+          },
+          {
+            "id": "first-byte",
+            "label": "最初のbyte（説明用budget）",
+            "detail": "statusとheaderを受け始める。budget 20ms、observed 75ms、累積310ms。ここが最初のdeadline超過点（10ms超過）。",
+            "phaseId": "exchange",
+            "order": 5
+          },
+          {
+            "id": "body-complete",
+            "label": "本文完了（説明用budget）",
+          "detail": "responseを読み終える。ただし業務結果はstatusとbodyの契約で判定する。budget 30ms、observed 25ms、累積335ms・残り-35ms。",
+            "phaseId": "exchange",
+            "order": 6
+          },
+          {
+            "id": "result",
+            "label": "結果確定（説明用budget）",
+          "detail": "clientが結果を永続化し、必要なら冪等keyで後から照会できる。budget 20ms、observed 10ms、累積345ms・残り-45ms。",
+            "phaseId": "business-result",
+            "order": 7
+          }
+        ]
+      }
+    },
+    {
+      "id": "request-path-static",
+      "type": "comparison",
+      "caption": "failure注入点ごとのrequest pathとretry判断",
+      "question": "DNS、TCP、TLS、request、response喪失を分けると、再試行前に何を観測すべきか。",
+      "afterSection": "workedExample",
+      "objectiveIds": ["obj-timeline", "obj-budget"],
+      "evidenceIds": ["trace-budget"],
+      "sourceIds": ["src-01", "src-02", "src-04", "src-05"],
+      "expectedObservation": "接続準備とHTTP交換を混同せず、failure点、観測結果、retry条件を有限scenarioごとに説明する。",
+      "notes": ["retry budget fixture。primaryの300ms phase breakdown fixtureとは別。実packet captureや普遍的latencyではない。"],
+      "payload": {
+        "alternatives": [
+          {"id": "healthy", "label": "failureなし", "detail": "全phaseを完了。"},
+          {"id": "dns-point", "label": "DNS failure", "detail": "DNSで停止。"},
+          {"id": "tcp-point", "label": "TCP failure", "detail": "TCPで停止。"},
+          {"id": "tls-point", "label": "TLS failure", "detail": "TLS設定不整合。"},
+          {"id": "request-point", "label": "request failure", "detail": "request timeout。"},
+          {"id": "response-point", "label": "response lost", "detail": "response未観測。"}
+        ],
+        "criteria": [
+          {"id": "completed-path", "label": "完了した段階", "detail": "failureまでに完了したDNS/TCP/TLS/request段階。"},
+          {"id": "observation", "label": "観測", "detail": "clientとserverのtraceで確認する事実。"},
+          {"id": "retry-decision", "label": "retry判断", "detail": "残りdeadlineと冪等性を確認してから再試行する。"}
+        ],
+        "cells": [
+          {"id": "healthy-path", "alternativeId": "healthy", "criterionId": "completed-path", "value": "DNS→TCP→TLS→request→response"},
+          {"id": "healthy-observation", "alternativeId": "healthy", "criterionId": "observation", "value": "statusとbodyまで観測"},
+          {"id": "healthy-retry", "alternativeId": "healthy", "criterionId": "retry-decision", "value": "retry不要"},
+          {"id": "dns-path", "alternativeId": "dns-point", "criterionId": "completed-path", "value": "DNS→failure observation→retry decision/recovery"},
+          {"id": "dns-observation", "alternativeId": "dns-point", "criterionId": "observation", "value": "resolver結果とTTL"},
+          {"id": "dns-retry", "alternativeId": "dns-point", "criterionId": "retry-decision", "value": "残りdeadline内で再解決"},
+          {"id": "tcp-path", "alternativeId": "tcp-point", "criterionId": "completed-path", "value": "DNS→TCP→failure observation→retry decision/recovery"},
+          {"id": "tcp-observation", "alternativeId": "tcp-point", "criterionId": "observation", "value": "connect timeoutとaddress"},
+          {"id": "tcp-retry", "alternativeId": "tcp-point", "criterionId": "retry-decision", "value": "別addressとbudgetを確認"},
+          {"id": "tls-path", "alternativeId": "tls-point", "criterionId": "completed-path", "value": "DNS→TCP→TLS failure→retry blocked/config repair"},
+          {"id": "tls-observation", "alternativeId": "tls-point", "criterionId": "observation", "value": "version、証明書、identity"},
+          {"id": "tls-retry", "alternativeId": "tls-point", "criterionId": "retry-decision", "value": "設定不整合なら盲目的retry禁止"},
+          {"id": "request-path-cell", "alternativeId": "request-point", "criterionId": "completed-path", "value": "DNS→TCP→TLS→request timeout→retry decision/recovery"},
+          {"id": "request-observation", "alternativeId": "request-point", "criterionId": "observation", "value": "送信量とserver trace"},
+          {"id": "request-retry", "alternativeId": "request-point", "criterionId": "retry-decision", "value": "冪等性と残りdeadlineを確認"},
+          {"id": "response-path", "alternativeId": "response-point", "criterionId": "completed-path", "value": "DNS→TCP→TLS→request sent→response unobserved→side-effect inquiry→retry decision"},
+          {"id": "response-observation", "alternativeId": "response-point", "criterionId": "observation", "value": "side effectとresponseを別々に照会"},
+          {"id": "response-retry", "alternativeId": "response-point", "criterionId": "retry-decision", "value": "同じ冪等keyで結果照会またはretry"}
+        ]
+      },
+      "simulation": {
+        "kind": "request-path", "interactionMode": "hybrid", "initialStateId": "dns-lookup", "defaultIntervalMs": 1000,
+        "parameters": [
+          {"id":"fault","label":"failure注入点","control":"select","options":[{"id":"ok","label":"なし"},{"id":"dns","label":"DNS"},{"id":"tcp","label":"TCP"},{"id":"tls","label":"TLS"},{"id":"req","label":"request"},{"id":"resp","label":"response喪失"}],"defaultOptionId":"ok"},
+          {"id":"budget","label":"latency profile","control":"radio","options":[{"id":"n","label":"normal-budget: elapsed=1900ms, remaining=100ms"},{"id":"t","label":"tight-budget(+1ms overhead): elapsed=1901ms, remaining=99ms"}],"defaultOptionId":"n"}
+        ],
+        "states": [
+          {"id":"dns-lookup","label":"DNS","status":"DNS→TCP→TLS→request。total=2000ms; first=800ms+backoff=100ms+second=700ms+post=200ms+cancel=100ms=planned=1900ms。retry開始条件 remaining>=100ms。","activeNodeIds":["completed-path"],"activeEdgeIds":[]},
+          {"id":"h-tcp","label":"TCP","status":"DNS完了、TCP接続を確立。","when":{"fault":"ok"},"activeNodeIds":["healthy"],"activeEdgeIds":["healthy-path"]},
+          {"id":"tls-ready","label":"TLS","status":"TCP完了、TLS identityを検証。","when":{"fault":"ok"},"activeNodeIds":["healthy"],"activeEdgeIds":["healthy-path"]},
+          {"id":"h-req","label":"request","status":"TLS完了、request送信。","when":{"fault":"ok"},"activeNodeIds":["healthy"],"activeEdgeIds":["healthy-path"]},
+          {"id":"h-ok","label":"response","status":"elapsed=1900ms; remaining=100ms; budget-gate=allowed。response observed。","when":{"fault":"ok","budget":"n"},"activeNodeIds":["healthy"],"activeEdgeIds":["healthy-path","healthy-observation"]},
+          {"id":"h-retry-blocked","label":"no deadline","status":"elapsed=1901ms; remaining=99ms; budget-gate=blocked。response待ち。","when":{"fault":"ok","budget":"t"},"activeNodeIds":["healthy"],"activeEdgeIds":["healthy-path","healthy-retry"]},
+          {"id":"d-fail","label":"DNS failure","status":"DNS failure観測。TCP以降は未開始。","when":{"fault":"dns"},"activeNodeIds":["dns-point"],"activeEdgeIds":["dns-path","dns-observation"]},
+          {"id":"d-retry","label":"DNS retry","status":"elapsed=1900ms; remaining=100ms; budget-gate=allowed。DNS recovery。","when":{"fault":"dns","budget":"n"},"activeNodeIds":["dns-point"],"activeEdgeIds":["dns-path","dns-retry"]},
+          {"id":"d-retry-blocked","label":"DNS blocked","status":"elapsed=1901ms; remaining=99ms; budget-gate=blocked。DNS retry禁止。","when":{"fault":"dns","budget":"t"},"activeNodeIds":["dns-point"],"activeEdgeIds":["dns-path","dns-retry"]},
+          {"id":"t-fail","label":"TCP failure","status":"DNS後にTCP failure観測。TLS以降は未開始。","when":{"fault":"tcp"},"activeNodeIds":["tcp-point"],"activeEdgeIds":["tcp-path","tcp-observation"]},
+          {"id":"t-retry","label":"TCP retry","status":"elapsed=1900ms; remaining=100ms; budget-gate=allowed。TCP recovery。","when":{"fault":"tcp","budget":"n"},"activeNodeIds":["tcp-point"],"activeEdgeIds":["tcp-path","tcp-retry"]},
+          {"id":"t-retry-blocked","label":"TCP blocked","status":"elapsed=1901ms; remaining=99ms; budget-gate=blocked。TCP retry禁止。","when":{"fault":"tcp","budget":"t"},"activeNodeIds":["tcp-point"],"activeEdgeIds":["tcp-path","tcp-retry"]},
+          {"id":"l-tcp","label":"TCP before TLS","status":"DNS後にTCP確立。","when":{"fault":"tls"},"activeNodeIds":["tls-point"],"activeEdgeIds":["tls-path"]},
+          {"id":"l-fail","label":"TLS failure","status":"TLS設定不整合を観測。","when":{"fault":"tls"},"activeNodeIds":["tls-point"],"activeEdgeIds":["tls-path","tls-observation"]},
+          {"id":"l-retry-blocked","label":"TLS repair","status":"elapsed=1900ms; remaining=100ms; budget-gate=allowed。設定不整合なのでretry禁止、config repair。","when":{"fault":"tls","budget":"n"},"activeNodeIds":["tls-point"],"activeEdgeIds":["tls-path","tls-retry"]},
+          {"id":"l-retry-blocked-tight","label":"TLS blocked","status":"elapsed=1901ms; remaining=99ms; budget-gate=blocked。TLS retry禁止。","when":{"fault":"tls","budget":"t"},"activeNodeIds":["tls-point"],"activeEdgeIds":["tls-path","tls-retry"]},
+          {"id":"q-tcp","label":"request TCP","status":"DNS後にTCP確立。","when":{"fault":"req"},"activeNodeIds":["request-point"],"activeEdgeIds":["request-path-cell"]},
+          {"id":"q-tls","label":"request TLS","status":"TCP後にTLS完了。","when":{"fault":"req"},"activeNodeIds":["request-point"],"activeEdgeIds":["request-path-cell"]},
+          {"id":"q-fail","label":"request timeout","status":"timeout観測。statusとside effectを照会。","when":{"fault":"req"},"activeNodeIds":["request-point"],"activeEdgeIds":["request-path-cell","request-observation"]},
+          {"id":"q-retry","label":"request retry","status":"elapsed=1900ms; remaining=100ms; budget-gate=allowed。status確認後retry decision。","when":{"fault":"req","budget":"n"},"activeNodeIds":["request-point"],"activeEdgeIds":["request-path-cell","request-retry"]},
+          {"id":"q-retry-blocked","label":"request blocked","status":"elapsed=1901ms; remaining=99ms; budget-gate=blocked。status照会、retry禁止。","when":{"fault":"req","budget":"t"},"activeNodeIds":["request-point"],"activeEdgeIds":["request-path-cell","request-retry"]},
+          {"id":"s-tcp","label":"response TCP","status":"DNS後にTCP確立。","when":{"fault":"resp"},"activeNodeIds":["response-point"],"activeEdgeIds":["response-path"]},
+          {"id":"s-tls","label":"response TLS","status":"TCP後にTLS完了。","when":{"fault":"resp"},"activeNodeIds":["response-point"],"activeEdgeIds":["response-path"]},
+          {"id":"s-req","label":"request sent","status":"TLS後にrequest送信。","when":{"fault":"resp"},"activeNodeIds":["response-point"],"activeEdgeIds":["response-path"]},
+          {"id":"deadline-exceeded","label":"unobserved","status":"response未観測。side effectは不明。","when":{"fault":"resp"},"activeNodeIds":["response-point"],"activeEdgeIds":["response-path","response-observation"]},
+          {"id":"s-inquiry","label":"inquiry","status":"冪等keyでside effect/statusを照会。","when":{"fault":"resp"},"activeNodeIds":["response-point"],"activeEdgeIds":["response-observation"]},
+          {"id":"s-retry","label":"response retry","status":"elapsed=1900ms; remaining=100ms; budget-gate=allowed。side-effect照会後retry。","when":{"fault":"resp","budget":"n"},"activeNodeIds":["response-point"],"activeEdgeIds":["response-path","response-retry"]},
+          {"id":"s-retry-blocked","label":"response blocked","status":"elapsed=1901ms; remaining=99ms; budget-gate=blocked。side-effect照会、retry禁止。","when":{"fault":"resp","budget":"t"},"activeNodeIds":["response-point"],"activeEdgeIds":["response-path","response-retry"]}
+        ],
+        "transitions": [
+          {"id":"apply-healthy","from":"dns-lookup","to":"dns-lookup","event":"parameter-change","when":{"fault":"ok"}},
+          {"id":"apply-dns","from":"dns-lookup","to":"dns-lookup","event":"parameter-change","when":{"fault":"dns"}},
+          {"id":"apply-tcp","from":"dns-lookup","to":"dns-lookup","event":"parameter-change","when":{"fault":"tcp"}},
+          {"id":"apply-tls","from":"dns-lookup","to":"dns-lookup","event":"parameter-change","when":{"fault":"tls"}},
+          {"id":"apply-request","from":"dns-lookup","to":"dns-lookup","event":"parameter-change","when":{"fault":"req"}},
+          {"id":"apply-response","from":"dns-lookup","to":"dns-lookup","event":"parameter-change","when":{"fault":"resp"}},
+          {"id":"n-s01","from":"dns-lookup","to":"h-tcp","event":"next","when":{"fault":"ok"}},
+          {"id":"t-s01","from":"dns-lookup","to":"h-tcp","event":"timer","when":{"fault":"ok"}},
+          {"id":"p-s01","from":"h-tcp","to":"dns-lookup","event":"previous","when":{"fault":"ok"}},
+          {"id":"r-s01","from":"h-tcp","to":"dns-lookup","event":"reset","when":{"fault":"ok"}},
+          {"id":"n-s02","from":"h-tcp","to":"tls-ready","event":"next","when":{"fault":"ok"}},
+          {"id":"t-s02","from":"h-tcp","to":"tls-ready","event":"timer","when":{"fault":"ok"}},
+          {"id":"p-s02","from":"tls-ready","to":"h-tcp","event":"previous","when":{"fault":"ok"}},
+          {"id":"r-s02","from":"tls-ready","to":"dns-lookup","event":"reset","when":{"fault":"ok"}},
+          {"id":"n-s03","from":"tls-ready","to":"h-req","event":"next","when":{"fault":"ok"}},
+          {"id":"t-s03","from":"tls-ready","to":"h-req","event":"timer","when":{"fault":"ok"}},
+          {"id":"p-s03","from":"h-req","to":"tls-ready","event":"previous","when":{"fault":"ok"}},
+          {"id":"r-s03","from":"h-req","to":"dns-lookup","event":"reset","when":{"fault":"ok"}},
+          {"id":"n-healthy-end","from":"h-req","to":"h-ok","event":"next","when":{"fault":"ok","budget":"n"}},
+          {"id":"t-healthy-end","from":"h-req","to":"h-ok","event":"timer","when":{"fault":"ok","budget":"n"}},
+          {"id":"p-healthy-end","from":"h-ok","to":"h-req","event":"previous","when":{"fault":"ok","budget":"n"}},
+          {"id":"r-healthy-end","from":"h-ok","to":"dns-lookup","event":"reset","when":{"fault":"ok","budget":"n"}},
+          {"id":"n-healthy-retry-blocked","from":"h-req","to":"h-retry-blocked","event":"next","when":{"fault":"ok","budget":"t"}},
+          {"id":"t-healthy-retry-blocked","from":"h-req","to":"h-retry-blocked","event":"timer","when":{"fault":"ok","budget":"t"}},
+          {"id":"p-healthy-retry-blocked","from":"h-retry-blocked","to":"h-req","event":"previous","when":{"fault":"ok","budget":"t"}},
+          {"id":"r-healthy-retry-blocked","from":"h-retry-blocked","to":"dns-lookup","event":"reset","when":{"fault":"ok","budget":"t"}},
+          {"id":"n-s06","from":"dns-lookup","to":"d-fail","event":"next","when":{"fault":"dns"}},
+          {"id":"t-s06","from":"dns-lookup","to":"d-fail","event":"timer","when":{"fault":"dns"}},
+          {"id":"p-s06","from":"d-fail","to":"dns-lookup","event":"previous","when":{"fault":"dns"}},
+          {"id":"r-s06","from":"d-fail","to":"dns-lookup","event":"reset","when":{"fault":"dns"}},
+          {"id":"n-dns-retry","from":"d-fail","to":"d-retry","event":"next","when":{"fault":"dns","budget":"n"}},
+          {"id":"t-dns-retry","from":"d-fail","to":"d-retry","event":"timer","when":{"fault":"dns","budget":"n"}},
+          {"id":"p-dns-retry","from":"d-retry","to":"d-fail","event":"previous","when":{"fault":"dns","budget":"n"}},
+          {"id":"r-dns-retry","from":"d-retry","to":"dns-lookup","event":"reset","when":{"fault":"dns","budget":"n"}},
+          {"id":"n-dns-retry-blocked","from":"d-fail","to":"d-retry-blocked","event":"next","when":{"fault":"dns","budget":"t"}},
+          {"id":"t-dns-retry-blocked","from":"d-fail","to":"d-retry-blocked","event":"timer","when":{"fault":"dns","budget":"t"}},
+          {"id":"p-dns-retry-blocked","from":"d-retry-blocked","to":"d-fail","event":"previous","when":{"fault":"dns","budget":"t"}},
+          {"id":"r-dns-retry-blocked","from":"d-retry-blocked","to":"dns-lookup","event":"reset","when":{"fault":"dns","budget":"t"}},
+          {"id":"n-s09","from":"dns-lookup","to":"t-fail","event":"next","when":{"fault":"tcp"}},
+          {"id":"t-s09","from":"dns-lookup","to":"t-fail","event":"timer","when":{"fault":"tcp"}},
+          {"id":"p-s09","from":"t-fail","to":"dns-lookup","event":"previous","when":{"fault":"tcp"}},
+          {"id":"r-s09","from":"t-fail","to":"dns-lookup","event":"reset","when":{"fault":"tcp"}},
+          {"id":"n-tcp-retry","from":"t-fail","to":"t-retry","event":"next","when":{"fault":"tcp","budget":"n"}},
+          {"id":"t-tcp-retry","from":"t-fail","to":"t-retry","event":"timer","when":{"fault":"tcp","budget":"n"}},
+          {"id":"p-tcp-retry","from":"t-retry","to":"t-fail","event":"previous","when":{"fault":"tcp","budget":"n"}},
+          {"id":"r-tcp-retry","from":"t-retry","to":"dns-lookup","event":"reset","when":{"fault":"tcp","budget":"n"}},
+          {"id":"n-tcp-retry-blocked","from":"t-fail","to":"t-retry-blocked","event":"next","when":{"fault":"tcp","budget":"t"}},
+          {"id":"t-tcp-retry-blocked","from":"t-fail","to":"t-retry-blocked","event":"timer","when":{"fault":"tcp","budget":"t"}},
+          {"id":"p-tcp-retry-blocked","from":"t-retry-blocked","to":"t-fail","event":"previous","when":{"fault":"tcp","budget":"t"}},
+          {"id":"r-tcp-retry-blocked","from":"t-retry-blocked","to":"dns-lookup","event":"reset","when":{"fault":"tcp","budget":"t"}},
+          {"id":"n-s12","from":"dns-lookup","to":"l-tcp","event":"next","when":{"fault":"tls"}},
+          {"id":"t-s12","from":"dns-lookup","to":"l-tcp","event":"timer","when":{"fault":"tls"}},
+          {"id":"p-s12","from":"l-tcp","to":"dns-lookup","event":"previous","when":{"fault":"tls"}},
+          {"id":"r-s12","from":"l-tcp","to":"dns-lookup","event":"reset","when":{"fault":"tls"}},
+          {"id":"n-s13","from":"l-tcp","to":"l-fail","event":"next","when":{"fault":"tls"}},
+          {"id":"t-s13","from":"l-tcp","to":"l-fail","event":"timer","when":{"fault":"tls"}},
+          {"id":"p-s13","from":"l-fail","to":"l-tcp","event":"previous","when":{"fault":"tls"}},
+          {"id":"r-s13","from":"l-fail","to":"dns-lookup","event":"reset","when":{"fault":"tls"}},
+          {"id":"n-tls-retry-blocked","from":"l-fail","to":"l-retry-blocked","event":"next","when":{"fault":"tls","budget":"n"}},
+          {"id":"t-tls-retry-blocked","from":"l-fail","to":"l-retry-blocked","event":"timer","when":{"fault":"tls","budget":"n"}},
+          {"id":"p-tls-retry-blocked","from":"l-retry-blocked","to":"l-fail","event":"previous","when":{"fault":"tls","budget":"n"}},
+          {"id":"r-tls-retry-blocked","from":"l-retry-blocked","to":"dns-lookup","event":"reset","when":{"fault":"tls","budget":"n"}},
+          {"id":"n-tls-retry-blocked-tight","from":"l-fail","to":"l-retry-blocked-tight","event":"next","when":{"fault":"tls","budget":"t"}},
+          {"id":"t-tls-retry-blocked-tight","from":"l-fail","to":"l-retry-blocked-tight","event":"timer","when":{"fault":"tls","budget":"t"}},
+          {"id":"p-tls-retry-blocked-tight","from":"l-retry-blocked-tight","to":"l-fail","event":"previous","when":{"fault":"tls","budget":"t"}},
+          {"id":"r-tls-retry-blocked-tight","from":"l-retry-blocked-tight","to":"dns-lookup","event":"reset","when":{"fault":"tls","budget":"t"}},
+          {"id":"n-s16","from":"dns-lookup","to":"q-tcp","event":"next","when":{"fault":"req"}},
+          {"id":"t-s16","from":"dns-lookup","to":"q-tcp","event":"timer","when":{"fault":"req"}},
+          {"id":"p-s16","from":"q-tcp","to":"dns-lookup","event":"previous","when":{"fault":"req"}},
+          {"id":"r-s16","from":"q-tcp","to":"dns-lookup","event":"reset","when":{"fault":"req"}},
+          {"id":"n-s17","from":"q-tcp","to":"q-tls","event":"next","when":{"fault":"req"}},
+          {"id":"t-s17","from":"q-tcp","to":"q-tls","event":"timer","when":{"fault":"req"}},
+          {"id":"p-s17","from":"q-tls","to":"q-tcp","event":"previous","when":{"fault":"req"}},
+          {"id":"r-s17","from":"q-tls","to":"dns-lookup","event":"reset","when":{"fault":"req"}},
+          {"id":"n-s18","from":"q-tls","to":"q-fail","event":"next","when":{"fault":"req"}},
+          {"id":"t-s18","from":"q-tls","to":"q-fail","event":"timer","when":{"fault":"req"}},
+          {"id":"p-s18","from":"q-fail","to":"q-tls","event":"previous","when":{"fault":"req"}},
+          {"id":"r-s18","from":"q-fail","to":"dns-lookup","event":"reset","when":{"fault":"req"}},
+          {"id":"n-request-retry","from":"q-fail","to":"q-retry","event":"next","when":{"fault":"req","budget":"n"}},
+          {"id":"t-request-retry","from":"q-fail","to":"q-retry","event":"timer","when":{"fault":"req","budget":"n"}},
+          {"id":"p-request-retry","from":"q-retry","to":"q-fail","event":"previous","when":{"fault":"req","budget":"n"}},
+          {"id":"r-request-retry","from":"q-retry","to":"dns-lookup","event":"reset","when":{"fault":"req","budget":"n"}},
+          {"id":"n-request-retry-blocked","from":"q-fail","to":"q-retry-blocked","event":"next","when":{"fault":"req","budget":"t"}},
+          {"id":"t-request-retry-blocked","from":"q-fail","to":"q-retry-blocked","event":"timer","when":{"fault":"req","budget":"t"}},
+          {"id":"p-request-retry-blocked","from":"q-retry-blocked","to":"q-fail","event":"previous","when":{"fault":"req","budget":"t"}},
+          {"id":"r-request-retry-blocked","from":"q-retry-blocked","to":"dns-lookup","event":"reset","when":{"fault":"req","budget":"t"}},
+          {"id":"n-s21","from":"dns-lookup","to":"s-tcp","event":"next","when":{"fault":"resp"}},
+          {"id":"t-s21","from":"dns-lookup","to":"s-tcp","event":"timer","when":{"fault":"resp"}},
+          {"id":"p-s21","from":"s-tcp","to":"dns-lookup","event":"previous","when":{"fault":"resp"}},
+          {"id":"r-s21","from":"s-tcp","to":"dns-lookup","event":"reset","when":{"fault":"resp"}},
+          {"id":"n-s22","from":"s-tcp","to":"s-tls","event":"next","when":{"fault":"resp"}},
+          {"id":"t-s22","from":"s-tcp","to":"s-tls","event":"timer","when":{"fault":"resp"}},
+          {"id":"p-s22","from":"s-tls","to":"s-tcp","event":"previous","when":{"fault":"resp"}},
+          {"id":"r-s22","from":"s-tls","to":"dns-lookup","event":"reset","when":{"fault":"resp"}},
+          {"id":"n-s23","from":"s-tls","to":"s-req","event":"next","when":{"fault":"resp"}},
+          {"id":"t-s23","from":"s-tls","to":"s-req","event":"timer","when":{"fault":"resp"}},
+          {"id":"p-s23","from":"s-req","to":"s-tls","event":"previous","when":{"fault":"resp"}},
+          {"id":"r-s23","from":"s-req","to":"dns-lookup","event":"reset","when":{"fault":"resp"}},
+          {"id":"n-s24","from":"s-req","to":"deadline-exceeded","event":"next","when":{"fault":"resp"}},
+          {"id":"t-s24","from":"s-req","to":"deadline-exceeded","event":"timer","when":{"fault":"resp"}},
+          {"id":"p-s24","from":"deadline-exceeded","to":"s-req","event":"previous","when":{"fault":"resp"}},
+          {"id":"r-s24","from":"deadline-exceeded","to":"dns-lookup","event":"reset","when":{"fault":"resp"}},
+          {"id":"n-s25","from":"deadline-exceeded","to":"s-inquiry","event":"next","when":{"fault":"resp"}},
+          {"id":"t-s25","from":"deadline-exceeded","to":"s-inquiry","event":"timer","when":{"fault":"resp"}},
+          {"id":"p-s25","from":"s-inquiry","to":"deadline-exceeded","event":"previous","when":{"fault":"resp"}},
+          {"id":"r-s25","from":"s-inquiry","to":"dns-lookup","event":"reset","when":{"fault":"resp"}},
+          {"id":"n-response-retry","from":"s-inquiry","to":"s-retry","event":"next","when":{"fault":"resp","budget":"n"}},
+          {"id":"t-response-retry","from":"s-inquiry","to":"s-retry","event":"timer","when":{"fault":"resp","budget":"n"}},
+          {"id":"p-response-retry","from":"s-retry","to":"s-inquiry","event":"previous","when":{"fault":"resp","budget":"n"}},
+          {"id":"r-response-retry","from":"s-retry","to":"dns-lookup","event":"reset","when":{"fault":"resp","budget":"n"}},
+          {"id":"n-response-retry-blocked","from":"s-inquiry","to":"s-retry-blocked","event":"next","when":{"fault":"resp","budget":"t"}},
+          {"id":"t-response-retry-blocked","from":"s-inquiry","to":"s-retry-blocked","event":"timer","when":{"fault":"resp","budget":"t"}},
+          {"id":"p-response-retry-blocked","from":"s-retry-blocked","to":"s-inquiry","event":"previous","when":{"fault":"resp","budget":"t"}},
+          {"id":"r-response-retry-blocked","from":"s-retry-blocked","to":"dns-lookup","event":"reset","when":{"fault":"resp","budget":"t"}}
+        ],
+        "outcomes": [
+          {"id":"h-ok-outcome","stateId":"h-ok","label":"elapsed=1900ms; remaining=100ms; budget-gate=allowed"},
+          {"id":"h-retry-blocked-outcome","stateId":"h-retry-blocked","label":"elapsed=1901ms; remaining=99ms; budget-gate=blocked"},
+          {"id":"d-retry-outcome","stateId":"d-retry","label":"elapsed=1900ms; remaining=100ms; budget-gate=allowed"},
+          {"id":"d-retry-blocked-outcome","stateId":"d-retry-blocked","label":"elapsed=1901ms; remaining=99ms; budget-gate=blocked"},
+          {"id":"t-retry-outcome","stateId":"t-retry","label":"elapsed=1900ms; remaining=100ms; budget-gate=allowed"},
+          {"id":"t-retry-blocked-outcome","stateId":"t-retry-blocked","label":"elapsed=1901ms; remaining=99ms; budget-gate=blocked"},
+          {"id":"l-retry-blocked-outcome","stateId":"l-retry-blocked","label":"elapsed=1900ms; remaining=100ms; budget-gate=allowed"},
+          {"id":"l-retry-blocked-tight-outcome","stateId":"l-retry-blocked-tight","label":"elapsed=1901ms; remaining=99ms; budget-gate=blocked"},
+          {"id":"q-retry-outcome","stateId":"q-retry","label":"elapsed=1900ms; remaining=100ms; budget-gate=allowed"},
+          {"id":"q-retry-blocked-outcome","stateId":"q-retry-blocked","label":"elapsed=1901ms; remaining=99ms; budget-gate=blocked"},
+          {"id":"s-retry-outcome","stateId":"s-retry","label":"elapsed=1900ms; remaining=100ms; budget-gate=allowed"},
+          {"id":"s-retry-blocked-outcome","stateId":"s-retry-blocked","label":"elapsed=1901ms; remaining=99ms; budget-gate=blocked"}
+        ]
+      }
+    }
+  ],
   "review": {
-    "intervalDays": [1, 7, 30, 90],
+    "intervalDays": [
+      1,
+      7,
+      30,
+      90
+    ],
     "prompts": [
       "総期限2000msへ一回の再試行を入れるなら、各試行へ何ms配分するか",
       "TCP成功から業務成功までに残る結果不明状態は何か",

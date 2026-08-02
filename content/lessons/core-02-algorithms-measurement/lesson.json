@@ -137,24 +137,117 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "big-O notation",
       "url": "https://www.nist.gov/dads/HTML/bigOnotation.html",
       "kind": "primary"
     },
     {
+      "id": "src-02",
       "title": "SPEC CPU®2017 Run and Reporting Rules",
       "url": "https://www.spec.org/cpu2017/Docs/runrules.html",
       "kind": "standard"
     },
     {
+      "id": "src-03",
       "title": "timeit — Measure execution time of small code snippets",
       "url": "https://docs.python.org/3/library/timeit.html",
       "kind": "primary"
     },
     {
+      "id": "src-04",
       "title": "Quicksort",
       "url": "https://www.cs.princeton.edu/courses/archive/spr18/cos226/lectures/23Quicksort.pdf",
       "kind": "primary"
+    }
+  ],
+  "visualizations": [
+    {
+      "id": "complexity-growth-static",
+      "type": "comparison",
+      "caption": "アルゴリズム再選択の検証経路",
+      "question": "同じquery列への構築済みlookupで、入力特性・size・setup・space・query回数が選択をどう変えるか。",
+      "afterSection": "mentalModel",
+      "objectiveIds": ["obj-predict", "obj-measure", "obj-reselect"],
+      "evidenceIds": ["benchmark-report", "assessment"],
+      "sourceIds": ["src-01", "src-02", "src-03", "src-04"],
+      "expectedObservation": "best・average・worst caseを区別し、予測と反復実測の差から再選択条件を説明できる。",
+      "notes": [
+        "操作モデル: 比較、hash計算、割り当てなど、支配的な操作を決める。",
+        "成長率予測: 支配操作がΘ(n)ならnを2倍にしたとき約2倍、Θ(n²)なら約4倍と予測する。",
+        "入力モデル: サイズだけでなく、順序、重複率、問い合わせ位置を固定する。",
+        "測定設計: 準備と対象区間を分け、ウォームアップ後に複数回測る。",
+        "統計要約: 全値、中央値、範囲を残し、除外規則を先に決める。",
+        "差の診断: 定数項、キャッシュ、GC、処理系、外れ値を追加測定で反証する。",
+        "再選択条件: 本番のn、分布、呼出回数の変化を監視する。"
+      ],
+      "payload": {
+        "alternatives": [
+          {"id": "linear-scan", "label": "線形走査", "detail": "順序なし配列を先頭から探索する候補。"},
+          {"id": "binary-search", "label": "二分探索", "detail": "整列済み配列を半分ずつ絞る候補。"},
+          {"id": "hash-lookup", "label": "hash lookup", "detail": "hash tableを構築してkeyを探索する候補。"}
+        ],
+        "criteria": [
+          {"id": "best-case", "label": "best case", "detail": "最も有利な入力配置での支配操作。"},
+          {"id": "average-case", "label": "average case", "detail": "明示した入力分布の期待操作回数。"},
+          {"id": "worst-case", "label": "worst case", "detail": "最も不利な入力と衝突条件の上界。"},
+          {"id": "setup-cost", "label": "setup / build cost", "detail": "worked exampleで分離測定するset構築または整列の費用。"},
+          {"id": "space-cost", "label": "space cost", "detail": "追加indexやcopyに必要なmemory。"},
+          {"id": "query-crossover", "label": "query count / crossover", "detail": "setup費用をlookup短縮で償却できる環境固有のquery回数。"}
+        ],
+        "cells": [
+          {"id": "linear-best", "alternativeId": "linear-scan", "criterionId": "best-case", "value": "Θ(1): 先頭で一致"},
+          {"id": "linear-average", "alternativeId": "linear-scan", "criterionId": "average-case", "value": "Θ(n): 平均で約n/2比較"},
+          {"id": "linear-worst", "alternativeId": "linear-scan", "criterionId": "worst-case", "value": "Θ(n): 末尾または不在"},
+          {"id": "linear-setup", "alternativeId": "linear-scan", "criterionId": "setup-cost", "value": "追加構築なしΘ(1)"},
+          {"id": "linear-space", "alternativeId": "linear-scan", "criterionId": "space-cost", "value": "追加space Θ(1)"},
+          {"id": "linear-crossover", "alternativeId": "linear-scan", "criterionId": "query-crossover", "value": "少数queryではbuild費用がないため候補"},
+          {"id": "binary-best", "alternativeId": "binary-search", "criterionId": "best-case", "value": "Θ(1): 中央で一致"},
+          {"id": "binary-average", "alternativeId": "binary-search", "criterionId": "average-case", "value": "Θ(log n): 整列済み入力"},
+          {"id": "binary-worst", "alternativeId": "binary-search", "criterionId": "worst-case", "value": "Θ(log n): 不在でも半減"},
+          {"id": "binary-setup", "alternativeId": "binary-search", "criterionId": "setup-cost", "value": "未整列ならsort Θ(n log n)"},
+          {"id": "binary-space", "alternativeId": "binary-search", "criterionId": "space-cost", "value": "sort実装とcopy方針に依存"},
+          {"id": "binary-crossover", "alternativeId": "binary-search", "criterionId": "query-crossover", "value": "sort費用を複数queryで償却"},
+          {"id": "hash-best", "alternativeId": "hash-lookup", "criterionId": "best-case", "value": "Θ(1): 衝突なし"},
+          {"id": "hash-average", "alternativeId": "hash-lookup", "criterionId": "average-case", "value": "期待Θ(1): hash分布を仮定"},
+          {"id": "hash-worst", "alternativeId": "hash-lookup", "criterionId": "worst-case", "value": "Θ(n): 全keyが衝突"},
+          {"id": "hash-setup", "alternativeId": "hash-lookup", "criterionId": "setup-cost", "value": "set構築Θ(n)をlookupと分離測定"},
+          {"id": "hash-space", "alternativeId": "hash-lookup", "criterionId": "space-cost", "value": "set tableの追加space Θ(n)"},
+          {"id": "hash-crossover", "alternativeId": "hash-lookup", "criterionId": "query-crossover", "value": "set_build中央値 ÷ 1 query当たり短縮; query回数8と比較"}
+        ]
+      },
+      "simulation": {
+        "kind": "complexity-growth",
+        "interactionMode": "scenario",
+        "parameters": [
+          {"id": "input-size", "label": "入力size", "control": "select", "options": [{"id": "small", "label": "n=1000"}, {"id": "crossover-size", "label": "n=10000"}, {"id": "large", "label": "n=100000"}], "defaultOptionId": "small"},
+          {"id": "algorithm-family", "label": "algorithm family", "control": "radio", "options": [{"id": "linear", "label": "線形走査"}, {"id": "binary", "label": "二分探索"}, {"id": "hash", "label": "hash lookup"}], "defaultOptionId": "linear"}
+        ],
+        "initialStateId": "small-input",
+        "states": [
+          {"id": "small-input", "label": "n=1000・線形走査", "status": "理論操作数 n=1000: 線形1000・二分10・hash期待1。測定sampleは7反復のmedian_ns/range_nsを別欄へ記録し、普遍的な時間にしない。", "when": {"input-size": "small", "algorithm-family": "linear"}, "activeNodeIds": ["linear-scan"], "activeEdgeIds": []},
+          {"id": "small-binary", "label": "n=1000・二分探索", "status": "理論操作数 n=1000: 線形1000・二分10・hash期待1。未整列ならsort費用を測定sampleと分離する。", "when": {"input-size": "small", "algorithm-family": "binary"}, "activeNodeIds": ["binary-search"], "activeEdgeIds": []},
+          {"id": "small-hash", "label": "n=1000・hash", "status": "理論操作数 n=1000: 線形1000・二分10・hash期待1。buildとlookupのmedian_ns/range_nsを分ける。", "when": {"input-size": "small", "algorithm-family": "hash"}, "activeNodeIds": ["hash-lookup"], "activeEdgeIds": []},
+          {"id": "crossover-linear", "label": "n=10000・線形走査", "status": "理論操作数 n=10000: 線形10000・二分14・hash期待1。測定sampleの増加率を理論値へ後付けしない。", "when": {"input-size": "crossover-size", "algorithm-family": "linear"}, "activeNodeIds": ["linear-scan"], "activeEdgeIds": []},
+          {"id": "crossover", "label": "n=10000・二分探索", "status": "理論操作数 n=10000: 線形10000・二分14・hash期待1。sort費用をquery回数で償却できるか測る。", "when": {"input-size": "crossover-size", "algorithm-family": "binary"}, "activeNodeIds": ["binary-search"], "activeEdgeIds": []},
+          {"id": "crossover-hash", "label": "n=10000・hash", "status": "理論操作数 n=10000: 線形10000・二分14・hash期待1。build中央値とlookup短縮の交差条件を算出する。", "when": {"input-size": "crossover-size", "algorithm-family": "hash"}, "activeNodeIds": ["hash-lookup"], "activeEdgeIds": []},
+          {"id": "large-linear", "label": "n=100000・線形走査", "status": "理論操作数 n=100000: 線形100000・二分17・hash期待1。median_ns/range_nsとの差を追加測定で診断する。", "when": {"input-size": "large", "algorithm-family": "linear"}, "activeNodeIds": ["linear-scan"], "activeEdgeIds": []},
+          {"id": "large-binary", "label": "n=100000・二分探索", "status": "理論操作数 n=100000: 線形100000・二分17・hash期待1。整列条件とsetupの測定sampleを別々に残す。", "when": {"input-size": "large", "algorithm-family": "binary"}, "activeNodeIds": ["binary-search"], "activeEdgeIds": []},
+          {"id": "large-input", "label": "n=100000・hash", "status": "理論操作数 n=100000: 線形100000・二分17・hash期待1。衝突とmemoryを測り、環境依存時間を普遍化しない。", "when": {"input-size": "large", "algorithm-family": "hash"}, "activeNodeIds": ["hash-lookup"], "activeEdgeIds": []}
+        ],
+        "transitions": [],
+        "outcomes": [
+          {"id": "small-linear-result", "stateId": "small-input", "label": "小入力ではsetup不要という候補を実測で確認する。"},
+          {"id": "small-binary-result", "stateId": "small-binary", "label": "小入力でも整列条件とsetupを分離する。"},
+          {"id": "small-hash-result", "stateId": "small-hash", "label": "小入力でもbuildと追加spaceを比較する。"},
+          {"id": "crossover-linear-result", "stateId": "crossover-linear", "label": "線形走査側の交差点測定を残す。"},
+          {"id": "crossover-binary-result", "stateId": "crossover", "label": "sort費用を含む二分探索の交差点を残す。"},
+          {"id": "crossover-hash-result", "stateId": "crossover-hash", "label": "hash buildを償却するquery回数を残す。"},
+          {"id": "large-linear-result", "stateId": "large-linear", "label": "線形成長と測定環境の差を診断する。"},
+          {"id": "large-binary-result", "stateId": "large-binary", "label": "対数成長と整列費用を別々に報告する。"},
+          {"id": "large-hash-result", "stateId": "large-input", "label": "期待計算量とworst caseを区別して報告する。"}
+        ]
+      }
     }
   ],
   "review": {

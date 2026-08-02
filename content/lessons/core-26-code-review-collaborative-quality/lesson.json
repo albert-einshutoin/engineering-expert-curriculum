@@ -15,17 +15,26 @@
     {
       "id": "obj-review-priority",
       "statement": "変更のrisk kindと観測証拠からreview findingのpriorityを再現可能に分類できる",
-      "evidenceIds": ["review-cycle", "assessment"]
+      "evidenceIds": [
+        "review-cycle",
+        "assessment"
+      ]
     },
     {
       "id": "obj-author-enablement",
       "statement": "人格ではなく変更へ向けたevidenceとactionable fixでauthorの修正を支援できる",
-      "evidenceIds": ["review-cycle", "teach-back"]
+      "evidenceIds": [
+        "review-cycle",
+        "teach-back"
+      ]
     },
     {
       "id": "obj-independent-review",
       "statement": "修正済みsnapshotを別reviewerが独立再評価し、system outcomeまで検証できる",
-      "evidenceIds": ["review-cycle", "transfer"]
+      "evidenceIds": [
+        "review-cycle",
+        "transfer"
+      ]
     }
   ],
   "evidence": [
@@ -54,27 +63,37 @@
     {
       "level": "recognize",
       "criterion": "blocking risk、改善提案、質問、称賛を区別し、priorityの根拠を識別できる",
-      "evidenceIds": ["review-cycle"]
+      "evidenceIds": [
+        "review-cycle"
+      ]
     },
     {
       "level": "explain",
       "criterion": "evidenceとactionable fixがauthorの学習と変更速度を両立する理由を説明できる",
-      "evidenceIds": ["teach-back"]
+      "evidenceIds": [
+        "teach-back"
+      ]
     },
     {
       "level": "apply",
       "criterion": "sample changeからfinding、priority、evidence、修正案を作りauthor fixへ結べる",
-      "evidenceIds": ["review-cycle"]
+      "evidenceIds": [
+        "review-cycle"
+      ]
     },
     {
       "level": "diagnose",
       "criterion": "好みの強制、priority欠落、証拠のない断定、同一reviewerだけの再確認を反証できる",
-      "evidenceIds": ["assessment"]
+      "evidenceIds": [
+        "assessment"
+      ]
     },
     {
       "level": "lead",
       "criterion": "別contributorが同じrisk判断と独立再評価を再現できるreview境界を運営できる",
-      "evidenceIds": ["transfer"]
+      "evidenceIds": [
+        "transfer"
+      ]
     }
   ],
   "lab": {
@@ -140,28 +159,141 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "The Standard of Code Review",
       "url": "https://google.github.io/eng-practices/review/reviewer/standard.html",
       "kind": "primary"
     },
     {
+      "id": "src-02",
       "title": "How to write code review comments",
       "url": "https://google.github.io/eng-practices/review/reviewer/comments.html",
       "kind": "primary"
     },
     {
+      "id": "src-03",
       "title": "Guide to the Software Engineering Body of Knowledge (SWEBOK Guide), Version 4.0a, September 2025",
       "url": "https://ieeecs-media.computer.org/media/education/swebok/swebok-v4.pdf",
       "kind": "standard"
     },
     {
+      "id": "src-04",
       "title": "Characteristics of Useful Code Reviews: An Empirical Study at Microsoft",
       "url": "https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/bosu2015useful.pdf",
       "kind": "peer-reviewed"
     }
   ],
+  "visualizations": [
+    {
+      "id": "collaborative-review-loop",
+      "type": "state-loop",
+      "caption": "sample changeから共同で品質を改善し独立再評価するreview loop",
+      "question": "author fix後に別reviewerがどのprobeを再実行し、blocking findingの解消を判断するか。",
+      "afterSection": "mentalModel",
+      "objectiveIds": [
+        "obj-review-priority",
+        "obj-author-enablement",
+        "obj-independent-review"
+      ],
+      "evidenceIds": [
+        "review-cycle"
+      ],
+      "sourceIds": [
+        "src-01",
+        "src-02",
+        "src-04"
+      ],
+      "expectedObservation": "riskとfinding IDからpatchを追跡し、feedback cycleを保ちながら独立再評価の証拠をterminalへ確定できる。",
+      "notes": [],
+      "payload": {
+        "states": [
+          {
+            "id": "scope",
+            "label": "Scope",
+            "detail": "changeとrisk kind、review budgetを固定する。"
+          },
+          {
+            "id": "initial-review",
+            "label": "Initial review",
+            "detail": "priority、evidence、actionable fixを同じ入力から導く。"
+          },
+          {
+            "id": "author-fix",
+            "label": "Author fix",
+            "detail": "指摘IDに対応するpatchをactual artifactへ適用し、patch IDを残す。"
+          },
+          {
+            "id": "independent-review",
+            "label": "Independent re-evaluation",
+            "detail": "初回とは別のreviewerがprobeを再実行し、actualとexpectedからblocking findingとsystem outcomeを確認する。"
+          },
+          {
+            "id": "enablement",
+            "label": "Enablement",
+            "detail": "判断根拠を残し、他のcontributorが再利用できるようにする。"
+          },
+          {
+            "id": "evidence-ready",
+            "label": "Review evidence ready",
+            "detail": "別reviewerのprobe、blocking finding解消、system outcome、再利用可能な判断根拠を一つの完了証拠として確定する。"
+          }
+        ],
+        "transitions": [
+          {
+            "id": "scope-to-initial-review",
+            "from": "scope",
+            "to": "initial-review",
+            "label": "次の証拠を得る"
+          },
+          {
+            "id": "initial-review-to-author-fix",
+            "from": "initial-review",
+            "to": "author-fix",
+            "label": "次の証拠を得る"
+          },
+          {
+            "id": "author-fix-to-independent-review",
+            "from": "author-fix",
+            "to": "independent-review",
+            "label": "次の証拠を得る"
+          },
+          {
+            "id": "independent-review-to-enablement",
+            "from": "independent-review",
+            "to": "enablement",
+            "label": "次の証拠を得る"
+          },
+          {
+            "id": "independent-feedback",
+            "from": "independent-review",
+            "to": "author-fix",
+            "label": "blocking findingが残れば再修正する"
+          },
+          {
+            "id": "enablement-feedback",
+            "from": "enablement",
+            "to": "scope",
+            "label": "次のchangeでriskを再評価する"
+          },
+          {
+            "id": "enablement-to-evidence-ready",
+            "from": "enablement",
+            "to": "evidence-ready",
+            "label": "独立再評価とsystem outcomeの証拠を確定する"
+          }
+        ],
+        "exitStateId": "evidence-ready",
+        "recoveryStateId": "author-fix"
+      }
+    }
+  ],
   "review": {
-    "intervalDays": [1, 7, 30, 90],
+    "intervalDays": [
+      1,
+      7,
+      30,
+      90
+    ],
     "prompts": [
       "priorityと個人的な好みを分ける最小証拠は何か",
       "actionable commentがauthor enablementになる条件は何か",

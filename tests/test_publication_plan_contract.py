@@ -898,6 +898,13 @@ gh pr view "$PUBLIC_PR_URL" --repo "wrong/project" # --repo "$PUBLIC_REPOSITORY_
             "tools/check_site.py --root site --require-current-release",
             publication,
         )
+        pages = _read(WORKFLOWS_ROOT / "pages.yml")
+        self.assertIn(
+            "tools/check_site.py --root site-first --require-current-release "
+            "--with-release-manifest",
+            pages,
+        )
+        self.assertIn("tools/verify_deployed_site.py", pages)
 
     def test_link_audit_is_described_as_optional_and_not_implemented(self) -> None:
         design = _read(DESIGN_SPEC)

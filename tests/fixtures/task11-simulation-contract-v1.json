@@ -1,0 +1,1830 @@
+{
+  "version": 1,
+  "lessons": [
+    {
+      "lessonId": "core-16-hci-usability-accessibility",
+      "simulation": {
+        "states": [
+          {
+            "id": "audit-start",
+            "status": "監査lensでありviewportや支援技術のエミュレータではありません。実ブラウザと支援技術で確認が必要。",
+            "when": {},
+            "activeNodeIds": [
+              "scope"
+            ],
+            "activeEdgeIds": []
+          },
+          {
+            "id": "wide-heading-motion",
+            "status": "wideで見出しのfocus orderとstandard motionの可視textを監査する。実ブラウザと支援技術で確認が必要。",
+            "when": {
+              "viewport": "wide",
+              "focus-step": "heading",
+              "motion-preference": "standard"
+            },
+            "activeNodeIds": [
+              "viewport-wide",
+              "focus-heading",
+              "motion-standard"
+            ],
+            "activeEdgeIds": [
+              "checklist-observe-wide",
+              "checklist-wide-heading",
+              "checklist-heading-standard"
+            ]
+          },
+          {
+            "id": "wide-control-motion",
+            "status": "wideでcontrolのfocus orderとstandard motionの可視textを監査する。実ブラウザと支援技術で確認が必要。",
+            "when": {
+              "viewport": "wide",
+              "focus-step": "control",
+              "motion-preference": "standard"
+            },
+            "activeNodeIds": [
+              "viewport-wide",
+              "focus-control",
+              "motion-standard"
+            ],
+            "activeEdgeIds": [
+              "checklist-observe-wide",
+              "checklist-wide-control",
+              "checklist-control-standard"
+            ]
+          },
+          {
+            "id": "wide-reset-motion",
+            "status": "wideでresetのfocus orderとstandard motionの状態復元を監査する。実ブラウザと支援技術で確認が必要。",
+            "when": {
+              "viewport": "wide",
+              "focus-step": "reset",
+              "motion-preference": "standard"
+            },
+            "activeNodeIds": [
+              "viewport-wide",
+              "focus-reset",
+              "motion-standard"
+            ],
+            "activeEdgeIds": [
+              "checklist-observe-wide",
+              "checklist-wide-reset",
+              "checklist-reset-standard"
+            ]
+          },
+          {
+            "id": "wide-heading-reduced",
+            "status": "wideで見出しのfocus orderとreduced motionの手動操作を監査する。実ブラウザと支援技術で確認が必要。",
+            "when": {
+              "viewport": "wide",
+              "focus-step": "heading",
+              "motion-preference": "reduced"
+            },
+            "activeNodeIds": [
+              "viewport-wide",
+              "focus-heading",
+              "motion-reduced"
+            ],
+            "activeEdgeIds": [
+              "checklist-observe-wide",
+              "checklist-wide-heading",
+              "checklist-heading-reduced"
+            ]
+          },
+          {
+            "id": "wide-control-reduced",
+            "status": "wideでcontrolのfocus orderとreduced motionの手動操作を監査する。実ブラウザと支援技術で確認が必要。",
+            "when": {
+              "viewport": "wide",
+              "focus-step": "control",
+              "motion-preference": "reduced"
+            },
+            "activeNodeIds": [
+              "viewport-wide",
+              "focus-control",
+              "motion-reduced"
+            ],
+            "activeEdgeIds": [
+              "checklist-observe-wide",
+              "checklist-wide-control",
+              "checklist-control-reduced"
+            ]
+          },
+          {
+            "id": "reduced-motion",
+            "status": "wideでresetのfocus orderとreduced motionのmanual navigationを監査する。実ブラウザと支援技術で確認が必要。",
+            "when": {
+              "viewport": "wide",
+              "focus-step": "reset",
+              "motion-preference": "reduced"
+            },
+            "activeNodeIds": [
+              "viewport-wide",
+              "focus-reset",
+              "motion-reduced"
+            ],
+            "activeEdgeIds": [
+              "checklist-observe-wide",
+              "checklist-wide-reset",
+              "checklist-reset-reduced"
+            ]
+          },
+          {
+            "id": "narrow-viewport",
+            "status": "320px reflowで見出しのfocus orderとstandard motionを監査する。実ブラウザと支援技術で確認が必要。",
+            "when": {
+              "viewport": "narrow",
+              "focus-step": "heading",
+              "motion-preference": "standard"
+            },
+            "activeNodeIds": [
+              "viewport-narrow",
+              "focus-heading",
+              "motion-standard"
+            ],
+            "activeEdgeIds": [
+              "checklist-observe-narrow",
+              "checklist-narrow-heading",
+              "checklist-heading-standard"
+            ]
+          },
+          {
+            "id": "keyboard-focus",
+            "status": "320px reflowでcontrolのkeyboard focusとstandard motionを監査する。実ブラウザと支援技術で確認が必要。",
+            "when": {
+              "viewport": "narrow",
+              "focus-step": "control",
+              "motion-preference": "standard"
+            },
+            "activeNodeIds": [
+              "viewport-narrow",
+              "focus-control",
+              "motion-standard"
+            ],
+            "activeEdgeIds": [
+              "checklist-observe-narrow",
+              "checklist-narrow-control",
+              "checklist-control-standard"
+            ]
+          },
+          {
+            "id": "narrow-reset-motion",
+            "status": "320px reflowでreset到達とstandard motionの状態復元を監査する。実ブラウザと支援技術で確認が必要。",
+            "when": {
+              "viewport": "narrow",
+              "focus-step": "reset",
+              "motion-preference": "standard"
+            },
+            "activeNodeIds": [
+              "viewport-narrow",
+              "focus-reset",
+              "motion-standard"
+            ],
+            "activeEdgeIds": [
+              "checklist-observe-narrow",
+              "checklist-narrow-reset",
+              "checklist-reset-standard"
+            ]
+          },
+          {
+            "id": "narrow-heading-reduced",
+            "status": "320px reflowで見出しとreduced motionのmanual navigationを監査する。実ブラウザと支援技術で確認が必要。",
+            "when": {
+              "viewport": "narrow",
+              "focus-step": "heading",
+              "motion-preference": "reduced"
+            },
+            "activeNodeIds": [
+              "viewport-narrow",
+              "focus-heading",
+              "motion-reduced"
+            ],
+            "activeEdgeIds": [
+              "checklist-observe-narrow",
+              "checklist-narrow-heading",
+              "checklist-heading-reduced"
+            ]
+          },
+          {
+            "id": "narrow-control-reduced",
+            "status": "320px reflowでcontrol focusとreduced motionの手動操作を監査する。実ブラウザと支援技術で確認が必要。",
+            "when": {
+              "viewport": "narrow",
+              "focus-step": "control",
+              "motion-preference": "reduced"
+            },
+            "activeNodeIds": [
+              "viewport-narrow",
+              "focus-control",
+              "motion-reduced"
+            ],
+            "activeEdgeIds": [
+              "checklist-observe-narrow",
+              "checklist-narrow-control",
+              "checklist-control-reduced"
+            ]
+          },
+          {
+            "id": "narrow-reset-reduced",
+            "status": "320px reflowでresetとreduced motionのmanual navigationを監査する。実ブラウザと支援技術で確認が必要。",
+            "when": {
+              "viewport": "narrow",
+              "focus-step": "reset",
+              "motion-preference": "reduced"
+            },
+            "activeNodeIds": [
+              "viewport-narrow",
+              "focus-reset",
+              "motion-reduced"
+            ],
+            "activeEdgeIds": [
+              "checklist-observe-narrow",
+              "checklist-narrow-reset",
+              "checklist-reset-reduced"
+            ]
+          }
+        ],
+        "transitions": [
+          {
+            "id": "apply-wide-heading-motion",
+            "from": "audit-start",
+            "to": "wide-heading-motion",
+            "event": "parameter-change",
+            "when": {
+              "viewport": "wide",
+              "focus-step": "heading",
+              "motion-preference": "standard"
+            }
+          },
+          {
+            "id": "apply-wide-control-motion",
+            "from": "audit-start",
+            "to": "wide-control-motion",
+            "event": "parameter-change",
+            "when": {
+              "viewport": "wide",
+              "focus-step": "control",
+              "motion-preference": "standard"
+            }
+          },
+          {
+            "id": "apply-wide-reset-motion",
+            "from": "audit-start",
+            "to": "wide-reset-motion",
+            "event": "parameter-change",
+            "when": {
+              "viewport": "wide",
+              "focus-step": "reset",
+              "motion-preference": "standard"
+            }
+          },
+          {
+            "id": "apply-wide-heading-reduced",
+            "from": "audit-start",
+            "to": "wide-heading-reduced",
+            "event": "parameter-change",
+            "when": {
+              "viewport": "wide",
+              "focus-step": "heading",
+              "motion-preference": "reduced"
+            }
+          },
+          {
+            "id": "apply-wide-control-reduced",
+            "from": "audit-start",
+            "to": "wide-control-reduced",
+            "event": "parameter-change",
+            "when": {
+              "viewport": "wide",
+              "focus-step": "control",
+              "motion-preference": "reduced"
+            }
+          },
+          {
+            "id": "apply-wide-reset-reduced",
+            "from": "audit-start",
+            "to": "reduced-motion",
+            "event": "parameter-change",
+            "when": {
+              "viewport": "wide",
+              "focus-step": "reset",
+              "motion-preference": "reduced"
+            }
+          },
+          {
+            "id": "apply-narrow-heading-motion",
+            "from": "audit-start",
+            "to": "narrow-viewport",
+            "event": "parameter-change",
+            "when": {
+              "viewport": "narrow",
+              "focus-step": "heading",
+              "motion-preference": "standard"
+            }
+          },
+          {
+            "id": "apply-narrow-control-motion",
+            "from": "audit-start",
+            "to": "keyboard-focus",
+            "event": "parameter-change",
+            "when": {
+              "viewport": "narrow",
+              "focus-step": "control",
+              "motion-preference": "standard"
+            }
+          },
+          {
+            "id": "apply-narrow-reset-motion",
+            "from": "audit-start",
+            "to": "narrow-reset-motion",
+            "event": "parameter-change",
+            "when": {
+              "viewport": "narrow",
+              "focus-step": "reset",
+              "motion-preference": "standard"
+            }
+          },
+          {
+            "id": "apply-narrow-heading-reduced",
+            "from": "audit-start",
+            "to": "narrow-heading-reduced",
+            "event": "parameter-change",
+            "when": {
+              "viewport": "narrow",
+              "focus-step": "heading",
+              "motion-preference": "reduced"
+            }
+          },
+          {
+            "id": "apply-narrow-control-reduced",
+            "from": "audit-start",
+            "to": "narrow-control-reduced",
+            "event": "parameter-change",
+            "when": {
+              "viewport": "narrow",
+              "focus-step": "control",
+              "motion-preference": "reduced"
+            }
+          },
+          {
+            "id": "apply-narrow-reset-reduced",
+            "from": "audit-start",
+            "to": "narrow-reset-reduced",
+            "event": "parameter-change",
+            "when": {
+              "viewport": "narrow",
+              "focus-step": "reset",
+              "motion-preference": "reduced"
+            }
+          },
+          {
+            "id": "next-wide-heading-motion",
+            "from": "audit-start",
+            "to": "wide-heading-motion",
+            "event": "next",
+            "when": {
+              "viewport": "wide",
+              "focus-step": "heading",
+              "motion-preference": "standard"
+            }
+          },
+          {
+            "id": "next-wide-control-motion",
+            "from": "audit-start",
+            "to": "wide-control-motion",
+            "event": "next",
+            "when": {
+              "viewport": "wide",
+              "focus-step": "control",
+              "motion-preference": "standard"
+            }
+          },
+          {
+            "id": "next-wide-reset-motion",
+            "from": "audit-start",
+            "to": "wide-reset-motion",
+            "event": "next",
+            "when": {
+              "viewport": "wide",
+              "focus-step": "reset",
+              "motion-preference": "standard"
+            }
+          },
+          {
+            "id": "next-wide-heading-reduced",
+            "from": "audit-start",
+            "to": "wide-heading-reduced",
+            "event": "next",
+            "when": {
+              "viewport": "wide",
+              "focus-step": "heading",
+              "motion-preference": "reduced"
+            }
+          },
+          {
+            "id": "next-wide-control-reduced",
+            "from": "audit-start",
+            "to": "wide-control-reduced",
+            "event": "next",
+            "when": {
+              "viewport": "wide",
+              "focus-step": "control",
+              "motion-preference": "reduced"
+            }
+          },
+          {
+            "id": "next-wide-reset-reduced",
+            "from": "audit-start",
+            "to": "reduced-motion",
+            "event": "next",
+            "when": {
+              "viewport": "wide",
+              "focus-step": "reset",
+              "motion-preference": "reduced"
+            }
+          },
+          {
+            "id": "next-narrow-heading-motion",
+            "from": "audit-start",
+            "to": "narrow-viewport",
+            "event": "next",
+            "when": {
+              "viewport": "narrow",
+              "focus-step": "heading",
+              "motion-preference": "standard"
+            }
+          },
+          {
+            "id": "next-narrow-control-motion",
+            "from": "audit-start",
+            "to": "keyboard-focus",
+            "event": "next",
+            "when": {
+              "viewport": "narrow",
+              "focus-step": "control",
+              "motion-preference": "standard"
+            }
+          },
+          {
+            "id": "next-narrow-reset-motion",
+            "from": "audit-start",
+            "to": "narrow-reset-motion",
+            "event": "next",
+            "when": {
+              "viewport": "narrow",
+              "focus-step": "reset",
+              "motion-preference": "standard"
+            }
+          },
+          {
+            "id": "next-narrow-heading-reduced",
+            "from": "audit-start",
+            "to": "narrow-heading-reduced",
+            "event": "next",
+            "when": {
+              "viewport": "narrow",
+              "focus-step": "heading",
+              "motion-preference": "reduced"
+            }
+          },
+          {
+            "id": "next-narrow-control-reduced",
+            "from": "audit-start",
+            "to": "narrow-control-reduced",
+            "event": "next",
+            "when": {
+              "viewport": "narrow",
+              "focus-step": "control",
+              "motion-preference": "reduced"
+            }
+          },
+          {
+            "id": "next-narrow-reset-reduced",
+            "from": "audit-start",
+            "to": "narrow-reset-reduced",
+            "event": "next",
+            "when": {
+              "viewport": "narrow",
+              "focus-step": "reset",
+              "motion-preference": "reduced"
+            }
+          },
+          {
+            "id": "previous-wide-heading-motion",
+            "from": "wide-heading-motion",
+            "to": "audit-start",
+            "event": "previous",
+            "when": {
+              "viewport": "wide",
+              "focus-step": "heading",
+              "motion-preference": "standard"
+            }
+          },
+          {
+            "id": "previous-wide-control-motion",
+            "from": "wide-control-motion",
+            "to": "audit-start",
+            "event": "previous",
+            "when": {
+              "viewport": "wide",
+              "focus-step": "control",
+              "motion-preference": "standard"
+            }
+          },
+          {
+            "id": "previous-wide-reset-motion",
+            "from": "wide-reset-motion",
+            "to": "audit-start",
+            "event": "previous",
+            "when": {
+              "viewport": "wide",
+              "focus-step": "reset",
+              "motion-preference": "standard"
+            }
+          },
+          {
+            "id": "previous-wide-heading-reduced",
+            "from": "wide-heading-reduced",
+            "to": "audit-start",
+            "event": "previous",
+            "when": {
+              "viewport": "wide",
+              "focus-step": "heading",
+              "motion-preference": "reduced"
+            }
+          },
+          {
+            "id": "previous-wide-control-reduced",
+            "from": "wide-control-reduced",
+            "to": "audit-start",
+            "event": "previous",
+            "when": {
+              "viewport": "wide",
+              "focus-step": "control",
+              "motion-preference": "reduced"
+            }
+          },
+          {
+            "id": "previous-wide-reset-reduced",
+            "from": "reduced-motion",
+            "to": "audit-start",
+            "event": "previous",
+            "when": {
+              "viewport": "wide",
+              "focus-step": "reset",
+              "motion-preference": "reduced"
+            }
+          },
+          {
+            "id": "previous-narrow-heading-motion",
+            "from": "narrow-viewport",
+            "to": "audit-start",
+            "event": "previous",
+            "when": {
+              "viewport": "narrow",
+              "focus-step": "heading",
+              "motion-preference": "standard"
+            }
+          },
+          {
+            "id": "previous-narrow-control-motion",
+            "from": "keyboard-focus",
+            "to": "audit-start",
+            "event": "previous",
+            "when": {
+              "viewport": "narrow",
+              "focus-step": "control",
+              "motion-preference": "standard"
+            }
+          },
+          {
+            "id": "previous-narrow-reset-motion",
+            "from": "narrow-reset-motion",
+            "to": "audit-start",
+            "event": "previous",
+            "when": {
+              "viewport": "narrow",
+              "focus-step": "reset",
+              "motion-preference": "standard"
+            }
+          },
+          {
+            "id": "previous-narrow-heading-reduced",
+            "from": "narrow-heading-reduced",
+            "to": "audit-start",
+            "event": "previous",
+            "when": {
+              "viewport": "narrow",
+              "focus-step": "heading",
+              "motion-preference": "reduced"
+            }
+          },
+          {
+            "id": "previous-narrow-control-reduced",
+            "from": "narrow-control-reduced",
+            "to": "audit-start",
+            "event": "previous",
+            "when": {
+              "viewport": "narrow",
+              "focus-step": "control",
+              "motion-preference": "reduced"
+            }
+          },
+          {
+            "id": "previous-narrow-reset-reduced",
+            "from": "narrow-reset-reduced",
+            "to": "audit-start",
+            "event": "previous",
+            "when": {
+              "viewport": "narrow",
+              "focus-step": "reset",
+              "motion-preference": "reduced"
+            }
+          },
+          {
+            "id": "reset-wide-heading-motion",
+            "from": "wide-heading-motion",
+            "to": "audit-start",
+            "event": "reset",
+            "when": {
+              "viewport": "wide",
+              "focus-step": "heading",
+              "motion-preference": "standard"
+            }
+          },
+          {
+            "id": "reset-wide-control-motion",
+            "from": "wide-control-motion",
+            "to": "audit-start",
+            "event": "reset",
+            "when": {
+              "viewport": "wide",
+              "focus-step": "control",
+              "motion-preference": "standard"
+            }
+          },
+          {
+            "id": "reset-wide-reset-motion",
+            "from": "wide-reset-motion",
+            "to": "audit-start",
+            "event": "reset",
+            "when": {
+              "viewport": "wide",
+              "focus-step": "reset",
+              "motion-preference": "standard"
+            }
+          },
+          {
+            "id": "reset-wide-heading-reduced",
+            "from": "wide-heading-reduced",
+            "to": "audit-start",
+            "event": "reset",
+            "when": {
+              "viewport": "wide",
+              "focus-step": "heading",
+              "motion-preference": "reduced"
+            }
+          },
+          {
+            "id": "reset-wide-control-reduced",
+            "from": "wide-control-reduced",
+            "to": "audit-start",
+            "event": "reset",
+            "when": {
+              "viewport": "wide",
+              "focus-step": "control",
+              "motion-preference": "reduced"
+            }
+          },
+          {
+            "id": "reset-wide-reset-reduced",
+            "from": "reduced-motion",
+            "to": "audit-start",
+            "event": "reset",
+            "when": {
+              "viewport": "wide",
+              "focus-step": "reset",
+              "motion-preference": "reduced"
+            }
+          },
+          {
+            "id": "reset-narrow-heading-motion",
+            "from": "narrow-viewport",
+            "to": "audit-start",
+            "event": "reset",
+            "when": {
+              "viewport": "narrow",
+              "focus-step": "heading",
+              "motion-preference": "standard"
+            }
+          },
+          {
+            "id": "reset-narrow-control-motion",
+            "from": "keyboard-focus",
+            "to": "audit-start",
+            "event": "reset",
+            "when": {
+              "viewport": "narrow",
+              "focus-step": "control",
+              "motion-preference": "standard"
+            }
+          },
+          {
+            "id": "reset-narrow-reset-motion",
+            "from": "narrow-reset-motion",
+            "to": "audit-start",
+            "event": "reset",
+            "when": {
+              "viewport": "narrow",
+              "focus-step": "reset",
+              "motion-preference": "standard"
+            }
+          },
+          {
+            "id": "reset-narrow-heading-reduced",
+            "from": "narrow-heading-reduced",
+            "to": "audit-start",
+            "event": "reset",
+            "when": {
+              "viewport": "narrow",
+              "focus-step": "heading",
+              "motion-preference": "reduced"
+            }
+          },
+          {
+            "id": "reset-narrow-control-reduced",
+            "from": "narrow-control-reduced",
+            "to": "audit-start",
+            "event": "reset",
+            "when": {
+              "viewport": "narrow",
+              "focus-step": "control",
+              "motion-preference": "reduced"
+            }
+          },
+          {
+            "id": "reset-narrow-reset-reduced",
+            "from": "narrow-reset-reduced",
+            "to": "audit-start",
+            "event": "reset",
+            "when": {
+              "viewport": "narrow",
+              "focus-step": "reset",
+              "motion-preference": "reduced"
+            }
+          }
+        ],
+        "outcomes": [
+          {
+            "id": "wide-heading-motion-result",
+            "stateId": "wide-heading-motion",
+            "label": "wideで見出しfocus orderを確認"
+          },
+          {
+            "id": "wide-control-motion-result",
+            "stateId": "wide-control-motion",
+            "label": "wideでcontrol到達を確認"
+          },
+          {
+            "id": "wide-reset-motion-result",
+            "stateId": "wide-reset-motion",
+            "label": "wideでreset順序を確認"
+          },
+          {
+            "id": "wide-heading-reduced-result",
+            "stateId": "wide-heading-reduced",
+            "label": "wide reducedで見出しを確認"
+          },
+          {
+            "id": "wide-control-reduced-result",
+            "stateId": "wide-control-reduced",
+            "label": "wide reducedで手動controlを確認"
+          },
+          {
+            "id": "wide-reset-reduced-result",
+            "stateId": "reduced-motion",
+            "label": "prefers-reduced-motionでmanual resetを確認"
+          },
+          {
+            "id": "narrow-heading-motion-result",
+            "stateId": "narrow-viewport",
+            "label": "320pxのreflow checklistを確認"
+          },
+          {
+            "id": "narrow-control-motion-result",
+            "stateId": "keyboard-focus",
+            "label": "320pxのkeyboard focusを確認"
+          },
+          {
+            "id": "narrow-reset-motion-result",
+            "stateId": "narrow-reset-motion",
+            "label": "320pxのreset到達を確認"
+          },
+          {
+            "id": "narrow-heading-reduced-result",
+            "stateId": "narrow-heading-reduced",
+            "label": "320px reducedで見出しを確認"
+          },
+          {
+            "id": "narrow-control-reduced-result",
+            "stateId": "narrow-control-reduced",
+            "label": "320px reducedでcontrolを確認"
+          },
+          {
+            "id": "narrow-reset-reduced-result",
+            "stateId": "narrow-reset-reduced",
+            "label": "320px reducedでmanual resetを確認"
+          }
+        ]
+      }
+    },
+    {
+      "lessonId": "core-22-evolution-safe-migrations",
+      "simulation": {
+        "states": [
+          {
+            "id": "expand-ready",
+            "status": "expandでold/new readerが共存できるnullable構造を用意し、compatibilityを確認する。",
+            "when": {},
+            "activeNodeIds": [
+              "expand"
+            ],
+            "activeEdgeIds": []
+          },
+          {
+            "id": "dual-write-compatible",
+            "status": "新旧fieldへのwrite parityを観測し、old reader compatibilityを維持する。",
+            "when": {},
+            "activeNodeIds": [
+              "dual-write"
+            ],
+            "activeEdgeIds": [
+              "expand-to-dual-write"
+            ]
+          },
+          {
+            "id": "migration-running",
+            "status": "migrate phaseでbounded backfillを実行し、error rateとlagを観測する。",
+            "when": {},
+            "activeNodeIds": [
+              "backfill"
+            ],
+            "activeEdgeIds": [
+              "dual-write-to-backfill"
+            ]
+          },
+          {
+            "id": "backfill-paused",
+            "status": "threshold超過で停止し、compatibility証拠がないunsafe contractをblockedにする。",
+            "when": {},
+            "activeNodeIds": [
+              "backfill",
+              "backfill-compatible"
+            ],
+            "activeEdgeIds": [
+              "backfill-stop"
+            ]
+          },
+          {
+            "id": "rollback-complete",
+            "status": "rollback後も旧fieldとdual writeを維持し、old readerの結果を回復確認する。",
+            "when": {},
+            "activeNodeIds": [
+              "backfill-compatible",
+              "restoration-verified"
+            ],
+            "activeEdgeIds": [
+              "backfill-verify"
+            ]
+          },
+          {
+            "id": "migration-retried",
+            "status": "原因解消後にbounded migrateを再開し、error rateとlagを再観測する。",
+            "when": {},
+            "activeNodeIds": [
+              "backfill"
+            ],
+            "activeEdgeIds": [
+              "dual-write-to-backfill"
+            ]
+          },
+          {
+            "id": "compatibility-verified",
+            "status": "新旧readerの同値性と旧構造の利用停止を確認してcontract gateを開く。",
+            "when": {},
+            "activeNodeIds": [
+              "dual-read"
+            ],
+            "activeEdgeIds": [
+              "backfill-to-dual-read"
+            ]
+          },
+          {
+            "id": "contract-complete",
+            "status": "compatibility証拠が揃った後だけ旧構造をcontractし、移行結果を再観測する。",
+            "when": {},
+            "activeNodeIds": [
+              "contract"
+            ],
+            "activeEdgeIds": [
+              "dual-read-to-contract"
+            ]
+          }
+        ],
+        "transitions": [
+          {
+            "id": "expand-next",
+            "from": "expand-ready",
+            "to": "dual-write-compatible",
+            "event": "next",
+            "when": {}
+          },
+          {
+            "id": "expand-timer",
+            "from": "expand-ready",
+            "to": "dual-write-compatible",
+            "event": "timer",
+            "when": {}
+          },
+          {
+            "id": "dual-write-next",
+            "from": "dual-write-compatible",
+            "to": "migration-running",
+            "event": "next",
+            "when": {}
+          },
+          {
+            "id": "dual-write-timer",
+            "from": "dual-write-compatible",
+            "to": "migration-running",
+            "event": "timer",
+            "when": {}
+          },
+          {
+            "id": "migration-next",
+            "from": "migration-running",
+            "to": "backfill-paused",
+            "event": "next",
+            "when": {}
+          },
+          {
+            "id": "migration-timer",
+            "from": "migration-running",
+            "to": "backfill-paused",
+            "event": "timer",
+            "when": {}
+          },
+          {
+            "id": "paused-next",
+            "from": "backfill-paused",
+            "to": "rollback-complete",
+            "event": "next",
+            "when": {}
+          },
+          {
+            "id": "paused-timer",
+            "from": "backfill-paused",
+            "to": "rollback-complete",
+            "event": "timer",
+            "when": {}
+          },
+          {
+            "id": "rollback-next",
+            "from": "rollback-complete",
+            "to": "migration-retried",
+            "event": "next",
+            "when": {}
+          },
+          {
+            "id": "rollback-timer",
+            "from": "rollback-complete",
+            "to": "migration-retried",
+            "event": "timer",
+            "when": {}
+          },
+          {
+            "id": "retry-next",
+            "from": "migration-retried",
+            "to": "compatibility-verified",
+            "event": "next",
+            "when": {}
+          },
+          {
+            "id": "retry-timer",
+            "from": "migration-retried",
+            "to": "compatibility-verified",
+            "event": "timer",
+            "when": {}
+          },
+          {
+            "id": "compatibility-next",
+            "from": "compatibility-verified",
+            "to": "contract-complete",
+            "event": "next",
+            "when": {}
+          },
+          {
+            "id": "compatibility-timer",
+            "from": "compatibility-verified",
+            "to": "contract-complete",
+            "event": "timer",
+            "when": {}
+          },
+          {
+            "id": "dual-write-previous",
+            "from": "dual-write-compatible",
+            "to": "expand-ready",
+            "event": "previous",
+            "when": {}
+          },
+          {
+            "id": "migration-previous",
+            "from": "migration-running",
+            "to": "dual-write-compatible",
+            "event": "previous",
+            "when": {}
+          },
+          {
+            "id": "paused-previous",
+            "from": "backfill-paused",
+            "to": "migration-running",
+            "event": "previous",
+            "when": {}
+          },
+          {
+            "id": "rollback-previous",
+            "from": "rollback-complete",
+            "to": "backfill-paused",
+            "event": "previous",
+            "when": {}
+          },
+          {
+            "id": "retry-previous",
+            "from": "migration-retried",
+            "to": "rollback-complete",
+            "event": "previous",
+            "when": {}
+          },
+          {
+            "id": "compatibility-previous",
+            "from": "compatibility-verified",
+            "to": "migration-retried",
+            "event": "previous",
+            "when": {}
+          },
+          {
+            "id": "contract-previous",
+            "from": "contract-complete",
+            "to": "compatibility-verified",
+            "event": "previous",
+            "when": {}
+          },
+          {
+            "id": "dual-write-reset",
+            "from": "dual-write-compatible",
+            "to": "expand-ready",
+            "event": "reset",
+            "when": {}
+          },
+          {
+            "id": "migration-reset",
+            "from": "migration-running",
+            "to": "expand-ready",
+            "event": "reset",
+            "when": {}
+          },
+          {
+            "id": "paused-reset",
+            "from": "backfill-paused",
+            "to": "expand-ready",
+            "event": "reset",
+            "when": {}
+          },
+          {
+            "id": "rollback-reset",
+            "from": "rollback-complete",
+            "to": "expand-ready",
+            "event": "reset",
+            "when": {}
+          },
+          {
+            "id": "retry-reset",
+            "from": "migration-retried",
+            "to": "expand-ready",
+            "event": "reset",
+            "when": {}
+          },
+          {
+            "id": "compatibility-reset",
+            "from": "compatibility-verified",
+            "to": "expand-ready",
+            "event": "reset",
+            "when": {}
+          },
+          {
+            "id": "contract-reset",
+            "from": "contract-complete",
+            "to": "expand-ready",
+            "event": "reset",
+            "when": {}
+          }
+        ],
+        "outcomes": [
+          {
+            "id": "unsafe-contract-blocked",
+            "stateId": "backfill-paused",
+            "label": "unsafe contractをblockedにして停止する"
+          },
+          {
+            "id": "compatibility-restored",
+            "stateId": "rollback-complete",
+            "label": "rollback後のcompatibilityを再観測する"
+          },
+          {
+            "id": "contract-after-evidence",
+            "stateId": "contract-complete",
+            "label": "互換性証拠の後だけcontractを完了する"
+          }
+        ]
+      }
+    },
+    {
+      "lessonId": "core-24-delivery-ci-release-safety",
+      "simulation": {
+        "states": [
+          {
+            "id": "source-fixed",
+            "status": "review済みsourceを固定する判断fixtureであり、実artifactの検証結果ではありません。required checksを確認する。",
+            "when": {},
+            "activeNodeIds": [
+              "ci"
+            ],
+            "activeEdgeIds": []
+          },
+          {
+            "id": "digest-computed",
+            "status": "固定sourceからbuildした候補bytesのdigestを計算し、配信対象を識別する。",
+            "when": {},
+            "activeNodeIds": [
+              "artifact"
+            ],
+            "activeEdgeIds": [
+              "checks-known-pass"
+            ]
+          },
+          {
+            "id": "artifact-verified",
+            "status": "候補artifactのbytesとdigestが一致することを独立に検証する。",
+            "when": {},
+            "activeNodeIds": [
+              "artifact",
+              "provenance"
+            ],
+            "activeEdgeIds": [
+              "artifact-to-provenance"
+            ]
+          },
+          {
+            "id": "provenance-verified",
+            "status": "provenanceのsubject digestとtrusted builderを検証し、sourceからartifactを追跡可能にする。",
+            "when": {},
+            "activeNodeIds": [
+              "provenance"
+            ],
+            "activeEdgeIds": [
+              "provenance-to-canary"
+            ]
+          },
+          {
+            "id": "canary-running",
+            "status": "同じdigestの候補をcanaryへ限定配信し、利用者可視error rateを観測する。",
+            "when": {},
+            "activeNodeIds": [
+              "canary"
+            ],
+            "activeEdgeIds": [
+              "canary-to-decision"
+            ]
+          },
+          {
+            "id": "canary-rejected",
+            "status": "threshold超過またはunknownをfail-closedに扱い、promoteを拒否してrollbackを選ぶ。",
+            "when": {},
+            "activeNodeIds": [
+              "decision",
+              "rolling-back"
+            ],
+            "activeEdgeIds": [
+              "threshold-exceeded-rollback"
+            ]
+          },
+          {
+            "id": "rollback-running",
+            "status": "検証済みの直前digestへrollbackし、command成功だけを復旧とは扱わない。",
+            "when": {},
+            "activeNodeIds": [
+              "rolling-back"
+            ],
+            "activeEdgeIds": [
+              "rollback-restoration"
+            ]
+          },
+          {
+            "id": "rollback-complete",
+            "status": "service health、利用者可視error rate、稼働artifact digestを再観測して復旧を確認する。",
+            "when": {},
+            "activeNodeIds": [
+              "restoration-verified",
+              "outcome"
+            ],
+            "activeEdgeIds": [
+              "restoration-outcome"
+            ]
+          },
+          {
+            "id": "canary-retried",
+            "status": "原因解消後に全gateを再実行し、新しい検証済みdigestをcanaryで再評価する。",
+            "when": {},
+            "activeNodeIds": [
+              "canary",
+              "decision"
+            ],
+            "activeEdgeIds": [
+              "canary-to-decision"
+            ]
+          },
+          {
+            "id": "promote-approved",
+            "status": "canaryがknown goodの時だけ、検証済みの同一digestを次の段階へpromoteする。",
+            "when": {},
+            "activeNodeIds": [
+              "promoted",
+              "outcome"
+            ],
+            "activeEdgeIds": [
+              "promote-outcome"
+            ]
+          }
+        ],
+        "transitions": [
+          {
+            "id": "source-next",
+            "from": "source-fixed",
+            "to": "digest-computed",
+            "event": "next",
+            "when": {}
+          },
+          {
+            "id": "source-timer",
+            "from": "source-fixed",
+            "to": "digest-computed",
+            "event": "timer",
+            "when": {}
+          },
+          {
+            "id": "digest-next",
+            "from": "digest-computed",
+            "to": "artifact-verified",
+            "event": "next",
+            "when": {}
+          },
+          {
+            "id": "digest-timer",
+            "from": "digest-computed",
+            "to": "artifact-verified",
+            "event": "timer",
+            "when": {}
+          },
+          {
+            "id": "artifact-next",
+            "from": "artifact-verified",
+            "to": "provenance-verified",
+            "event": "next",
+            "when": {}
+          },
+          {
+            "id": "artifact-timer",
+            "from": "artifact-verified",
+            "to": "provenance-verified",
+            "event": "timer",
+            "when": {}
+          },
+          {
+            "id": "provenance-next",
+            "from": "provenance-verified",
+            "to": "canary-running",
+            "event": "next",
+            "when": {}
+          },
+          {
+            "id": "provenance-timer",
+            "from": "provenance-verified",
+            "to": "canary-running",
+            "event": "timer",
+            "when": {}
+          },
+          {
+            "id": "canary-next",
+            "from": "canary-running",
+            "to": "canary-rejected",
+            "event": "next",
+            "when": {}
+          },
+          {
+            "id": "canary-timer",
+            "from": "canary-running",
+            "to": "canary-rejected",
+            "event": "timer",
+            "when": {}
+          },
+          {
+            "id": "rejected-next",
+            "from": "canary-rejected",
+            "to": "rollback-running",
+            "event": "next",
+            "when": {}
+          },
+          {
+            "id": "rejected-timer",
+            "from": "canary-rejected",
+            "to": "rollback-running",
+            "event": "timer",
+            "when": {}
+          },
+          {
+            "id": "rollback-next",
+            "from": "rollback-running",
+            "to": "rollback-complete",
+            "event": "next",
+            "when": {}
+          },
+          {
+            "id": "rollback-timer",
+            "from": "rollback-running",
+            "to": "rollback-complete",
+            "event": "timer",
+            "when": {}
+          },
+          {
+            "id": "restored-next",
+            "from": "rollback-complete",
+            "to": "canary-retried",
+            "event": "next",
+            "when": {}
+          },
+          {
+            "id": "restored-timer",
+            "from": "rollback-complete",
+            "to": "canary-retried",
+            "event": "timer",
+            "when": {}
+          },
+          {
+            "id": "retry-next",
+            "from": "canary-retried",
+            "to": "promote-approved",
+            "event": "next",
+            "when": {}
+          },
+          {
+            "id": "retry-timer",
+            "from": "canary-retried",
+            "to": "promote-approved",
+            "event": "timer",
+            "when": {}
+          },
+          {
+            "id": "digest-previous",
+            "from": "digest-computed",
+            "to": "source-fixed",
+            "event": "previous",
+            "when": {}
+          },
+          {
+            "id": "artifact-previous",
+            "from": "artifact-verified",
+            "to": "digest-computed",
+            "event": "previous",
+            "when": {}
+          },
+          {
+            "id": "provenance-previous",
+            "from": "provenance-verified",
+            "to": "artifact-verified",
+            "event": "previous",
+            "when": {}
+          },
+          {
+            "id": "canary-previous",
+            "from": "canary-running",
+            "to": "provenance-verified",
+            "event": "previous",
+            "when": {}
+          },
+          {
+            "id": "rejected-previous",
+            "from": "canary-rejected",
+            "to": "canary-running",
+            "event": "previous",
+            "when": {}
+          },
+          {
+            "id": "rollback-previous",
+            "from": "rollback-running",
+            "to": "canary-rejected",
+            "event": "previous",
+            "when": {}
+          },
+          {
+            "id": "restored-previous",
+            "from": "rollback-complete",
+            "to": "rollback-running",
+            "event": "previous",
+            "when": {}
+          },
+          {
+            "id": "retry-previous",
+            "from": "canary-retried",
+            "to": "rollback-complete",
+            "event": "previous",
+            "when": {}
+          },
+          {
+            "id": "promote-previous",
+            "from": "promote-approved",
+            "to": "canary-retried",
+            "event": "previous",
+            "when": {}
+          },
+          {
+            "id": "digest-reset",
+            "from": "digest-computed",
+            "to": "source-fixed",
+            "event": "reset",
+            "when": {}
+          },
+          {
+            "id": "artifact-reset",
+            "from": "artifact-verified",
+            "to": "source-fixed",
+            "event": "reset",
+            "when": {}
+          },
+          {
+            "id": "provenance-reset",
+            "from": "provenance-verified",
+            "to": "source-fixed",
+            "event": "reset",
+            "when": {}
+          },
+          {
+            "id": "canary-reset",
+            "from": "canary-running",
+            "to": "source-fixed",
+            "event": "reset",
+            "when": {}
+          },
+          {
+            "id": "rejected-reset",
+            "from": "canary-rejected",
+            "to": "source-fixed",
+            "event": "reset",
+            "when": {}
+          },
+          {
+            "id": "rollback-reset",
+            "from": "rollback-running",
+            "to": "source-fixed",
+            "event": "reset",
+            "when": {}
+          },
+          {
+            "id": "restored-reset",
+            "from": "rollback-complete",
+            "to": "source-fixed",
+            "event": "reset",
+            "when": {}
+          },
+          {
+            "id": "retry-reset",
+            "from": "canary-retried",
+            "to": "source-fixed",
+            "event": "reset",
+            "when": {}
+          },
+          {
+            "id": "promote-reset",
+            "from": "promote-approved",
+            "to": "source-fixed",
+            "event": "reset",
+            "when": {}
+          }
+        ],
+        "outcomes": [
+          {
+            "id": "provenance-bound",
+            "stateId": "provenance-verified",
+            "label": "source・digest・provenanceを同じ候補へ結ぶ"
+          },
+          {
+            "id": "unsafe-promote-blocked",
+            "stateId": "canary-rejected",
+            "label": "unknownまたは閾値超過ならfail-closedでpromoteを拒否する"
+          },
+          {
+            "id": "service-restored",
+            "stateId": "rollback-complete",
+            "label": "rollback後のservice outcomeを再観測する"
+          },
+          {
+            "id": "promoted-same-digest",
+            "stateId": "promote-approved",
+            "label": "検証済みの同一digestだけをpromoteする"
+          }
+        ]
+      }
+    }
+  ],
+  "accessibilityLens": {
+    "checklistNodeIds": [
+      "viewport-wide",
+      "viewport-narrow",
+      "focus-heading",
+      "focus-control",
+      "focus-reset",
+      "motion-standard",
+      "motion-reduced"
+    ],
+    "checklistEdgeIds": [
+      "checklist-observe-wide",
+      "checklist-observe-narrow",
+      "checklist-wide-heading",
+      "checklist-wide-control",
+      "checklist-wide-reset",
+      "checklist-narrow-heading",
+      "checklist-narrow-control",
+      "checklist-narrow-reset",
+      "checklist-heading-standard",
+      "checklist-heading-reduced",
+      "checklist-control-standard",
+      "checklist-control-reduced",
+      "checklist-reset-standard",
+      "checklist-reset-reduced"
+    ],
+    "lenses": [
+      {
+        "when": {
+          "viewport": "wide",
+          "focus-step": "heading",
+          "motion-preference": "standard"
+        },
+        "activeNodeIds": [
+          "viewport-wide",
+          "focus-heading",
+          "motion-standard"
+        ],
+        "activeEdgeIds": [
+          "checklist-observe-wide",
+          "checklist-wide-heading",
+          "checklist-heading-standard"
+        ]
+      },
+      {
+        "when": {
+          "viewport": "wide",
+          "focus-step": "control",
+          "motion-preference": "standard"
+        },
+        "activeNodeIds": [
+          "viewport-wide",
+          "focus-control",
+          "motion-standard"
+        ],
+        "activeEdgeIds": [
+          "checklist-observe-wide",
+          "checklist-wide-control",
+          "checklist-control-standard"
+        ]
+      },
+      {
+        "when": {
+          "viewport": "wide",
+          "focus-step": "reset",
+          "motion-preference": "standard"
+        },
+        "activeNodeIds": [
+          "viewport-wide",
+          "focus-reset",
+          "motion-standard"
+        ],
+        "activeEdgeIds": [
+          "checklist-observe-wide",
+          "checklist-wide-reset",
+          "checklist-reset-standard"
+        ]
+      },
+      {
+        "when": {
+          "viewport": "wide",
+          "focus-step": "heading",
+          "motion-preference": "reduced"
+        },
+        "activeNodeIds": [
+          "viewport-wide",
+          "focus-heading",
+          "motion-reduced"
+        ],
+        "activeEdgeIds": [
+          "checklist-observe-wide",
+          "checklist-wide-heading",
+          "checklist-heading-reduced"
+        ]
+      },
+      {
+        "when": {
+          "viewport": "wide",
+          "focus-step": "control",
+          "motion-preference": "reduced"
+        },
+        "activeNodeIds": [
+          "viewport-wide",
+          "focus-control",
+          "motion-reduced"
+        ],
+        "activeEdgeIds": [
+          "checklist-observe-wide",
+          "checklist-wide-control",
+          "checklist-control-reduced"
+        ]
+      },
+      {
+        "when": {
+          "viewport": "wide",
+          "focus-step": "reset",
+          "motion-preference": "reduced"
+        },
+        "activeNodeIds": [
+          "viewport-wide",
+          "focus-reset",
+          "motion-reduced"
+        ],
+        "activeEdgeIds": [
+          "checklist-observe-wide",
+          "checklist-wide-reset",
+          "checklist-reset-reduced"
+        ]
+      },
+      {
+        "when": {
+          "viewport": "narrow",
+          "focus-step": "heading",
+          "motion-preference": "standard"
+        },
+        "activeNodeIds": [
+          "viewport-narrow",
+          "focus-heading",
+          "motion-standard"
+        ],
+        "activeEdgeIds": [
+          "checklist-observe-narrow",
+          "checklist-narrow-heading",
+          "checklist-heading-standard"
+        ]
+      },
+      {
+        "when": {
+          "viewport": "narrow",
+          "focus-step": "control",
+          "motion-preference": "standard"
+        },
+        "activeNodeIds": [
+          "viewport-narrow",
+          "focus-control",
+          "motion-standard"
+        ],
+        "activeEdgeIds": [
+          "checklist-observe-narrow",
+          "checklist-narrow-control",
+          "checklist-control-standard"
+        ]
+      },
+      {
+        "when": {
+          "viewport": "narrow",
+          "focus-step": "reset",
+          "motion-preference": "standard"
+        },
+        "activeNodeIds": [
+          "viewport-narrow",
+          "focus-reset",
+          "motion-standard"
+        ],
+        "activeEdgeIds": [
+          "checklist-observe-narrow",
+          "checklist-narrow-reset",
+          "checklist-reset-standard"
+        ]
+      },
+      {
+        "when": {
+          "viewport": "narrow",
+          "focus-step": "heading",
+          "motion-preference": "reduced"
+        },
+        "activeNodeIds": [
+          "viewport-narrow",
+          "focus-heading",
+          "motion-reduced"
+        ],
+        "activeEdgeIds": [
+          "checklist-observe-narrow",
+          "checklist-narrow-heading",
+          "checklist-heading-reduced"
+        ]
+      },
+      {
+        "when": {
+          "viewport": "narrow",
+          "focus-step": "control",
+          "motion-preference": "reduced"
+        },
+        "activeNodeIds": [
+          "viewport-narrow",
+          "focus-control",
+          "motion-reduced"
+        ],
+        "activeEdgeIds": [
+          "checklist-observe-narrow",
+          "checklist-narrow-control",
+          "checklist-control-reduced"
+        ]
+      },
+      {
+        "when": {
+          "viewport": "narrow",
+          "focus-step": "reset",
+          "motion-preference": "reduced"
+        },
+        "activeNodeIds": [
+          "viewport-narrow",
+          "focus-reset",
+          "motion-reduced"
+        ],
+        "activeEdgeIds": [
+          "checklist-observe-narrow",
+          "checklist-narrow-reset",
+          "checklist-reset-reduced"
+        ]
+      }
+    ]
+  },
+  "migrationCompatibilityMatrix": [
+    [
+      "phase",
+      "old reader",
+      "new reader",
+      "old writer",
+      "new writer",
+      "backfill / recovery"
+    ],
+    [
+      "expand",
+      "allowed — old reader remains valid",
+      "blocked — new reader is not deployed",
+      "allowed — old writer remains valid",
+      "blocked — dual write is not enabled",
+      "stop — backfill has not started"
+    ],
+    [
+      "dual-write",
+      "allowed — old reader remains valid",
+      "fallback — new reader may use old field",
+      "allowed — old writer remains valid",
+      "required — dual write begins",
+      "stop — parity failure disables new-field write"
+    ],
+    [
+      "backfill",
+      "allowed — old reader remains valid",
+      "fallback — new reader retains old field",
+      "allowed — old writer remains valid",
+      "required — dual write continues",
+      "rollback — pause at checkpoint on error or lag"
+    ],
+    [
+      "dual-read",
+      "allowed — old reader remains valid",
+      "required — compare new result with fallback",
+      "allowed — old writer remains valid",
+      "required — dual write continues",
+      "fallback — route reads to old field on mismatch"
+    ],
+    [
+      "contract",
+      "blocked — old reader usage must be zero",
+      "required — new reader is verified",
+      "blocked — old writer usage must be zero",
+      "required — new writer is verified",
+      "rollback — defer contract if any old usage returns"
+    ]
+  ]
+}

@@ -15,17 +15,26 @@
     {
       "id": "obj-boundaries",
       "statement": "プロセスの隔離資源とスレッドの共有資源を、障害伝播と通信経路を含めて図示できる",
-      "evidenceIds": ["race-record", "teach-back"]
+      "evidenceIds": [
+        "race-record",
+        "teach-back"
+      ]
     },
     {
       "id": "obj-race",
       "statement": "100回以上の反復で競合を再現し、失敗時のinterleavingと破られた不変条件を記録できる",
-      "evidenceIds": ["race-record", "assessment"]
+      "evidenceIds": [
+        "race-record",
+        "assessment"
+      ]
     },
     {
       "id": "obj-fix",
       "statement": "同期方法を適用した後に正しさ、停止性、性能を再測定し、別の共有境界で選択を再比較できる",
-      "evidenceIds": ["assessment", "transfer"]
+      "evidenceIds": [
+        "assessment",
+        "transfer"
+      ]
     }
   ],
   "evidence": [
@@ -54,27 +63,37 @@
     {
       "level": "recognize",
       "criterion": "アドレス空間、ファイル記述子、実行状態、共有データを隔離または共有の観点で分類できる",
-      "evidenceIds": ["race-record"]
+      "evidenceIds": [
+        "race-record"
+      ]
     },
     {
       "level": "explain",
       "criterion": "操作のatomicity、可視性、順序性、deadlockを別の正しさ条件として説明できる",
-      "evidenceIds": ["teach-back"]
+      "evidenceIds": [
+        "teach-back"
+      ]
     },
     {
       "level": "apply",
       "criterion": "失敗頻度を測れる競合実験を作り、明示した不変条件に対して同期方法を適用できる",
-      "evidenceIds": ["race-record"]
+      "evidenceIds": [
+        "race-record"
+      ]
     },
     {
       "level": "diagnose",
       "criterion": "イベント列、ロック取得順、進捗カウンタからdata race、deadlock、starvationを切り分けられる",
-      "evidenceIds": ["assessment"]
+      "evidenceIds": [
+        "assessment"
+      ]
     },
     {
       "level": "lead",
       "criterion": "信頼境界、障害半径、通信量、デバッグ容易性から隔離単位のレビューを主導できる",
-      "evidenceIds": ["transfer"]
+      "evidenceIds": [
+        "transfer"
+      ]
     }
   ],
   "lab": {
@@ -140,33 +159,322 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "Chapter 17. Threads and Locks",
       "url": "https://docs.oracle.com/javase/specs/jls/se21/html/jls-17.html",
       "kind": "standard"
     },
     {
+      "id": "src-02",
       "title": "pthread_create — thread creation",
       "url": "https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/functions/pthread_create.html",
       "kind": "standard"
     },
     {
+      "id": "src-03",
       "title": "fork — create a new process",
       "url": "https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/functions/fork.html",
       "kind": "standard"
     },
     {
+      "id": "src-04",
       "title": "Linux kernel memory barriers",
       "url": "https://docs.kernel.org/core-api/wrappers/memory-barriers.html",
       "kind": "primary"
     },
     {
+      "id": "src-05",
       "title": "About Processes and Threads",
       "url": "https://learn.microsoft.com/en-us/windows/win32/procthread/about-processes-and-threads",
       "kind": "primary"
     }
   ],
+  "visualizations": [
+    {
+      "id": "concurrency-diagnostic-timeline",
+      "type": "timeline",
+      "caption": "共有境界から不変条件を守る診断経路",
+      "question": "説明用のx=10で、Thread A/Bのどのinterleavingがlost updateを起こし、mutex後に何が変わるか。",
+      "afterSection": "mentalModel",
+      "objectiveIds": [
+        "obj-boundaries",
+        "obj-race"
+      ],
+      "evidenceIds": [
+        "race-record"
+      ],
+      "sourceIds": [
+        "src-01",
+        "src-04"
+      ],
+      "expectedObservation": "両threadがx=10を読む最小trace、期待値x=8に対する違反点、mutex後のx=8を順に説明できる。",
+      "notes": [
+        "この注記は旧図の読み順を保持する補助です。",
+        "隔離単位: process A、process B、または同一process内thread AとBを置く。",
+        "共有対象: memory、file、socket、database row、queueを列挙する。",
+        "操作分解: read、compute、write、publishをイベントへ分ける。",
+        "不変条件: 在庫は0以上、合計減算数と最終値が一致、同じ注文を二度確定しない。",
+        "同期関係: mutex、atomic operation、message passingのどれが前後関係を作るか示す。",
+        "停止性: lock順、待機資源、timeout、cancel経路を観測する。",
+        "回帰: 同じstress条件で違反頻度と所要時間を再測定する。"
+      ],
+      "payload": {
+        "phases": [
+          {
+            "id": "boundary",
+            "label": "境界と説明用fixture",
+            "detail": "同一processのThread A/Bが共有整数xを1ずつ減算する説明用scenario。初期値x = 10は普遍値ではない。"
+          },
+          {
+            "id": "lost-update-trace",
+            "label": "同期なしのlost update",
+            "detail": "両threadが同じx = 10を読んで9を書き、二回減算の期待値x = 8を破る最小trace。"
+          },
+          {
+            "id": "synchronized-trace",
+            "label": "mutexによる比較trace",
+            "detail": "同じ説明用fixtureをmutexで直列化し、二回目のreadがx = 9を見る比較。"
+          },
+          {
+            "id": "verification",
+            "label": "停止性と回帰",
+            "detail": "安全性だけでなくlock順、timeout、同条件stressを再確認する。"
+          }
+        ],
+        "events": [
+          {
+            "id": "isolation-unit",
+            "label": "隔離単位・shared context",
+            "detail": "process A/Bまたは同一processのThread A/Bを置く。この説明用traceは同一processの二threadを使う。",
+            "phaseId": "boundary",
+            "order": 0,
+            "lane": "shared-context"
+          },
+          {
+            "id": "shared-target",
+            "label": "共有対象・x",
+            "detail": "memory上の共有整数x = 10を説明用fixtureとし、実systemではfile、socket、database row、queueも列挙する。",
+            "phaseId": "boundary",
+            "order": 1,
+            "lane": "shared-context"
+          },
+          {
+            "id": "unsynchronized-start",
+            "label": "同期なし開始",
+          "detail": "説明用の値は初期値x = 10。Thread AとThread Bがmutexなしで1ずつ減算する。",
+            "phaseId": "lost-update-trace",
+            "order": 2,
+            "lane": "shared-context"
+          },
+          {
+            "id": "a-read",
+            "label": "Thread A read",
+            "detail": "Thread Aが共有値x = 10を読む。",
+            "phaseId": "lost-update-trace",
+            "order": 3,
+            "lane": "thread-a"
+          },
+          {
+            "id": "b-read",
+            "label": "Thread B read",
+            "detail": "Thread BもAのwrite前に同じ共有値x = 10を読む。",
+            "phaseId": "lost-update-trace",
+            "order": 4,
+            "lane": "thread-b"
+          },
+          {
+            "id": "a-compute",
+            "label": "Thread A compute",
+            "detail": "Thread Aはlocalに10 - 1 = 9を計算する。",
+            "phaseId": "lost-update-trace",
+            "order": 5,
+            "lane": "thread-a"
+          },
+          {
+            "id": "b-compute",
+            "label": "Thread B compute",
+            "detail": "Thread Bもlocalに10 - 1 = 9を計算する。",
+            "phaseId": "lost-update-trace",
+            "order": 6,
+            "lane": "thread-b"
+          },
+          {
+            "id": "a-write",
+            "label": "Thread A write",
+            "detail": "Thread Aが共有値へx = 9を書き込む。",
+            "phaseId": "lost-update-trace",
+            "order": 7,
+            "lane": "thread-a"
+          },
+          {
+            "id": "b-write",
+            "label": "Thread B write",
+            "detail": "Thread Bが同じx = 9を上書きし、Thread Aの減算を失わせる。",
+            "phaseId": "lost-update-trace",
+            "order": 8,
+            "lane": "thread-b"
+          },
+          {
+            "id": "lost-update-violation",
+            "label": "lost update違反点",
+            "detail": "二回減算後の期待値 x = 8に対しactual x = 9。Thread B writeの完了時点でlost updateが観測可能になる。",
+            "phaseId": "lost-update-trace",
+            "order": 9,
+            "lane": "shared-context"
+          },
+          {
+            "id": "a-lock",
+            "label": "Thread A mutex取得",
+            "detail": "同じ説明用fixtureをx = 10へ戻し、Thread Aがmutexを取得する。",
+            "phaseId": "synchronized-trace",
+            "order": 10,
+            "lane": "thread-a"
+          },
+          {
+            "id": "a-locked-update",
+            "label": "Thread A read/compute/write",
+            "detail": "mutex内でThread Aがx = 10を読み、9を計算してx = 9を書く。",
+            "phaseId": "synchronized-trace",
+            "order": 11,
+            "lane": "thread-a"
+          },
+          {
+            "id": "a-unlock",
+            "label": "Thread A mutex解放",
+            "detail": "Thread Aのwrite後にmutexを解放し、happens-beforeを作る。",
+            "phaseId": "synchronized-trace",
+            "order": 12,
+            "lane": "thread-a"
+          },
+          {
+            "id": "b-lock",
+            "label": "Thread B mutex取得",
+            "detail": "Thread BはAの解放後にmutexを取得する。",
+            "phaseId": "synchronized-trace",
+            "order": 13,
+            "lane": "thread-b"
+          },
+          {
+            "id": "b-locked-update",
+            "label": "Thread B read/compute/write",
+            "detail": "Thread Bは同期後のx = 9を読み、8を計算してx = 8を書く。",
+            "phaseId": "synchronized-trace",
+            "order": 14,
+            "lane": "thread-b"
+          },
+          {
+            "id": "synchronized-invariant",
+            "label": "同期後の不変条件",
+          "detail": "同期後の x = 8は二回減算後の期待値 x = 8と一致し、lost updateはない。",
+            "phaseId": "synchronized-trace",
+            "order": 15,
+            "lane": "shared-context"
+          },
+          {
+            "id": "liveness",
+            "label": "停止性",
+            "detail": "mutexのlock順、待機資源、timeout、cancel経路を観測する。",
+            "phaseId": "verification",
+            "order": 16,
+            "lane": "shared-context"
+          },
+          {
+            "id": "regression",
+            "label": "回帰",
+            "detail": "同期なしとmutexありを同じstress条件で反復し、違反頻度と所要時間を再測定する。",
+            "phaseId": "verification",
+            "order": 17,
+            "lane": "shared-context"
+          }
+        ]
+      }
+    },
+    {
+      "id": "scheduler-interleaving-static",
+      "type": "state-machine",
+      "caption": "lost updateとmutex回復の完全な状態遷移",
+      "question": "二つのthreadが同じ古い値を読んだ後、どこで不変条件を破り、mutexでどう回復するか。",
+      "afterSection": "workedExample",
+      "objectiveIds": ["obj-boundaries", "obj-race"],
+      "evidenceIds": ["race-record"],
+      "sourceIds": ["src-01", "src-04"],
+      "expectedObservation": "read-old-valueからlost-updateを経て、mutexで二回の減算を直列化したlocked-completeまでを再現する。",
+      "notes": ["x=10から二回減算する説明用fixtureであり、schedulerの普遍的な実行順を表さない。"],
+      "payload": {
+        "states": [
+          {"id": "read-old-value", "label": "A read", "detail": "primary event a-read: Thread Aがx=10を読む。"},
+          {"id": "b-read-old-value", "label": "B read", "detail": "primary event b-read: BもA write前のx=10を読む。"},
+          {"id": "a-compute", "label": "A compute", "detail": "primary event a-compute: localで10-1=9。"},
+          {"id": "b-compute", "label": "B compute", "detail": "primary event b-compute: localで10-1=9。"},
+          {"id": "a-write", "label": "A write", "detail": "primary event a-write: x=9を書く。"},
+          {"id": "lost-update", "label": "B write / lost update", "detail": "primary events b-write/lost-update-violation: 9を上書きし、期待値x=8に対してactual x=9。"},
+          {"id": "lock-acquired", "label": "A lock", "detail": "primary event a-lock: fixtureを10へ戻してmutex取得。"},
+          {"id": "a-locked-write", "label": "A locked read/compute/write", "detail": "primary event a-locked-update: mutex内で10→9。"},
+          {"id": "unlock", "label": "A unlock", "detail": "primary event a-unlock: write後にmutex解放。"},
+          {"id": "b-lock-acquired", "label": "B lock", "detail": "primary event b-lock: A unlock後にmutex取得。"},
+          {"id": "b-locked-write", "label": "B locked read/compute/write", "detail": "primary event b-locked-update: 同期後の9を読み9→8。"},
+          {"id": "locked-complete", "label": "invariant complete", "detail": "primary event synchronized-invariant: 期待値x=8とactual x=8。lock/unlock単位の完全trace。"}
+        ],
+        "initialStateId": "read-old-value",
+        "transitions": [
+          {"id": "step-01", "from": "read-old-value", "to": "b-read-old-value", "event": "next", "status": "allowed"},
+          {"id": "step-02", "from": "b-read-old-value", "to": "a-compute", "event": "next", "status": "allowed"},
+          {"id": "step-03", "from": "a-compute", "to": "b-compute", "event": "next", "status": "allowed"},
+          {"id": "step-04", "from": "b-compute", "to": "a-write", "event": "next", "status": "allowed"},
+          {"id": "step-05", "from": "a-write", "to": "lost-update", "event": "next", "status": "allowed"},
+          {"id": "step-06", "from": "lost-update", "to": "lock-acquired", "event": "next", "status": "allowed"},
+          {"id": "step-07", "from": "lock-acquired", "to": "a-locked-write", "event": "next", "status": "allowed"},
+          {"id": "step-08", "from": "a-locked-write", "to": "unlock", "event": "next", "status": "allowed"},
+          {"id": "step-09", "from": "unlock", "to": "b-lock-acquired", "event": "next", "status": "allowed"},
+          {"id": "step-10", "from": "b-lock-acquired", "to": "b-locked-write", "event": "next", "status": "allowed"},
+          {"id": "step-11", "from": "b-locked-write", "to": "locked-complete", "event": "next", "status": "allowed"},
+          {"id": "locked-to-lost-rejected", "from": "locked-complete", "to": "lost-update", "event": "next", "status": "rejected", "reason": "read/compute/write全体を同じmutex境界で保護する。"}
+        ]
+      },
+      "simulation": {
+        "kind": "scheduler-interleaving", "interactionMode": "playback", "parameters": [], "initialStateId": "read-old-value", "defaultIntervalMs": 1200,
+        "states": [
+          {"id": "read-old-value", "label": "A read", "status": "read/compute/write trace 1: Aがx=10をread。", "activeNodeIds": ["read-old-value"], "activeEdgeIds": []},
+          {"id": "b-read-old-value", "label": "B read", "status": "trace 2: Bもx=10をread。", "activeNodeIds": ["b-read-old-value"], "activeEdgeIds": ["step-01"]},
+          {"id": "a-compute", "label": "A compute", "status": "trace 3: Aがlocal 9をcompute。", "activeNodeIds": ["a-compute"], "activeEdgeIds": ["step-02"]},
+          {"id": "b-compute", "label": "B compute", "status": "trace 4: Bもlocal 9をcompute。", "activeNodeIds": ["b-compute"], "activeEdgeIds": ["step-03"]},
+          {"id": "a-write", "label": "A write", "status": "trace 5: Aがx=9をwrite。", "activeNodeIds": ["a-write"], "activeEdgeIds": ["step-04"]},
+          {"id": "lost-update", "label": "B write", "status": "trace 6: Bが9を上書き。期待値x=8、actual x=9でinvariant違反。", "activeNodeIds": ["lost-update"], "activeEdgeIds": ["step-05"]},
+          {"id": "lock-acquired", "label": "A lock", "status": "trace 7: fixtureを10へ戻しAがlock。", "activeNodeIds": ["lock-acquired"], "activeEdgeIds": ["step-06"]},
+          {"id": "a-locked-write", "label": "A locked update", "status": "trace 8: mutex内でAがread/compute/writeし10→9。", "activeNodeIds": ["a-locked-write"], "activeEdgeIds": ["step-07"]},
+          {"id": "unlock", "label": "A unlock", "status": "trace 9: Aがwrite後にunlock。", "activeNodeIds": ["unlock"], "activeEdgeIds": ["step-08"]},
+          {"id": "b-lock-acquired", "label": "B lock", "status": "trace 10: Bがlockし、同期後の9を観測。", "activeNodeIds": ["b-lock-acquired"], "activeEdgeIds": ["step-09"]},
+          {"id": "b-locked-write", "label": "B locked update", "status": "trace 11: Bがread/compute/writeし9→8。", "activeNodeIds": ["b-locked-write"], "activeEdgeIds": ["step-10"]},
+          {"id": "locked-complete", "label": "invariant complete", "status": "trace 12: 期待値x=8、actual x=8。lock/unlockを含む完全trace。", "activeNodeIds": ["locked-complete"], "activeEdgeIds": ["step-11"]}
+        ],
+        "transitions": [
+          {"id": "read-next", "from": "read-old-value", "to": "b-read-old-value", "event": "next"}, {"id": "read-timer", "from": "read-old-value", "to": "b-read-old-value", "event": "timer"},
+          {"id": "b-read-next", "from": "b-read-old-value", "to": "a-compute", "event": "next"}, {"id": "b-read-timer", "from": "b-read-old-value", "to": "a-compute", "event": "timer"}, {"id": "b-read-previous", "from": "b-read-old-value", "to": "read-old-value", "event": "previous"}, {"id": "b-read-reset", "from": "b-read-old-value", "to": "read-old-value", "event": "reset"},
+          {"id": "a-compute-next", "from": "a-compute", "to": "b-compute", "event": "next"}, {"id": "a-compute-timer", "from": "a-compute", "to": "b-compute", "event": "timer"}, {"id": "a-compute-previous", "from": "a-compute", "to": "b-read-old-value", "event": "previous"}, {"id": "a-compute-reset", "from": "a-compute", "to": "read-old-value", "event": "reset"},
+          {"id": "b-compute-next", "from": "b-compute", "to": "a-write", "event": "next"}, {"id": "b-compute-timer", "from": "b-compute", "to": "a-write", "event": "timer"}, {"id": "b-compute-previous", "from": "b-compute", "to": "a-compute", "event": "previous"}, {"id": "b-compute-reset", "from": "b-compute", "to": "read-old-value", "event": "reset"},
+          {"id": "a-write-next", "from": "a-write", "to": "lost-update", "event": "next"}, {"id": "a-write-timer", "from": "a-write", "to": "lost-update", "event": "timer"}, {"id": "a-write-previous", "from": "a-write", "to": "b-compute", "event": "previous"}, {"id": "a-write-reset", "from": "a-write", "to": "read-old-value", "event": "reset"},
+          {"id": "lost-next", "from": "lost-update", "to": "lock-acquired", "event": "next"}, {"id": "lost-timer", "from": "lost-update", "to": "lock-acquired", "event": "timer"}, {"id": "lost-previous", "from": "lost-update", "to": "a-write", "event": "previous"}, {"id": "lost-reset", "from": "lost-update", "to": "read-old-value", "event": "reset"},
+          {"id": "lock-next", "from": "lock-acquired", "to": "a-locked-write", "event": "next"}, {"id": "lock-timer", "from": "lock-acquired", "to": "a-locked-write", "event": "timer"}, {"id": "lock-previous", "from": "lock-acquired", "to": "lost-update", "event": "previous"}, {"id": "lock-reset", "from": "lock-acquired", "to": "read-old-value", "event": "reset"},
+          {"id": "a-locked-next", "from": "a-locked-write", "to": "unlock", "event": "next"}, {"id": "a-locked-timer", "from": "a-locked-write", "to": "unlock", "event": "timer"}, {"id": "a-locked-previous", "from": "a-locked-write", "to": "lock-acquired", "event": "previous"}, {"id": "a-locked-reset", "from": "a-locked-write", "to": "read-old-value", "event": "reset"},
+          {"id": "unlock-next", "from": "unlock", "to": "b-lock-acquired", "event": "next"}, {"id": "unlock-timer", "from": "unlock", "to": "b-lock-acquired", "event": "timer"}, {"id": "unlock-previous", "from": "unlock", "to": "a-locked-write", "event": "previous"}, {"id": "unlock-reset", "from": "unlock", "to": "read-old-value", "event": "reset"},
+          {"id": "b-lock-next", "from": "b-lock-acquired", "to": "b-locked-write", "event": "next"}, {"id": "b-lock-timer", "from": "b-lock-acquired", "to": "b-locked-write", "event": "timer"}, {"id": "b-lock-previous", "from": "b-lock-acquired", "to": "unlock", "event": "previous"}, {"id": "b-lock-reset", "from": "b-lock-acquired", "to": "read-old-value", "event": "reset"},
+          {"id": "b-locked-next", "from": "b-locked-write", "to": "locked-complete", "event": "next"}, {"id": "b-locked-timer", "from": "b-locked-write", "to": "locked-complete", "event": "timer"}, {"id": "b-locked-previous", "from": "b-locked-write", "to": "b-lock-acquired", "event": "previous"}, {"id": "b-locked-reset", "from": "b-locked-write", "to": "read-old-value", "event": "reset"},
+          {"id": "complete-previous", "from": "locked-complete", "to": "b-locked-write", "event": "previous"}, {"id": "complete-reset", "from": "locked-complete", "to": "read-old-value", "event": "reset"}
+        ],
+        "outcomes": [
+          {"id": "lost-update-outcome", "stateId": "lost-update", "label": "同期なしtraceでは期待値8とactual 9の差を示す。"},
+          {"id": "locked-outcome", "stateId": "locked-complete", "label": "mutex traceでは最終値8と停止性の両方を検証する。"}
+        ]
+      }
+    }
+  ],
   "review": {
-    "intervalDays": [1, 7, 30, 90],
+    "intervalDays": [
+      1,
+      7,
+      30,
+      90
+    ],
     "prompts": [
       "atomicity、可視性、順序性のうち、今回の不変条件に必要なのはどれか",
       "deadlock説を反証する最小のイベント証拠は何か",

@@ -1,0 +1,1599 @@
+{
+  "version": 1,
+  "baselineCommit": "267c3233a70b5f6541db175c2295c44df6f39ca9",
+  "figures": [
+    {
+      "lessonId": "core-01-systems-tradeoffs",
+      "sectionRole": "mentalModel",
+      "occurrence": 1,
+      "caption": "判断を更新可能にする因果ループ",
+      "visibleAtoms": [
+        "目的:",
+        "利用者が二秒以内に受付結果を知る。",
+        "境界:",
+        "Web、受付API、永続ストア、worker、通知を含め、決済事業者は外部契約とする。",
+        "制約:",
+        "重複確定は0件、受付データ損失は0件、運用当番は一名。",
+        "代替案:",
+        "同期完了、永続化後に非同期実行、負荷時だけ非同期化を比較する。",
+        "観測:",
+        "p95受付時間、成果完了時間、重複率、最古滞留時間、復旧時間を測る。",
+        "反証:",
+        "観測が閾値を越えたら、境界または選択案を見直す。"
+      ],
+      "tableCells": [],
+      "disposition": "migrate"
+    },
+    {
+      "lessonId": "core-02-algorithms-measurement",
+      "sectionRole": "mentalModel",
+      "occurrence": 1,
+      "caption": "アルゴリズム再選択の検証経路",
+      "visibleAtoms": [
+        "操作モデル:",
+        "比較、hash計算、割り当てなど、支配的な操作を決める。",
+        "成長率予測:",
+        "支配操作がΘ(n)ならnを2倍にしたとき約2倍、Θ(n²)なら約4倍と予測する。",
+        "入力モデル:",
+        "サイズだけでなく、順序、重複率、問い合わせ位置を固定する。",
+        "測定設計:",
+        "準備と対象区間を分け、ウォームアップ後に複数回測る。",
+        "統計要約:",
+        "全値、中央値、範囲を残し、除外規則を先に決める。",
+        "差の診断:",
+        "定数項、キャッシュ、GC、処理系、外れ値を追加測定で反証する。",
+        "再選択条件:",
+        "本番のn、分布、呼出回数の変化を監視する。"
+      ],
+      "tableCells": [],
+      "disposition": "migrate"
+    },
+    {
+      "lessonId": "core-03-architecture-memory-caches",
+      "sectionRole": "mentalModel",
+      "occurrence": 1,
+      "caption": "一つのロードを診断する論理段階",
+      "visibleAtoms": [
+        "命令:",
+        "仮想アドレスAの値を要求する。",
+        "TLB:",
+        "Aのページ変換を検索する。missならページテーブルwalkが必要になる。",
+        "L1 cache:",
+        "Aを含むcache lineを検索する。hitなら近い階層で返る。",
+        "L2と最終レベルcache:",
+        "L1 miss後の候補を調べる。L2やLLCがcore-privateか複数coreでsharedかというprivate/shared範囲は機種依存である。",
+        "memory controller:",
+        "全cacheでmissなら主記憶からline単位で転送する。",
+        "再利用:",
+        "同じline内の次要素を使えば空間的局所性、短時間に同じ値を使えば時間的局所性を得る。"
+      ],
+      "tableCells": [],
+      "disposition": "migrate"
+    },
+    {
+      "lessonId": "core-04-os-processes-concurrency",
+      "sectionRole": "mentalModel",
+      "occurrence": 1,
+      "caption": "共有境界から不変条件を守る診断経路",
+      "visibleAtoms": [
+        "隔離単位:",
+        "process A、process B、または同一process内thread AとBを置く。",
+        "共有対象:",
+        "memory、file、socket、database row、queueを列挙する。",
+        "操作分解:",
+        "read、compute、write、publishをイベントへ分ける。",
+        "不変条件:",
+        "在庫は0以上、合計減算数と最終値が一致、同じ注文を二度確定しない。",
+        "同期関係:",
+        "mutex、atomic operation、message passingのどれが前後関係を作るか示す。",
+        "停止性:",
+        "lock順、待機資源、timeout、cancel経路を観測する。",
+        "回帰:",
+        "同じstress条件で違反頻度と所要時間を再測定する。"
+      ],
+      "tableCells": [],
+      "disposition": "migrate"
+    },
+    {
+      "lessonId": "core-05-networks-latency-failure",
+      "sectionRole": "mentalModel",
+      "occurrence": 1,
+      "caption": "DNSから業務結果までの時系列",
+      "visibleAtoms": [
+        "名前解決:",
+        "DNS queryを送り、候補addressとTTLを得る。",
+        "輸送接続:",
+        "TCP SYN、SYN-ACK、ACKで接続状態を確立する。",
+        "暗号接続:",
+        "TLSでversion、鍵、相手のidentityを検証する。",
+        "request送信:",
+        "HTTP method、target、header、bodyを送る。",
+        "server処理:",
+        "handlerと依存serviceが状態を読み書きする。",
+        "最初のbyte:",
+        "statusとheaderを受け始める。",
+        "本文完了:",
+        "responseを読み終える。ただし業務結果はstatusとbodyの契約で判定する。",
+        "結果確定:",
+        "clientが結果を永続化し、必要なら冪等keyで後から照会できる。"
+      ],
+      "tableCells": [],
+      "disposition": "migrate"
+    },
+    {
+      "lessonId": "core-06-requirements-domain-modeling",
+      "sectionRole": "mentalModel",
+      "occurrence": 1,
+      "caption": "発言を検証可能なドメインモデルへ変換する循環",
+      "visibleAtoms": [
+        "発言:",
+        "利害関係者の目的、困り事、制約を発言者と状況付きで記録する。",
+        "用語:",
+        "語ごとに定義、具体例、反例、所有する文脈を置く。",
+        "境界:",
+        "同じ語と不変条件が一貫する範囲を決め、境界間の翻訳を示す。",
+        "振る舞い:",
+        "意図をコマンド、起きた事実をイベント、許される状態変化を不変条件で表す。",
+        "例外:",
+        "時間切れ、在庫不足、権限不足、外部決済失敗を通常経路と同じ粒度で置く。",
+        "検証:",
+        "要求から観測までを追跡し、空欄と矛盾を次の質問へ戻す。"
+      ],
+      "tableCells": [],
+      "disposition": "migrate"
+    },
+    {
+      "lessonId": "core-07-api-contract-design",
+      "sectionRole": "mentalModel",
+      "occurrence": 1,
+      "caption": "オフライン操作を副作用と観測へ分ける契約経路",
+      "visibleAtoms": [
+        "作成:",
+        "clientは操作ID、冪等key、対象version、tenantを永続化する。serverは認証済みprincipal、tenant、route、keyを保存scopeにする。",
+        "送信:",
+        "serverはschema、意味、認証、認可を順に検査する。",
+        "適用:",
+        "keyと操作結果を同じ耐久境界で記録し、状態を一度だけ進める。",
+        "応答:",
+        "現在時刻やtrace IDを含むresponseは試行ごとに違ってよい。",
+        "喪失:",
+        "responseが届かなくても、clientは同じkeyで安全に再送する。",
+        "照会:",
+        "保存済み効果を返し、同じ配送や同じresponseを保証したとは主張しない。",
+        "進化:",
+        "旧versionの利用状況を観測し、source、wire、意味の互換性を別々に判定する。"
+      ],
+      "tableCells": [],
+      "disposition": "migrate"
+    },
+    {
+      "lessonId": "core-08-modularity-evolutionary-architecture",
+      "sectionRole": "mentalModel",
+      "occurrence": 1,
+      "caption": "変更理由を内側へ隠蔽する三層の依存graph",
+      "visibleAtoms": [
+        "pricing-domain:",
+        "料金規則と不変条件。UIやDB形式を知らない。",
+        "pricing-application:",
+        "use caseを順序付け、domainのportを使う。",
+        "pricing-adapters:",
+        "HTTP、DB、batch形式をdomainの語彙へ変換する。",
+        "reporting:",
+        "料金計算の変更対象外となる独立module。impact計算のfalse positiveを検出する基準にする。",
+        "source dependencyはadaptersからapplication、applicationからdomainへ向ける。",
+        "運用viewでは逆向きのrequest flowを別の矢印として記述し、意味を混ぜない。"
+      ],
+      "tableCells": [],
+      "disposition": "migrate"
+    },
+    {
+      "lessonId": "core-09-test-strategy-tdd",
+      "sectionRole": "mentalModel",
+      "occurrence": 1,
+      "caption": "riskから証拠へ進み、mutationで感度を反証するloop",
+      "visibleAtoms": [
+        "利用者影響と守る不変条件を一つ選ぶ。",
+        "失敗する最小の期待を実行し、REDの理由を読む。",
+        "最小実装でGREENにし、別の入力でも性質を確認する。",
+        "振る舞いを保って構造を整理し、同じ観測を再実行する。",
+        "mutantまたは障害注入で、testが実際に誤りを検出するか確かめる。"
+      ],
+      "tableCells": [],
+      "disposition": "migrate"
+    },
+    {
+      "lessonId": "core-10-threat-modeling-secure-design",
+      "sectionRole": "mentalModel",
+      "occurrence": 1,
+      "caption": "assetから攻撃経路、control、verification、残余riskを結ぶtrace",
+      "visibleAtoms": [
+        "asset:",
+        "customer data、deployment credential、audit logの価値と安全性目標を定義する。",
+        "actorとboundary:",
+        "external customer、operations contractor、platform adminをID・type・scopeを持つentityとして定義し、flowの起点と越境点へ参照させる。",
+        "threat:",
+        "意図ではなく、credential再利用、誤ったbulk export、audit停止など観測可能な行為で表す。",
+        "control:",
+        "prevent、detect、recoverを型として区別し、各threatへ三種類すべてを重ねる。",
+        "verification:",
+        "具体的なtest ID、control ID、resultをthreatへ接続する。",
+        "residual risk:",
+        "threat ID、decision、uncertainty、owner、期限を付け、未解決を隠さない。"
+      ],
+      "tableCells": [],
+      "disposition": "migrate"
+    },
+    {
+      "lessonId": "core-11-data-modeling-storage",
+      "sectionRole": "mentalModel",
+      "occurrence": 1,
+      "caption": "workload証拠からstorage ADRを再計算するmechanism",
+      "visibleAtoms": [
+        "domain:",
+        "注文番号の一意性、合計額と明細合計の一致、注文状態遷移を不変条件にする。",
+        "workload:",
+        "顧客履歴、注文detail、商品・期間検索、状態更新を一意なquery IDと時間当たり頻度で表す。",
+        "growth:",
+        "現在件数と月間増加から12か月後を計算し、synthetic projectionである限界を残す。",
+        "comparison:",
+        "relational、document、key-valueをaccess fit、constraint、capacity、operations、recoveryの同じweightで採点する。",
+        "ADR:",
+        "winnerだけでなく、負の帰結、移行境界、confirmationを記録する。",
+        "mutation:",
+        "商品・期間検索が主要queryになったらfrequencyとratingを変え、scoreとwinnerを再計算する。"
+      ],
+      "tableCells": [],
+      "disposition": "migrate"
+    },
+    {
+      "lessonId": "core-12-transactions-isolation-consistency",
+      "sectionRole": "mentalModel",
+      "occurrence": 1,
+      "caption": "snapshotから依存関係、commit判定、retryへ進む分離異常の因果経路",
+      "visibleAtoms": [
+        "不変条件:",
+        "「aliceまたはbobの少なくとも一人が当直」をdatabaseのrowとは別に明示する。",
+        "snapshot:",
+        "T1とT2が同じ開始状態",
+        "{alice: on, bob: on}",
+        "を読む。",
+        "局所判断:",
+        "T1はbobが当直なのでaliceを外し、T2はaliceが当直なのでbobを外す。",
+        "検証:",
+        "Snapshot Isolationでは別rowへのwriteが双方commitし得る。Serializableでは危険な依存を検出して一方をabortする。",
+        "retry:",
+        "abortされたT2は古い判断を再利用せず、transaction開始から読み直す。aliceが外れているためbobを当直に残す。"
+      ],
+      "tableCells": [],
+      "disposition": "migrate"
+    },
+    {
+      "lessonId": "core-13-distributed-coordination-failure",
+      "sectionRole": "mentalModel",
+      "occurrence": 1,
+      "caption": "at-least-once commandを永続dedupeと回復へ接続するmechanism",
+      "visibleAtoms": [
+        "receive:",
+        "tenant、resource、operationを含むstable keyと入力fingerprintを受け取る。",
+        "lookup:",
+        "永続dedupe storeにkeyがあれば入力fingerprintを照合し、一致時だけ状態遷移を再実行せず最初のresultを再利用する。不一致はkey衝突として拒否する。",
+        "apply:",
+        "keyがなければ現在stateから許可された次stateへ一度だけ遷移する。",
+        "commit:",
+        "state、fingerprint、resultを同じdurability境界で保存する。response lossはcommitを取り消さない。",
+        "recover:",
+        "partition中のmessageを再開後に処理し、logical sequenceとdelivery orderの差を検査する。",
+        "re-evaluate:",
+        "partitionがdeadlineを越えたら、queue、retention、stale command、reconciliation、利用者結果を更新する。"
+      ],
+      "tableCells": [],
+      "disposition": "migrate"
+    },
+    {
+      "lessonId": "core-14-performance-capacity",
+      "sectionRole": "mentalModel",
+      "occurrence": 1,
+      "caption": "負荷を証拠へ変えて安全容量を更新する循環",
+      "visibleAtoms": [
+        "Fixture:",
+        "request mix、payload、依存、処理上限、環境を固定する。",
+        "Curve:",
+        "低負荷、限界付近、超過、回復を同じ列で記録する。",
+        "Diagnose:",
+        "plateau、tail、error、queue、resource、downstreamを結ぶ。",
+        "Profile:",
+        "仮説に合う実processの局所証拠を別に採取する。",
+        "Capacity:",
+        "observed kneeからheadroomを引き、再測定条件を残す。"
+      ],
+      "tableCells": [],
+      "disposition": "migrate"
+    },
+    {
+      "lessonId": "core-15-reliability-observability-slo",
+      "sectionRole": "mentalModel",
+      "occurrence": 1,
+      "caption": "利用者結果からon-call actionまでを閉じるflow",
+      "visibleAtoms": [
+        "Journey:",
+        "利用者が達成したい結果とvalidな試行を定める。",
+        "SLI:",
+        "goodの結果とlatency境界をevent単位で計算する。",
+        "SLO:",
+        "window、target、error budget、例外を合意する。",
+        "Alert:",
+        "短窓と長窓のburnをpageとticketへ分ける。",
+        "Runbook:",
+        "impact確認、mitigation、rollback、escalationを結ぶ。",
+        "Telemetry:",
+        "traceで原因へ相関し、意味とprivacyを検証する。"
+      ],
+      "tableCells": [],
+      "disposition": "migrate"
+    },
+    {
+      "lessonId": "core-16-hci-usability-accessibility",
+      "sectionRole": "mentalModel",
+      "occurrence": 1,
+      "caption": "生成サイトの監査を適合主張と利用者タスクへ結ぶ証拠flow",
+      "visibleAtoms": [
+        "Scope:",
+        "ページfixture、利用者、入力方式、環境、除外を固定する。",
+        "Target:",
+        "WCAG 2.2 Level AAの規範的targetと版を記録する。",
+        "Observe:",
+        "keyboard、200% zoom、reading order、usabilityを期待値と比較する。",
+        "Review:",
+        "自動化で判定できない意味、順序、タスク成功を人が確認する。",
+        "Claim:",
+        "合否、未確認、残余リスクを分け、範囲を限定して報告する。"
+      ],
+      "tableCells": [],
+      "disposition": "migrate"
+    },
+    {
+      "lessonId": "core-17-graphics-visual-information",
+      "sectionRole": "mentalModel",
+      "occurrence": 1,
+      "caption": "一つのdata modelから視覚と同等textへ分岐するrendering pipeline",
+      "visibleAtoms": [
+        "Data:",
+        "roadmapのnodeとedge、chartのlabelとvalueをID付きで定義する。",
+        "Transform:",
+        "並び、scale、minimum、maximumを決定的に計算する。",
+        "Visual:",
+        "semantic HTMLとCSSでroadmapとquantitative chartを配置する。",
+        "Equivalent:",
+        "node関係list、caption付きtable、summaryを同じdataから導出する。",
+        "Verify:",
+        "ID、edge、row、値、集約、display modeの不変条件を照合する。"
+      ],
+      "tableCells": [],
+      "disposition": "migrate"
+    },
+    {
+      "lessonId": "core-17-graphics-visual-information",
+      "sectionRole": "workedExample",
+      "occurrence": 1,
+      "caption": "同じ0–100%尺度で比較する学習活動の時間",
+      "visibleAtoms": [
+        "0%",
+        "100%",
+        "color表示",
+        "学習: 12 hours (60%)",
+        "60%",
+        "実践: 20 hours (100%)",
+        "100%",
+        "復習: 8 hours (40%)",
+        "40%",
+        "monochrome表示",
+        "学習: 12 hours (60%)",
+        "60%",
+        "実践: 20 hours (100%)",
+        "100%",
+        "復習: 8 hours (40%)",
+        "40%",
+        "barと同じfixtureから導出した活動別時間"
+      ],
+      "tableCells": [
+        "活動",
+        "ID",
+        "時間",
+        "学習",
+        "learn",
+        "12 hours",
+        "実践",
+        "practice",
+        "20 hours",
+        "復習",
+        "review",
+        "8 hours"
+      ],
+      "disposition": "retain"
+    },
+    {
+      "lessonId": "core-18-product-discovery-experiments",
+      "sectionRole": "mentalModel",
+      "occurrence": 1,
+      "caption": "問題発見から事前固定した停止判断までの因果flow",
+      "visibleAtoms": [
+        "Problem:",
+        "利用者の行動と制約を観察し、solutionから独立した問題を記述する。",
+        "Hypothesis:",
+        "介入、success metricの期待差、反証条件を宣言する。",
+        "Plan:",
+        "primary metric、guardrail、stop condition、always-valid解析を観測前に固定する。",
+        "Simulate:",
+        "controlとtreatmentの固定集計からrateと差分を導出する。",
+        "Decide:",
+        "successとguardrailを同時評価し、continue、stop、learnを記録する。"
+      ],
+      "tableCells": [],
+      "disposition": "migrate"
+    },
+    {
+      "lessonId": "core-19-technical-communication-design-docs",
+      "sectionRole": "mentalModel",
+      "occurrence": 1,
+      "caption": "一つの決定証拠から読者別viewを導く構造",
+      "visibleAtoms": [
+        "Audience:",
+        "責務、判断、既知の用語、時間制約を定義する。",
+        "Evidence:",
+        "評価基準、入力、代替案、risk、検証結果を固定する。",
+        "Decision:",
+        "選定結果、負うconsequence、再評価条件を明示する。",
+        "Executive view:",
+        "結論、価値、主要risk、承認依頼を一頁へ収める。",
+        "Implementation view:",
+        "interface、migration、rollback、validationを付録へ置く。",
+        "Drift check:",
+        "要約、付録、ADRが同じdecisionを指すか検査する。"
+      ],
+      "tableCells": [],
+      "disposition": "migrate"
+    },
+    {
+      "lessonId": "core-20-ethics-privacy-societal-impact",
+      "sectionRole": "mentalModel",
+      "occurrence": 1,
+      "caption": "affected peopleから残余riskの意思決定へ至るimpact chain",
+      "visibleAtoms": [
+        "People:",
+        "利益、害、権力、退出可能性が異なる集団を列挙する。",
+        "Lifecycle:",
+        "collect、use、share、retain、deleteの目的とownerを追う。",
+        "Harm:",
+        "privacy、security、accessibility、人権、労働への害を具体化する。",
+        "Inherent risk:",
+        "likelihood、severity、exposureを軽減前に評価する。",
+        "Mitigation:",
+        "回避、最小化、検知、救済、退出を設計する。",
+        "Residual risk:",
+        "残る害、uneven harm、owner、期限、停止条件を記録する。"
+      ],
+      "tableCells": [],
+      "disposition": "migrate"
+    },
+    {
+      "lessonId": "core-21-maintenance-legacy-comprehension",
+      "sectionRole": "mentalModel",
+      "occurrence": 1,
+      "caption": "change requestから変更前証拠を作るlegacy comprehension loop",
+      "visibleAtoms": [
+        "Reason:",
+        "誰のどの結果を変える要求かを一文で固定する。",
+        "Trace:",
+        "entry pointから実際のexecution pathを入力付きで追う。",
+        "Map:",
+        "component、data、side effect、ownerを経路へ結ぶ。",
+        "Unknown:",
+        "未観測、未所有、仕様不明を仮説から分離する。",
+        "Characterize:",
+        "現在のexpected、actual、observed pathをtestへ残す。",
+        "Decide:",
+        "証拠が足りなければ編集せず調査または停止を選ぶ。"
+      ],
+      "tableCells": [],
+      "disposition": "migrate"
+    },
+    {
+      "lessonId": "core-22-evolution-safe-migrations",
+      "sectionRole": "mentalModel",
+      "occurrence": 1,
+      "caption": "互換性と観測gateを持つexpand-contract state machine",
+      "visibleAtoms": [
+        "expand:",
+        "old readerを壊さないnullable構造を追加する。",
+        "dual write:",
+        "新旧fieldへ書き、成功率と値のparityを観測する。",
+        "backfill:",
+        "bounded batchで既存rowを移しerror rateとlagを測る。",
+        "dual read:",
+        "新旧readerの結果差を比較しfallbackを保持する。",
+        "contract:",
+        "利用停止の証拠を確認してから旧構造を除く。",
+        "rollback:",
+        "各stateで戻す対象と回復確認を先に定義する。"
+      ],
+      "tableCells": [],
+      "disposition": "migrate"
+    },
+    {
+      "lessonId": "core-23-incident-response-learning",
+      "sectionRole": "mentalModel",
+      "occurrence": 1,
+      "caption": "incident evidenceを検証可能な学習へ変えるreview chain",
+      "visibleAtoms": [
+        "Evidence:",
+        "timestamp、source、観測値、evidence IDを固定する。",
+        "Timeline:",
+        "clockを揃えて観測事実を時刻順に並べる。",
+        "Impact:",
+        "incident startからdetectionまでの未緩和時間とaffected rateから検知遅延の影響を導く。",
+        "Decision:",
+        "当時利用可能だったevidenceと判断を結ぶ。",
+        "Factor:",
+        "複数のsystem conditionと反証可能な仮説を残す。",
+        "Action:",
+        "owner、due、verification、evidenceで完了を定義する。"
+      ],
+      "tableCells": [],
+      "disposition": "migrate"
+    },
+    {
+      "lessonId": "core-24-delivery-ci-release-safety",
+      "sectionRole": "mentalModel",
+      "occurrence": 1,
+      "caption": "source変更からrollback outcomeまでを結ぶdelivery evidence chain",
+      "visibleAtoms": [
+        "CI:",
+        "required check集合がすべて観測され成功したか検査する。",
+        "Artifact:",
+        "配信対象bytesからdigestを計算して固定する。",
+        "Provenance:",
+        "subject digestとtrusted builderを独立に検証する。",
+        "Canary:",
+        "利用者可視のerror rateを閾値と比較する。",
+        "Decision:",
+        "advance、stop、rollbackを入力から導く。",
+        "Outcome:",
+        "command完了後にservice restorationを再観測する。"
+      ],
+      "tableCells": [],
+      "disposition": "migrate"
+    },
+    {
+      "lessonId": "core-25-engineering-economics-capacity",
+      "sectionRole": "mentalModel",
+      "occurrence": 1,
+      "caption": "入力からcapacity制約とunit economicsを経て投資判断へ至るchain",
+      "visibleAtoms": [
+        "Direct:",
+        "fixtureで与えた取得・実行費を置く。",
+        "Opportunity:",
+        "engineering hoursと一時間の代替価値を掛ける。",
+        "Operations:",
+        "operations hoursと運用単価を掛ける。",
+        "Reliability:",
+        "障害確率、時間、時間当たり影響を掛ける。",
+        "Capacity:",
+        "需要と供給からheadroomとbreachを導く。",
+        "Decision:",
+        "制約違反を先に、unit costを次に比較する。"
+      ],
+      "tableCells": [],
+      "disposition": "migrate"
+    },
+    {
+      "lessonId": "core-26-code-review-collaborative-quality",
+      "sectionRole": "mentalModel",
+      "occurrence": 1,
+      "caption": "sample changeから共同で品質を改善し独立再評価するreview loop",
+      "visibleAtoms": [
+        "Scope:",
+        "changeとrisk kind、review budgetを固定する。",
+        "Initial review:",
+        "priority、evidence、actionable fixを同じ入力から導く。",
+        "Author fix:",
+        "指摘IDに対応するpatchをactual artifactへ適用し、patch IDを残す。",
+        "Independent re-evaluation:",
+        "初回とは別のreviewerがprobeを再実行し、actualとexpectedからblocking findingとsystem outcomeを確認する。",
+        "Enablement:",
+        "判断根拠を残し、他のcontributorが再利用できるようにする。"
+      ],
+      "tableCells": [],
+      "disposition": "migrate"
+    },
+    {
+      "lessonId": "core-27-team-interfaces-sociotechnical-architecture",
+      "sectionRole": "mentalModel",
+      "occurrence": 1,
+      "caption": "team ownershipからdependency SLOとcontributor enablementへ至る社会技術interface",
+      "visibleAtoms": [
+        "Ownership:",
+        "checkout teamがcheckout capabilityのdecision rightを持つ。",
+        "Dependency:",
+        "checkoutはplatform capabilityへ依存する。",
+        "Cognitive load:",
+        "assigned領域をcapacityと比較し、過負荷を個人努力へ隠さない。",
+        "SLO:",
+        "dependency latencyのtargetとobservedを同じ単位で評価する。",
+        "Enablement:",
+        "各interface snapshotから判断を再計算し、healthyならmonitor、breachedならescalateとしてcheckoutの自律判断を増やす。"
+      ],
+      "tableCells": [],
+      "disposition": "migrate"
+    },
+    {
+      "lessonId": "core-28-oss-governance-stewardship",
+      "sectionRole": "mentalModel",
+      "occurrence": 1,
+      "caption": "第三者contributionをmaintainerのreview・merge・release evidenceへ安全に接続するgovernance chain",
+      "visibleAtoms": [
+        "discover:",
+        "第三者がlicense、community rule、security窓口、contribution手順を見つける。",
+        "prepare:",
+        "forkまたは同等のread-only境界で変更と検証証拠を作る。",
+        "submit:",
+        "変更理由、scope、test結果をreview可能な単位で提示する。",
+        "review:",
+        "maintainerが品質、security、policy、互換性を証拠で判断する。",
+        "maintainer-merge:",
+        "write権限を第三者へ移さず、承認済み変更だけを統合する。",
+        "release-evidence:",
+        "CI結果、provenance、承認、公開artifactを対応付ける。"
+      ],
+      "tableCells": [],
+      "disposition": "migrate"
+    },
+    {
+      "lessonId": "core-29-cross-cultural-async-collaboration",
+      "sectionRole": "mentalModel",
+      "occurrence": 1,
+      "caption": "proposal contextからreasoned decisionへ進む非同期review chain",
+      "visibleAtoms": [
+        "Frame:",
+        "problem、decision rights、対象外を固定する。",
+        "Expose:",
+        "alternatives、evidence、uncertaintyを同じ文書に置く。",
+        "Include:",
+        "timezone、working language、用語、UTC期限を示す。",
+        "Invite:",
+        "dissentを安全に記録するresponse-windowを開く。",
+        "Resolve:",
+        "異論ごとのresponseと採否理由を残す。",
+        "Replay:",
+        "meeting unnecessaryな状態で第三者が判断を再評価する。"
+      ],
+      "tableCells": [],
+      "disposition": "migrate"
+    },
+    {
+      "lessonId": "core-30-evidence-based-technical-leadership",
+      "sectionRole": "mentalModel",
+      "occurrence": 1,
+      "caption": "多面的evidenceから可逆な投資と撤退判断へ進むleadership loop",
+      "visibleAtoms": [
+        "Frame:",
+        "system outcome、非目標、decision rightsを合意する。",
+        "Measure:",
+        "five metrics、risk、cost、利用者影響を別々に観測する。",
+        "Challenge:",
+        "uncertaintyとdissentから反証条件を作る。",
+        "Order:",
+        "制約を守るoptionを投資順へ置く。",
+        "Act:",
+        "reversible first stepだけにtimeboxしたbudgetを与える。",
+        "Review:",
+        "withdrawal conditionsでstop、adapt、expandを判断する。"
+      ],
+      "tableCells": [],
+      "disposition": "migrate"
+    }
+  ],
+  "residualBodies": [
+    {
+      "lessonId": "core-01-systems-tradeoffs",
+      "sha256": "b3a0ce6ccb1391306a1c0244442bde2426db15a67f145e5d58cb906cfe736669"
+    },
+    {
+      "lessonId": "core-02-algorithms-measurement",
+      "sha256": "8d1f7f13feb6658db843b3a313bcf93eff9e569093ccc3982521f7ce2fc345ea"
+    },
+    {
+      "lessonId": "core-03-architecture-memory-caches",
+      "sha256": "8f20966cce0c11fee5caf724ea4ecc4752bea931bab065c87a681263eea42f0a"
+    },
+    {
+      "lessonId": "core-04-os-processes-concurrency",
+      "sha256": "4922ba3d940cb09eeeddffb132866fe99c9876ee7deca6679fb3de85b6184df8"
+    },
+    {
+      "lessonId": "core-05-networks-latency-failure",
+      "sha256": "c23cc57c8db7a6ba9bab835e26de7a2f0400a0001870efd70f98513d213cfeab"
+    },
+    {
+      "lessonId": "core-06-requirements-domain-modeling",
+      "sha256": "1bb9b3fe312fb1e60dfe66c8adf16dcbc2c8a591da3e8014b09d2234a6c517ef"
+    },
+    {
+      "lessonId": "core-07-api-contract-design",
+      "sha256": "42be255196f05c1fb77e3a27e4c08797739b9afd21fc3690da78589059b8f563"
+    },
+    {
+      "lessonId": "core-08-modularity-evolutionary-architecture",
+      "sha256": "fc2f44b2703b8668b4bf984dc1eae179e746efcd6dbdf641f352719994d2d688"
+    },
+    {
+      "lessonId": "core-09-test-strategy-tdd",
+      "sha256": "51e9da3aa1b0f056e0dbfde1fad897d2343953d0cef95c62466f0755494b9c55"
+    },
+    {
+      "lessonId": "core-10-threat-modeling-secure-design",
+      "sha256": "02a9d164aaec14b4fcd665a199358ce9c8155ee985ec3a273ebe94a4f60d8180"
+    },
+    {
+      "lessonId": "core-11-data-modeling-storage",
+      "sha256": "2244dbf882aa56bec8daec716050c30100bd395bc9c78a1ecbc2c54e4c2e7099"
+    },
+    {
+      "lessonId": "core-12-transactions-isolation-consistency",
+      "sha256": "ab6acdfb3d73b3822d24653707c6eb964dcaa20ba3b52d32997a26389b98a908"
+    },
+    {
+      "lessonId": "core-13-distributed-coordination-failure",
+      "sha256": "34d3c67b6c11ee3d3d284c8a3fbf5d808fb24e463ad80390537147981ed4318a"
+    },
+    {
+      "lessonId": "core-14-performance-capacity",
+      "sha256": "f415bff2723e4ff3768f70224cbc468b284191d7439f3f28e8e77e4821815d5f"
+    },
+    {
+      "lessonId": "core-15-reliability-observability-slo",
+      "sha256": "d3f336733a7d101b1d1f17cf7e8505a825f1bc2d63aeb6c07d9feb1cf5c0eecc"
+    },
+    {
+      "lessonId": "core-16-hci-usability-accessibility",
+      "sha256": "3f5cc1f1a2878675dd74aa9499759bde32de7eb524ba73d467298cbb1e368511"
+    },
+    {
+      "lessonId": "core-17-graphics-visual-information",
+      "sha256": "e01655003a87baec79cf8b26879cf14a90f7a0017bb7b391b3387027480124d0"
+    },
+    {
+      "lessonId": "core-18-product-discovery-experiments",
+      "sha256": "b081bb7700bc04ac4559bc90120f29e7119307de72fa5c8c063f6171c1e1e5d2"
+    },
+    {
+      "lessonId": "core-19-technical-communication-design-docs",
+      "sha256": "d78194534075e8bd7f4d011a3baba39f48b9f5e179420b894d018cd7eed12258"
+    },
+    {
+      "lessonId": "core-20-ethics-privacy-societal-impact",
+      "sha256": "2c4a81e1271ce6c67cf118e79fa519b56b79f535b67afb27a2a23d41e5a455e7"
+    },
+    {
+      "lessonId": "core-21-maintenance-legacy-comprehension",
+      "sha256": "6357e39728b867f93247160a229613301b4f4d4af3c3d149e269e6410046f803"
+    },
+    {
+      "lessonId": "core-22-evolution-safe-migrations",
+      "sha256": "15a98018dc335822ea1e8d70b16b6ab8ca620a1cd7b0974c43d12f472a21e06d"
+    },
+    {
+      "lessonId": "core-23-incident-response-learning",
+      "sha256": "8cdbd8ead36c11add048dbc62434cb2abfca3fd6483d6443a790a3d35c7ec65a"
+    },
+    {
+      "lessonId": "core-24-delivery-ci-release-safety",
+      "sha256": "af75464c62c21d04b55f0ef1c20ba7e04f688e37b6b4211b4abb04699db3e5de"
+    },
+    {
+      "lessonId": "core-25-engineering-economics-capacity",
+      "sha256": "9a58a3bea2308ff741df2519882667ae98a951af6f8bb2d9516b89abc49d26fc"
+    },
+    {
+      "lessonId": "core-26-code-review-collaborative-quality",
+      "sha256": "f543663386c79490ffb4527ad3a325b2b32039e28086dfe416b9fb7c1e4ffe8a"
+    },
+    {
+      "lessonId": "core-27-team-interfaces-sociotechnical-architecture",
+      "sha256": "d3e0c97cfe95ddc31f58a78383b26e4631ea0d0ebb49060f108cdc6a4799e841"
+    },
+    {
+      "lessonId": "core-28-oss-governance-stewardship",
+      "sha256": "d4008da80cbd806e1059f9e05b6c72fb404545ffed414936b2be3c2ba6652c8b"
+    },
+    {
+      "lessonId": "core-29-cross-cultural-async-collaboration",
+      "sha256": "0e8a40cd17e9e664b074671dbcf0b5411c1976273381655b6464ed0b6bf5ff65"
+    },
+    {
+      "lessonId": "core-30-evidence-based-technical-leadership",
+      "sha256": "52fb86b0ef7b275bb885b9301400546d5d600bc0e2e3a72f622ac76e3d94c782"
+    }
+  ],
+  "sourceProjections": [
+    {
+      "lessonId": "core-01-systems-tradeoffs",
+      "sources": [
+        {
+          "title": "NASA Systems Engineering Handbook",
+          "url": "https://www.nasa.gov/reference/systems-engineering-handbook/",
+          "kind": "primary"
+        },
+        {
+          "title": "NIST SP 800-160 Vol. 1 Rev. 1: Engineering Trustworthy Secure Systems",
+          "url": "https://doi.org/10.6028/NIST.SP.800-160v1r1",
+          "kind": "standard"
+        },
+        {
+          "title": "The Architecture Tradeoff Analysis Method",
+          "url": "https://www.sei.cmu.edu/library/the-architecture-tradeoff-analysis-method/",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "lessonId": "core-02-algorithms-measurement",
+      "sources": [
+        {
+          "title": "big-O notation",
+          "url": "https://www.nist.gov/dads/HTML/bigOnotation.html",
+          "kind": "primary"
+        },
+        {
+          "title": "SPEC CPU®2017 Run and Reporting Rules",
+          "url": "https://www.spec.org/cpu2017/Docs/runrules.html",
+          "kind": "standard"
+        },
+        {
+          "title": "timeit — Measure execution time of small code snippets",
+          "url": "https://docs.python.org/3/library/timeit.html",
+          "kind": "primary"
+        },
+        {
+          "title": "Quicksort",
+          "url": "https://www.cs.princeton.edu/courses/archive/spr18/cos226/lectures/23Quicksort.pdf",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "lessonId": "core-03-architecture-memory-caches",
+      "sources": [
+        {
+          "title": "Intel® 64 and IA-32 Architectures Optimization",
+          "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel64-and-ia32-architectures-optimization.html",
+          "kind": "primary"
+        },
+        {
+          "title": "Armv8-A memory model",
+          "url": "https://developer.arm.com/-/media/Arm%20Developer%20Community/PDF/Learn%20the%20Architecture/Armv8-A%20memory%20model%20guide.pdf?revision=58b1dd0a-3800-4218-b21a-f95a0332034c",
+          "kind": "primary"
+        },
+        {
+          "title": "The TLB",
+          "url": "https://docs.kernel.org/arch/x86/tlb.html",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "lessonId": "core-04-os-processes-concurrency",
+      "sources": [
+        {
+          "title": "Chapter 17. Threads and Locks",
+          "url": "https://docs.oracle.com/javase/specs/jls/se21/html/jls-17.html",
+          "kind": "standard"
+        },
+        {
+          "title": "pthread_create — thread creation",
+          "url": "https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/functions/pthread_create.html",
+          "kind": "standard"
+        },
+        {
+          "title": "fork — create a new process",
+          "url": "https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/functions/fork.html",
+          "kind": "standard"
+        },
+        {
+          "title": "Linux kernel memory barriers",
+          "url": "https://docs.kernel.org/core-api/wrappers/memory-barriers.html",
+          "kind": "primary"
+        },
+        {
+          "title": "About Processes and Threads",
+          "url": "https://learn.microsoft.com/en-us/windows/win32/procthread/about-processes-and-threads",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "lessonId": "core-05-networks-latency-failure",
+      "sources": [
+        {
+          "title": "RFC 1035: Domain Names - Implementation and Specification",
+          "url": "https://www.rfc-editor.org/rfc/rfc1035.html",
+          "kind": "standard"
+        },
+        {
+          "title": "RFC 9293: Transmission Control Protocol (TCP)",
+          "url": "https://www.rfc-editor.org/rfc/rfc9293.html",
+          "kind": "standard"
+        },
+        {
+          "title": "RFC 6298: Computing TCP's Retransmission Timer",
+          "url": "https://www.rfc-editor.org/rfc/rfc6298.html",
+          "kind": "standard"
+        },
+        {
+          "title": "RFC 8446: The Transport Layer Security (TLS) Protocol Version 1.3",
+          "url": "https://www.rfc-editor.org/rfc/rfc8446.html",
+          "kind": "standard"
+        },
+        {
+          "title": "RFC 9110: HTTP Semantics",
+          "url": "https://www.rfc-editor.org/rfc/rfc9110.html",
+          "kind": "standard"
+        }
+      ]
+    },
+    {
+      "lessonId": "core-06-requirements-domain-modeling",
+      "sources": [
+        {
+          "title": "ISO/IEC/IEEE 29148:2018 - Systems and software engineering — Life cycle processes — Requirements engineering",
+          "url": "https://www.iso.org/standard/72089.html",
+          "kind": "standard"
+        },
+        {
+          "title": "Appendix C: How to Write a Good Requirement",
+          "url": "https://www.nasa.gov/reference/appendix-c-how-to-write-a-good-requirement/",
+          "kind": "primary"
+        },
+        {
+          "title": "Domain-Driven Design Reference: Definitions and Pattern Summaries",
+          "url": "https://www.domainlanguage.com/wp-content/uploads/2016/05/DDD_Reference_2015-03.pdf",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "lessonId": "core-07-api-contract-design",
+      "sources": [
+        {
+          "title": "RFC 9110: HTTP Semantics",
+          "url": "https://www.rfc-editor.org/rfc/rfc9110.html",
+          "kind": "standard"
+        },
+        {
+          "title": "OpenAPI Specification v3.2.0",
+          "url": "https://spec.openapis.org/oas/v3.2.0.html",
+          "kind": "standard"
+        },
+        {
+          "title": "JSON Schema Validation: A Vocabulary for Structural Validation of JSON",
+          "url": "https://json-schema.org/draft/2020-12/json-schema-validation",
+          "kind": "standard"
+        },
+        {
+          "title": "AIP-180: Backwards compatibility",
+          "url": "https://google.aip.dev/180",
+          "kind": "primary"
+        },
+        {
+          "title": "RFC 9457: Problem Details for HTTP APIs",
+          "url": "https://www.rfc-editor.org/rfc/rfc9457.html",
+          "kind": "standard"
+        }
+      ]
+    },
+    {
+      "lessonId": "core-08-modularity-evolutionary-architecture",
+      "sources": [
+        {
+          "title": "On the Criteria To Be Used in Decomposing Systems into Modules",
+          "url": "https://doi.org/10.1145/361598.361623",
+          "kind": "primary"
+        },
+        {
+          "title": "ISO/IEC/IEEE 42010:2022 - Software, systems and enterprise — Architecture description",
+          "url": "https://www.iso.org/standard/74393.html",
+          "kind": "standard"
+        },
+        {
+          "title": "Documenting Software Architectures: Views and Beyond, Second Edition",
+          "url": "https://www.sei.cmu.edu/library/documenting-software-architectures-views-and-beyond-second-edition/",
+          "kind": "primary"
+        },
+        {
+          "title": "MADR 4.0.0 — The Markdown Architectural Decision Records",
+          "url": "https://adr.github.io/madr/",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "lessonId": "core-09-test-strategy-tdd",
+      "sources": [
+        {
+          "title": "ISTQB Certified Tester Foundation Level Syllabus v4.0.1",
+          "url": "https://istqb.org/wp-content/uploads/2024/11/ISTQB_CTFL_Syllabus_v4.0.1.pdf",
+          "kind": "standard"
+        },
+        {
+          "title": "Test Driven Development: By Example",
+          "url": "https://www.informit.com/store/test-driven-development-by-example-9780321146533",
+          "kind": "primary"
+        },
+        {
+          "title": "An Empirical Analysis of Flaky Tests",
+          "url": "https://doi.org/10.1145/2635868.2635920",
+          "kind": "peer-reviewed"
+        },
+        {
+          "title": "Metamorphic Testing: A New Approach for Generating Next Test Cases",
+          "url": "https://www.cse.ust.hk/~scc/publ/CS98-01-metamorphictesting.pdf",
+          "kind": "primary"
+        },
+        {
+          "title": "Pact Specification",
+          "url": "https://docs.pact.io/getting_started/specification",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "lessonId": "core-10-threat-modeling-secure-design",
+      "sources": [
+        {
+          "title": "Secure Software Development Framework (SSDF) Version 1.1: Recommendations for Mitigating the Risk of Software Vulnerabilities",
+          "url": "https://csrc.nist.gov/pubs/sp/800/218/final",
+          "kind": "standard"
+        },
+        {
+          "title": "Shifting the Balance of Cybersecurity Risk: Principles and Approaches for Secure by Design Software",
+          "url": "https://www.cisa.gov/sites/default/files/2023-10/Shifting-the-Balance-of-Cybersecurity-Risk-Principles-and-Approaches-for-Secure-by-Design-Software.pdf",
+          "kind": "primary"
+        },
+        {
+          "title": "Threat Modeling Cheat Sheet",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/Threat_Modeling_Cheat_Sheet.html",
+          "kind": "primary"
+        },
+        {
+          "title": "OWASP Application Security Verification Standard 5.0.0",
+          "url": "https://github.com/OWASP/ASVS/releases/tag/v5.0.0_release",
+          "kind": "standard"
+        },
+        {
+          "title": "Insider Threat Mitigation Guide",
+          "url": "https://www.cisa.gov/sites/default/files/2022-11/Insider%20Threat%20Mitigation%20Guide_Final_508.pdf",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "lessonId": "core-11-data-modeling-storage",
+      "sources": [
+        {
+          "title": "A Relational Model of Data for Large Shared Data Banks",
+          "url": "https://doi.org/10.1145/362384.362685",
+          "kind": "peer-reviewed"
+        },
+        {
+          "title": "Chapter 5. Data Definition",
+          "url": "https://www.postgresql.org/docs/18/ddl.html",
+          "kind": "primary"
+        },
+        {
+          "title": "Data Modeling in MongoDB",
+          "url": "https://www.mongodb.com/docs/v8.0/data-modeling/",
+          "kind": "primary"
+        },
+        {
+          "title": "Dynamo: Amazon’s Highly Available Key-value Store",
+          "url": "https://doi.org/10.1145/1294261.1294281",
+          "kind": "peer-reviewed"
+        }
+      ]
+    },
+    {
+      "lessonId": "core-12-transactions-isolation-consistency",
+      "sources": [
+        {
+          "title": "Principles of Transaction-Oriented Database Recovery",
+          "url": "https://doi.org/10.1145/289.291",
+          "kind": "peer-reviewed"
+        },
+        {
+          "title": "A Critique of ANSI SQL Isolation Levels",
+          "url": "https://sigmodrecord.org/1995/06/06/a-critique-of-ansi-sql-isolation-levels/",
+          "kind": "peer-reviewed"
+        },
+        {
+          "title": "13.2. Transaction Isolation",
+          "url": "https://www.postgresql.org/docs/18/transaction-iso.html",
+          "kind": "primary"
+        },
+        {
+          "title": "Serializable Snapshot Isolation in PostgreSQL",
+          "url": "https://doi.org/10.14778/2367502.2367523",
+          "kind": "peer-reviewed"
+        }
+      ]
+    },
+    {
+      "lessonId": "core-13-distributed-coordination-failure",
+      "sources": [
+        {
+          "title": "Impossibility of Distributed Consensus with One Faulty Process",
+          "url": "https://doi.org/10.1145/3149.214121",
+          "kind": "peer-reviewed"
+        },
+        {
+          "title": "In Search of an Understandable Consensus Algorithm",
+          "url": "https://raft.github.io/raft.pdf",
+          "kind": "primary"
+        },
+        {
+          "title": "RFC 9110: HTTP Semantics",
+          "url": "https://www.rfc-editor.org/rfc/rfc9110.html",
+          "kind": "standard"
+        },
+        {
+          "title": "FoundationDB: A Distributed Unbundled Transactional Key Value Store",
+          "url": "https://doi.org/10.1145/3448016.3457559",
+          "kind": "peer-reviewed"
+        }
+      ]
+    },
+    {
+      "lessonId": "core-14-performance-capacity",
+      "sources": [
+        {
+          "title": "Diagnostics",
+          "url": "https://go.dev/doc/diagnostics",
+          "kind": "primary"
+        },
+        {
+          "title": "Handling Overload",
+          "url": "https://sre.google/sre-book/handling-overload/",
+          "kind": "primary"
+        },
+        {
+          "title": "A Proof for the Queuing Formula: L = λW",
+          "url": "https://doi.org/10.1287/opre.9.3.383",
+          "kind": "peer-reviewed"
+        },
+        {
+          "title": "The Tail at Scale",
+          "url": "https://doi.org/10.1145/2408776.2408794",
+          "kind": "peer-reviewed"
+        },
+        {
+          "title": "The Python Profilers",
+          "url": "https://docs.python.org/3.13/library/profile.html",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "lessonId": "core-15-reliability-observability-slo",
+      "sources": [
+        {
+          "title": "Service Level Objectives",
+          "url": "https://sre.google/sre-book/service-level-objectives/",
+          "kind": "primary"
+        },
+        {
+          "title": "Alerting on SLOs",
+          "url": "https://sre.google/workbook/alerting-on-slos/",
+          "kind": "primary"
+        },
+        {
+          "title": "On-Call",
+          "url": "https://sre.google/workbook/on-call/",
+          "kind": "primary"
+        },
+        {
+          "title": "OpenTelemetry Specification 1.59.0",
+          "url": "https://opentelemetry.io/docs/specs/otel/",
+          "kind": "standard"
+        },
+        {
+          "title": "OpenTelemetry semantic conventions 1.43.0",
+          "url": "https://opentelemetry.io/docs/specs/semconv/",
+          "kind": "standard"
+        }
+      ]
+    },
+    {
+      "lessonId": "core-16-hci-usability-accessibility",
+      "sources": [
+        {
+          "title": "Web Content Accessibility Guidelines (WCAG) 2.2",
+          "url": "https://www.w3.org/TR/WCAG22/",
+          "kind": "standard"
+        },
+        {
+          "title": "Website Accessibility Conformance Evaluation Methodology (WCAG-EM) 1.0",
+          "url": "https://www.w3.org/TR/WCAG-EM/",
+          "kind": "standard"
+        },
+        {
+          "title": "ISO 9241-210:2019 - Ergonomics of human-system interaction — Part 210: Human-centred design for interactive systems",
+          "url": "https://www.iso.org/standard/77520.html",
+          "kind": "standard"
+        },
+        {
+          "title": "W3C Accessibility Guidelines (WCAG) 3.0 Working Draft 03 March 2026",
+          "url": "https://www.w3.org/TR/wcag-3.0/",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "lessonId": "core-17-graphics-visual-information",
+      "sources": [
+        {
+          "title": "The OpenGL Graphics System: A Specification, Version 4.6 (Core Profile), May 5, 2022",
+          "url": "https://registry.khronos.org/OpenGL/specs/gl/glspec46.core.pdf",
+          "kind": "standard"
+        },
+        {
+          "title": "Scalable Vector Graphics (SVG) 2",
+          "url": "https://www.w3.org/TR/SVG2/",
+          "kind": "standard"
+        },
+        {
+          "title": "Graphical Perception: Theory, Experimentation, and Application to the Development of Graphical Methods",
+          "url": "https://doi.org/10.1080/01621459.1984.10478080",
+          "kind": "peer-reviewed"
+        },
+        {
+          "title": "Visualization Analysis and Design",
+          "url": "https://www.routledge.com/Visualization-Analysis-and-Design/Munzner/p/book/9781466508910",
+          "kind": "primary"
+        },
+        {
+          "title": "Complex Images",
+          "url": "https://www.w3.org/WAI/tutorials/images/complex/",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "lessonId": "core-18-product-discovery-experiments",
+      "sources": [
+        {
+          "title": "How the discovery phase works",
+          "url": "https://www.gov.uk/service-manual/agile-delivery/how-the-discovery-phase-works",
+          "kind": "primary"
+        },
+        {
+          "title": "Trustworthy Online Controlled Experiments: A Practical Guide to A/B Testing",
+          "url": "https://doi.org/10.1017/9781108653985",
+          "kind": "primary"
+        },
+        {
+          "title": "Online Experimentation at Microsoft",
+          "url": "https://www.microsoft.com/en-us/research/publication/online-experimentation-at-microsoft/",
+          "kind": "primary"
+        },
+        {
+          "title": "Always Valid Inference: Continuous Monitoring of A/B Tests",
+          "url": "https://doi.org/10.1287/opre.2021.2135",
+          "kind": "peer-reviewed"
+        }
+      ]
+    },
+    {
+      "lessonId": "core-19-technical-communication-design-docs",
+      "sources": [
+        {
+          "title": "ISO/IEC/IEEE 42010:2022 - Software, systems and enterprise — Architecture description",
+          "url": "https://www.iso.org/standard/74393.html",
+          "kind": "standard"
+        },
+        {
+          "title": "NASA Systems Engineering Handbook, NASA/SP-2016-6105 Rev2",
+          "url": "https://www.nasa.gov/reference/systems-engineering-handbook/",
+          "kind": "primary"
+        },
+        {
+          "title": "RFC 7322: RFC Style Guide",
+          "url": "https://www.rfc-editor.org/info/rfc7322/",
+          "kind": "standard"
+        },
+        {
+          "title": "Markdown Architectural Decision Records 4.0.0",
+          "url": "https://adr.github.io/madr/",
+          "kind": "primary"
+        },
+        {
+          "title": "Plain language guide series",
+          "url": "https://digital.gov/guides/plain-language",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "lessonId": "core-20-ethics-privacy-societal-impact",
+      "sources": [
+        {
+          "title": "ACM Code of Ethics and Professional Conduct (2018)",
+          "url": "https://www.acm.org/code-of-ethics",
+          "kind": "standard"
+        },
+        {
+          "title": "NIST Privacy Framework: A Tool for Improving Privacy through Enterprise Risk Management, Version 1.0",
+          "url": "https://doi.org/10.6028/NIST.CSWP.01162020",
+          "kind": "standard"
+        },
+        {
+          "title": "RFC 6973: Privacy Considerations for Internet Protocols",
+          "url": "https://www.rfc-editor.org/info/rfc6973/",
+          "kind": "standard"
+        },
+        {
+          "title": "RFC 9620: Guidelines for Human Rights Protocol and Architecture Considerations",
+          "url": "https://www.rfc-editor.org/rfc/rfc9620.html",
+          "kind": "primary"
+        },
+        {
+          "title": "Artificial Intelligence Risk Management Framework (AI RMF 1.0)",
+          "url": "https://doi.org/10.6028/NIST.AI.100-1",
+          "kind": "standard"
+        }
+      ]
+    },
+    {
+      "lessonId": "core-21-maintenance-legacy-comprehension",
+      "sources": [
+        {
+          "title": "Guide to the Software Engineering Body of Knowledge (SWEBOK Guide), Version 4.0a, September 2025",
+          "url": "https://ieeecs-media.computer.org/media/education/swebok/swebok-v4.pdf",
+          "kind": "standard"
+        },
+        {
+          "title": "ISO/IEC/IEEE 14764:2022 - Software engineering — Software life cycle processes — Maintenance",
+          "url": "https://www.iso.org/standard/80710.html",
+          "kind": "standard"
+        },
+        {
+          "title": "Software maintenance and evolution: a roadmap (2000)",
+          "url": "https://doi.org/10.1145/336512.336534",
+          "kind": "peer-reviewed"
+        },
+        {
+          "title": "Comprehension strategies and difficulties in maintaining object-oriented systems: An explorative study (2007)",
+          "url": "https://doi.org/10.1016/j.jss.2006.10.041",
+          "kind": "peer-reviewed"
+        }
+      ]
+    },
+    {
+      "lessonId": "core-22-evolution-safe-migrations",
+      "sources": [
+        {
+          "title": "DORA Capability: Database change management (accessed 2026-07-31)",
+          "url": "https://dora.dev/capabilities/database-change-management/",
+          "kind": "primary"
+        },
+        {
+          "title": "PostgreSQL 18 Documentation: ALTER TABLE",
+          "url": "https://www.postgresql.org/docs/18/sql-altertable.html",
+          "kind": "primary"
+        },
+        {
+          "title": "PostgreSQL 18 Documentation: Restrictions",
+          "url": "https://www.postgresql.org/docs/18/logical-replication-restrictions.html",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "lessonId": "core-23-incident-response-learning",
+      "sources": [
+        {
+          "title": "NIST SP 800-61 Rev. 3: Incident Response Recommendations and Considerations for Cybersecurity Risk Management (April 2025)",
+          "url": "https://doi.org/10.6028/NIST.SP.800-61r3",
+          "kind": "standard"
+        },
+        {
+          "title": "Google SRE Workbook: Incident Response",
+          "url": "https://sre.google/workbook/incident-response/",
+          "kind": "primary"
+        },
+        {
+          "title": "Google SRE Workbook: Postmortem Culture — Learning from Failure",
+          "url": "https://sre.google/workbook/postmortem-culture/",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "lessonId": "core-24-delivery-ci-release-safety",
+      "sources": [
+        {
+          "title": "SLSA Specification Version 1.2 (Approved)",
+          "url": "https://slsa.dev/spec/v1.2/",
+          "kind": "standard"
+        },
+        {
+          "title": "DORA's software delivery performance metrics (updated January 5, 2026)",
+          "url": "https://dora.dev/guides/dora-metrics/",
+          "kind": "primary"
+        },
+        {
+          "title": "DORA Capability: Continuous delivery (accessed 2026-07-31)",
+          "url": "https://dora.dev/capabilities/continuous-delivery/",
+          "kind": "primary"
+        },
+        {
+          "title": "NIST SP 800-218: Secure Software Development Framework Version 1.1 (February 2022)",
+          "url": "https://doi.org/10.6028/NIST.SP.800-218",
+          "kind": "standard"
+        }
+      ]
+    },
+    {
+      "lessonId": "core-25-engineering-economics-capacity",
+      "sources": [
+        {
+          "title": "FinOps Framework Capability: Unit Economics (accessed 2026-07-31)",
+          "url": "https://www.finops.org/framework/capabilities/unit-economics/",
+          "kind": "primary"
+        },
+        {
+          "title": "FinOps Framework Capability: Architecting & Workload Placement (accessed 2026-07-31)",
+          "url": "https://www.finops.org/framework/capabilities/architecting-workload-placement/",
+          "kind": "primary"
+        },
+        {
+          "title": "AWS Well-Architected Framework: Cost Optimization Pillar (June 27, 2024)",
+          "url": "https://docs.aws.amazon.com/wellarchitected/latest/cost-optimization-pillar/welcome.html",
+          "kind": "primary"
+        },
+        {
+          "title": "Google Cloud Well-Architected Framework: Cost optimization pillar (accessed 2026-07-31)",
+          "url": "https://docs.cloud.google.com/architecture/framework/cost-optimization",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "lessonId": "core-26-code-review-collaborative-quality",
+      "sources": [
+        {
+          "title": "The Standard of Code Review",
+          "url": "https://google.github.io/eng-practices/review/reviewer/standard.html",
+          "kind": "primary"
+        },
+        {
+          "title": "How to write code review comments",
+          "url": "https://google.github.io/eng-practices/review/reviewer/comments.html",
+          "kind": "primary"
+        },
+        {
+          "title": "Guide to the Software Engineering Body of Knowledge (SWEBOK Guide), Version 4.0a, September 2025",
+          "url": "https://ieeecs-media.computer.org/media/education/swebok/swebok-v4.pdf",
+          "kind": "standard"
+        },
+        {
+          "title": "Characteristics of Useful Code Reviews: An Empirical Study at Microsoft",
+          "url": "https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/bosu2015useful.pdf",
+          "kind": "peer-reviewed"
+        }
+      ]
+    },
+    {
+      "lessonId": "core-27-team-interfaces-sociotechnical-architecture",
+      "sources": [
+        {
+          "title": "DORA Capability: Loosely coupled teams (accessed 2026-07-31)",
+          "url": "https://dora.dev/capabilities/loosely-coupled-teams/",
+          "kind": "primary"
+        },
+        {
+          "title": "How Do Committees Invent? (1968)",
+          "url": "https://www.melconway.com/Home/Committees_Paper.html",
+          "kind": "primary"
+        },
+        {
+          "title": "Team Topologies: Key concepts (accessed 2026-07-31)",
+          "url": "https://teamtopologies.com/key-concepts",
+          "kind": "primary"
+        },
+        {
+          "title": "ISO/IEC/IEEE 42010:2022 - Software, systems and enterprise — Architecture description",
+          "url": "https://www.iso.org/standard/74393.html",
+          "kind": "standard"
+        }
+      ]
+    },
+    {
+      "lessonId": "core-28-oss-governance-stewardship",
+      "sources": [
+        {
+          "title": "OpenSSF Scorecard (accessed 2026-07-31)",
+          "url": "https://www.scorecard.dev/",
+          "kind": "primary"
+        },
+        {
+          "title": "Contributor Covenant Code of Conduct Version 2.1",
+          "url": "https://www.contributor-covenant.org/version/2/1/code_of_conduct/",
+          "kind": "standard"
+        },
+        {
+          "title": "SLSA v1.2 Source: Requirements for producing source",
+          "url": "https://slsa.dev/spec/v1.2/source-requirements",
+          "kind": "standard"
+        },
+        {
+          "title": "Setting up your project for healthy contributions",
+          "url": "https://docs.github.com/en/communities/setting-up-your-project-for-healthy-contributions",
+          "kind": "primary"
+        },
+        {
+          "title": "Best Practices for Maintainers",
+          "url": "https://opensource.guide/best-practices/",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "lessonId": "core-29-cross-cultural-async-collaboration",
+      "sources": [
+        {
+          "title": "RFC 7282: On Consensus and Humming in the IETF",
+          "url": "https://www.rfc-editor.org/info/rfc7282/",
+          "kind": "standard"
+        },
+        {
+          "title": "RFC 7322: RFC Style Guide",
+          "url": "https://www.rfc-editor.org/info/rfc7322/",
+          "kind": "standard"
+        },
+        {
+          "title": "W3C Process Document, 18 August 2025",
+          "url": "https://www.w3.org/policies/process/",
+          "kind": "standard"
+        },
+        {
+          "title": "The Art of Consensus (W3C Guidebook, accessed 2026-07-31)",
+          "url": "https://www.w3.org/guide/",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "lessonId": "core-30-evidence-based-technical-leadership",
+      "sources": [
+        {
+          "title": "ACM Code of Ethics and Professional Conduct (2018)",
+          "url": "https://www.acm.org/code-of-ethics",
+          "kind": "standard"
+        },
+        {
+          "title": "DORA's software delivery performance metrics (updated January 5, 2026)",
+          "url": "https://dora.dev/guides/dora-metrics/",
+          "kind": "primary"
+        },
+        {
+          "title": "FinOps Framework 2026 (accessed 2026-07-31)",
+          "url": "https://www.finops.org/framework/",
+          "kind": "primary"
+        },
+        {
+          "title": "The NIST Cybersecurity Framework (CSF) 2.0",
+          "url": "https://doi.org/10.6028/NIST.CSWP.29",
+          "kind": "standard"
+        }
+      ]
+    }
+  ]
+}

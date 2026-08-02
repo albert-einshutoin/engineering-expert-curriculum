@@ -9,19 +9,6 @@
 <section id="mental-model">
   <h2>メンタルモデル</h2>
   <p>一要求を層ではなくイベント列として観測する。各イベントに単調時計の開始・完了、残りdeadline、request IDを付ける。層の境界を越えるたびに「何が完了したと言えるか」を更新する。</p>
-  <figure>
-    <figcaption>DNSから業務結果までの時系列</figcaption>
-    <ol>
-      <li><strong>名前解決:</strong> DNS queryを送り、候補addressとTTLを得る。</li>
-      <li><strong>輸送接続:</strong> TCP SYN、SYN-ACK、ACKで接続状態を確立する。</li>
-      <li><strong>暗号接続:</strong> TLSでversion、鍵、相手のidentityを検証する。</li>
-      <li><strong>request送信:</strong> HTTP method、target、header、bodyを送る。</li>
-      <li><strong>server処理:</strong> handlerと依存serviceが状態を読み書きする。</li>
-      <li><strong>最初のbyte:</strong> statusとheaderを受け始める。</li>
-      <li><strong>本文完了:</strong> responseを読み終える。ただし業務結果はstatusとbodyの契約で判定する。</li>
-      <li><strong>結果確定:</strong> clientが結果を永続化し、必要なら冪等keyで後から照会できる。</li>
-    </ol>
-  </figure>
   <p>timeoutは各層へ同じ値を配るのではなく、利用者の総deadlineから逆算する。再試行を許すなら、一回目のtimeout、backoff、二回目、後処理の合計が総deadline以下でなければならない。下流にも残りdeadlineを伝えないと、clientが諦めた後もserverが仕事を続ける。</p>
 </section>
 <section id="worked-example">

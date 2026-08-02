@@ -9,17 +9,6 @@
 <section id="mental-model">
   <h2>メンタルモデル</h2>
   <p>利用者journeyをvalid eventの集合として定義し、そのうち期待した結果と時間境界を満たすものをgoodとする。SLIはgood÷valid、SLOはwindowとtarget、error budgetは許容できるbadの割合である。burn rateは観測したbad割合がbudgetを何倍の速さで消費するかを表す。</p>
-  <figure>
-    <figcaption>利用者結果からon-call actionまでを閉じるflow</figcaption>
-    <ol>
-      <li><strong>Journey:</strong> 利用者が達成したい結果とvalidな試行を定める。</li>
-      <li><strong>SLI:</strong> goodの結果とlatency境界をevent単位で計算する。</li>
-      <li><strong>SLO:</strong> window、target、error budget、例外を合意する。</li>
-      <li><strong>Alert:</strong> 短窓と長窓のburnをpageとticketへ分ける。</li>
-      <li><strong>Runbook:</strong> impact確認、mitigation、rollback、escalationを結ぶ。</li>
-      <li><strong>Telemetry:</strong> traceで原因へ相関し、意味とprivacyを検証する。</li>
-    </ol>
-  </figure>
   <p>pageは人が直ちに取る行動があり、error budgetを急速に失う時に限定する。長いwindowの緩やかなburnや容量傾向はticketにし、参考情報はdashboardへ置く。thresholdを緩める前に、利用者impact、false positive、runbookの有効性を確認する。</p>
 </section>
 <section id="worked-example">

@@ -9,17 +9,6 @@
 <section id="mental-model">
   <h2>メンタルモデル</h2>
   <p>配信を、sourceからsystem outcomeへ証拠を引き渡すstate machineとして扱う。各境界は未知を成功へ倒さないfail-closed gateにし、次段へ進む条件と戻る条件を対で定義する。</p>
-  <figure>
-    <figcaption>source変更からrollback outcomeまでを結ぶdelivery evidence chain</figcaption>
-    <ol>
-      <li><strong>CI:</strong> required check集合がすべて観測され成功したか検査する。</li>
-      <li><strong>Artifact:</strong>配信対象bytesからdigestを計算して固定する。</li>
-      <li><strong>Provenance:</strong> subject digestとtrusted builderを独立に検証する。</li>
-      <li><strong>Canary:</strong> 利用者可視のerror rateを閾値と比較する。</li>
-      <li><strong>Decision:</strong> advance、stop、rollbackを入力から導く。</li>
-      <li><strong>Outcome:</strong> command完了後にservice restorationを再観測する。</li>
-    </ol>
-  </figure>
   <p>DORAのcurrent five metricsはchange lead time、deployment frequency、failed deployment recovery time、change fail rate、deployment rework rateである。指標はrankingのためではなく、throughputとinstabilityを同時に見て改善仮説を検証するために使う。</p>
 </section>
 <section id="worked-example">

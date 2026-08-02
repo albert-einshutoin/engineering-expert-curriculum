@@ -9,16 +9,6 @@
 <section id="mental-model">
   <h2>メンタルモデル</h2>
   <p>まずriskを「どの境界で、何が壊れ、誰にどの影響が出るか」で記述する。次に、その失敗を最短で観測できる層へtestを置く。test数の多さではなく、異なる失敗仮説への感度と診断可能性を設計する。</p>
-  <figure>
-    <figcaption>riskから証拠へ進み、mutationで感度を反証するloop</figcaption>
-    <ol>
-      <li>利用者影響と守る不変条件を一つ選ぶ。</li>
-      <li>失敗する最小の期待を実行し、REDの理由を読む。</li>
-      <li>最小実装でGREENにし、別の入力でも性質を確認する。</li>
-      <li>振る舞いを保って構造を整理し、同じ観測を再実行する。</li>
-      <li>mutantまたは障害注入で、testが実際に誤りを検出するか確かめる。</li>
-    </ol>
-  </figure>
   <table>
     <caption>失敗riskからtest技法を選ぶdecision table</caption>
     <thead>

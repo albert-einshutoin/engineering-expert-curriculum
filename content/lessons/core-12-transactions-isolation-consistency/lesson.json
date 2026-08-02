@@ -14,17 +14,26 @@
     {
       "id": "obj-anomaly",
       "statement": "同じ並行scheduleからRead Committedのnon-repeatable readとSnapshot Isolationのwrite skewをevent traceで再現できる",
-      "evidenceIds": ["transaction-experiment", "teach-back"]
+      "evidenceIds": [
+        "transaction-experiment",
+        "teach-back"
+      ]
     },
     {
       "id": "obj-serializable",
       "statement": "Serializableで競合する一方をabortし、トランザクション全体のretry後に明示した業務不変条件が回復したことを検証できる",
-      "evidenceIds": ["transaction-experiment", "assessment"]
+      "evidenceIds": [
+        "transaction-experiment",
+        "assessment"
+      ]
     },
     {
       "id": "obj-scope",
       "statement": "ACID、MVCC、Snapshot Isolation、SQL分離レベルの保証範囲とvendor差を区別し、並行性変更へ判断を移せる",
-      "evidenceIds": ["assessment", "transfer"]
+      "evidenceIds": [
+        "assessment",
+        "transfer"
+      ]
     }
   ],
   "evidence": [
@@ -53,27 +62,37 @@
     {
       "level": "recognize",
       "criterion": "atomicity、consistency、isolation、durabilityと、dirty read、non-repeatable read、phantom、write skewを区別できる",
-      "evidenceIds": ["transaction-experiment"]
+      "evidenceIds": [
+        "transaction-experiment"
+      ]
     },
     {
       "level": "explain",
       "criterion": "MVCCが読取り待ちを減らしても直列化可能性を自動的に保証せず、業務不変条件をdatabaseが推論しない理由を説明できる",
-      "evidenceIds": ["teach-back"]
+      "evidenceIds": [
+        "teach-back"
+      ]
     },
     {
       "level": "apply",
       "criterion": "固定scheduleで二つの分離異常を再現し、Serializableのabortをトランザクション境界からretryできる",
-      "evidenceIds": ["transaction-experiment"]
+      "evidenceIds": [
+        "transaction-experiment"
+      ]
     },
     {
       "level": "diagnose",
       "criterion": "event trace、snapshot、読み書き集合から異常を分類し、単なるlost updateや実装bugという誤診を反証できる",
-      "evidenceIds": ["assessment"]
+      "evidenceIds": [
+        "assessment"
+      ]
     },
     {
       "level": "lead",
       "criterion": "不変条件、競合率、latency、vendor保証、retry副作用をレビューし、運用可能な分離方針を合意できる",
-      "evidenceIds": ["transfer"]
+      "evidenceIds": [
+        "transfer"
+      ]
     }
   ],
   "lab": {
@@ -139,28 +158,211 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "Principles of Transaction-Oriented Database Recovery",
       "url": "https://doi.org/10.1145/289.291",
       "kind": "peer-reviewed"
     },
     {
+      "id": "src-02",
       "title": "A Critique of ANSI SQL Isolation Levels",
       "url": "https://sigmodrecord.org/1995/06/06/a-critique-of-ansi-sql-isolation-levels/",
       "kind": "peer-reviewed"
     },
     {
+      "id": "src-03",
       "title": "13.2. Transaction Isolation",
       "url": "https://www.postgresql.org/docs/18/transaction-iso.html",
       "kind": "primary"
     },
     {
+      "id": "src-04",
       "title": "Serializable Snapshot Isolation in PostgreSQL",
       "url": "https://doi.org/10.14778/2367502.2367523",
       "kind": "peer-reviewed"
     }
   ],
+  "visualizations": [
+    {
+      "id": "isolation-schedule-static",
+      "type": "timeline",
+      "caption": "snapshotから依存関係、commit判定、retryへ進む分離異常の因果経路",
+      "question": "同じsnapshotを読んだT1とT2のwrite skewを、どの依存検証とretryが防ぐか。",
+      "afterSection": "mentalModel",
+      "objectiveIds": [
+        "obj-anomaly",
+        "obj-serializable"
+      ],
+      "evidenceIds": [
+        "transaction-experiment"
+      ],
+      "sourceIds": [
+        "src-01",
+        "src-02",
+        "src-04"
+      ],
+      "expectedObservation": "業務不変条件、並行read、局所判断、Serializableのabort、transaction全体の再読込を順に説明できる。",
+      "notes": [],
+      "payload": {
+        "phases": [
+          {
+            "id": "contract",
+            "label": "不変条件",
+            "detail": "rowとは別に業務不変条件を固定する。"
+          },
+          {
+            "id": "concurrent",
+            "label": "並行schedule",
+            "detail": "二つのtransactionのreadと局所判断を並べる。"
+          },
+          {
+            "id": "validation-phase",
+            "label": "検証と回復",
+            "detail": "commit可否を判断し、abort後は読み直す。"
+          }
+        ],
+        "events": [
+          {
+            "id": "invariant",
+            "label": "不変条件",
+            "detail": "「aliceまたはbobの少なくとも一人が当直」をdatabaseのrowとは別に明示する。",
+            "phaseId": "contract",
+            "order": 0
+          },
+          {
+            "id": "snapshot",
+            "label": "snapshot",
+            "detail": "T1とT2が同じ開始状態 {alice: on, bob: on} を読む。",
+            "phaseId": "concurrent",
+            "order": 1
+          },
+          {
+            "id": "local-decision",
+            "label": "局所判断",
+            "detail": "T1はbobが当直なのでaliceを外し、T2はaliceが当直なのでbobを外す。",
+            "phaseId": "concurrent",
+            "order": 2
+          },
+          {
+            "id": "validation",
+            "label": "検証",
+            "detail": "Snapshot Isolationでは別rowへのwriteが双方commitし得る。Serializableでは危険な依存を検出して一方をabortする。",
+            "phaseId": "validation-phase",
+            "order": 3
+          },
+          {
+            "id": "retry",
+            "label": "retry",
+            "detail": "abortされたT2は古い判断を再利用せず、transaction開始から読み直す。aliceが外れているためbobを当直に残す。",
+            "phaseId": "validation-phase",
+            "order": 4
+          }
+        ]
+      },
+      "simulation": {
+        "kind": "isolation-schedule",
+        "interactionMode": "hybrid",
+        "parameters": [
+          {
+            "id": "isolation",
+            "label": "分離とcommit判定",
+            "control": "radio",
+            "options": [
+              {"id": "snapshot", "label": "Snapshot Isolation"},
+              {"id": "serializable", "label": "Serializable + whole-transaction retry"}
+            ],
+            "defaultOptionId": "snapshot"
+          }
+        ],
+        "initialStateId": "concurrent-read",
+        "defaultIntervalMs": 1100,
+        "states": [
+          {
+            "id": "concurrent-read",
+            "label": "同じsnapshotを読む",
+            "status": "T1とT2が開始状態 {alice: on, bob: on} を読み、各transactionが相手を根拠に局所判断する。",
+            "activeNodeIds": ["snapshot"],
+            "activeEdgeIds": []
+          },
+          {
+            "id": "snapshot-local-decision",
+            "label": "別rowを更新",
+            "status": "Snapshot IsolationではT1がalice、T2がbobを外す。read集合を根拠に別rowへwriteする。",
+            "when": {"isolation": "snapshot"},
+            "activeNodeIds": ["local-decision"],
+            "activeEdgeIds": []
+          },
+          {
+            "id": "write-skew",
+            "label": "write skew成立",
+            "status": "Snapshot Isolationで2件ともcommitし、当直者0人となって業務不変条件に違反する。",
+            "when": {"isolation": "snapshot"},
+            "activeNodeIds": ["validation"],
+            "activeEdgeIds": []
+          },
+          {
+            "id": "serializable-validation",
+            "label": "危険な依存を検証",
+            "status": "Serializableは同じreadと局所判断から生じる危険な依存をcommit前に検出する。",
+            "when": {"isolation": "serializable"},
+            "activeNodeIds": ["validation"],
+            "activeEdgeIds": []
+          },
+          {
+            "id": "transaction-aborted",
+            "label": "T2 attempt 1をabort",
+            "status": "T1をcommitし、競合するT2の1件をabortする。abortは正常な競合解決として記録する。",
+            "when": {"isolation": "serializable"},
+            "activeNodeIds": ["validation"],
+            "activeEdgeIds": []
+          },
+          {
+            "id": "transaction-retried",
+            "label": "transaction全体をretry",
+            "status": "T2 attempt 2は開始から読み直す。合計3 attempt後、bobを残して当直者1人となる。",
+            "when": {"isolation": "serializable"},
+            "activeNodeIds": ["retry"],
+            "activeEdgeIds": []
+          }
+        ],
+        "transitions": [
+          {"id": "apply-snapshot", "from": "concurrent-read", "to": "concurrent-read", "event": "parameter-change", "when": {"isolation": "snapshot"}},
+          {"id": "snapshot-decision-next", "from": "concurrent-read", "to": "snapshot-local-decision", "event": "next", "when": {"isolation": "snapshot"}},
+          {"id": "snapshot-decision-timer", "from": "concurrent-read", "to": "snapshot-local-decision", "event": "timer", "when": {"isolation": "snapshot"}},
+          {"id": "snapshot-decision-previous", "from": "snapshot-local-decision", "to": "concurrent-read", "event": "previous", "when": {"isolation": "snapshot"}},
+          {"id": "snapshot-decision-reset", "from": "snapshot-local-decision", "to": "concurrent-read", "event": "reset", "when": {"isolation": "snapshot"}},
+          {"id": "write-skew-next", "from": "snapshot-local-decision", "to": "write-skew", "event": "next", "when": {"isolation": "snapshot"}},
+          {"id": "write-skew-timer", "from": "snapshot-local-decision", "to": "write-skew", "event": "timer", "when": {"isolation": "snapshot"}},
+          {"id": "write-skew-previous", "from": "write-skew", "to": "snapshot-local-decision", "event": "previous", "when": {"isolation": "snapshot"}},
+          {"id": "write-skew-reset", "from": "write-skew", "to": "concurrent-read", "event": "reset", "when": {"isolation": "snapshot"}},
+          {"id": "apply-serializable", "from": "concurrent-read", "to": "concurrent-read", "event": "parameter-change", "when": {"isolation": "serializable"}},
+          {"id": "serializable-validation-next", "from": "concurrent-read", "to": "serializable-validation", "event": "next", "when": {"isolation": "serializable"}},
+          {"id": "serializable-validation-timer", "from": "concurrent-read", "to": "serializable-validation", "event": "timer", "when": {"isolation": "serializable"}},
+          {"id": "serializable-validation-previous", "from": "serializable-validation", "to": "concurrent-read", "event": "previous", "when": {"isolation": "serializable"}},
+          {"id": "serializable-validation-reset", "from": "serializable-validation", "to": "concurrent-read", "event": "reset", "when": {"isolation": "serializable"}},
+          {"id": "transaction-abort-next", "from": "serializable-validation", "to": "transaction-aborted", "event": "next", "when": {"isolation": "serializable"}},
+          {"id": "transaction-abort-timer", "from": "serializable-validation", "to": "transaction-aborted", "event": "timer", "when": {"isolation": "serializable"}},
+          {"id": "transaction-abort-previous", "from": "transaction-aborted", "to": "serializable-validation", "event": "previous", "when": {"isolation": "serializable"}},
+          {"id": "transaction-abort-reset", "from": "transaction-aborted", "to": "concurrent-read", "event": "reset", "when": {"isolation": "serializable"}},
+          {"id": "transaction-retry-next", "from": "transaction-aborted", "to": "transaction-retried", "event": "next", "when": {"isolation": "serializable"}},
+          {"id": "transaction-retry-timer", "from": "transaction-aborted", "to": "transaction-retried", "event": "timer", "when": {"isolation": "serializable"}},
+          {"id": "transaction-retry-previous", "from": "transaction-retried", "to": "transaction-aborted", "event": "previous", "when": {"isolation": "serializable"}},
+          {"id": "transaction-retry-reset", "from": "transaction-retried", "to": "concurrent-read", "event": "reset", "when": {"isolation": "serializable"}}
+        ],
+        "outcomes": [
+          {"id": "write-skew-observed", "stateId": "write-skew", "label": "Snapshot Isolation: 2件commit、当直者0人。不変条件違反をschedule全体で説明する。"},
+          {"id": "retry-preserves-invariant", "stateId": "transaction-retried", "label": "Serializable: 1件をabortしtransaction全体をretry。合計3 attempt、当直者1人。"}
+        ]
+      }
+    }
+  ],
   "review": {
-    "intervalDays": [1, 7, 30, 90],
+    "intervalDays": [
+      1,
+      7,
+      30,
+      90
+    ],
     "prompts": [
       "ACID consistencyと業務不変条件の責任境界を一つの反例で示す",
       "Snapshot Isolationでwrite skewが起きる四つのeventを順に説明する",

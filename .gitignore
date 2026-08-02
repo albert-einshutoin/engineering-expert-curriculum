@@ -26,3 +26,4 @@ dist/
 
 # Generated output is reproducible from version-controlled source content.
 site/
+/outputs/

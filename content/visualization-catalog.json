@@ -1,0 +1,305 @@
+{
+  "version": 1,
+  "lessons": [
+    {
+      "lessonId": "core-01-systems-tradeoffs",
+      "primaryType": "causal",
+      "optionalSecondaryType": "matrix",
+      "dynamic": false
+    },
+    {
+      "lessonId": "core-02-algorithms-measurement",
+      "primaryType": "comparison",
+      "optionalSecondaryType": "flow",
+      "dynamic": true,
+      "simulation": {
+        "kind": "complexity-growth",
+        "interactionMode": "scenario",
+        "staticEquivalentId": "complexity-growth-static",
+        "visualRegressionStateIds": [
+          "small-input",
+          "crossover",
+          "large-input"
+        ]
+      }
+    },
+    {
+      "lessonId": "core-03-architecture-memory-caches",
+      "primaryType": "memory",
+      "optionalSecondaryType": "matrix",
+      "dynamic": true,
+      "simulation": {
+        "kind": "memory-access",
+        "interactionMode": "hybrid",
+        "staticEquivalentId": "memory-access-static",
+        "visualRegressionStateIds": [
+          "tlb-lookup",
+          "l1-hit",
+          "memory-return"
+        ]
+      }
+    },
+    {
+      "lessonId": "core-04-os-processes-concurrency",
+      "primaryType": "timeline",
+      "optionalSecondaryType": "state-machine",
+      "dynamic": true,
+      "simulation": {
+        "kind": "scheduler-interleaving",
+        "interactionMode": "playback",
+        "staticEquivalentId": "scheduler-interleaving-static",
+        "visualRegressionStateIds": [
+          "read-old-value",
+          "lost-update",
+          "locked-complete"
+        ]
+      }
+    },
+    {
+      "lessonId": "core-05-networks-latency-failure",
+      "primaryType": "timeline",
+      "optionalSecondaryType": "comparison",
+      "dynamic": true,
+      "simulation": {
+        "kind": "request-path",
+        "interactionMode": "hybrid",
+        "staticEquivalentId": "request-path-static",
+        "visualRegressionStateIds": [
+          "dns-lookup",
+          "tls-ready",
+          "deadline-exceeded"
+        ]
+      }
+    },
+    {
+      "lessonId": "core-06-requirements-domain-modeling",
+      "primaryType": "network",
+      "optionalSecondaryType": "state-machine",
+      "dynamic": false
+    },
+    {
+      "lessonId": "core-07-api-contract-design",
+      "primaryType": "state-machine",
+      "optionalSecondaryType": "timeline",
+      "dynamic": true,
+      "simulation": {
+        "kind": "retry-contract",
+        "interactionMode": "playback",
+        "staticEquivalentId": "retry-contract-static",
+        "visualRegressionStateIds": [
+          "request-accepted",
+          "response-lost",
+          "retry-replayed"
+        ]
+      }
+    },
+    {
+      "lessonId": "core-08-modularity-evolutionary-architecture",
+      "primaryType": "network",
+      "optionalSecondaryType": "matrix",
+      "dynamic": false
+    },
+    {
+      "lessonId": "core-09-test-strategy-tdd",
+      "primaryType": "state-loop",
+      "optionalSecondaryType": "matrix",
+      "dynamic": false
+    },
+    {
+      "lessonId": "core-10-threat-modeling-secure-design",
+      "primaryType": "network",
+      "optionalSecondaryType": "matrix",
+      "dynamic": false
+    },
+    {
+      "lessonId": "core-11-data-modeling-storage",
+      "primaryType": "matrix",
+      "optionalSecondaryType": "flow",
+      "dynamic": false
+    },
+    {
+      "lessonId": "core-12-transactions-isolation-consistency",
+      "primaryType": "timeline",
+      "optionalSecondaryType": "network",
+      "dynamic": true,
+      "simulation": {
+        "kind": "isolation-schedule",
+        "interactionMode": "hybrid",
+        "staticEquivalentId": "isolation-schedule-static",
+        "visualRegressionStateIds": [
+          "concurrent-read",
+          "write-skew",
+          "transaction-retried"
+        ]
+      }
+    },
+    {
+      "lessonId": "core-13-distributed-coordination-failure",
+      "primaryType": "timeline",
+      "optionalSecondaryType": "state-machine",
+      "dynamic": true,
+      "simulation": {
+        "kind": "distributed-failure",
+        "interactionMode": "hybrid",
+        "staticEquivalentId": "distributed-failure-static",
+        "visualRegressionStateIds": [
+          "duplicate-received",
+          "partition-detected",
+          "recovery-converged"
+        ]
+      }
+    },
+    {
+      "lessonId": "core-14-performance-capacity",
+      "primaryType": "causal",
+      "optionalSecondaryType": "comparison",
+      "dynamic": true,
+      "simulation": {
+        "kind": "queue-capacity",
+        "interactionMode": "scenario",
+        "staticEquivalentId": "queue-capacity-static",
+        "visualRegressionStateIds": [
+          "stable-load",
+          "saturation",
+          "capacity-recovered"
+        ]
+      }
+    },
+    {
+      "lessonId": "core-15-reliability-observability-slo",
+      "primaryType": "state-loop",
+      "optionalSecondaryType": "timeline",
+      "dynamic": true,
+      "simulation": {
+        "kind": "slo-burn",
+        "interactionMode": "scenario",
+        "staticEquivalentId": "slo-burn-static",
+        "visualRegressionStateIds": [
+          "budget-healthy",
+          "fast-burn",
+          "page-triggered"
+        ]
+      }
+    },
+    {
+      "lessonId": "core-16-hci-usability-accessibility",
+      "primaryType": "flow",
+      "optionalSecondaryType": "matrix",
+      "dynamic": true,
+      "simulation": {
+        "kind": "accessible-ui-state",
+        "interactionMode": "explorer",
+        "staticEquivalentId": "accessible-ui-state-static",
+        "visualRegressionStateIds": [
+          "narrow-viewport",
+          "keyboard-focus",
+          "reduced-motion"
+        ]
+      }
+    },
+    {
+      "lessonId": "core-17-graphics-visual-information",
+      "primaryType": "flow",
+      "optionalSecondaryType": "comparison",
+      "dynamic": false
+    },
+    {
+      "lessonId": "core-18-product-discovery-experiments",
+      "primaryType": "causal",
+      "optionalSecondaryType": "matrix",
+      "dynamic": false
+    },
+    {
+      "lessonId": "core-19-technical-communication-design-docs",
+      "primaryType": "hierarchy",
+      "optionalSecondaryType": "comparison",
+      "dynamic": false
+    },
+    {
+      "lessonId": "core-20-ethics-privacy-societal-impact",
+      "primaryType": "causal",
+      "optionalSecondaryType": "matrix",
+      "dynamic": false
+    },
+    {
+      "lessonId": "core-21-maintenance-legacy-comprehension",
+      "primaryType": "network",
+      "optionalSecondaryType": "state-loop",
+      "dynamic": false
+    },
+    {
+      "lessonId": "core-22-evolution-safe-migrations",
+      "primaryType": "state-machine",
+      "optionalSecondaryType": "timeline",
+      "dynamic": true,
+      "simulation": {
+        "kind": "migration-phase",
+        "interactionMode": "playback",
+        "staticEquivalentId": "migration-phase-static",
+        "visualRegressionStateIds": [
+          "expand-ready",
+          "backfill-paused",
+          "contract-complete"
+        ]
+      }
+    },
+    {
+      "lessonId": "core-23-incident-response-learning",
+      "primaryType": "timeline",
+      "optionalSecondaryType": "causal",
+      "dynamic": false
+    },
+    {
+      "lessonId": "core-24-delivery-ci-release-safety",
+      "primaryType": "state-machine",
+      "optionalSecondaryType": "network",
+      "dynamic": true,
+      "simulation": {
+        "kind": "release-safety",
+        "interactionMode": "playback",
+        "staticEquivalentId": "release-safety-static",
+        "visualRegressionStateIds": [
+          "artifact-verified",
+          "canary-rejected",
+          "rollback-complete"
+        ]
+      }
+    },
+    {
+      "lessonId": "core-25-engineering-economics-capacity",
+      "primaryType": "matrix",
+      "optionalSecondaryType": "comparison",
+      "dynamic": false
+    },
+    {
+      "lessonId": "core-26-code-review-collaborative-quality",
+      "primaryType": "state-loop",
+      "optionalSecondaryType": "matrix",
+      "dynamic": false
+    },
+    {
+      "lessonId": "core-27-team-interfaces-sociotechnical-architecture",
+      "primaryType": "network",
+      "optionalSecondaryType": "matrix",
+      "dynamic": false
+    },
+    {
+      "lessonId": "core-28-oss-governance-stewardship",
+      "primaryType": "flow",
+      "optionalSecondaryType": "hierarchy",
+      "dynamic": false
+    },
+    {
+      "lessonId": "core-29-cross-cultural-async-collaboration",
+      "primaryType": "timeline",
+      "optionalSecondaryType": "matrix",
+      "dynamic": false
+    },
+    {
+      "lessonId": "core-30-evidence-based-technical-leadership",
+      "primaryType": "causal",
+      "optionalSecondaryType": "matrix",
+      "dynamic": false
+    }
+  ]
+}

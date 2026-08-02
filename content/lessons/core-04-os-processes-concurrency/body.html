@@ -9,18 +9,6 @@
 <section id="mental-model">
   <h2>メンタルモデル</h2>
   <p>並行性の正しさを四つに分ける。atomicityは操作が途中状態を見せないこと、可視性は一方の書込みを他方が観測できること、順序性は必要な前後関係が成立すること、停止性は処理がいつか進むことである。一つを満たしても他を自動では満たさない。Java SE 21では、あるvolatile書込みは同じfieldへの後続volatile読取りにhappens-beforeするが、<code>stock--</code>全体はread、compute、writeの複合操作である。</p>
-  <figure>
-    <figcaption>共有境界から不変条件を守る診断経路</figcaption>
-    <ol>
-      <li><strong>隔離単位:</strong> process A、process B、または同一process内thread AとBを置く。</li>
-      <li><strong>共有対象:</strong> memory、file、socket、database row、queueを列挙する。</li>
-      <li><strong>操作分解:</strong> read、compute、write、publishをイベントへ分ける。</li>
-      <li><strong>不変条件:</strong> 在庫は0以上、合計減算数と最終値が一致、同じ注文を二度確定しない。</li>
-      <li><strong>同期関係:</strong> mutex、atomic operation、message passingのどれが前後関係を作るか示す。</li>
-      <li><strong>停止性:</strong> lock順、待機資源、timeout、cancel経路を観測する。</li>
-      <li><strong>回帰:</strong> 同じstress条件で違反頻度と所要時間を再測定する。</li>
-    </ol>
-  </figure>
   <p>「data raceがない」と「業務上のrace conditionがない」も別である。個々のアクセスがatomicでも、在庫確認と確定の間に別操作が入れば業務不変条件を破り得る。守る範囲はコード行ではなく状態遷移で決める。</p>
 </section>
 <section id="worked-example">

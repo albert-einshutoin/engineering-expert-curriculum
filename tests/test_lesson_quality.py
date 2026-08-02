@@ -20,6 +20,10 @@ from curriculum_builder.lessons import (
 FIXTURES = Path(__file__).parent / "fixtures"
 COMPLETE = FIXTURES / "complete-lesson.json"
 INCOMPLETE = FIXTURES / "incomplete-lesson.json"
+VISUALIZED_COMPLETE = (
+    Path(__file__).resolve().parents[1]
+    / "content/lessons/core-01-systems-tradeoffs/lesson.json"
+)
 CAPABILITY_PROGRESSION = [
     {
         "level": "recognize",
@@ -49,9 +53,19 @@ CAPABILITY_PROGRESSION = [
 ]
 
 
+def _complete_fixture_document() -> dict[str, object]:
+    return json.loads(COMPLETE.read_text(encoding="utf-8"))
+
+
+def _complete_fixture_bytes() -> bytes:
+    return json.dumps(
+        _complete_fixture_document(), ensure_ascii=False
+    ).encode("utf-8")
+
+
 class LessonQualityTests(unittest.TestCase):
     def complete_document(self) -> dict[str, object]:
-        loaded = json.loads(COMPLETE.read_text(encoding="utf-8"))
+        loaded = _complete_fixture_document()
         self.assertIsInstance(loaded, dict)
         return loaded
 
@@ -86,7 +100,7 @@ class LessonQualityTests(unittest.TestCase):
                 load_lesson(path)
 
     def test_complete_fixture_connects_every_objective_to_evidence(self) -> None:
-        lesson = load_lesson(COMPLETE)
+        lesson = load_lesson_bytes(_complete_fixture_bytes(), COMPLETE.name)
 
         self.assertEqual(lesson.id, "core-01-systems-tradeoffs")
         self.assertEqual(lesson.status, "complete")
@@ -99,9 +113,57 @@ class LessonQualityTests(unittest.TestCase):
         for objective in lesson.objectives:
             self.assertTrue(objective.evidence_ids)
             self.assertLessEqual(set(objective.evidence_ids), evidence_ids)
+        self.assertEqual(
+            tuple(source.id for source in lesson.sources),
+            ("src-nasa-handbook", "src-iso-42010"),
+        )
+        self.assertEqual(lesson.visualizations[0].id, "decision-flow")
+
+    def test_complete_fixture_visual_mutations_are_not_hidden_by_the_helper(self) -> None:
+        fixture = json.loads(COMPLETE.read_text(encoding="utf-8"))
+        mutations = []
+        missing = json.loads(json.dumps(fixture, ensure_ascii=False))
+        missing.pop("visualizations")
+        mutations.append(missing)
+        invalid = json.loads(json.dumps(fixture, ensure_ascii=False))
+        invalid["visualizations"][0]["payload"]["transitions"][0]["to"] = "missing-step"
+        mutations.append(invalid)
+
+        for mutated in mutations:
+            with self.subTest(mutation=mutated.get("visualizations")):
+                with patch.object(
+                    Path,
+                    "read_text",
+                    return_value=json.dumps(mutated, ensure_ascii=False),
+                ), self.assertRaises(CurriculumValidationError):
+                    load_lesson_bytes(_complete_fixture_bytes(), COMPLETE.name)
+
+    def test_complete_lesson_requires_visualizations_and_stable_source_ids(self) -> None:
+        legacy = self.complete_document()
+        legacy.pop("visualizations")
+        for source in legacy["sources"]:
+            source.pop("id")
+        self.assert_invalid(legacy, "complete lessons require visualizations")
+
+        visualized = self.complete_document()
+        with TemporaryDirectory() as directory:
+            lesson = load_lesson(self.write_document(directory, visualized))
+        self.assertEqual(lesson.visualizations[0].id, "decision-flow")
+
+        visualized["sources"][1].pop("id")
+        self.assert_invalid(
+            visualized,
+            "every source requires an id when visualizations exist",
+        )
+        visualized["sources"][1]["id"] = "src-iso-42010"
+        visualized["sources"][0].pop("id")
+        self.assert_invalid(
+            visualized,
+            "every source requires an id when visualizations exist",
+        )
 
     def test_load_lesson_bytes_parses_the_callers_pinned_snapshot(self) -> None:
-        raw = COMPLETE.read_bytes()
+        raw = _complete_fixture_bytes()
 
         lesson = load_lesson_bytes(raw, "lesson.json")
 
@@ -251,13 +313,17 @@ class LessonQualityTests(unittest.TestCase):
             with self.subTest(field=field):
                 raw = self.complete_document()
                 raw[field] = None
-                self.assert_invalid(raw, rf"{field}.*required|{field}.*complete")
+                self.assert_invalid(
+                    raw,
+                    rf"{field}.*required|{field}.*complete|dangling source reference",
+                )
 
     def test_draft_allows_quality_work_to_remain_incomplete(self) -> None:
         raw = self.complete_document()
         raw["status"] = "draft"
         raw["objectives"] = []
         raw["evidence"] = []
+        raw.pop("visualizations")
         for field in (
             "capabilityProgression",
             "lab",
@@ -285,7 +351,7 @@ class LessonQualityTests(unittest.TestCase):
         self.assert_invalid(raw, "rubric levels")
 
     def test_duplicate_json_keys_are_rejected_at_every_depth(self) -> None:
-        raw = COMPLETE.read_text(encoding="utf-8")
+        raw = _complete_fixture_bytes().decode("utf-8")
         cases = {
             "root": raw.replace('"version": 1,', '"version": 1, "version": 1,', 1),
             "nested": raw.replace(
@@ -312,7 +378,7 @@ class LessonQualityTests(unittest.TestCase):
         self.assertIn("unknown fields", str(caught.exception))
         self.assertNotIn("customer-secret-token", str(caught.exception))
 
-        duplicate = COMPLETE.read_text(encoding="utf-8").replace(
+        duplicate = _complete_fixture_bytes().decode("utf-8").replace(
             '"version": 1,',
             '"customer-secret-token": 1, "customer-secret-token": 2,',
             1,
@@ -353,7 +419,7 @@ class LessonQualityTests(unittest.TestCase):
     def test_domain_objects_are_deeply_immutable_and_do_not_expose_raw_dicts(
         self,
     ) -> None:
-        lesson = load_lesson(COMPLETE)
+        lesson = load_lesson_bytes(_complete_fixture_bytes(), COMPLETE.name)
 
         with self.assertRaises(FrozenInstanceError):
             lesson.status = "draft"  # type: ignore[misc]
@@ -395,7 +461,7 @@ class LessonQualityTests(unittest.TestCase):
                 with self.subTest(name=repr(name)):
                     path = root / name
                     if "\0" not in name and len(name) <= 255:
-                        path.write_bytes(COMPLETE.read_bytes())
+                        path.write_bytes(_complete_fixture_bytes())
                     with self.assertRaises(CurriculumValidationError) as caught:
                         load_lesson(path)
                     self.assertEqual(
@@ -425,7 +491,7 @@ class LessonQualityTests(unittest.TestCase):
             root = Path(directory).resolve()
             real_parent = root / "real"
             real_parent.mkdir()
-            (real_parent / "lesson.json").write_bytes(COMPLETE.read_bytes())
+            (real_parent / "lesson.json").write_bytes(_complete_fixture_bytes())
             linked_parent = root / "linked"
             linked_parent.symlink_to(real_parent, target_is_directory=True)
 
@@ -442,7 +508,7 @@ class LessonQualityTests(unittest.TestCase):
             real_ancestor = root / "real"
             nested = real_ancestor / "level-two"
             nested.mkdir(parents=True)
-            (nested / "lesson.json").write_bytes(COMPLETE.read_bytes())
+            (nested / "lesson.json").write_bytes(_complete_fixture_bytes())
             linked_ancestor = root / "linked"
             linked_ancestor.symlink_to(real_ancestor, target_is_directory=True)
 
@@ -458,7 +524,7 @@ class LessonQualityTests(unittest.TestCase):
             root = Path(directory).resolve()
             safe = root / "safe"
             safe.mkdir()
-            (safe / "lesson.json").write_bytes(COMPLETE.read_bytes())
+            (safe / "lesson.json").write_bytes(_complete_fixture_bytes())
             ambiguous = safe / ".." / "safe" / "lesson.json"
 
             with self.assertRaisesRegex(
@@ -487,9 +553,9 @@ class LessonQualityTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             path = root / "lesson.json"
-            path.write_bytes(COMPLETE.read_bytes())
+            path.write_bytes(_complete_fixture_bytes())
             replacement = root / "replacement.json"
-            replacement.write_bytes(COMPLETE.read_bytes())
+            replacement.write_bytes(_complete_fixture_bytes())
             real_open = os.open
             replaced = False
 
@@ -519,7 +585,7 @@ class LessonQualityTests(unittest.TestCase):
             nested = ancestor / "nested"
             nested.mkdir(parents=True)
             path = nested / "lesson.json"
-            path.write_bytes(COMPLETE.read_bytes())
+            path.write_bytes(_complete_fixture_bytes())
             replacement = root / "replacement"
             replacement_nested = replacement / "nested"
             replacement_nested.mkdir(parents=True)
@@ -561,7 +627,7 @@ class LessonQualityTests(unittest.TestCase):
             nested = ancestor / "nested"
             nested.mkdir(parents=True)
             path = nested / "lesson.json"
-            path.write_bytes(COMPLETE.read_bytes())
+            path.write_bytes(_complete_fixture_bytes())
             shared_temp_parent = os.stat(root.parent)
             shared_temp_identity = (
                 shared_temp_parent.st_dev,
@@ -638,7 +704,7 @@ class LessonQualityTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 CurriculumValidationError, r"changed during read"
             ):
-                load_lesson(COMPLETE)
+                load_lesson(VISUALIZED_COMPLETE)
 
     def test_os_errors_do_not_leak_private_paths_or_contents(self) -> None:
         with patch(
@@ -646,10 +712,10 @@ class LessonQualityTests(unittest.TestCase):
             side_effect=OSError("/private/customer/secret.json"),
         ):
             with self.assertRaises(CurriculumValidationError) as caught:
-                load_lesson(COMPLETE)
+                load_lesson(VISUALIZED_COMPLETE)
 
         message = str(caught.exception)
-        self.assertIn(COMPLETE.name, message)
+        self.assertIn(VISUALIZED_COMPLETE.name, message)
         self.assertNotIn("/private/customer", message)
         self.assertNotIn("システム思考", message)
 
@@ -683,7 +749,7 @@ class LessonQualityTests(unittest.TestCase):
                 side_effect=track_close,
             ),
         ):
-            load_lesson(COMPLETE)
+            load_lesson(VISUALIZED_COMPLETE)
 
         self.assertGreater(len(opened), 2)
         self.assertEqual(closed, list(reversed(opened)))
@@ -709,7 +775,7 @@ class LessonQualityTests(unittest.TestCase):
                 CurriculumValidationError,
                 r"lesson descriptor close failed",
             ) as caught:
-                load_lesson(COMPLETE)
+                load_lesson(VISUALIZED_COMPLETE)
 
         self.assertGreater(len(closed), 2)
         self.assertEqual(len(closed), len(set(closed)))
@@ -741,7 +807,7 @@ class LessonQualityTests(unittest.TestCase):
                 CurriculumValidationError,
                 r"lesson cannot be read safely",
             ) as caught:
-                load_lesson(COMPLETE)
+                load_lesson(VISUALIZED_COMPLETE)
 
         self.assertGreater(len(closed), 2)
         self.assertEqual(len(closed), len(set(closed)))

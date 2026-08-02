@@ -12,7 +12,8 @@ import sys
 from tempfile import TemporaryDirectory
 import unittest
 
-from curriculum_builder.lessons import load_lesson
+from curriculum_builder.lessons import load_lesson, load_lesson_bytes
+from curriculum_builder.visualizations import MemoryPayload, VisualizationType
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -1980,10 +1981,29 @@ class CoreTrackTests(unittest.TestCase):
             self.assertEqual(len(result.stderr.splitlines()), 1)
             self.assertTrue(result.stderr.endswith("\n"))
 
-    def assert_body_contract(self, body: str, lesson_id: str) -> None:
+    def assert_body_contract(
+        self,
+        body: str,
+        lesson_id: str,
+        *,
+        visualization_captions: tuple[str, ...] | None = None,
+    ) -> None:
         parser = _BodyContractParser()
         parser.feed(body)
         parser.close()
+        if visualization_captions is None:
+            lesson = load_lesson(
+                self.body_path(lesson_id).with_name("lesson.json")
+            )
+            visualization_captions = tuple(
+                visual.caption for visual in lesson.visualizations
+            )
+        semantic_figure_count = parser.figure_count + len(
+            visualization_captions
+        )
+        semantic_figure_captions = (
+            tuple(parser.figure_captions) + visualization_captions
+        )
 
         self.assertEqual(
             tuple(parser.headings),
@@ -1991,17 +2011,17 @@ class CoreTrackTests(unittest.TestCase):
             f"{lesson_id}: ordered section headings",
         )
         self.assertGreaterEqual(
-            parser.figure_count,
+            semantic_figure_count,
             1,
             f"{lesson_id}: mechanism figure",
         )
         self.assertEqual(
-            len(parser.figure_captions),
-            parser.figure_count,
+            len(semantic_figure_captions),
+            semantic_figure_count,
             f"{lesson_id}: every figure has a caption",
         )
         self.assertTrue(
-            all(parser.figure_captions),
+            all(semantic_figure_captions),
             f"{lesson_id}: non-empty figure caption",
         )
         self.assertEqual(
@@ -2057,6 +2077,61 @@ class CoreTrackTests(unittest.TestCase):
             f"{lesson_id}: inline behavior or remote resource",
         )
 
+    def assert_memory_visual_contract(self, raw: bytes) -> None:
+        lesson = load_lesson_bytes(
+            raw,
+            "lesson.json",
+        )
+        self.assertEqual(len(lesson.visualizations), 1)
+        visual = lesson.visualizations[0]
+        self.assertIs(visual.type, VisualizationType.MEMORY)
+        self.assertEqual(visual.after_section.value, "mentalModel")
+        self.assertIs(type(visual.payload), MemoryPayload)
+        payload = visual.payload
+        assert isinstance(payload, MemoryPayload)
+        self.assertEqual(
+            tuple(
+                (layer.id, layer.label, layer.detail, layer.group)
+                for layer in payload.layers
+            ),
+            (
+                ("instruction", "命令", "仮想アドレスAの値を要求する。", "request"),
+                ("tlb", "TLB", "Aのページ変換を検索し、missならpage table walkを開始する。", "translation"),
+                ("page-table", "page table walk", "TLB miss branchだけで仮想pageから物理pageへの変換情報を取得する。", "translation"),
+                ("address-ready", "物理address ready", "TLB hitまたはpage table walk完了が合流し、物理tag照合へ必要なaddressを渡す。", "translation"),
+                ("l1-cache", "L1 cache", "VIPTでは仮想addressのindex lookupがTLBと並行し得るが、物理tag照合後にhit/missを判断する。", "transfer"),
+                ("lower-cache", "L2と最終レベルcache", "private/shared範囲と段数は機種依存で、固定latencyではない。", "transfer"),
+                ("memory-controller", "memory controller", "全cache miss時に主記憶からline単位で転送する。", "transfer"),
+                ("return", "値を命令へreturn", "L1 hit、lower cache hit、またはmemory転送完了が共通returnへ合流する。", "return"),
+                ("reuse", "再利用", "return後、空間的局所性または時間的局所性で後続accessのhitを増やす。", "reuse"),
+            ),
+        )
+        self.assertEqual(
+            tuple(
+                (
+                    transfer.id,
+                    transfer.from_id,
+                    transfer.to_id,
+                    transfer.label,
+                    transfer.kind,
+                )
+                for transfer in payload.transfers
+            ),
+            (
+                ("instruction-to-tlb", "instruction", "tlb", "仮想アドレスAの変換を検索", "translation-request"),
+                ("instruction-to-l1", "instruction", "l1-cache", "VIPT index lookupは変換と並行し得る", "vipt-parallel-index"),
+                ("tlb-hit", "tlb", "address-ready", "TLB hitなら保持した変換を使う", "tlb-hit"),
+                ("tlb-miss", "tlb", "page-table", "TLB miss時だけpage table walk", "tlb-miss"),
+                ("walk-complete", "page-table", "address-ready", "walk完了で物理addressを得る", "translation-result"),
+                ("address-to-l1", "address-ready", "l1-cache", "物理tag照合でdata hit/missを確定", "tag-check"),
+                ("l1-hit-return", "l1-cache", "return", "L1 hitなら値を返す", "l1-hit"),
+                ("l1-miss-lower", "l1-cache", "lower-cache", "L1 miss時だけ下位cacheへ", "l1-miss"),
+                ("lower-hit-return", "lower-cache", "return", "lower cache hitなら値を返す", "lower-hit"),
+                ("lower-miss-memory", "lower-cache", "memory-controller", "全cache miss時だけ主記憶へ", "lower-miss"),
+                ("memory-return", "memory-controller", "return", "line転送完了後に値を返す", "memory-return"),
+                ("return-to-reuse", "return", "reuse", "返却後のlineを後続accessで再利用", "reuse"),
+            ),
+        )
     def assert_track(
         self,
         contract: dict[str, dict[str, object]],
@@ -2399,36 +2474,37 @@ class CoreTrackTests(unittest.TestCase):
             + body[rebuttal_start + len("<strong>反証:</strong>"):]
         )
         mutations = {
-            "non-empty figure caption": body.replace(
-                "判断を更新可能にする因果ループ",
-                "",
-                1,
+            "non-empty figure caption": (body, ("",)),
+            "non-empty table caption": (
+                body.replace(
+                    "受付方式を選ぶdecision table",
+                    "",
+                    1,
+                ),
+                None,
             ),
-            "non-empty table caption": body.replace(
-                "受付方式を選ぶdecision table",
-                "",
-                1,
+            "every table header has scope": (
+                body.replace(' scope="col"', "", 1),
+                None,
             ),
-            "every table header has scope": body.replace(
-                ' scope="col"',
-                "",
-                1,
-            ),
-            "misdiagnosis and rebuttal": without_paired_rebuttal,
+            "misdiagnosis and rebuttal": (without_paired_rebuttal, None),
             "numeric or executable worked example": (
-                body[:worked_start]
-                + without_marker
-                + body[worked_end:]
+                body[:worked_start] + without_marker + body[worked_end:],
+                None,
             ),
         }
 
-        for expected_message, mutated in mutations.items():
+        for expected_message, (mutated, captions) in mutations.items():
             with self.subTest(expected_message=expected_message):
                 with self.assertRaisesRegex(
                     AssertionError,
                     expected_message,
                 ):
-                    self.assert_body_contract(mutated, lesson_id)
+                    self.assert_body_contract(
+                        mutated,
+                        lesson_id,
+                        visualization_captions=captions,
+                    )
 
     def test_systems_weighted_score_is_arithmetically_correct(self) -> None:
         systems = self.body_path(
@@ -2508,7 +2584,7 @@ class CoreTrackTests(unittest.TestCase):
         self.assertIn("trace-fixture.csv", networks)
         self.assertIn("curl", networks)
 
-    def test_memory_model_diagram_is_a_machine_specific_diagnostic(
+    def test_memory_model_prose_is_a_machine_specific_diagnostic(
         self,
     ) -> None:
         memory = self.body_path(
@@ -2520,13 +2596,35 @@ class CoreTrackTests(unittest.TestCase):
             "VIPT",
             "並行",
             "private/shared",
-            "機種依存",
+            "実装依存",
         ):
             self.assertIn(marker, memory)
         self.assertNotIn(
             "L1 miss時により大きい共有階層を探索する",
             memory,
         )
+
+    def test_memory_visual_is_an_exact_branched_diagnostic(self) -> None:
+        path = self.body_path(
+            "core-03-architecture-memory-caches"
+        ).with_name("lesson.json")
+        self.assert_memory_visual_contract(path.read_bytes())
+
+    def test_memory_diagram_contract_rejects_markers_moved_out_of_the_payload(self) -> None:
+        path = self.body_path(
+            "core-03-architecture-memory-caches"
+        ).with_name("lesson.json")
+        document = json.loads(path.read_text(encoding="utf-8"))
+        document["title"] += " VIPT private/shared 機種依存"
+        document["sources"][0]["title"] += " VIPT private/shared 機種依存"
+        visual = document["visualizations"][0]
+        for layer in visual["payload"]["layers"]:
+            layer["detail"] = "汎用的な段階。"
+
+        with self.assertRaises(AssertionError):
+            self.assert_memory_visual_contract(
+                json.dumps(document, ensure_ascii=False).encode("utf-8")
+            )
 
     def test_java_memory_model_claims_are_language_scoped(self) -> None:
         concurrency = self.body_path(
@@ -4089,10 +4187,33 @@ class CoreTrackTests(unittest.TestCase):
                 point["accepted_rps"],
                 point["offered_rps"],
             )
-            self.assertLessEqual(
-                point["success_rps"],
-                point["accepted_rps"],
+            self.assertEqual(point["interval_seconds"], 1)
+            self.assertEqual(
+                point["arrivals_requests"],
+                point["offered_rps"] * point["interval_seconds"],
             )
+            self.assertEqual(
+                point["queue_end_requests"],
+                max(
+                    0,
+                    point["queue_start_requests"]
+                    + point["admitted_requests"]
+                    - point["completed_requests"],
+                ),
+            )
+            self.assertEqual(
+                point["completed_requests"],
+                point["immediate_work_requests"]
+                + point["backlog_completed_requests"],
+            )
+            self.assertEqual(
+                point["arrivals_requests"],
+                point["admitted_requests"] + point["rejected_requests"],
+            )
+            self.assertEqual(point["failed_requests"], point["rejected_requests"])
+            self.assertEqual(point["accepted_rps"], point["admitted_requests"])
+            self.assertEqual(point["success_rps"], point["completed_requests"])
+            self.assertLessEqual(point["queue_end_requests"], 30)
             self.assertLessEqual(point["p50_ms"], point["p95_ms"])
             self.assertLessEqual(point["p95_ms"], point["p99_ms"])
             self.assertGreaterEqual(point["cpu_percent"], 0)
@@ -4120,6 +4241,46 @@ class CoreTrackTests(unittest.TestCase):
         self.assertTrue(analysis["tail_growth"])
         self.assertTrue(analysis["error_growth"])
         self.assertTrue(analysis["recovery_hysteresis"])
+        self.assertEqual(
+            report["fifo_backlog_first_boundary"],
+            {
+                "interval_seconds": 1,
+                "queue_start_requests": 30,
+                "arrivals_requests": 90,
+                "service_capacity_requests": 100,
+                "queue_limit_requests": 30,
+                "backlog_completed_requests": 30,
+                "immediate_work_requests": 70,
+                "admitted_requests": 90,
+                "completed_requests": 100,
+                "queue_end_requests": 20,
+                "rejected_requests": 0,
+                "failed_requests": 0,
+            },
+        )
+        expected_queue_records = [
+            (0, 40, 40, 40, 0, 40, 0, 0, 0),
+            (0, 100, 100, 100, 0, 100, 0, 0, 0),
+            (0, 150, 130, 100, 0, 100, 30, 20, 20),
+            (30, 50, 50, 50, 30, 80, 0, 0, 0),
+        ]
+        self.assertEqual(
+            [
+                (
+                    point["queue_start_requests"],
+                    point["arrivals_requests"],
+                    point["admitted_requests"],
+                    point["immediate_work_requests"],
+                    point["backlog_completed_requests"],
+                    point["completed_requests"],
+                    point["queue_end_requests"],
+                    point["rejected_requests"],
+                    point["failed_requests"],
+                )
+                for point in curve
+            ],
+            expected_queue_records,
+        )
         capacity = report["capacity"]
         self.assertLess(
             capacity["safe_capacity_rps"],
@@ -4221,8 +4382,7 @@ class CoreTrackTests(unittest.TestCase):
                     current["p99_ms"] > previous["p99_ms"]
                 )
                 error_growth = (
-                    current["success_rps"]
-                    < current["accepted_rps"]
+                    current["rejected_requests"] > 0
                 )
                 if plateau and tail_growth and error_growth:
                     return previous["offered_rps"]
@@ -4237,6 +4397,28 @@ class CoreTrackTests(unittest.TestCase):
             {point["offered_rps"] for point in curve},
         )
         transfer_curve = mutation["mutated_load_curve"]
+        self.assertEqual(
+            [
+                (
+                    point["queue_start_requests"],
+                    point["arrivals_requests"],
+                    point["admitted_requests"],
+                    point["immediate_work_requests"],
+                    point["backlog_completed_requests"],
+                    point["completed_requests"],
+                    point["queue_end_requests"],
+                    point["rejected_requests"],
+                    point["failed_requests"],
+                )
+                for point in transfer_curve
+            ],
+            [
+                (0, 40, 40, 40, 0, 40, 0, 0, 0),
+                (0, 80, 80, 80, 0, 80, 0, 0, 0),
+                (0, 120, 110, 80, 0, 80, 30, 10, 10),
+                (30, 50, 50, 50, 30, 80, 0, 0, 0),
+            ],
+        )
         self.assertEqual(
             mutation["mutated_observed_knee_rps"],
             inferred_knee(transfer_curve),
@@ -4253,14 +4435,24 @@ class CoreTrackTests(unittest.TestCase):
         self.assert_data_scale_mastery_evidence(report, lesson_id)
         self.assertFalse(report["external_network_used"])
 
-    def test_performance_harness_rejects_capacity_mutation(
+    def test_performance_harness_rejects_queue_capacity_mutation(
         self,
     ) -> None:
         self.assert_harness_source_mutation_fails(
             "core-14-performance-capacity",
             "performance_capacity_lab_v1",
-            "if offered_rps > capacity:",
-            "if False:",
+            "QUEUE_LIMIT_REQUESTS = 30",
+            "QUEUE_LIMIT_REQUESTS = 0",
+        )
+
+    def test_performance_harness_rejects_arrival_first_service_mutation(
+        self,
+    ) -> None:
+        self.assert_harness_source_mutation_fails(
+            "core-14-performance-capacity",
+            "performance_capacity_lab_v1",
+            "backlog_completed_requests = min(\n        queue_start_requests,\n        service_budget_requests,\n    )",
+            "backlog_completed_requests = min(\n        queue_start_requests,\n        max(0, service_budget_requests - arrivals_requests),\n    )",
         )
 
     def test_reliability_harness_derives_slo_alerts_and_runbook(

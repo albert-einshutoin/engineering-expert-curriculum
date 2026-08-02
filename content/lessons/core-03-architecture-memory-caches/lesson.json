@@ -137,19 +137,116 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "Intel® 64 and IA-32 Architectures Optimization",
       "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel64-and-ia32-architectures-optimization.html",
       "kind": "primary"
     },
     {
+      "id": "src-02",
       "title": "Armv8-A memory model",
       "url": "https://developer.arm.com/-/media/Arm%20Developer%20Community/PDF/Learn%20the%20Architecture/Armv8-A%20memory%20model%20guide.pdf?revision=58b1dd0a-3800-4218-b21a-f95a0332034c",
       "kind": "primary"
     },
     {
+      "id": "src-03",
       "title": "The TLB",
       "url": "https://docs.kernel.org/arch/x86/tlb.html",
       "kind": "primary"
+    }
+  ],
+  "visualizations": [
+    {
+      "id": "memory-access-static",
+      "type": "memory",
+      "caption": "一つのロードを診断する論理段階",
+      "question": "一つのloadでaddress translationとdata transferの待ちをどう切り分けるか。",
+      "afterSection": "mentalModel",
+      "objectiveIds": ["obj-path", "obj-locality", "obj-transfer"],
+      "evidenceIds": ["locality-report", "assessment"],
+      "sourceIds": ["src-01", "src-02", "src-03"],
+      "expectedObservation": "TLB・page tableの変換経路とcache・主記憶の転送経路を区別し、機種依存の階層を普遍的latencyとして扱わない。",
+      "notes": [
+        "命令: 仮想アドレスAの値を要求する。",
+        "TLB: Aのページ変換を検索する。missならページテーブルwalkが必要になる。",
+        "L1 cache: Aを含むcache lineを検索する。hitなら近い階層で返る。",
+        "L2と最終レベルcache: L1 miss後の候補を調べる。L2やLLCがcore-privateか複数coreでsharedかというprivate/shared範囲は機種依存である。",
+        "memory controller: 全cacheでmissなら主記憶からline単位で転送する。",
+        "再利用: 同じline内の次要素を使えば空間的局所性、短時間に同じ値を使えば時間的局所性を得る。",
+        "このDAGはhit/missの診断依存を示し、VIPTではTLB変換とL1 index lookupが並行し得るため普遍的な逐次latencyではない。"
+      ],
+      "payload": {
+        "layers": [
+          {"id": "instruction", "label": "命令", "detail": "仮想アドレスAの値を要求する。", "group": "request"},
+          {"id": "tlb", "label": "TLB", "detail": "Aのページ変換を検索し、missならpage table walkを開始する。", "group": "translation"},
+          {"id": "page-table", "label": "page table walk", "detail": "TLB miss branchだけで仮想pageから物理pageへの変換情報を取得する。", "group": "translation"},
+          {"id": "address-ready", "label": "物理address ready", "detail": "TLB hitまたはpage table walk完了が合流し、物理tag照合へ必要なaddressを渡す。", "group": "translation"},
+          {"id": "l1-cache", "label": "L1 cache", "detail": "VIPTでは仮想addressのindex lookupがTLBと並行し得るが、物理tag照合後にhit/missを判断する。", "group": "transfer"},
+          {"id": "lower-cache", "label": "L2と最終レベルcache", "detail": "private/shared範囲と段数は機種依存で、固定latencyではない。", "group": "transfer"},
+          {"id": "memory-controller", "label": "memory controller", "detail": "全cache miss時に主記憶からline単位で転送する。", "group": "transfer"},
+          {"id": "return", "label": "値を命令へreturn", "detail": "L1 hit、lower cache hit、またはmemory転送完了が共通returnへ合流する。", "group": "return"},
+          {"id": "reuse", "label": "再利用", "detail": "return後、空間的局所性または時間的局所性で後続accessのhitを増やす。", "group": "reuse"}
+        ],
+        "transfers": [
+          {"id": "instruction-to-tlb", "from": "instruction", "to": "tlb", "label": "仮想アドレスAの変換を検索", "kind": "translation-request"},
+          {"id": "instruction-to-l1", "from": "instruction", "to": "l1-cache", "label": "VIPT index lookupは変換と並行し得る", "kind": "vipt-parallel-index"},
+          {"id": "tlb-hit", "from": "tlb", "to": "address-ready", "label": "TLB hitなら保持した変換を使う", "kind": "tlb-hit"},
+          {"id": "tlb-miss", "from": "tlb", "to": "page-table", "label": "TLB miss時だけpage table walk", "kind": "tlb-miss"},
+          {"id": "walk-complete", "from": "page-table", "to": "address-ready", "label": "walk完了で物理addressを得る", "kind": "translation-result"},
+          {"id": "address-to-l1", "from": "address-ready", "to": "l1-cache", "label": "物理tag照合でdata hit/missを確定", "kind": "tag-check"},
+          {"id": "l1-hit-return", "from": "l1-cache", "to": "return", "label": "L1 hitなら値を返す", "kind": "l1-hit"},
+          {"id": "l1-miss-lower", "from": "l1-cache", "to": "lower-cache", "label": "L1 miss時だけ下位cacheへ", "kind": "l1-miss"},
+          {"id": "lower-hit-return", "from": "lower-cache", "to": "return", "label": "lower cache hitなら値を返す", "kind": "lower-hit"},
+          {"id": "lower-miss-memory", "from": "lower-cache", "to": "memory-controller", "label": "全cache miss時だけ主記憶へ", "kind": "lower-miss"},
+          {"id": "memory-return", "from": "memory-controller", "to": "return", "label": "line転送完了後に値を返す", "kind": "memory-return"},
+          {"id": "return-to-reuse", "from": "return", "to": "reuse", "label": "返却後のlineを後続accessで再利用", "kind": "reuse"}
+        ]
+      },
+      "simulation": {
+        "kind": "memory-access",
+        "interactionMode": "hybrid",
+        "parameters": [
+          {"id": "working-set", "label": "作業集合", "control": "select", "options": [{"id": "small", "label": "cache内候補"}, {"id": "large", "label": "cache超過候補"}], "defaultOptionId": "small"},
+          {"id": "access-order", "label": "access順", "control": "radio", "options": [{"id": "sequential", "label": "連続"}, {"id": "random", "label": "固定seedランダム"}], "defaultOptionId": "sequential"}
+        ],
+        "initialStateId": "tlb-lookup",
+        "defaultIntervalMs": 1000,
+        "states": [
+          {"id": "tlb-lookup", "label": "固定sample traceを開始", "status": "説明用の固定sample traceでtranslationとtransferを独立に追う。所要時間の観測値だけでは原因を証明できない。", "activeNodeIds": ["instruction", "tlb", "l1-cache"], "activeEdgeIds": ["instruction-to-tlb", "instruction-to-l1"]},
+          {"id": "l1-hit", "label": "小作業集合・連続access候補", "status": "L1 hitは原因候補であり断定ではない。hardware counter等でtranslation hitとdata hitを別々に確認する。", "when": {"working-set": "small", "access-order": "sequential"}, "activeNodeIds": ["address-ready", "l1-cache", "return", "reuse"], "activeEdgeIds": ["address-to-l1", "l1-hit-return", "return-to-reuse"]},
+          {"id": "small-random-return", "label": "小作業集合・ランダムaccess候補", "status": "lower cache利用は原因候補。観測値だけでは証明できないためhardware counterと独立変数で反証する。", "when": {"working-set": "small", "access-order": "random"}, "activeNodeIds": ["address-ready", "l1-cache", "lower-cache", "return"], "activeEdgeIds": ["address-to-l1", "l1-miss-lower", "lower-hit-return"]},
+          {"id": "large-sequential-return", "label": "大作業集合・連続access候補", "status": "page walkとmemory transferは固定sample traceの候補経路。translationとtransferを独立観測する。", "when": {"working-set": "large", "access-order": "sequential"}, "activeNodeIds": ["page-table", "address-ready", "lower-cache", "memory-controller", "return"], "activeEdgeIds": ["walk-complete", "lower-miss-memory", "memory-return"]},
+          {"id": "memory-return", "label": "大作業集合・ランダムaccess候補", "status": "TLB missと全cache missは別の原因候補。hardware counterなしに作業集合とaccess順だけで断定しない。", "when": {"working-set": "large", "access-order": "random"}, "activeNodeIds": ["tlb", "page-table", "lower-cache", "memory-controller", "return"], "activeEdgeIds": ["tlb-miss", "walk-complete", "lower-miss-memory", "memory-return"]}
+        ],
+        "transitions": [
+          {"id": "apply-small-sequential", "from": "tlb-lookup", "to": "tlb-lookup", "event": "parameter-change", "when": {"working-set": "small", "access-order": "sequential"}},
+          {"id": "next-small-sequential", "from": "tlb-lookup", "to": "l1-hit", "event": "next", "when": {"working-set": "small", "access-order": "sequential"}},
+          {"id": "timer-small-sequential", "from": "tlb-lookup", "to": "l1-hit", "event": "timer", "when": {"working-set": "small", "access-order": "sequential"}},
+          {"id": "previous-l1-hit", "from": "l1-hit", "to": "tlb-lookup", "event": "previous", "when": {"working-set": "small", "access-order": "sequential"}},
+          {"id": "reset-l1-hit", "from": "l1-hit", "to": "tlb-lookup", "event": "reset", "when": {"working-set": "small", "access-order": "sequential"}},
+          {"id": "apply-small-random", "from": "tlb-lookup", "to": "tlb-lookup", "event": "parameter-change", "when": {"working-set": "small", "access-order": "random"}},
+          {"id": "next-small-random", "from": "tlb-lookup", "to": "small-random-return", "event": "next", "when": {"working-set": "small", "access-order": "random"}},
+          {"id": "timer-small-random", "from": "tlb-lookup", "to": "small-random-return", "event": "timer", "when": {"working-set": "small", "access-order": "random"}},
+          {"id": "previous-small-random", "from": "small-random-return", "to": "tlb-lookup", "event": "previous", "when": {"working-set": "small", "access-order": "random"}},
+          {"id": "reset-small-random-return", "from": "small-random-return", "to": "tlb-lookup", "event": "reset", "when": {"working-set": "small", "access-order": "random"}},
+          {"id": "apply-large-sequential", "from": "tlb-lookup", "to": "tlb-lookup", "event": "parameter-change", "when": {"working-set": "large", "access-order": "sequential"}},
+          {"id": "next-large-sequential", "from": "tlb-lookup", "to": "large-sequential-return", "event": "next", "when": {"working-set": "large", "access-order": "sequential"}},
+          {"id": "timer-large-sequential", "from": "tlb-lookup", "to": "large-sequential-return", "event": "timer", "when": {"working-set": "large", "access-order": "sequential"}},
+          {"id": "previous-large-sequential", "from": "large-sequential-return", "to": "tlb-lookup", "event": "previous", "when": {"working-set": "large", "access-order": "sequential"}},
+          {"id": "reset-large-sequential-return", "from": "large-sequential-return", "to": "tlb-lookup", "event": "reset", "when": {"working-set": "large", "access-order": "sequential"}},
+          {"id": "apply-large-random", "from": "tlb-lookup", "to": "tlb-lookup", "event": "parameter-change", "when": {"working-set": "large", "access-order": "random"}},
+          {"id": "next-large-random", "from": "tlb-lookup", "to": "memory-return", "event": "next", "when": {"working-set": "large", "access-order": "random"}},
+          {"id": "timer-large-random", "from": "tlb-lookup", "to": "memory-return", "event": "timer", "when": {"working-set": "large", "access-order": "random"}},
+          {"id": "previous-memory-return", "from": "memory-return", "to": "tlb-lookup", "event": "previous", "when": {"working-set": "large", "access-order": "random"}},
+          {"id": "reset-memory-return", "from": "memory-return", "to": "tlb-lookup", "event": "reset", "when": {"working-set": "large", "access-order": "random"}}
+        ],
+        "outcomes": [
+          {"id": "small-sequential-outcome", "stateId": "l1-hit", "label": "translationとtransferを独立に測り、L1 hitを原因候補として検証する。"},
+          {"id": "small-random-outcome", "stateId": "small-random-return", "label": "観測値だけでは証明できないためhardware counterで候補を反証する。"},
+          {"id": "large-sequential-outcome", "stateId": "large-sequential-return", "label": "固定sample traceを機種固有の候補経路として報告する。"},
+          {"id": "large-random-outcome", "stateId": "memory-return", "label": "作業集合と順序だけでhit/missを断定せず、普遍的latencyへ一般化しない。"}
+        ]
+      }
     }
   ],
   "review": {

@@ -21,9 +21,15 @@ Capstoneでは、グローバルサービスの設計と運用、レガシーシ
 
 ## 静的配信の契約
 
-公開成果物はHTMLとCSSだけで動作し、JavaScriptを使用しません。ビルド後の`site/index.html`を直接開く`file://`環境とGitHub Pagesの双方で、同じ情報へ到達できます。アカウント、分析、サーバーAPI、データベースはなく、学習者データを収集しません。
+v0.1.0はHTML/CSS-onlyの不変なリリースです。v0.2.0では、HTMLとCSSだけで全内容を理解できるno-JS baselineを保ったまま、simulationを持つ承認済みレッスンだけがrepository-ownedの`static/visualization.js`をprogressive enhancementとして読み込みます。ビルド後の`site/index.html`を直接開く`file://`環境とGitHub Pagesの双方で、JavaScriptが無効・失敗・遮断された場合も同じ学習情報へ到達できます。
+
+runtimeはdependency-freeで、network、storage、analytics、URL stateを使いません。アカウント、server API、databaseはなく、学習者データを収集・保存・送信しません。
 
 ブラウザ組み込み検索、意味のあるHTML、印刷可能なレイアウトを基準にしています。CSSを無効にしても読み順と依存関係が残り、色や接続線だけに意味を委ねません。
+
+承認済み12ページでは10種の図解を提供し、keyboard、reduced motion、forced colorsでも同じ因果関係と状態を追跡できます。公開候補はversion固定されたChromium・Firefoxとinstalled Safariで検証し、browserのcache、screenshot、raw performance reportは`outputs/`だけに置いて配布物へ含めません。ChromiumとFirefoxは`file://`とPages形式のloopback HTTPを検証します。Safari WebDriverは外部file main resourceをWebKit sandboxで拒否するため、同じpre-product harnessをloopback HTTPのdesktop幅と390px narrow viewportで実行します。これはmobile device emulationの主張ではなく、静的no-JS/file契約は別のbrowser/checker証拠で維持します。
+
+公開時はcommit、各HTML/CSS/JavaScriptのbyte数とSHA-256をrootのrelease manifestへ記録し、GitHub Pages配信後に同じbytesを再検証します。manifestは署名やpublisherの真正性を単独で証明するものではありません。またmeta CSPでは`frame-ancestors`を強制できず、GitHub Pagesで任意response headerを設定できないため、clickjacking防止は保証しません。
 
 ## ローカルで読む
 
@@ -68,7 +74,7 @@ python3 tools/build.py
 | `content/competencies.json` | コンピテンシー対応と根拠 |
 | `content/capstones/` | 3つの統合課題 |
 | `curriculum_builder/` | 標準ライブラリだけを使う検証・生成処理 |
-| `templates/`, `static/` | HTML templateとCSS |
+| `templates/`, `static/` | HTML template、CSS、任意のfirst-party progressive runtime |
 | `tests/` | 内容、構造、安全性、決定性の契約 |
 | `site/` | ローカル生成物。Git管理対象外 |
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import date
 from pathlib import Path
 import re
 import unittest
@@ -68,6 +67,31 @@ def changelog_section(changelog: str, heading_pattern: str) -> str | None:
 
 
 class RepositoryContractTests(unittest.TestCase):
+    def test_chromium_oci_sandbox_exception_is_public_and_bounded(self) -> None:
+        security = read("SECURITY.md")
+        for phrase in (
+            "non-root OCI",
+            "--oci-container-no-sandbox",
+            "通常のlocal Linuxではbrowser sandboxを維持",
+            "file://",
+            "loopback HTTP",
+        ):
+            self.assertIn(phrase, security)
+
+    def test_safari_webdriver_capability_amendment_is_public_and_explicit(self) -> None:
+        readme = read("README.md") + read("README.en.md")
+        security = read("SECURITY.md")
+        design = read("docs/superpowers/specs/2026-08-01-interactive-visual-learning-design.md")
+        plan = read("docs/superpowers/plans/2026-08-01-interactive-visual-learning.md")
+        for phrase in ("Safari WebDriver", "loopback HTTP"):
+            self.assertIn(phrase, readme)
+        for phrase in ("WebKit sandbox", "file://", "Safari WebDriver"):
+            self.assertIn(phrase, security)
+        for document in (design, plan):
+            self.assertIn("core-02-http-desktop", document)
+            self.assertIn("core-02-http-mobile", document)
+            self.assertIn("WebKit sandbox", document)
+
     def test_required_public_files_exist_and_are_substantial(self) -> None:
         for relative in PUBLIC_FILES:
             with self.subTest(path=relative):
@@ -104,12 +128,17 @@ class RepositoryContractTests(unittest.TestCase):
             "site/index.html",
             "file://",
             "HTMLとCSS",
-            "JavaScriptを使用しません",
+            "v0.1.0はHTML/CSS-only",
+            "no-JS baseline",
+            "network、storage、analytics",
             "Learn → Practice → Explain → Prove → Transfer → Review",
             "ai-assisted",
             "human approval",
             "CONTRIBUTING.md",
             "SECURITY.md",
+            "12ページ",
+            "release manifest",
+            "clickjacking",
         )
         for phrase in phrases:
             with self.subTest(phrase=phrase):
@@ -127,22 +156,28 @@ class RepositoryContractTests(unittest.TestCase):
             "SFIA 9",
             "file://",
             "HTML and CSS",
+            "v0.1.0 is the immutable HTML/CSS-only release",
             "no JavaScript",
+            "no network, storage, analytics",
             "Learn → Practice → Explain → Prove → Transfer → Review",
             "AI-assisted",
             "human approval",
             "CONTRIBUTING.md",
             "SECURITY.md",
+            "12 approved lessons",
+            "release manifest",
+            "clickjacking",
         )
         for phrase in phrases:
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, readme)
 
-    def test_citation_and_changelog_release_state_are_consistent(self) -> None:
+    def test_version_020_release_metadata_and_history_are_consistent(self) -> None:
         citation = read("CITATION.cff")
         for line in (
             'cff-version: "1.2.0"',
-            'version: "0.1.0"',
+            'version: "0.2.0"',
+            "date-released: 2026-08-01",
             "license: MIT",
             'repository-code: "https://github.com/albert-einshutoin/engineering-expert-curriculum"',
         ):
@@ -153,66 +188,26 @@ class RepositoryContractTests(unittest.TestCase):
             citation,
             re.MULTILINE,
         )
-        self.assertLessEqual(len(release_date_fields), 1)
+        self.assertEqual(release_date_fields, ["2026-08-01"])
 
         changelog = read("CHANGELOG.md")
         unreleased = changelog_section(changelog, r"^## \[Unreleased\]$")
         self.assertIsNotNone(unreleased)
         assert unreleased is not None
-        release_sections = list(
-            re.finditer(r"^## \[0\.1\.0\] - (?P<date>\S+)$", changelog, re.MULTILINE)
-        )
-        self.assertLessEqual(len(release_sections), 1)
-
-        initial_release_marker = "1,140項目"
-        if not release_date_fields:
-            self.assertIn(initial_release_marker, unreleased)
-            self.assertEqual(changelog.count(initial_release_marker), 1)
-            self.assertEqual(len(release_sections), 0)
-            self.assertNotRegex(
-                changelog,
-                re.compile(r"^## \[0\.1\.0\] - ", re.MULTILINE),
-            )
-            self.assertEqual(
-                changelog.count(
-                    "[Unreleased]: https://github.com/albert-einshutoin/"
-                    "engineering-expert-curriculum/commits/main"
-                ),
-                1,
-            )
-            self.assertNotIn("compare/v0.1.0...HEAD", changelog)
-            self.assertNotIn("[0.1.0]:", changelog)
-        else:
-            raw_date = release_date_fields[0]
-            self.assertRegex(raw_date, r"^\d{4}-\d{2}-\d{2}$")
-            parsed_date = date.fromisoformat(raw_date)
-            self.assertEqual(raw_date, parsed_date.isoformat())
-            self.assertEqual(len(release_sections), 1)
-            self.assertEqual(release_sections[0].group("date"), raw_date)
-            release = changelog_section(
-                changelog,
-                rf"^## \[0\.1\.0\] - {re.escape(raw_date)}$",
-            )
-            self.assertIsNotNone(release)
-            assert release is not None
-            self.assertNotIn(initial_release_marker, unreleased)
-            self.assertIn(initial_release_marker, release)
-            self.assertEqual(changelog.count(initial_release_marker), 1)
-            self.assertEqual(
-                changelog.count(
-                    "[Unreleased]: https://github.com/albert-einshutoin/"
-                    "engineering-expert-curriculum/compare/v0.1.0...HEAD"
-                ),
-                1,
-            )
-            self.assertEqual(
-                changelog.count(
-                    "[0.1.0]: https://github.com/albert-einshutoin/"
-                    "engineering-expert-curriculum/releases/tag/v0.1.0"
-                ),
-                1,
-            )
-            self.assertNotIn("engineering-expert-curriculum/commits/main", changelog)
+        release_010 = changelog_section(changelog, r"^## \[0\.1\.0\] - 2026-07-31$")
+        release_020 = changelog_section(changelog, r"^## \[0\.2\.0\] - 2026-08-01$")
+        self.assertIsNotNone(release_010)
+        self.assertIsNotNone(release_020)
+        assert release_010 is not None and release_020 is not None
+        self.assertIn("1,140項目", release_010)
+        self.assertIn("progressive runtime", release_020)
+        self.assertNotIn("progressive runtime", unreleased)
+        for link in (
+            "compare/v0.2.0...HEAD",
+            "compare/v0.1.0...v0.2.0",
+            "releases/tag/v0.1.0",
+        ):
+            self.assertEqual(changelog.count(link), 1)
 
     def test_contributing_defines_github_flow_tdd_and_review_accountability(self) -> None:
         contributing = read("CONTRIBUTING.md")
@@ -233,6 +228,10 @@ class RepositoryContractTests(unittest.TestCase):
             "merge commit",
             "未解決thread",
             "ローカルとリモートのマージ済みブランチを削除",
+            "reduced-motion",
+            "forced-colors",
+            "no-JS",
+            "browser-matrix.json",
         )
         for phrase in phrases:
             with self.subTest(phrase=phrase):
@@ -269,6 +268,8 @@ class RepositoryContractTests(unittest.TestCase):
             "公開Issueを作成しないでください",
             "最新リリース",
             "learner dataを保存しません",
+            "release manifest",
+            "真正性",
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, security)

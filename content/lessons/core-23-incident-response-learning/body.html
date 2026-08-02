@@ -9,17 +9,6 @@
 <section id="mental-model">
   <h2>メンタルモデル</h2>
   <p>最初にclockとevidence IDを揃え、何がいつ観測されたかだけを並べる。次にincident startからdetectionまでを未緩和のpre-detection impact、incident startからrecoveryまでをtotal durationとして別々に算出し、当時のdecisionをその時点までに利用可能だったevidenceへ結ぶ。contributing factorは個人の性質ではなく、alert、権限、interface、容量、変更境界など変更可能なsystem conditionとして記述する。</p>
-  <figure>
-    <figcaption>incident evidenceを検証可能な学習へ変えるreview chain</figcaption>
-    <ol>
-      <li><strong>Evidence:</strong> timestamp、source、観測値、evidence IDを固定する。</li>
-      <li><strong>Timeline:</strong> clockを揃えて観測事実を時刻順に並べる。</li>
-      <li><strong>Impact:</strong> incident startからdetectionまでの未緩和時間とaffected rateから検知遅延の影響を導く。</li>
-      <li><strong>Decision:</strong> 当時利用可能だったevidenceと判断を結ぶ。</li>
-      <li><strong>Factor:</strong> 複数のsystem conditionと反証可能な仮説を残す。</li>
-      <li><strong>Action:</strong> owner、due、verification、evidenceで完了を定義する。</li>
-    </ol>
-  </figure>
   <p>non-blamingはaccountabilityを消す言い換えではない。個人の注意力を再発防止策にせず、誰が改善を所有し、どのfixtureとsignalで効果を確認し、失敗時に何を再設計するかを明確にする。</p>
 </section>
 <section id="worked-example">

@@ -40,3 +40,25 @@ jobs:
           python tools/check_site.py --root site --require-current-release
           LC_ALL=C find site -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum > /tmp/site-second.sha256
           diff -u /tmp/site-first.sha256 /tmp/site-second.sha256
+
+  browser-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      image: mcr.microsoft.com/playwright/python:v1.61.0-noble-amd64@sha256:80fd7c1aad9600ea348572dd46ca00b9ea31d890831f5838fc61319ab79900d2
+      options: --user 1001
+    steps:
+      - name: Check out repository without retained credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.13"
+      - name: Build browser candidate
+        run: python tools/build.py --output site-browser
+      - name: Install only verified browser archives
+        run: python tools/install_test_browsers.py --matrix tests/browser-matrix.json --cache outputs/browser-cache --oci-container-no-sandbox
+      - name: Run pinned real-browser contract
+        run: python tools/run_browser_contract.py --site site-browser --matrix tests/browser-matrix.json --oci-container-no-sandbox

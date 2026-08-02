@@ -140,31 +140,52 @@
   ],
   "sources": [
     {
+      "id": "src-01",
       "title": "ISO/IEC/IEEE 42010:2022 - Software, systems and enterprise — Architecture description",
       "url": "https://www.iso.org/standard/74393.html",
       "kind": "standard"
     },
     {
+      "id": "src-02",
       "title": "NASA Systems Engineering Handbook, NASA/SP-2016-6105 Rev2",
       "url": "https://www.nasa.gov/reference/systems-engineering-handbook/",
       "kind": "primary"
     },
     {
+      "id": "src-03",
       "title": "RFC 7322: RFC Style Guide",
       "url": "https://www.rfc-editor.org/info/rfc7322/",
       "kind": "standard"
     },
     {
+      "id": "src-04",
       "title": "Markdown Architectural Decision Records 4.0.0",
       "url": "https://adr.github.io/madr/",
       "kind": "primary"
     },
     {
+      "id": "src-05",
       "title": "Plain language guide series",
       "url": "https://digital.gov/guides/plain-language",
       "kind": "primary"
     }
   ],
+  "visualizations": [{
+    "id": "decision-evidence-hierarchy", "type": "hierarchy", "caption": "一つの決定証拠から読者別viewを導く構造",
+    "question": "同じdecision evidenceを読者別viewへどう入れ子にし、driftを防ぐか。", "afterSection": "mentalModel",
+    "objectiveIds": ["obj-audience", "obj-decision", "obj-transfer"], "evidenceIds": ["design-document", "assessment"], "sourceIds": ["src-01", "src-02", "src-03", "src-04", "src-05"],
+    "expectedObservation": "共通decision recordの下にevidenceと読者別viewを置き、executiveとimplementationの詳細度だけを変えて同じdecisionを参照すると説明できる。",
+    "notes": ["Audience:", "Evidence:", "Decision:", "Executive view:", "Implementation view:", "Drift check: 要約、付録、ADRが同じdecisionを指すか検査する。"],
+    "payload": {"nodes": [
+      {"id": "decision-record", "label": "Decision record", "detail": "選定結果、負うconsequence、再評価条件を明示する。", "parentId": null},
+      {"id": "audience", "label": "Audience", "detail": "責務、判断、既知の用語、時間制約を定義する。", "parentId": "decision-record"},
+      {"id": "evidence", "label": "Evidence", "detail": "評価基準、入力、代替案、risk、検証結果を固定する。", "parentId": "decision-record"},
+      {"id": "executive-view", "label": "Executive view", "detail": "結論、価値、主要risk、承認依頼を一頁へ収める。", "parentId": "audience"},
+      {"id": "implementation-view", "label": "Implementation view", "detail": "interface、migration、rollback、validationを付録へ置く。", "parentId": "audience"},
+      {"id": "alternatives", "label": "代替案と基準", "detail": "採用案だけでなく比較対象と評価基準を保持する。", "parentId": "evidence"},
+      {"id": "validation", "label": "検証と再評価", "detail": "結果の確認方法とdecisionを開き直す条件を保持する。", "parentId": "evidence"}
+    ]}
+  }],
   "review": {
     "intervalDays": [1, 7, 30, 90],
     "prompts": [

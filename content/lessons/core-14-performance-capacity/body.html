@@ -8,17 +8,7 @@
 </section>
 <section id="mental-model">
   <h2>メンタルモデル</h2>
-  <p>性能判断を、需要、受理、完了、待機、resource、依存、利用者結果のflowとして扱う。offered loadを上げた時にaccepted throughputが横ばいになり、p99、error、queueのどれが先に変わるかを観測する。負荷を戻した後の値も取り、回復hysteresisを見逃さない。</p>
-  <figure>
-    <figcaption>負荷を証拠へ変えて安全容量を更新する循環</figcaption>
-    <ol>
-      <li><strong>Fixture:</strong> request mix、payload、依存、処理上限、環境を固定する。</li>
-      <li><strong>Curve:</strong> 低負荷、限界付近、超過、回復を同じ列で記録する。</li>
-      <li><strong>Diagnose:</strong> plateau、tail、error、queue、resource、downstreamを結ぶ。</li>
-      <li><strong>Profile:</strong> 仮説に合う実processの局所証拠を別に採取する。</li>
-      <li><strong>Capacity:</strong> observed kneeからheadroomを引き、再測定条件を残す。</li>
-    </ol>
-  </figure>
+  <p>性能判断を、需要、受理、完了、待機、resource、依存、利用者結果のflowとして扱う。このfixtureは有限queue 30 requestを使い、request countの保存則Qnext=max(0,Qprev+admitted-completed)を各点で検査する。Δt=1 sでRPSをrequest countへ変換してから保存則へ入れる。acceptedはその区間に到着して即時処理または有限queueへadmittedされた仕事、successはその区間に既存backlogを含めてcompletedした仕事を表すため、回復区間ではsuccessがacceptedを上回り得る。</p>
   <p>平均同時実行数L、平均到着または完了率λ、平均滞在時間Wの関係L = λWは、単位と観測窓を揃えた定常区間の整合確認に使う。式が合うことは、個別requestのtailや将来の容量を保証しない。</p>
 </section>
 <section id="worked-example">
@@ -26,13 +16,13 @@
   <h3>注文APIのsimulated load curveとactual local profileを分ける</h3>
   <dl>
     <dt>前提</dt>
-    <dd>production計測ではない固定simulationを使う。read比率80%とwrite比率70%の二つのrequest mixへ、低負荷、限界付近、超過、回復のload pointを与える。各点のmeanはbounded latency sampleの算術平均、active concurrencyはLittleの式から作らない独立synthetic入力とする。profileだけは、この場のCPython 3.13 processで実際に採取する。cProfile/pstatsはPython 3.13標準libraryを対象とし、version固定のないGo Diagnosticsは2026-07-31確認時点の範囲として扱う。</dd>
+    <dd>production計測ではない固定simulationを使う。read比率80%とwrite比率70%の二つのrequest mixへ、低負荷、限界付近、超過、回復のload pointを与える。各load pointはΔt=1 sで、queue上限は30 requestとする。各点のmeanはbounded latency sampleの算術平均、active concurrencyはLittleの式から作らない独立synthetic入力とする。profileだけは、この場のCPython 3.13 processで実際に採取する。cProfile/pstatsはPython 3.13標準libraryを対象とし、version固定のないGo Diagnosticsは2026-07-31確認時点の範囲として扱う。</dd>
     <dt>入力</dt>
     <dd>baselineは40、100、150、50 RPS、write中心transferは40、80、120、50 RPSの順で負荷を変える。各点に7件のlatency sampleを固定し、最後の点は超過後の回復区間とする。</dd>
     <dt>操作</dt>
-    <dd>accepted、success、sample mean、p50、p95、p99、CPU、memory、queue、downstreamを計算する。throughput plateau、tail growth、error growthが初めて同時成立する点の直前をcurve上のkneeとし、20%のheadroomを引く。定常点ではsample meanをLittleの式へ接続し、cProfileでboundedなlocal関数を測る。</dd>
+    <dd>区間開始queue、arrivals、admitted、immediate work、backlog completed、completed、区間終了queue、rejected/failedを同じrequest単位で計算する。FIFOの既存backlogを先に処理し、残りcapacityで新規到着を即時処理し、overflowは30 requestまでadmitする。throughput plateau、tail growth、reject発生が初めて同時成立する点の直前をcurve上のkneeとし、20%のheadroomを引く。</dd>
     <dt>観測</dt>
-    <dd>baseline curveは100 RPS、write中心curveは80 RPSが違反点直前のkneeとなる。負荷を戻してもqueue由来のtailが残る。両方のsafe capacityは、それぞれのcurveから導いたkneeへ同じ20% headroomを適用して80 RPSと64 RPSになる。</dd>
+    <dd>baseline curveは100 RPS、write中心curveは80 RPSが違反点直前のkneeとなる。超過区間のqueueは30 requestで上限に達し、回復区間で30 requestをdrainしてQend=0となる一方、p99のhysteresisは残る。両方のsafe capacityは、それぞれのcurveから導いたkneeへ同じ20% headroomを適用して80 RPSと64 RPSになる。</dd>
     <dt>結論</dt>
     <dd>安全容量は最大値ではなく、tailとerrorが急増する前のkneeから運用余力を引いた値である。simulationの数値は教材の因果を検査するfixtureであり、このserviceのproduction性能を表さない。</dd>
   </dl>
@@ -44,6 +34,8 @@ import pstats
 
 HARNESS = "performance_capacity_lab_v1"
 CAPACITY_RPS = 100
+INTERVAL_SECONDS = 1
+QUEUE_LIMIT_REQUESTS = 30
 HEADROOM_FRACTION = 0.2
 KNEE_CRITERIA = [
     "throughput-plateau",
@@ -120,17 +112,44 @@ def simulate(
     observed_active_concurrency,
     latency_samples_ms,
 ):
-    if offered_rps > capacity:
-        accepted_rps = capacity
-        queue_depth = previous_queue + offered_rps - capacity
-    else:
-        accepted_rps = offered_rps
-        spare = capacity - offered_rps
-        queue_depth = max(0, previous_queue - spare // 2)
-
-    rejected_rps = max(0, offered_rps - capacity)
-    error_rps = rejected_rps // 5
-    success_rps = accepted_rps - min(accepted_rps, error_rps)
+    interval_seconds = INTERVAL_SECONDS
+    queue_start_requests = previous_queue
+    arrivals_requests = offered_rps * interval_seconds
+    service_budget_requests = capacity * interval_seconds
+    # Existing FIFO backlog consumes service capacity first. This ordering makes
+    # recovery drain explicit and keeps every request in one conservation ledger.
+    backlog_completed_requests = min(
+        queue_start_requests,
+        service_budget_requests,
+    )
+    remaining_service_requests = (
+        service_budget_requests - backlog_completed_requests
+    )
+    immediate_work_requests = min(
+        arrivals_requests,
+        remaining_service_requests,
+    )
+    arrival_overflow_requests = arrivals_requests - immediate_work_requests
+    remaining_backlog_requests = (
+        queue_start_requests - backlog_completed_requests
+    )
+    queue_space_requests = QUEUE_LIMIT_REQUESTS - remaining_backlog_requests
+    queued_current_requests = min(
+        arrival_overflow_requests,
+        queue_space_requests,
+    )
+    admitted_requests = immediate_work_requests + queued_current_requests
+    completed_requests = immediate_work_requests + backlog_completed_requests
+    queue_end_requests = remaining_backlog_requests + queued_current_requests
+    rejected_requests = arrivals_requests - admitted_requests
+    failed_requests = rejected_requests
+    assert queue_end_requests == max(
+        0,
+        queue_start_requests + admitted_requests - completed_requests,
+    )
+    assert arrivals_requests == admitted_requests + rejected_requests
+    accepted_rps = admitted_requests / interval_seconds
+    success_rps = completed_requests / interval_seconds
     samples = list(latency_samples_ms)
     # Bounded samples keep this local harness deterministic and cheap. The
     # arithmetic mean intentionally has a separate derivation from percentiles
@@ -143,6 +162,16 @@ def simulate(
     p99_ms = nearest_rank(samples, 0.99)
     return {
         "stage": stage,
+        "interval_seconds": interval_seconds,
+        "queue_start_requests": queue_start_requests,
+        "arrivals_requests": arrivals_requests,
+        "admitted_requests": admitted_requests,
+        "immediate_work_requests": immediate_work_requests,
+        "backlog_completed_requests": backlog_completed_requests,
+        "completed_requests": completed_requests,
+        "queue_end_requests": queue_end_requests,
+        "rejected_requests": rejected_requests,
+        "failed_requests": failed_requests,
         "offered_rps": offered_rps,
         "accepted_rps": accepted_rps,
         "success_rps": success_rps,
@@ -153,10 +182,10 @@ def simulate(
         "mean_source": "bounded-latency-samples-arithmetic-mean",
         "latency_samples_ms": samples,
         "observed_active_concurrency": observed_active_concurrency,
-        "cpu_percent": min(99.0, 20.0 + accepted_rps * 0.65),
-        "memory_mb": 128 + queue_depth * 2,
-        "queue_depth": queue_depth,
-        "downstream_ms": 15 + int(write_fraction * 50) + queue_depth // 2,
+        "cpu_percent": min(99.0, 20.0 + success_rps * 0.65),
+        "memory_mb": 128 + queue_end_requests * 2,
+        "queue_depth": queue_end_requests,
+        "downstream_ms": 15 + int(write_fraction * 50) + queue_end_requests // 2,
     }
 
 def safe_capacity(observed_knee_rps, headroom_fraction):
@@ -198,9 +227,7 @@ def detect_knee(load_curve):
                 current["success_rps"] &lt;= previous["success_rps"]
             ),
             "tail-growth": current["p99_ms"] > previous["p99_ms"],
-            "error-growth": (
-                current["success_rps"] &lt; current["accepted_rps"]
-            ),
+            "error-growth": current["rejected_requests"] > 0,
         }
         if all(criteria.values()):
             return {
@@ -235,8 +262,53 @@ def main():
         transfer_write_fraction,
     )
 
+    # This boundary is separate from the authored eight scenario states. With
+    # total work above capacity, it proves FIFO backlog receives service before
+    # current arrivals; aggregate Qend alone cannot distinguish arrival-first.
+    fifo_boundary_point = simulate(
+        "fifo-backlog-first-boundary",
+        90,
+        CAPACITY_RPS,
+        30,
+        baseline_write_fraction,
+        10.0,
+        [40, 45, 50, 55, 60, 75, 100],
+    )
+    fifo_backlog_first_boundary = {
+        "interval_seconds": fifo_boundary_point["interval_seconds"],
+        "queue_start_requests": fifo_boundary_point["queue_start_requests"],
+        "arrivals_requests": fifo_boundary_point["arrivals_requests"],
+        "service_capacity_requests": CAPACITY_RPS * INTERVAL_SECONDS,
+        "queue_limit_requests": QUEUE_LIMIT_REQUESTS,
+        "backlog_completed_requests": fifo_boundary_point[
+            "backlog_completed_requests"
+        ],
+        "immediate_work_requests": fifo_boundary_point[
+            "immediate_work_requests"
+        ],
+        "admitted_requests": fifo_boundary_point["admitted_requests"],
+        "completed_requests": fifo_boundary_point["completed_requests"],
+        "queue_end_requests": fifo_boundary_point["queue_end_requests"],
+        "rejected_requests": fifo_boundary_point["rejected_requests"],
+        "failed_requests": fifo_boundary_point["failed_requests"],
+    }
+    assert fifo_backlog_first_boundary == {
+        "interval_seconds": 1,
+        "queue_start_requests": 30,
+        "arrivals_requests": 90,
+        "service_capacity_requests": 100,
+        "queue_limit_requests": 30,
+        "backlog_completed_requests": 30,
+        "immediate_work_requests": 70,
+        "admitted_requests": 90,
+        "completed_requests": 100,
+        "queue_end_requests": 20,
+        "rejected_requests": 0,
+        "failed_requests": 0,
+    }
+
     by_stage = {point["stage"]: point for point in curve}
-    assert by_stage["overload"]["accepted_rps"] == CAPACITY_RPS
+    assert by_stage["overload"]["immediate_work_requests"] == CAPACITY_RPS
     assert by_stage["overload"]["queue_depth"] > 0
     assert by_stage["recovery"]["p99_ms"] > by_stage["low"]["p99_ms"]
 
@@ -327,19 +399,17 @@ def main():
             ),
         },
         "load_curve": curve,
+        "fifo_backlog_first_boundary": fifo_backlog_first_boundary,
         "curve_analysis": {
             "throughput_plateau": (
-                by_stage["near-limit"]["accepted_rps"]
-                == by_stage["overload"]["accepted_rps"]
+                by_stage["near-limit"]["success_rps"]
+                == by_stage["overload"]["success_rps"]
             ),
             "tail_growth": (
                 by_stage["overload"]["p99_ms"]
                 > by_stage["near-limit"]["p99_ms"]
             ),
-            "error_growth": (
-                by_stage["overload"]["success_rps"]
-                &lt; by_stage["overload"]["accepted_rps"]
-            ),
+            "error_growth": by_stage["overload"]["rejected_requests"] > 0,
             "recovery_hysteresis": (
                 by_stage["recovery"]["p99_ms"]
                 > by_stage["low"]["p99_ms"]
