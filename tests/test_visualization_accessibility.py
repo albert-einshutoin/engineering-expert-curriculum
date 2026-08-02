@@ -31,6 +31,7 @@ from tools.run_browser_contract import (
     _instrumented_harness_source,
     browser_run_plan,
     run_safari_smoke,
+    run_browser_contract,
 )
 
 from curriculum_builder.visualizations import (
@@ -849,6 +850,33 @@ class BrowserContractTests(VisualizationAccessibilityTests):
                 plan[-1], status="blocked",
                 reason=SafariSessionUnavailable.reason,
             )
+
+    def test_runner_atomically_terminalizes_every_post_journal_failure(self) -> None:
+        with TemporaryDirectory() as temporary:
+            evidence = Path(temporary) / "evidence"
+            report_path = evidence / "report.json"
+
+            def fail_after_journal(**_kwargs: object) -> dict[str, object]:
+                _write_report(report_path, {
+                    "schemaVersion": 1, "status": "running",
+                    "runs": [{"label": "lesson", "status": "not-run"}],
+                })
+                raise BrowserMatrixError("lesson lookup failed")
+
+            with mock.patch(
+                "tools.run_browser_contract._run_browser_contract",
+                side_effect=fail_after_journal,
+            ):
+                with self.assertRaisesRegex(BrowserMatrixError, "lesson lookup"):
+                    run_browser_contract(
+                        site=Path(temporary), matrix_path=Path("matrix.json"),
+                        cache=Path(temporary) / "cache", evidence=evidence,
+                    )
+            report = json.loads(report_path.read_bytes())
+            self.assertEqual(report["status"], "failed")
+            self.assertEqual(report["failure"], "browser-contract-aborted")
+            self.assertEqual(report["runs"][0]["status"], "not-run")
+            self.assertFalse((evidence / ".report.json.pending").exists())
 
     def test_safari_smoke_injects_the_pinned_harness_and_returns_its_result(self) -> None:
         process = mock.Mock()

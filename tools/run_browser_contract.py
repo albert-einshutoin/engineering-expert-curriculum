@@ -1178,7 +1178,7 @@ def browser_evidence_report(
     }
 
 
-def run_browser_contract(
+def _run_browser_contract(
     *, site: Path, matrix_path: Path, cache: Path, evidence: Path,
 ) -> dict[str, object]:
     matrix = load_browser_matrix(matrix_path)
@@ -1382,13 +1382,43 @@ def run_browser_contract(
 
     report = journal.report()
     if report["status"] == "blocked":
-        raise BrowserMatrixError(
+        raise SafariSessionUnavailable(
             "Safari release smoke blocked: Remote Automation session unavailable"
         )
     if report["status"] != "passed":
         journal.fail("browser-contract-plan-incomplete")
         raise BrowserMatrixError("browser contract did not complete its closed run plan")
     return report
+
+
+def _terminalize_browser_report(path: Path) -> None:
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > 4 * 1024 * 1024:
+            return
+        report = json.loads(path.read_bytes())
+    except (OSError, json.JSONDecodeError):
+        return
+    if type(report) is not dict or type(report.get("runs")) is not list:
+        return
+    report["status"] = "failed"
+    report["failure"] = "browser-contract-aborted"
+    _write_report(path, report)
+
+
+def run_browser_contract(
+    *, site: Path, matrix_path: Path, cache: Path, evidence: Path,
+) -> dict[str, object]:
+    try:
+        return _run_browser_contract(
+            site=site, matrix_path=matrix_path, cache=cache, evidence=evidence,
+        )
+    except SafariSessionUnavailable:
+        raise
+    except Exception:
+        # A journal may already contain individually terminal runs. Preserve
+        # them and make the top-level outcome terminal for every later failure.
+        _terminalize_browser_report(evidence / "report.json")
+        raise
 
 
 def main(argv: list[str] | None = None) -> int:
