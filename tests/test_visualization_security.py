@@ -4,6 +4,7 @@ from pathlib import Path
 import hashlib
 import io
 import os
+import stat
 import subprocess
 import tarfile
 from tempfile import TemporaryDirectory
@@ -312,6 +313,86 @@ class BrowserProvisioningSecurityTests(unittest.TestCase):
                                     AssertionError("cache attack must not redownload")
                                 ),
                             )
+
+    def test_macos_zip_ditto_uses_private_verified_payload_after_cache_swap(self) -> None:
+        good = self._zip({"Browser.app/Contents/MacOS/browser": b"good"})
+        bad = self._zip({
+            "Browser.app/Contents/MacOS/browser": b"bad",
+            "Browser.app/Contents/Resources/extra": b"unexpected",
+        })
+        definition = BrowserArchive(
+            version="123.0.1", url="https://storage.googleapis.com/browser.zip",
+            sha256=hashlib.sha256(good).hexdigest(), archive_format="zip",
+            max_bytes=len(good), executable="Browser.app/Contents/MacOS/browser",
+            signature_policy="developer-id",
+        )
+        with TemporaryDirectory() as temporary:
+            cache = Path(temporary) / "cache"
+
+            def ditto(arguments: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+                source = Path(arguments[3])
+                destination = Path(arguments[4])
+                cached = cache / definition.sha256 / "archive"
+                cached.write_bytes(bad)
+                self.assertEqual(source.read_bytes(), good)
+                with zipfile.ZipFile(source) as archive:
+                    archive.extractall(destination)
+                return subprocess.CompletedProcess(arguments, 0, "", "")
+
+            with mock.patch("tools.install_test_browsers.sys.platform", "darwin"), \
+                    mock.patch("tools.install_test_browsers.subprocess.run", side_effect=ditto), \
+                    mock.patch("tools.install_test_browsers.verify_macos_browser_bundle"):
+                executable = install_archive(
+                    definition, cache, downloader=lambda *_args: good,
+                )
+            self.assertEqual(executable.read_bytes(), b"good")
+            self.assertFalse((executable.parents[1] / "Resources/extra").exists())
+
+    def test_dmg_ignores_precreated_predictable_symlink_fifo_and_hardlink(self) -> None:
+        payload = b"verified dmg payload"
+        definition = BrowserArchive(
+            version="123.0.1", url="https://storage.googleapis.com/browser.dmg",
+            sha256=hashlib.sha256(payload).hexdigest(), archive_format="dmg",
+            max_bytes=len(payload), executable="Browser.app/Contents/MacOS/browser",
+            signature_policy="developer-id",
+        )
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for attack in ("symlink", "fifo", "hardlink"):
+                with self.subTest(attack=attack):
+                    cache = root / attack
+                    digest_root = cache / definition.sha256
+                    digest_root.mkdir(parents=True)
+                    predictable = digest_root / f".{definition.sha256}.download"
+                    victim = root / f"{attack}-victim"
+                    victim.write_bytes(b"victim")
+                    if attack == "symlink":
+                        predictable.symlink_to(victim)
+                    elif attack == "fifo":
+                        os.mkfifo(predictable)
+                        fifo_reader = os.open(predictable, os.O_RDONLY | os.O_NONBLOCK)
+                    else:
+                        os.link(victim, predictable)
+
+                    def extract(source: Path, destination: Path, *_args: object) -> None:
+                        if stat.S_ISFIFO(source.lstat().st_mode):
+                            raise AssertionError("predictable FIFO staging path was used")
+                        self.assertEqual(source.read_bytes(), payload)
+                        executable = destination / definition.executable
+                        executable.parent.mkdir(parents=True)
+                        executable.write_bytes(b"browser")
+
+                    try:
+                        with mock.patch("tools.install_test_browsers.sys.platform", "darwin"), \
+                                mock.patch("tools.install_test_browsers._extract_dmg", side_effect=extract), \
+                                mock.patch("tools.install_test_browsers.verify_macos_browser_bundle"):
+                            install_archive(
+                                definition, cache, downloader=lambda *_args: payload,
+                            )
+                    finally:
+                        if attack == "fifo":
+                            os.close(fifo_reader)
+                    self.assertEqual(victim.read_bytes(), b"victim")
 
     def test_linux_preflight_requires_x86_64_elf_dependencies_version_and_launch(self) -> None:
         elf = bytearray(64)

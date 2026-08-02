@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager, nullcontext
 import errno
 from dataclasses import dataclass
 import hashlib
@@ -20,7 +21,7 @@ import sys
 import tarfile
 import tempfile
 from types import MappingProxyType
-from typing import Callable, Mapping
+from typing import Callable, Iterator, Mapping
 from urllib.request import Request, urlopen
 from urllib.parse import urlsplit
 import zipfile
@@ -750,6 +751,102 @@ def _read_cached_archive(
                 os.close(descriptor)
 
 
+@contextmanager
+def _verified_payload_file(payload: bytes, max_bytes: int) -> Iterator[Path]:
+    """Publish verified bytes only inside an installer-owned private directory."""
+    if type(payload) is not bytes or len(payload) > max_bytes:
+        raise BrowserMatrixError("verified browser payload exceeds its byte ceiling")
+    staging_root = Path(tempfile.mkdtemp(prefix="browser-payload-"))
+    root_fd = payload_fd = -1
+    try:
+        root_before = os.stat(staging_root, follow_symlinks=False)
+        if not stat.S_ISDIR(root_before.st_mode) or stat.S_IMODE(root_before.st_mode) != 0o700:
+            raise BrowserMatrixError("browser payload staging root is not private")
+        root_fd = os.open(
+            staging_root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+        )
+        root_opened = os.fstat(root_fd)
+        if not _same_file_identity(root_before, root_opened):
+            raise BrowserMatrixError("browser payload staging root binding changed")
+        payload_fd = os.open(
+            "archive",
+            os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+            0o400, dir_fd=root_fd,
+        )
+        offset = 0
+        while offset < len(payload):
+            written = os.write(payload_fd, payload[offset:offset + 1024 * 1024])
+            if written <= 0:
+                raise BrowserMatrixError("browser payload staging write made no progress")
+            offset += written
+        os.fsync(payload_fd)
+        os.fchmod(payload_fd, 0o400)
+        root_bound = os.fstat(root_fd)
+        payload_before = os.fstat(payload_fd)
+        if (
+            not stat.S_ISREG(payload_before.st_mode)
+            or payload_before.st_nlink != 1
+            or payload_before.st_size != len(payload)
+            or os.listdir(root_fd) != ["archive"]
+        ):
+            raise BrowserMatrixError("browser payload staging identity is invalid")
+        yield staging_root / "archive"
+        payload_after = os.fstat(payload_fd)
+        path_after = os.stat("archive", dir_fd=root_fd, follow_symlinks=False)
+        root_after = os.stat(staging_root, follow_symlinks=False)
+        if (
+            not _same_file_identity(payload_before, payload_after)
+            or not _same_file_identity(payload_before, path_after)
+            or not _same_file_identity(root_bound, root_after)
+            or os.listdir(root_fd) != ["archive"]
+        ):
+            raise BrowserMatrixError("browser payload staging changed during extraction")
+        os.lseek(payload_fd, 0, os.SEEK_SET)
+        observed = bytearray()
+        while len(observed) <= max_bytes:
+            chunk = os.read(payload_fd, min(1024 * 1024, max_bytes + 1 - len(observed)))
+            if not chunk:
+                break
+            observed.extend(chunk)
+        if bytes(observed) != payload:
+            raise BrowserMatrixError("browser payload staging bytes changed during extraction")
+    except BrowserMatrixError:
+        raise
+    except OSError as error:
+        raise BrowserMatrixError("browser payload could not be staged safely") from error
+    finally:
+        if payload_fd >= 0:
+            os.close(payload_fd)
+        if root_fd >= 0:
+            try:
+                os.unlink("archive", dir_fd=root_fd)
+            except FileNotFoundError:
+                pass
+            os.close(root_fd)
+        try:
+            staging_root.rmdir()
+        except OSError:
+            shutil.rmtree(staging_root)
+
+
+def _tree_inventory(root: Path) -> tuple[tuple[str, str, int | str], ...]:
+    inventory: list[tuple[str, str, int | str]] = []
+    for current, directories, files in os.walk(root, followlinks=False):
+        for name in (*directories, *files):
+            path = Path(current) / name
+            relative = path.relative_to(root).as_posix()
+            metadata = path.lstat()
+            if stat.S_ISLNK(metadata.st_mode):
+                inventory.append((relative, "link", os.readlink(path)))
+            elif stat.S_ISDIR(metadata.st_mode):
+                inventory.append((relative, "directory", 0))
+            elif stat.S_ISREG(metadata.st_mode):
+                inventory.append((relative, "file", metadata.st_size))
+            else:
+                raise BrowserMatrixError("browser extraction inventory contains a special file")
+    return tuple(sorted(inventory))
+
+
 def install_archive(
     archive: BrowserArchive,
     cache: Path,
@@ -787,32 +884,43 @@ def install_archive(
                 os.fsync(stream.fileno())
             os.replace(pending_archive, cached_archive)
         temporary = Path(tempfile.mkdtemp(prefix=".extract-", dir=digest_root))
-        payload_path = digest_root / f".{archive.sha256}.download"
         try:
             expanded_limit = min(2 * 1024 * 1024 * 1024, archive.max_bytes * 8)
-            if archive.archive_format == "zip":
-                _extract_zip(payload, temporary, expanded_limit, archive.symlinks)
-                if sys.platform == "darwin" and any(
-                    part.endswith(".app") for part in PurePosixPath(archive.executable).parts
-                ):
-                    # The first extraction validates every archive member and the
-                    # exact link graph. ditto is then allowed only for this pinned
-                    # signed bundle so Apple metadata required by codesign survives.
-                    shutil.rmtree(temporary)
-                    temporary.mkdir(mode=0o700)
-                    subprocess.run(
-                        ["/usr/bin/ditto", "-x", "-k", str(cached_archive), str(temporary)],
-                        check=True, capture_output=True, text=True, timeout=120,
+            needs_macos_payload = archive.archive_format == "dmg" or (
+                archive.archive_format == "zip" and sys.platform == "darwin"
+                and any(part.endswith(".app") for part in PurePosixPath(archive.executable).parts)
+            )
+            payload_context = (
+                _verified_payload_file(payload, archive.max_bytes)
+                if needs_macos_payload else nullcontext(None)
+            )
+            with payload_context as immutable_payload:
+                if archive.archive_format == "zip":
+                    _extract_zip(payload, temporary, expanded_limit, archive.symlinks)
+                    if needs_macos_payload:
+                        # Validate the byte-level archive first, then require
+                        # ditto's Apple-metadata-preserving output to have the
+                        # exact same path/type/size inventory.
+                        validated_inventory = _tree_inventory(temporary)
+                        shutil.rmtree(temporary)
+                        temporary.mkdir(mode=0o700)
+                        subprocess.run(
+                            ["/usr/bin/ditto", "-x", "-k", str(immutable_payload), str(temporary)],
+                            check=True, capture_output=True, text=True, timeout=120,
+                        )
+                        if _tree_inventory(temporary) != validated_inventory:
+                            raise BrowserMatrixError("ditto extraction inventory drifted")
+                elif archive.archive_format == "tar.xz":
+                    _extract_tar(payload, temporary, expanded_limit)
+                elif archive.archive_format == "dmg":
+                    if immutable_payload is None:
+                        raise BrowserMatrixError("DMG verified staging payload is unavailable")
+                    _extract_dmg(
+                        immutable_payload, temporary,
+                        archive.executable, archive.symlinks,
                     )
-                    if _tree_symlinks(temporary) != archive.symlinks:
-                        raise BrowserMatrixError("ditto extraction symlink map drifted")
-            elif archive.archive_format == "tar.xz":
-                _extract_tar(payload, temporary, expanded_limit)
-            elif archive.archive_format == "dmg":
-                payload_path.write_bytes(payload)
-                _extract_dmg(payload_path, temporary, archive.executable, archive.symlinks)
-            else:
-                raise BrowserMatrixError("browser archive format is unsupported")
+                else:
+                    raise BrowserMatrixError("browser archive format is unsupported")
             candidate = temporary.joinpath(*PurePosixPath(archive.executable).parts)
             if not candidate.is_file() or candidate.is_symlink():
                 raise BrowserMatrixError("pinned browser executable is absent after extraction")
@@ -846,7 +954,6 @@ def install_archive(
                 shutil.rmtree(previous)
             return executable
         finally:
-            payload_path.unlink(missing_ok=True)
             if temporary.exists():
                 shutil.rmtree(temporary)
     except BrowserMatrixError:
