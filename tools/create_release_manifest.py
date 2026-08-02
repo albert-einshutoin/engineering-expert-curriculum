@@ -11,7 +11,11 @@ from pathlib import Path
 import sys
 import tempfile
 
-from tools.verify_release_manifest import (
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
+
+from tools.verify_release_manifest import (  # noqa: E402
     MANIFEST_NAME,
     ReleaseManifestError,
     parse_manifest_bytes,

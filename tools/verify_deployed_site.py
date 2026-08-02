@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 import hashlib
+from pathlib import Path
 import posixpath
 import sys
 import time
@@ -13,7 +14,11 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, unquote, urljoin, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
-from tools.verify_release_manifest import (
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
+
+from tools.verify_release_manifest import (  # noqa: E402
     MAX_FILE_BYTES,
     MAX_MANIFEST_BYTES,
     MAX_TOTAL_BYTES,

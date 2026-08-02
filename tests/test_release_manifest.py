@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import subprocess
+import sys
 from tempfile import TemporaryDirectory
 import unittest
 from urllib.error import HTTPError, URLError
@@ -17,6 +19,7 @@ from tools.verify_deployed_site import DeployedSiteError, FetchPolicy, verify_de
 
 
 COMMIT = "0123456789abcdef0123456789abcdef01234567"
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _canonical(path: str = "index.html", source: bytes = b"hello") -> bytes:
@@ -85,6 +88,27 @@ class ManifestSchemaTests(unittest.TestCase):
 
 
 class LocalManifestTests(unittest.TestCase):
+    def test_manifest_clis_start_from_an_unrelated_working_directory(self) -> None:
+        scripts = (
+            "create_release_manifest.py",
+            "verify_release_manifest.py",
+            "verify_deployed_site.py",
+        )
+        with TemporaryDirectory() as directory:
+            for script in scripts:
+                with self.subTest(script=script):
+                    result = subprocess.run(
+                        [
+                            sys.executable,
+                            str(REPOSITORY_ROOT / "tools" / script),
+                            "--help",
+                        ],
+                        cwd=directory,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_generator_is_deterministic_and_local_verifier_covers_all_assets(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
