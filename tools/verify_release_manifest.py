@@ -20,6 +20,11 @@ MAX_FILES: Final = 4_096
 MAX_FILE_BYTES: Final = 4 * 1024 * 1024
 MAX_TOTAL_BYTES: Final = 64 * 1024 * 1024
 MAX_DEPTH: Final = 32
+# Bound the full directory evidence retained for the final recursive pass.
+# A release with MAX_FILES may use at most MAX_DEPTH distinct ancestors per
+# artifact under this conservative policy; empty directories share the same
+# global ceiling instead of remaining an unbounded metadata-only input.
+MAX_TREE_ENTRIES: Final = MAX_FILES * (MAX_DEPTH + 1) + 1
 MANIFEST_NAME: Final = "release-manifest.json"
 _COMMIT = re.compile(r"[0-9a-f]{40}\Z", re.ASCII)
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z", re.ASCII)
@@ -285,6 +290,51 @@ def _scan_release_tree_at(
     files: dict[PurePosixPath, bytes] = {}
     manifest_bytes: bytes | None = None
     total = 0
+    directory_bindings: dict[PurePosixPath, os.stat_result] = {}
+    directory_memberships: dict[PurePosixPath, tuple[str, ...]] = {}
+    entry_bindings: dict[PurePosixPath, tuple[int, int, int]] = {}
+    file_snapshots: dict[PurePosixPath, bytes] = {}
+    discovered_entries = 0
+
+    def scan_initial_children(descriptor: int):
+        nonlocal discovered_entries
+        children = []
+        try:
+            with os.scandir(descriptor) as iterator:
+                for child in iterator:
+                    # Count an entry as soon as the initial walk discovers it.
+                    # Ancestor directories may still retain sorted child lists,
+                    # so recorded bindings alone do not bound live evidence.
+                    discovered_entries += 1
+                    if discovered_entries > MAX_TREE_ENTRIES:
+                        raise ReleaseManifestError(
+                            "release tree exceeds its entry budget"
+                        )
+                    children.append(child)
+        except OSError as error:
+            raise ReleaseManifestError(
+                "release directory cannot be scanned safely"
+            ) from error
+        return sorted(children, key=lambda item: item.name)
+
+    def scan_current_membership(
+        descriptor: int,
+        expected: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        names: list[str] = []
+        try:
+            with os.scandir(descriptor) as iterator:
+                for child in iterator:
+                    if len(names) >= len(expected):
+                        raise ReleaseManifestError(
+                            "release directory contents changed"
+                        )
+                    names.append(child.name)
+        except OSError as error:
+            raise ReleaseManifestError(
+                "release directory cannot be scanned safely"
+            ) from error
+        return tuple(sorted(names))
 
     def revalidate_directory(
         descriptor: int,
@@ -322,11 +372,10 @@ def _scan_release_tree_at(
         if depth > MAX_DEPTH:
             raise ReleaseManifestError("release tree exceeds its depth budget")
         revalidate_directory(descriptor, expected_directory, parent)
-        try:
-            with os.scandir(descriptor) as iterator:
-                children = sorted(iterator, key=lambda item: item.name)
-        except OSError as error:
-            raise ReleaseManifestError("release directory cannot be scanned safely") from error
+        children = scan_initial_children(descriptor)
+        initial_membership = tuple(child.name for child in children)
+        directory_bindings[relative_directory] = expected_directory
+        directory_memberships[relative_directory] = initial_membership
         for child in children:
             revalidate_directory(descriptor, expected_directory, parent)
             relative = (
@@ -342,6 +391,9 @@ def _scan_release_tree_at(
                 )
             except OSError as error:
                 raise ReleaseManifestError("release entry binding changed") from error
+            if len(entry_bindings) >= MAX_TREE_ENTRIES:
+                raise ReleaseManifestError("release tree exceeds its entry budget")
+            entry_bindings[relative] = _binding_identity(binding)
             if stat.S_ISLNK(binding.st_mode):
                 raise ReleaseManifestError("release tree contains a symbolic link")
             if stat.S_ISDIR(binding.st_mode):
@@ -381,13 +433,15 @@ def _scan_release_tree_at(
             if child.name == MANIFEST_NAME and relative.parent == PurePosixPath("."):
                 if not stat.S_ISREG(binding.st_mode) or binding.st_nlink != 1:
                     raise ReleaseManifestError("release manifest output is unsafe")
+                source = _read_regular_at(
+                    descriptor,
+                    child.name,
+                    binding,
+                    MAX_MANIFEST_BYTES,
+                )
+                file_snapshots[relative] = source
                 if read_manifest:
-                    manifest_bytes = _read_regular_at(
-                        descriptor,
-                        child.name,
-                        binding,
-                        MAX_MANIFEST_BYTES,
-                    )
+                    manifest_bytes = source
                 continue
             if (
                 not stat.S_ISREG(binding.st_mode)
@@ -406,6 +460,99 @@ def _scan_release_tree_at(
             if total > MAX_TOTAL_BYTES:
                 raise ReleaseManifestError("release tree exceeds its aggregate byte budget")
             files[relative] = source
+            file_snapshots[relative] = source
+        # Re-enumerate through the same open directory binding. Directory
+        # timestamps can be too coarse to expose an add/delete/rename that
+        # races the walk, so metadata identity alone cannot close the set.
+        final_membership = scan_current_membership(
+            descriptor,
+            initial_membership,
+        )
+        if final_membership != initial_membership:
+            raise ReleaseManifestError("release directory contents changed")
+        revalidate_directory(descriptor, expected_directory, parent)
+
+    def revalidate_tree_snapshot(
+        descriptor: int,
+        relative_directory: PurePosixPath,
+        depth: int,
+        expected_directory: os.stat_result,
+        parent: tuple[int, str, os.stat_result] | None,
+    ) -> None:
+        if depth > MAX_DEPTH:
+            raise ReleaseManifestError("release tree exceeds its depth budget")
+        revalidate_directory(descriptor, expected_directory, parent)
+        expected_membership = directory_memberships.get(relative_directory)
+        if expected_membership is None:
+            raise ReleaseManifestError("release directory binding changed")
+        membership = scan_current_membership(descriptor, expected_membership)
+        if membership != expected_membership:
+            raise ReleaseManifestError("release directory contents changed")
+        for name in membership:
+            relative = (
+                PurePosixPath(name)
+                if relative_directory == PurePosixPath(".")
+                else relative_directory / name
+            )
+            try:
+                binding = os.stat(
+                    name,
+                    dir_fd=descriptor,
+                    follow_symlinks=False,
+                )
+            except OSError as error:
+                raise ReleaseManifestError("release entry binding changed") from error
+            if _binding_identity(binding) != entry_bindings.get(relative):
+                raise ReleaseManifestError("release entry binding changed")
+            if stat.S_ISDIR(binding.st_mode):
+                try:
+                    child_descriptor = _open_descriptor(
+                        name,
+                        _fd_flags(directory=True),
+                        dir_fd=descriptor,
+                    )
+                except OSError as error:
+                    raise ReleaseManifestError(
+                        "release directory could not be opened safely"
+                    ) from error
+                try:
+                    opened = os.fstat(child_descriptor)
+                    _assert_same_identity(
+                        opened,
+                        binding,
+                        "release directory binding changed before it was reopened",
+                    )
+                    recorded = directory_bindings.get(relative)
+                    if recorded is None or _binding_identity(opened) != (
+                        _binding_identity(recorded)
+                    ):
+                        raise ReleaseManifestError("release directory binding changed")
+                    revalidate_tree_snapshot(
+                        child_descriptor,
+                        relative,
+                        depth + 1,
+                        recorded,
+                        (descriptor, name, binding),
+                    )
+                finally:
+                    _close_descriptor(child_descriptor)
+                revalidate_directory(descriptor, expected_directory, parent)
+                continue
+            expected_source = file_snapshots.get(relative)
+            if expected_source is not None:
+                maximum = (
+                    MAX_MANIFEST_BYTES
+                    if relative == PurePosixPath(MANIFEST_NAME)
+                    else MAX_FILE_BYTES
+                )
+                source = _read_regular_at(
+                    descriptor,
+                    name,
+                    binding,
+                    maximum,
+                )
+                if source != expected_source:
+                    raise ReleaseManifestError("release artifact changed after it was read")
         revalidate_directory(descriptor, expected_directory, parent)
 
     try:
@@ -420,6 +567,17 @@ def _scan_release_tree_at(
     if not stat.S_ISDIR(opened_root.st_mode):
         raise ReleaseManifestError("release root descriptor must bind a directory")
     walk(
+        root_descriptor,
+        PurePosixPath("."),
+        0,
+        opened_root,
+        None,
+    )
+    # POSIX does not provide an atomic recursive directory snapshot. Release
+    # publication therefore requires a quiescent tree; this second complete
+    # pass rejects every membership, binding, or covered-byte change observed
+    # between the initial walk and the final descriptor-relative validation.
+    revalidate_tree_snapshot(
         root_descriptor,
         PurePosixPath("."),
         0,

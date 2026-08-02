@@ -220,6 +220,124 @@ class LocalManifestTests(unittest.TestCase):
                 with self.assertRaises(ReleaseManifestError):
                     create_manifest_bytes(root, commit=COMMIT)
 
+    def test_walk_bounds_full_tree_snapshot_entries(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "index.html").write_bytes(b"one")
+            (root / "styles.css").write_bytes(b"two")
+            with patch.object(
+                verifier_module,
+                "MAX_TREE_ENTRIES",
+                1,
+            ), self.assertRaisesRegex(
+                ReleaseManifestError,
+                "entry budget",
+            ):
+                create_manifest_bytes(root, commit=COMMIT)
+
+    def test_walk_stops_scandir_at_the_entry_budget_boundary(self) -> None:
+        class CountingScandir:
+            def __init__(self) -> None:
+                self.yielded = 0
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                self.yielded += 1
+                if self.yielded > 10:
+                    raise StopIteration
+                return type("Entry", (), {"name": f"{self.yielded}.html"})()
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            root.joinpath("index.html").write_bytes(b"hello")
+            iterator = CountingScandir()
+            original_supports_fd = set(os.supports_fd)
+            with patch.object(
+                verifier_module.os,
+                "scandir",
+                return_value=iterator,
+            ) as scandir, patch.object(
+                verifier_module.os,
+                "supports_fd",
+                original_supports_fd | {scandir},
+            ), patch.object(
+                verifier_module,
+                "MAX_TREE_ENTRIES",
+                2,
+            ), self.assertRaisesRegex(
+                ReleaseManifestError,
+                "entry budget",
+            ):
+                create_manifest_bytes(root, commit=COMMIT)
+        self.assertEqual(iterator.yielded, 3)
+
+    def test_walk_counts_unprocessed_ancestor_siblings_in_entry_budget(
+        self,
+    ) -> None:
+        class CountingScandir:
+            def __init__(self, iterator) -> None:
+                self.iterator = iterator
+
+            def __enter__(self):
+                self.iterator.__enter__()
+                return self
+
+            def __exit__(self, *args):
+                return self.iterator.__exit__(*args)
+
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                nonlocal yielded
+                entry = next(self.iterator)
+                yielded += 1
+                return entry
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            child = root / "a-child"
+            child.mkdir()
+            (child / "index.html").write_bytes(b"child")
+            (root / "z-later.css").write_bytes(b"later")
+            original_scandir = os.scandir
+            original_supports_fd = set(os.supports_fd)
+            yielded = 0
+
+            def tracked_scandir(descriptor: int):
+                return CountingScandir(original_scandir(descriptor))
+
+            with patch.object(
+                verifier_module.os,
+                "scandir",
+                side_effect=tracked_scandir,
+            ) as scandir, patch.object(
+                verifier_module.os,
+                "supports_fd",
+                original_supports_fd | {scandir},
+            ), patch.object(
+                verifier_module,
+                "MAX_TREE_ENTRIES",
+                2,
+            ), self.assertRaisesRegex(
+                ReleaseManifestError,
+                "entry budget",
+            ):
+                create_manifest_bytes(root, commit=COMMIT)
+
+        # The root's two entries remain materialized for sorting while its
+        # first child is walked. The nested entry is therefore the global
+        # limit+1 observation and must abort immediately.
+        self.assertEqual(yielded, 3)
+
     def test_walk_rejects_directory_membership_change_after_scan(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
@@ -245,6 +363,190 @@ class LocalManifestTests(unittest.TestCase):
             ):
                 with self.assertRaises(ReleaseManifestError):
                     create_manifest_bytes(root, commit=COMMIT)
+
+    def test_walk_reenumerates_closed_membership_on_coarse_timestamp_filesystems(
+        self,
+    ) -> None:
+        for scope in ("root", "nested"):
+            for mutation in ("add", "delete", "rename"):
+                with self.subTest(
+                    scope=scope, mutation=mutation
+                ), TemporaryDirectory() as directory:
+                    self._assert_coarse_membership_race_is_rejected(
+                        Path(directory), scope=scope, mutation=mutation
+                    )
+
+    def test_walk_reenumerates_each_membership_through_the_same_descriptor(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "index.html").write_bytes(b"hello")
+            original_scandir = os.scandir
+            original_supports_fd = set(os.supports_fd)
+            descriptors: list[int] = []
+
+            def tracked_scandir(descriptor: int):
+                descriptors.append(descriptor)
+                return original_scandir(descriptor)
+
+            with patch.object(
+                verifier_module.os,
+                "scandir",
+                side_effect=tracked_scandir,
+            ) as scandir:
+                with patch.object(
+                    verifier_module.os,
+                    "supports_fd",
+                    original_supports_fd | {scandir},
+                ):
+                    create_manifest_bytes(root, commit=COMMIT)
+        self.assertEqual(len(descriptors), 3)
+        self.assertEqual(len(set(descriptors)), 1)
+
+    def test_walk_revalidates_child_membership_after_later_parent_entries(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            child = root / "a-child"
+            child.mkdir()
+            (child / "index.html").write_bytes(b"child")
+            later = root / "z-later.css"
+            later.write_bytes(b"body{}")
+            original_read = verifier_module._read_regular_at
+            mutated = False
+
+            def read_then_mutate(parent_descriptor, name, *args, **kwargs):
+                nonlocal mutated
+                source = original_read(
+                    parent_descriptor, name, *args, **kwargs
+                )
+                if name == later.name and not mutated:
+                    mutated = True
+                    (child / "late.css").write_bytes(b"late{}")
+                return source
+
+            with patch.object(
+                verifier_module,
+                "_directory_snapshot_identity",
+                side_effect=lambda status: verifier_module._binding_identity(status),
+            ), patch.object(
+                verifier_module,
+                "_read_regular_at",
+                side_effect=read_then_mutate,
+            ), self.assertRaisesRegex(
+                ReleaseManifestError,
+                "directory contents changed",
+            ):
+                create_manifest_bytes(root, commit=COMMIT)
+
+    def test_walk_revalidates_same_name_file_binding_after_replacement(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            asset = root / "index.html"
+            asset.write_bytes(b"same bytes")
+            original_read = verifier_module._read_regular_at
+            replaced = False
+
+            def read_then_replace(*args, **kwargs):
+                nonlocal replaced
+                source = original_read(*args, **kwargs)
+                if not replaced:
+                    replaced = True
+                    replacement = root / "replacement.html"
+                    replacement.write_bytes(source)
+                    asset.unlink()
+                    replacement.rename(asset)
+                return source
+
+            with patch.object(
+                verifier_module,
+                "_directory_snapshot_identity",
+                side_effect=lambda status: verifier_module._binding_identity(status),
+            ), patch.object(
+                verifier_module,
+                "_read_regular_at",
+                side_effect=read_then_replace,
+            ), self.assertRaisesRegex(
+                ReleaseManifestError,
+                "entry binding changed",
+            ):
+                create_manifest_bytes(root, commit=COMMIT)
+
+    def test_walk_revalidates_same_inode_file_content_after_read(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            asset = root / "index.html"
+            asset.write_bytes(b"trusted")
+            original_read = verifier_module._read_regular_at
+            mutated = False
+
+            def read_then_mutate(*args, **kwargs):
+                nonlocal mutated
+                source = original_read(*args, **kwargs)
+                if not mutated:
+                    mutated = True
+                    before = asset.stat()
+                    asset.write_bytes(b"changed")
+                    os.utime(asset, ns=(before.st_atime_ns, before.st_mtime_ns))
+                return source
+
+            with patch.object(
+                verifier_module,
+                "_directory_snapshot_identity",
+                side_effect=lambda status: verifier_module._binding_identity(status),
+            ), patch.object(
+                verifier_module,
+                "_read_regular_at",
+                side_effect=read_then_mutate,
+            ), self.assertRaisesRegex(
+                ReleaseManifestError,
+                "artifact changed after it was read",
+            ):
+                create_manifest_bytes(root, commit=COMMIT)
+
+    def _assert_coarse_membership_race_is_rejected(
+        self, root: Path, *, scope: str, mutation: str,
+    ) -> None:
+        membership_root = root if scope == "root" else root / "nested"
+        membership_root.mkdir(parents=True, exist_ok=True)
+        asset = membership_root / "index.html"
+        asset.write_bytes(b"hello")
+        original_read = verifier_module._read_regular_at
+        mutated = False
+
+        def read_then_mutate(*args, **kwargs):
+            nonlocal mutated
+            source = original_read(*args, **kwargs)
+            if not mutated:
+                mutated = True
+                if mutation == "add":
+                    (membership_root / "late.css").write_bytes(b"body{}")
+                elif mutation == "delete":
+                    asset.unlink()
+                else:
+                    asset.rename(membership_root / "renamed.html")
+            return source
+
+        # Model a filesystem whose directory timestamps do not change within
+        # the verifier's observation granularity. Membership must remain
+        # closed independently of metadata timestamps.
+        with patch.object(
+            verifier_module,
+            "_directory_snapshot_identity",
+            side_effect=lambda status: verifier_module._binding_identity(status),
+        ), patch.object(
+            verifier_module,
+            "_read_regular_at",
+            side_effect=read_then_mutate,
+        ), self.assertRaisesRegex(
+            ReleaseManifestError,
+            "directory contents changed",
+        ):
+            create_manifest_bytes(root, commit=COMMIT)
 
     def test_publication_rejects_root_swap_immediately_after_scan(self) -> None:
         with TemporaryDirectory() as directory:
