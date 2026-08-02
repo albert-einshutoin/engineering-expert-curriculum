@@ -267,6 +267,34 @@ class LocalManifestTests(unittest.TestCase):
             self.assertEqual(calls, 2)
             self.assertEqual(verify_release_manifest(root, manifest).commit, COMMIT)
 
+    def test_publication_rejects_root_swap_during_parent_fsync(self) -> None:
+        with TemporaryDirectory() as directory:
+            base = Path(directory)
+            root = base / "site"
+            root.mkdir()
+            (root / "index.html").write_bytes(b"hello")
+            manifest = root / "release-manifest.json"
+            original_fsync = os.fsync
+            calls = 0
+
+            def swap_during_parent_fsync(descriptor):
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    root.rename(base / "published-site")
+                    root.mkdir()
+                return original_fsync(descriptor)
+
+            with patch.object(
+                create_module.os,
+                "fsync",
+                side_effect=swap_during_parent_fsync,
+            ):
+                with self.assertRaises(ReleaseManifestError) as raised:
+                    write_release_manifest(root, manifest, commit=COMMIT)
+            self.assertTrue(getattr(raised.exception, "published", False))
+            self.assertTrue((base / "published-site" / manifest.name).is_file())
+
 
 class _Response:
     def __init__(

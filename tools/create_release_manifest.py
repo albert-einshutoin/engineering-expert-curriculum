@@ -151,6 +151,14 @@ def write_release_manifest(root: Path, output: Path, *, commit: str) -> None:
             raise ReleaseManifestPostCommitError(
                 "release manifest was replaced but its directory sync failed"
             ) from error
+        final_root = os.lstat(root)
+        if (final_root.st_dev, final_root.st_ino) != (
+            root_binding.st_dev,
+            root_binding.st_ino,
+        ):
+            raise ReleaseManifestPostCommitError(
+                "release manifest root changed during its directory sync"
+            )
     except Exception:
         if not published and temporary_name is not None:
             try:
