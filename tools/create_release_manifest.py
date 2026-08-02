@@ -7,7 +7,7 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import secrets
 import stat
 import sys
@@ -21,6 +21,7 @@ from tools.verify_release_manifest import (  # noqa: E402
     ReleaseManifestError,
     parse_manifest_bytes,
     scan_release_files,
+    scan_release_files_at,
 )
 
 
@@ -30,8 +31,11 @@ class ReleaseManifestPostCommitError(ReleaseManifestError):
     published = True
 
 
-def create_manifest_bytes(root: Path, *, commit: str) -> bytes:
-    files = scan_release_files(root)
+def _encode_manifest_bytes(
+    files: dict[PurePosixPath, bytes],
+    *,
+    commit: str,
+) -> bytes:
     value = {
         "schemaVersion": 1,
         "commit": commit,
@@ -49,6 +53,10 @@ def create_manifest_bytes(root: Path, *, commit: str) -> bytes:
     return raw
 
 
+def create_manifest_bytes(root: Path, *, commit: str) -> bytes:
+    return _encode_manifest_bytes(scan_release_files(root), commit=commit)
+
+
 def write_release_manifest(root: Path, output: Path, *, commit: str) -> None:
     if (
         not isinstance(root, Path)
@@ -57,7 +65,6 @@ def write_release_manifest(root: Path, output: Path, *, commit: str) -> None:
         or output.name != MANIFEST_NAME
     ):
         raise ReleaseManifestError("output must be the exact release-root manifest")
-    raw = create_manifest_bytes(root, commit=commit)
     nofollow = getattr(os, "O_NOFOLLOW", None)
     directory_flag = getattr(os, "O_DIRECTORY", None)
     if type(nofollow) is not int or type(directory_flag) is not int:
@@ -85,6 +92,32 @@ def write_release_manifest(root: Path, output: Path, *, commit: str) -> None:
     ):
         os.close(root_descriptor)
         raise ReleaseManifestError("manifest root binding changed before publication")
+    try:
+        # Scan and publish through the same descriptor so a path swap cannot make
+        # the manifest describe one tree while it is written into another tree.
+        raw = _encode_manifest_bytes(
+            scan_release_files_at(root_descriptor, opened_root),
+            commit=commit,
+        )
+        try:
+            scanned_root = os.lstat(root)
+        except OSError as error:
+            raise ReleaseManifestError(
+                "manifest root binding changed during its release scan"
+            ) from error
+        if (scanned_root.st_dev, scanned_root.st_ino) != (
+            root_binding.st_dev,
+            root_binding.st_ino,
+        ):
+            raise ReleaseManifestError(
+                "manifest root binding changed during its release scan"
+            )
+    except BaseException:
+        try:
+            os.close(root_descriptor)
+        except OSError:
+            pass
+        raise
     try:
         existing = os.stat(
             MANIFEST_NAME,
@@ -137,7 +170,12 @@ def write_release_manifest(root: Path, output: Path, *, commit: str) -> None:
             dst_dir_fd=root_descriptor,
         )
         published = True
-        current_root = os.lstat(root)
+        try:
+            current_root = os.lstat(root)
+        except OSError as error:
+            raise ReleaseManifestPostCommitError(
+                "release manifest was replaced but its root metadata was unavailable"
+            ) from error
         if (current_root.st_dev, current_root.st_ino) != (
             root_binding.st_dev,
             root_binding.st_ino,
@@ -151,7 +189,12 @@ def write_release_manifest(root: Path, output: Path, *, commit: str) -> None:
             raise ReleaseManifestPostCommitError(
                 "release manifest was replaced but its directory sync failed"
             ) from error
-        final_root = os.lstat(root)
+        try:
+            final_root = os.lstat(root)
+        except OSError as error:
+            raise ReleaseManifestPostCommitError(
+                "release manifest was replaced but its final root metadata was unavailable"
+            ) from error
         if (final_root.st_dev, final_root.st_ino) != (
             root_binding.st_dev,
             root_binding.st_ino,

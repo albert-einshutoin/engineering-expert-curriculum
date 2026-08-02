@@ -16,6 +16,7 @@ import tools.verify_deployed_site as deployed_module
 import tools.verify_release_manifest as verifier_module
 from tools.create_release_manifest import create_manifest_bytes, write_release_manifest
 from tools.verify_release_manifest import (
+    ReleaseManifest,
     ReleaseManifestError,
     parse_manifest_bytes,
     verify_release_manifest,
@@ -245,6 +246,36 @@ class LocalManifestTests(unittest.TestCase):
                 with self.assertRaises(ReleaseManifestError):
                     create_manifest_bytes(root, commit=COMMIT)
 
+    def test_publication_rejects_root_swap_immediately_after_scan(self) -> None:
+        with TemporaryDirectory() as directory:
+            base = Path(directory)
+            root = base / "site"
+            root.mkdir()
+            (root / "index.html").write_bytes(b"trusted")
+            moved_root = base / "moved-site"
+            original_scan = create_module.scan_release_files_at
+
+            def scan_then_swap(descriptor, binding):
+                files = original_scan(descriptor, binding)
+                root.rename(moved_root)
+                root.mkdir()
+                (root / "index.html").write_bytes(b"replacement")
+                return files
+
+            with patch.object(
+                create_module,
+                "scan_release_files_at",
+                side_effect=scan_then_swap,
+            ):
+                with self.assertRaises(ReleaseManifestError):
+                    write_release_manifest(
+                        root,
+                        root / "release-manifest.json",
+                        commit=COMMIT,
+                    )
+            self.assertFalse((moved_root / "release-manifest.json").exists())
+            self.assertFalse((root / "release-manifest.json").exists())
+
     def test_parent_fsync_failure_is_an_explicit_post_commit_error(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
@@ -294,6 +325,36 @@ class LocalManifestTests(unittest.TestCase):
                     write_release_manifest(root, manifest, commit=COMMIT)
             self.assertTrue(getattr(raised.exception, "published", False))
             self.assertTrue((base / "published-site" / manifest.name).is_file())
+
+    def test_post_replace_root_metadata_failure_is_a_post_commit_error(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "index.html").write_bytes(b"hello")
+            manifest = root / "release-manifest.json"
+            original_replace = os.replace
+            original_lstat = os.lstat
+            replaced = False
+
+            def tracked_replace(*args, **kwargs):
+                nonlocal replaced
+                original_replace(*args, **kwargs)
+                replaced = True
+
+            def fail_after_replace(path):
+                if replaced and Path(path) == root:
+                    raise OSError("injected post-replace metadata failure")
+                return original_lstat(path)
+
+            with (
+                patch.object(create_module.os, "replace", side_effect=tracked_replace),
+                patch.object(create_module.os, "lstat", side_effect=fail_after_replace),
+            ):
+                with self.assertRaises(
+                    create_module.ReleaseManifestPostCommitError
+                ) as raised:
+                    write_release_manifest(root, manifest, commit=COMMIT)
+            self.assertTrue(raised.exception.published)
+            self.assertTrue(manifest.is_file())
 
 
 class _Response:
@@ -346,6 +407,27 @@ def _sleep_past_deadline() -> None:
 
 def _return_before_deadline() -> str:
     return "ok"
+
+
+def _return_large_valid_manifest() -> ReleaseManifest:
+    value = {
+        "schemaVersion": 1,
+        "commit": COMMIT,
+        "files": [
+            {
+                "path": f"assets/{index:04d}.js",
+                "bytes": 0,
+                "sha256": f"{index:064x}",
+            }
+            for index in range(900)
+        ],
+    }
+    raw = json.dumps(
+        value,
+        ensure_ascii=True,
+        separators=(",", ":"),
+    ).encode("utf-8") + b"\n"
+    return parse_manifest_bytes(raw, expected_commit=COMMIT)
 
 
 class _Opener:
@@ -566,6 +648,14 @@ class DeployedManifestTests(unittest.TestCase):
             "ok",
         )
         self.assertLess(time.monotonic() - start, 0.75)
+
+    def test_hard_deadline_drains_a_large_valid_worker_result(self) -> None:
+        result = deployed_module._run_with_hard_deadline(
+            _return_large_valid_manifest,
+            2.0,
+        )
+        self.assertEqual(result.commit, COMMIT)
+        self.assertEqual(len(result.files), 900)
 
     def test_http_and_response_close_are_exactly_once_and_preserve_primary(self) -> None:
         manifest_url = self.BASE + "release-manifest.json"

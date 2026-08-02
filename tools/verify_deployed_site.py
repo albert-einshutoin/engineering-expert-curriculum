@@ -359,25 +359,52 @@ def _run_with_hard_deadline(function, seconds: float, *arguments):
         process.close()
         raise DeployedSiteError("deployed verifier worker could not start") from error
     sender.close()
-    process.join(seconds)
-    if process.is_alive():
-        process.terminate()
-        process.join(1.0)
-        if process.is_alive():
-            process.kill()
-            process.join()
-        receiver.close()
-        process.close()
-        raise DeployedSiteError("deployed verification exceeded its hard deadline")
+    deadline = time.monotonic() + seconds
+    result = None
     try:
-        if not receiver.poll():
-            raise DeployedSiteError("deployed verifier worker exited without a result")
-        result = receiver.recv()
+        # Read the pipe before join: a large, valid result can otherwise fill the
+        # pipe and leave the worker blocked while its parent waits for it to exit.
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise DeployedSiteError(
+                    "deployed verification exceeded its hard deadline"
+                )
+            if receiver.poll(min(remaining, 0.05)):
+                result = receiver.recv()
+                break
+            if not process.is_alive():
+                process.join()
+                if receiver.poll():
+                    result = receiver.recv()
+                    break
+                raise DeployedSiteError(
+                    "deployed verifier worker exited without a result"
+                )
+
+        remaining = deadline - time.monotonic()
+        process.join(max(0.0, remaining))
+        if process.is_alive():
+            raise DeployedSiteError(
+                "deployed verification exceeded its hard deadline"
+            )
+        if process.exitcode != 0:
+            raise DeployedSiteError(
+                "deployed verifier worker exited unsuccessfully"
+            )
     except (EOFError, OSError) as error:
         raise DeployedSiteError("deployed verifier worker result was unavailable") from error
     finally:
+        if process.is_alive():
+            process.terminate()
+            process.join(1.0)
+            if process.is_alive():
+                process.kill()
+                process.join()
         receiver.close()
         process.close()
+    if type(result) is not tuple or len(result) not in {2, 3}:
+        raise DeployedSiteError("deployed verifier worker returned an invalid result")
     if result[0] is not True:
         raise DeployedSiteError(f"deployed verifier worker failed: {result[1]}")
     return result[1]

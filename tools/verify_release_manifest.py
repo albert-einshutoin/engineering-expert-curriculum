@@ -275,24 +275,13 @@ def _read_regular_at(
             ) from close_error
 
 
-def _scan_release_tree(
-    root: Path,
+def _scan_release_tree_at(
+    root_descriptor: int,
+    root_binding: os.stat_result,
     *,
     read_manifest: bool,
 ) -> tuple[dict[PurePosixPath, bytes], bytes | None]:
-    if not isinstance(root, Path):
-        raise ReleaseManifestError("release root must be a real directory")
     _fd_flags(directory=True)
-    try:
-        root_binding = os.lstat(root)
-    except OSError as error:
-        raise ReleaseManifestError("release root could not be inspected safely") from error
-    if not stat.S_ISDIR(root_binding.st_mode):
-        raise ReleaseManifestError("release root must be a real directory")
-    try:
-        root_descriptor = _open_descriptor(root, _fd_flags(directory=True))
-    except OSError as error:
-        raise ReleaseManifestError("release root could not be opened safely") from error
     files: dict[PurePosixPath, bytes] = {}
     manifest_bytes: bytes | None = None
     total = 0
@@ -421,17 +410,50 @@ def _scan_release_tree(
 
     try:
         opened_root = os.fstat(root_descriptor)
-        _assert_same_identity(
-            opened_root,
-            root_binding,
-            "release root binding changed before it was opened",
-        )
-        walk(
+    except OSError as error:
+        raise ReleaseManifestError("release root descriptor could not be inspected") from error
+    _assert_same_identity(
+        opened_root,
+        root_binding,
+        "release root descriptor binding changed before its scan",
+    )
+    if not stat.S_ISDIR(opened_root.st_mode):
+        raise ReleaseManifestError("release root descriptor must bind a directory")
+    walk(
+        root_descriptor,
+        PurePosixPath("."),
+        0,
+        opened_root,
+        None,
+    )
+    if not files:
+        raise ReleaseManifestError("release tree contains no static artifacts")
+    return files, manifest_bytes
+
+
+def _scan_release_tree(
+    root: Path,
+    *,
+    read_manifest: bool,
+) -> tuple[dict[PurePosixPath, bytes], bytes | None]:
+    if not isinstance(root, Path):
+        raise ReleaseManifestError("release root must be a real directory")
+    _fd_flags(directory=True)
+    try:
+        root_binding = os.lstat(root)
+    except OSError as error:
+        raise ReleaseManifestError("release root could not be inspected safely") from error
+    if not stat.S_ISDIR(root_binding.st_mode):
+        raise ReleaseManifestError("release root must be a real directory")
+    try:
+        root_descriptor = _open_descriptor(root, _fd_flags(directory=True))
+    except OSError as error:
+        raise ReleaseManifestError("release root could not be opened safely") from error
+    try:
+        files, manifest_bytes = _scan_release_tree_at(
             root_descriptor,
-            PurePosixPath("."),
-            0,
-            opened_root,
-            None,
+            root_binding,
+            read_manifest=read_manifest,
         )
         try:
             final_root = os.lstat(root)
@@ -442,8 +464,6 @@ def _scan_release_tree(
             root_binding,
             "release root binding changed",
         )
-        if not files:
-            raise ReleaseManifestError("release tree contains no static artifacts")
         return files, manifest_bytes
     finally:
         _close_descriptor(root_descriptor)
@@ -451,6 +471,19 @@ def _scan_release_tree(
 
 def scan_release_files(root: Path) -> dict[PurePosixPath, bytes]:
     files, _manifest = _scan_release_tree(root, read_manifest=False)
+    return files
+
+
+def scan_release_files_at(
+    root_descriptor: int,
+    root_binding: os.stat_result,
+) -> dict[PurePosixPath, bytes]:
+    """Scan a release tree through a caller-owned, stable directory binding."""
+    files, _manifest = _scan_release_tree_at(
+        root_descriptor,
+        root_binding,
+        read_manifest=False,
+    )
     return files
 
 
