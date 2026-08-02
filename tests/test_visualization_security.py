@@ -26,6 +26,7 @@ from tools.install_test_browsers import (
     verify_macos_browser_bundle,
     verify_linux_browser_binary,
     verify_safari_version,
+    _verified_payload_file,
 )
 
 
@@ -393,6 +394,43 @@ class BrowserProvisioningSecurityTests(unittest.TestCase):
                         if attack == "fifo":
                             os.close(fifo_reader)
                     self.assertEqual(victim.read_bytes(), b"victim")
+
+    def test_payload_cleanup_never_follows_a_replaced_staging_root_or_masks_primary_error(self) -> None:
+        with TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            for primary_error in (False, True):
+                with self.subTest(primary_error=primary_error):
+                    staging = parent / f"staging-{primary_error}"
+
+                    def make_staging(*_args: object, **_kwargs: object) -> str:
+                        staging.mkdir(mode=0o700)
+                        return str(staging)
+
+                    renamed = parent / f"renamed-{primary_error}"
+                    with mock.patch(
+                        "tools.install_test_browsers.tempfile.mkdtemp",
+                        side_effect=make_staging,
+                    ), mock.patch(
+                        "tools.install_test_browsers.shutil.rmtree",
+                        side_effect=AssertionError("recursive cleanup is forbidden"),
+                    ):
+                        if primary_error:
+                            with self.assertRaisesRegex(RuntimeError, "primary"):
+                                with _verified_payload_file(b"verified", 8) as payload_path:
+                                    payload_path.parent.rename(renamed)
+                                    staging.mkdir(mode=0o700)
+                                    (staging / "victim-marker").write_bytes(b"survive")
+                                    raise RuntimeError("primary extraction failure")
+                        else:
+                            with self.assertRaisesRegex(BrowserMatrixError, "staging"):
+                                with _verified_payload_file(b"verified", 8) as payload_path:
+                                    payload_path.parent.rename(renamed)
+                                    staging.mkdir(mode=0o700)
+                                    (staging / "victim-marker").write_bytes(b"survive")
+                    self.assertEqual(
+                        (staging / "victim-marker").read_bytes(), b"survive"
+                    )
+                    self.assertFalse((renamed / "archive").exists())
 
     def test_linux_preflight_requires_x86_64_elf_dependencies_version_and_launch(self) -> None:
         elf = bytearray(64)

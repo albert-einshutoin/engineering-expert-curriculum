@@ -757,13 +757,18 @@ def _verified_payload_file(payload: bytes, max_bytes: int) -> Iterator[Path]:
     if type(payload) is not bytes or len(payload) > max_bytes:
         raise BrowserMatrixError("verified browser payload exceeds its byte ceiling")
     staging_root = Path(tempfile.mkdtemp(prefix="browser-payload-"))
-    root_fd = payload_fd = -1
+    parent_fd = root_fd = payload_fd = -1
+    cleanup_error: BrowserMatrixError | None = None
     try:
-        root_before = os.stat(staging_root, follow_symlinks=False)
+        parent = staging_root.parent
+        basename = staging_root.name
+        parent_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        root_before = os.stat(basename, dir_fd=parent_fd, follow_symlinks=False)
         if not stat.S_ISDIR(root_before.st_mode) or stat.S_IMODE(root_before.st_mode) != 0o700:
             raise BrowserMatrixError("browser payload staging root is not private")
         root_fd = os.open(
-            staging_root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+            basename, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+            dir_fd=parent_fd,
         )
         root_opened = os.fstat(root_fd)
         if not _same_file_identity(root_before, root_opened):
@@ -793,7 +798,7 @@ def _verified_payload_file(payload: bytes, max_bytes: int) -> Iterator[Path]:
         yield staging_root / "archive"
         payload_after = os.fstat(payload_fd)
         path_after = os.stat("archive", dir_fd=root_fd, follow_symlinks=False)
-        root_after = os.stat(staging_root, follow_symlinks=False)
+        root_after = os.stat(basename, dir_fd=parent_fd, follow_symlinks=False)
         if (
             not _same_file_identity(payload_before, payload_after)
             or not _same_file_identity(payload_before, path_after)
@@ -815,6 +820,7 @@ def _verified_payload_file(payload: bytes, max_bytes: int) -> Iterator[Path]:
     except OSError as error:
         raise BrowserMatrixError("browser payload could not be staged safely") from error
     finally:
+        primary_error_active = sys.exc_info()[0] is not None
         if payload_fd >= 0:
             os.close(payload_fd)
         if root_fd >= 0:
@@ -822,11 +828,39 @@ def _verified_payload_file(payload: bytes, max_bytes: int) -> Iterator[Path]:
                 os.unlink("archive", dir_fd=root_fd)
             except FileNotFoundError:
                 pass
+            except OSError as error:
+                cleanup_error = BrowserMatrixError(
+                    "browser payload archive cleanup failed"
+                )
+                cleanup_error.__cause__ = error
+        if parent_fd >= 0 and root_fd >= 0:
+            try:
+                current = os.stat(basename, dir_fd=parent_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                current = None
+            except OSError as error:
+                current = None
+                cleanup_error = cleanup_error or BrowserMatrixError(
+                    "browser payload root binding cleanup failed"
+                )
+                cleanup_error.__cause__ = error
+            opened = os.fstat(root_fd)
+            if current is not None and (
+                current.st_dev, current.st_ino
+            ) == (opened.st_dev, opened.st_ino):
+                try:
+                    os.rmdir(basename, dir_fd=parent_fd)
+                except OSError as error:
+                    cleanup_error = cleanup_error or BrowserMatrixError(
+                        "browser payload staging directory cleanup failed"
+                    )
+                    cleanup_error.__cause__ = error
+        if root_fd >= 0:
             os.close(root_fd)
-        try:
-            staging_root.rmdir()
-        except OSError:
-            shutil.rmtree(staging_root)
+        if parent_fd >= 0:
+            os.close(parent_fd)
+        if cleanup_error is not None and not primary_error_active:
+            raise cleanup_error
 
 
 def _tree_inventory(root: Path) -> tuple[tuple[str, str, int | str], ...]:
