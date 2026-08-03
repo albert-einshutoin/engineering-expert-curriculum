@@ -1,0 +1,183 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="38ドメインの推奨学習順と依存関係マップ">
+<title>ロードマップ | Engineering Expert Curriculum</title>
+<link rel="stylesheet" href="assets/styles.css">
+<script>window.CURRICULUM_BASE_PREFIX="";</script>
+<script src="assets/curriculum.js"></script>
+<script>if(window.CURRICULUM) window.CURRICULUM.basePrefix=window.CURRICULUM_BASE_PREFIX;</script>
+<script defer src="assets/app.js"></script>
+<style>
+.roadmap-svg-wrap{overflow-x:auto;margin:24px 0;text-align:center}
+.roadmap-svg{min-width:700px;max-width:100%;height:auto}
+.stage-box{transition:opacity .2s;cursor:pointer}
+.stage-box:hover{filter:brightness(1.2)}
+.stage-box.completed{opacity:1}
+.stage-box.active{opacity:1}
+.stage-box.inactive{opacity:0.35}
+.stage-label{font-size:13px;font-weight:600;fill:var(--text)}
+.stage-sub{font-size:10px;fill:var(--muted)}
+.stage-count{font-size:10px;fill:var(--muted)}
+.stage-connector{stroke:rgba(255,255,255,.1);stroke-width:2;fill:none;stroke-dasharray:6,4}
+.flow-arrow{fill:rgba(255,255,255,.1)}
+.flow-arrow.active{fill:var(--accent)}
+.stage-bar{stroke-width:3;fill:none;stroke-linecap:round;transition:stroke-dashoffset 1s}
+.domain-progress-row{display:flex;align-items:center;gap:10px;padding:6px 0;font-size:13px}
+.domain-progress-row .d-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.domain-progress-row .d-name a{color:var(--text);text-decoration:none}
+.domain-progress-row .d-name a:hover{color:var(--accent)}
+.domain-progress-row .d-bar-shell{width:120px;flex-shrink:0;height:5px;background:rgba(255,255,255,.06);border-radius:3px;overflow:hidden}
+.domain-progress-row .d-bar-fill{height:100%;border-radius:3px;transition:width .5s}
+.domain-progress-row .d-pct{width:36px;text-align:right;font-size:11px;color:var(--muted);flex-shrink:0}
+.prereq-graph{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin:10px 0}
+.prereq-node{font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid var(--line);background:rgba(255,255,255,.03);color:var(--muted);text-decoration:none;transition:all .12s}
+.prereq-node:hover{border-color:#4d659e;color:var(--text)}
+.prereq-node.done{border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.08);color:#34d399}
+.prereq-node.progress{border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.08);color:var(--gold)}
+@media(max-width:700px){.domain-progress-row .d-bar-shell{width:80px}}
+</style>
+</head><body><header class="site-header"><nav class="nav">
+<a class="brand" href="index.html">Engineering Expert Curriculum</a>
+<a href="roadmap.html" style="color:var(--accent)">ロードマップ</a>
+<a href="daily.html">今日のLesson</a>
+<a href="progress.html">進捗</a>
+<a href="map3d.html">3Dマップ</a>
+<a href="guide.html">使い方</a>
+</nav></header><main>
+<section class="hero"><h1>推奨ロードマップ</h1><p class="lede">順番は絶対ではありません。ただし専門分野だけを先に暗記するより、下位レイヤと検証方法を並行して学ぶ方が応用力が残ります。</p></section>
+
+<section class="section">
+<h2>学習パス依存関係図</h2>
+<p class="small">各学習段階のつながりと、完了したドメインの数。ノードをクリックで該当Stageへスクロールします。</p>
+<div class="roadmap-svg-wrap" id="roadmap-viz"></div>
+</section>
+
+<section id="stage-all">
+<h2>Stage別ドメイン進捗</h2>
+<p class="small">各ドメインの進捗状況と前提関係を確認できます。</p>
+<div id="stages-container"></div>
+</section>
+
+<section class="section"><h2>1日の推奨構成</h2>
+<ol class="steps"><li>新規の基礎Lessonを1件。</li><li>現在の業務に直結する応用Lessonを1件。</li><li>完了済みLessonの復習または専門Lessonを1件。</li></ol>
+<p>毎日1〜5件から選べます。継続を優先し、演習を省略してページ数だけ進めないでください。</p></section>
+</main><footer>Engineering Expert Curriculum — 学習内容は、実装・検証・運用・説明までを一つの完了条件として設計しています。</footer>
+
+<script>
+(() => {
+const C = window.CURRICULUM;
+if(!C) return;
+const PROGRESS_KEY = 'engineering-curriculum-progress-v1';
+function loadP(){try{return JSON.parse(localStorage.getItem(PROGRESS_KEY)||'{}')}catch{return{}}}
+function isComplete(id){return (loadP())[id]?.completed===true}
+function lessonId(did,mi,li){return `D${String(did).padStart(2,'0')}-M${String(mi).padStart(2,'0')}-L${li}`}
+function domainStats(did){let d=0;for(let m=1;m<=10;m++)for(let l=1;l<=3;l++)if(isComplete(lessonId(did,m,l)))d++;return{done:d,total:30,pct:Math.round(d/30*100)}}
+
+const stages = [
+  {id:'stage1',title:'計算の土台',desc:'数学、アルゴリズム、ハードウェア、OS、言語処理、ネットワーク',ids:[1,2,3,4,5,6,7,8,9,10],color:'#60a5fa'},
+  {id:'stage2',title:'実装と設計',desc:'複数言語、Web、DB、設計、分散システム',ids:[11,12,13,14,15,16,17],color:'#818cf8'},
+  {id:'stage3',title:'本番運用',desc:'クラウド、配布、信頼性、可観測性、性能、セキュリティ、品質',ids:[18,19,20,21,22,23,24,25],color:'#34d399'},
+  {id:'stage4',title:'Data・AI',desc:'データ基盤から学習、LLM、MLOps',ids:[26,27,28,29],color:'#67e8f9'},
+  {id:'stage5',title:'Product・Leadership',desc:'開発者体験、要求、意思決定、チーム能力',ids:[30,31,32],color:'#fbbf24'},
+  {id:'stage6',title:'専門選択',desc:'ブラウザ、クライアント、IoT、ロボティクス、GPU、信号処理',ids:[33,34,35,36,37,38],color:'#fb923c'},
+];
+
+function stageStats(s){
+  let done=0,total=0;
+  s.ids.forEach(did=>{const ds=domainStats(did);done+=ds.done;total+=ds.total});
+  return{done,total,pct:total?Math.round(done/total*100):0};
+}
+
+function renderSVG(){
+  const container = document.getElementById('roadmap-viz');
+  const w = stages.length * 160 + 40;
+  const h = 240;
+  let svg = `<svg class="roadmap-svg" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg"><defs>
+    <filter id="g"><feDropShadow dx="0" dy="1" stdDeviation="2" flood-opacity=".3"/></filter>
+  </defs>`;
+
+  // Connector arrows between stages
+  for(let i=0;i<stages.length-1;i++){
+    const x1 = 40 + i*160 + 120;
+    const y1 = 80;
+    const x2 = 40 + (i+1)*160;
+    const y2 = 80;
+    const cx = (x1+x2)/2;
+    svg += `<path d="M${x1},${y1} Q${cx},${y1-20} ${cx},${y2-15} Q${cx},${y2} ${x2},${y2}" class="stage-connector"/>`;
+    svg += `<polygon points="${x2-4},${y2-6} ${x2+4},${y2} ${x2-4},${y2+6}" class="flow-arrow"/>`;
+  }
+
+  // Stage boxes
+  stages.forEach((s,i)=>{
+    const x = 40 + i*160;
+    const y = 40;
+    const st = stageStats(s);
+    const pct = st.pct;
+    const boxW = 120, boxH = 80;
+    const completed = pct >= 70;
+
+    svg += `<g class="stage-box" filter="url(#g)" onclick="document.getElementById('${s.id}').scrollIntoView({behavior:'smooth'})">`;
+    svg += `<rect x="${x}" y="${y}" width="${boxW}" height="${boxH}" rx="12" fill="rgba(17,24,43,.86)" stroke="${s.color}" stroke-width="1.5" stroke-opacity="${completed?'0.8':'0.3'}"/>`;
+    svg += `<text x="${x+boxW/2}" y="${y+28}" text-anchor="middle" class="stage-label" fill="${s.color}">${s.title}</text>`;
+    svg += `<text x="${x+boxW/2}" y="${y+46}" text-anchor="middle" class="stage-sub">${st.done}/${st.total}</text>`;
+    svg += `<text x="${x+boxW/2}" y="${y+62}" text-anchor="middle" class="stage-count">${pct}%</text>`;
+    // Progress bar
+    svg += `<rect x="${x+15}" y="${y+68}" width="${boxW-30}" height="4" rx="2" fill="rgba(255,255,255,.06)"/>`;
+    if(pct>0) svg += `<rect x="${x+15}" y="${y+68}" width="${(boxW-30)*pct/100}" height="4" rx="2" fill="${s.color}" opacity="0.8"/>`;
+    // Completion indicator
+    if(completed) svg += `<circle cx="${x+boxW-10}" cy="${y+10}" r="5" fill="#34d399"/>`;
+    svg += `</g>`;
+  });
+
+  svg += '</svg>';
+  container.innerHTML = svg;
+}
+
+function renderStages(){
+  const container = document.getElementById('stages-container');
+  container.innerHTML = stages.map(s=>{
+    const st = stageStats(s);
+    const pct = st.pct;
+    const completed = pct >= 70;
+    const domHtml = s.ids.map(did=>{
+      const d = C.domains.find(x=>x.id===did);
+      if(!d) return '';
+      const ds = domainStats(did);
+      const status = ds.pct>=70?'done':ds.done>0?'progress':'none';
+      const prereqs = (d.prerequisites||[]).map(pid=>{
+        const pd = C.domains.find(x=>x.id===pid);
+        if(!pd) return '';
+        const pds = domainStats(pid);
+        const pcls = pds.pct>=70?'done':pds.done>0?'progress':'';
+        return `<a class="prereq-node ${pcls}" href="domains/${pd.slug}/index.html" title="${pd.title}: ${pds.pct}%">D${String(pid).padStart(2,'0')}</a>`;
+      }).join('');
+      return `<div class="domain-progress-row">
+        <span class="d-name"><a href="domains/${d.slug}/index.html">D${String(did).padStart(2,'0')} ${d.title}</a></span>
+        <span class="d-bar-shell"><span class="d-bar-fill" style="width:${ds.pct}%;background:${s.color}"></span></span>
+        <span class="d-pct">${ds.pct}%</span>
+        <span style="font-size:11px;color:var(--muted);flex-shrink:0">${ds.done}/30</span>
+        ${prereqs ? `<div class="prereq-graph" style="margin-left:8px">前提:${prereqs}</div>` : ''}
+      </div>`;
+    }).join('');
+
+    return `<section class="section" id="${s.id}">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <h2 style="margin:0">Stage ${s.id.replace('stage','')} — ${s.title}</h2>
+        <span class="badge level" style="background:${s.color}22;border-color:${s.color}44;color:${s.color}">${st.done}/${st.total} · ${pct}%</span>
+      </div>
+      <p class="small">${s.desc}</p>
+      ${domHtml}
+    </section>`;
+  }).join('');
+}
+
+function refresh(){
+  renderSVG();
+  renderStages();
+}
+
+document.addEventListener('DOMContentLoaded', refresh);
+window.addEventListener('curriculum-progress-changed', refresh);
+})();
+</script>
+</body></html>

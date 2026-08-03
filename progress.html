@@ -1,0 +1,368 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="38ドメインの資格進捗ダッシュボード">
+<title>資格進捗ダッシュボード | Engineering Expert Curriculum</title>
+<link rel="stylesheet" href="assets/styles.css">
+<script>window.CURRICULUM_BASE_PREFIX="";</script>
+<script src="assets/curriculum.js"></script>
+<script>if(window.CURRICULUM) window.CURRICULUM.basePrefix=window.CURRICULUM_BASE_PREFIX;</script>
+<script defer src="assets/app.js"></script>
+<style>
+:root{--gold:#fbbf24;--silver:#94a3b8;--bronze:#d97706;--platinum:#a78bfa}
+.cert-hero{text-align:center;padding:40px 34px}
+.cert-level{display:inline-flex;align-items:center;gap:14px;margin:16px 0}
+.cert-badge{width:80px;height:80px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;border:3px solid}
+.cert-badge.bronze{background:linear-gradient(135deg,#92400e,#d97706);border-color:var(--bronze);color:#fef3c7}
+.cert-badge.silver{background:linear-gradient(135deg,#475569,#94a3b8);border-color:var(--silver);color:#f1f5f9}
+.cert-badge.gold{background:linear-gradient(135deg,#92400e,#fbbf24);border-color:var(--gold);color:#fef3c7}
+.cert-badge.platinum{background:linear-gradient(135deg,#5b21b6,#a78bfa);border-color:var(--platinum);color:#ede9fe}
+.cert-label{text-align:left}
+.cert-label h2{margin:0;font-size:24px}
+.cert-label p{margin:2px 0 0;color:var(--muted)}
+.cert-milestones{display:flex;gap:8px;justify-content:center;margin:18px 0;flex-wrap:wrap}
+.cert-milestone{padding:8px 16px;border-radius:999px;font-size:12px;border:1px solid var(--line);background:rgba(255,255,255,.03)}
+.cert-milestone.done{border-color:var(--accent);background:rgba(125,211,252,.1);color:var(--accent)}
+.donut-container{display:flex;justify-content:center;margin:16px 0}
+.donut-bg{fill:none;stroke:rgba(255,255,255,.06);stroke-width:8}
+.donut-fill{fill:none;stroke:var(--accent);stroke-width:8;stroke-linecap:round;transform:rotate(-90deg);transform-origin:center;transition:stroke-dashoffset 1s ease}
+.donut-text{font-size:28px;font-weight:700;fill:var(--text)}
+.donut-label{font-size:12px;fill:var(--muted)}
+.domain-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin:18px 0}
+.domain-card{border:1px solid var(--line);border-radius:14px;padding:16px;background:rgba(17,24,43,.74);transition:transform .12s}
+.domain-card:hover{transform:translateY(-1px);border-color:#4d659e}
+.domain-card .d-header{display:flex;justify-content:space-between;align-items:start;gap:8px}
+.domain-card .d-title{font-weight:600;font-size:14px;color:var(--text);text-decoration:none}
+.domain-card .d-title:hover{color:var(--accent)}
+.domain-card .d-status{font-size:11px;padding:2px 8px;border-radius:999px;white-space:nowrap;flex-shrink:0}
+.d-status.none{background:rgba(255,255,255,.04);color:var(--muted)}
+.d-status.progress{background:rgba(251,191,36,.12);color:var(--gold)}
+.d-status.done{background:rgba(52,211,153,.12);color:#34d399}
+.domain-card .d-bar-shell{height:6px;background:rgba(255,255,255,.06);border-radius:3px;margin-top:10px;overflow:hidden}
+.domain-card .d-bar-fill{height:100%;border-radius:3px;transition:width .6s;min-width:0}
+.domain-card .d-meta{font-size:11px;color:var(--muted);margin-top:8px;display:flex;justify-content:space-between}
+.domain-card .d-modules{display:flex;gap:3px;margin-top:8px;flex-wrap:wrap}
+.domain-card .d-module{width:8px;height:8px;border-radius:2px;background:rgba(255,255,255,.06)}
+.domain-card .d-module.done{background:var(--accent)}
+.domain-card .d-module.partial{background:var(--gold)}
+.track-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin:18px 0}
+.track-card{border:1px solid var(--line);border-radius:14px;padding:16px;background:rgba(17,24,43,.74)}
+.track-card h3{margin:0;font-size:15px}
+.track-card .t-domains{display:flex;gap:4px;margin-top:8px;flex-wrap:wrap}
+.track-card .t-dot{width:22px;height:22px;border-radius:4px;font-size:9px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.06);color:var(--muted)}
+.track-card .t-dot.done{background:rgba(52,211,153,.15);color:#34d399}
+.track-card .t-dot.progress{background:rgba(251,191,36,.12);color:var(--gold)}
+.track-card .t-bar-shell{height:5px;background:rgba(255,255,255,.06);border-radius:3px;margin-top:10px;overflow:hidden}
+.track-card .t-bar-fill{height:100%;border-radius:3px;transition:width .6s}
+.history-list{display:grid;gap:6px;max-height:300px;overflow-y:auto}
+.history-item{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;border-radius:8px;background:rgba(255,255,255,.02);font-size:13px}
+.history-item .h-date{color:var(--muted);font-size:11px}
+.history-item .h-lesson{color:var(--text)}
+.history-item .h-domain{color:var(--accent);font-size:11px}
+.tab-bar{display:flex;gap:4px;margin-bottom:16px;flex-wrap:wrap}
+.tab{background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:8px;padding:8px 14px;font-size:13px;cursor:pointer;color:var(--muted);transition:all .12s}
+.tab:hover{background:rgba(255,255,255,.08)}
+.tab.active{background:rgba(125,211,252,.1);border-color:var(--accent);color:var(--accent)}
+.tab-content{display:none}
+.tab-content.active{display:block}
+.heatmap-grid{display:grid;grid-template-columns:100px repeat(10,1fr);gap:3px;font-size:11px}
+.heatmap-header{font-weight:600;color:var(--muted);text-align:center;padding:4px 0}
+.heatmap-row{display:contents}
+.heatmap-label{padding:4px 6px;color:var(--muted);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;align-self:center}
+.heatmap-cell{aspect-ratio:1;border-radius:3px;background:rgba(255,255,255,.04);transition:background .2s;min-height:16px}
+.heatmap-cell.done{background:var(--accent)}
+.heatmap-cell.partial{background:rgba(125,211,252,.3)}
+@media(max-width:700px){.domain-grid{grid-template-columns:1fr}.track-grid{grid-template-columns:1fr}.cert-badge{width:60px;height:60px;font-size:20px}.heatmap-grid{grid-template-columns:70px repeat(10,1fr)}}
+@media print{.cert-hero{break-inside:avoid}.domain-grid,.track-grid{break-inside:avoid}}
+</style>
+</head><body><header class="site-header"><nav class="nav">
+<a class="brand" href="index.html">Engineering Expert Curriculum</a>
+<a href="roadmap.html">ロードマップ</a>
+<a href="daily.html">今日のLesson</a>
+<a href="progress.html" style="color:var(--accent)">進捗</a>
+<a href="map3d.html">3Dマップ</a>
+<a href="guide.html">使い方</a>
+</nav></header><main>
+
+<section class="hero cert-hero" id="cert-section">
+<div id="cert-level-display"></div>
+<div class="donut-container">
+<svg width="180" height="180" viewBox="0 0 180 180">
+<circle class="donut-bg" cx="90" cy="90" r="72"/>
+<circle class="donut-fill" id="donut-fill" cx="90" cy="90" r="72" stroke-dasharray="452.4" stroke-dashoffset="452.4"/>
+<text class="donut-text" x="90" y="88" text-anchor="middle" id="donut-pct">0%</text>
+<text class="donut-label" x="90" y="106" text-anchor="middle">完了</text>
+</svg>
+</div>
+<div class="stats" id="stats-summary">
+<div class="stat"><span class="small">全Lesson</span><strong id="stat-total">1,140</strong></div>
+<div class="stat"><span class="small">完了</span><strong id="stat-completed">0</strong></div>
+<div class="stat"><span class="small">完了率</span><strong id="stat-percent">0%</strong></div>
+<div class="stat"><span class="small">完了Domain</span><strong id="stat-domains">0</strong></div>
+<div class="stat"><span class="small">完了Track</span><strong id="stat-tracks">0</strong></div>
+</div>
+<div class="cert-milestones" id="milestones"></div>
+</section>
+
+<section class="section">
+<div class="tab-bar">
+<button class="tab active" data-tab="domains">ドメイン別</button>
+<button class="tab" data-tab="tracks">トラック別</button>
+<button class="tab" data-tab="heatmap">ヒートマップ</button>
+<button class="tab" data-tab="history">履歴</button>
+<button class="tab" data-tab="manage">管理</button>
+</div>
+
+<div class="tab-content active" id="tab-domains">
+<p class="small">各ドメイン10モジュール × 3レベル = 30Lesson。各モジュールの3つの点は基礎・応用・専門を表します。</p>
+<div class="domain-grid" id="domain-grid"></div>
+</div>
+
+<div class="tab-content" id="tab-tracks">
+<p class="small">トラック別の資格進捗。各点は1ドメインを表し、色が完了状態を示します。</p>
+<div class="track-grid" id="track-grid"></div>
+</div>
+
+<div class="tab-content" id="tab-heatmap">
+<p class="small">ドメイン×モジュールの完了ヒートマップ（各セルは3Lessonの完了率）。</p>
+<div style="overflow-x:auto"><div class="heatmap-grid" id="heatmap"></div></div>
+</div>
+
+<div class="tab-content" id="tab-history">
+<p class="small">直近の完了記録（最大50件）。</p>
+<div class="history-list" id="history-list"><p class="small" style="text-align:center;padding:20px">完了したLessonがここに表示されます。</p></div>
+</div>
+
+<div class="tab-content" id="tab-manage">
+<h3>バックアップ</h3>
+<div class="toolbar">
+<button data-export-progress>進捗JSONを書き出す</button>
+<label class="button secondary">進捗JSONを読み込む<input data-import-progress type="file" accept="application/json" hidden></label>
+<button class="danger" data-reset-progress>進捗を全削除</button>
+</div>
+<h3>完了の基準</h3>
+<ul><li>Lessonを説明できる。</li><li>最小例を自分で再現できる。</li><li>反例または障害条件を示せる。</li><li>設計判断と検証証拠をノートへ残した。</li></ul>
+</div>
+</section>
+
+</main><footer>Engineering Expert Curriculum — 学習内容は、実装・検証・運用・説明までを一つの完了条件として設計しています。</footer>
+
+<script>
+(() => {
+const PROGRESS_KEY = 'engineering-curriculum-progress-v1';
+const C = window.CURRICULUM;
+if(!C) return;
+
+const domains = C.domains;
+const tracks = C.tracks;
+const trackNames = {
+  backend:'Backend', systems:'Systems', cloud:'Cloud/SRE',
+  ai:'Data/AI', product:'Product/Leadership', physical:'Physical AI'
+};
+
+const GROUP_COLORS = {
+  core:'#60a5fa', systems:'#a78bfa', language:'#818cf8',
+  'lang-impl':'#4ade80', backend:'#f472b6', architecture:'#f87171',
+  data:'#facc15', distributed:'#fbbf24', cloud:'#7dd3fc',
+  delivery:'#a3e635', reliability:'#34d399', ai:'#67e8f9',
+  security:'#fb7185', quality:'#d946ef', perf:'#c084fc',
+  tools:'#94a3b8', product:'#fbbf24', frontend:'#60a5fa',
+  mobile:'#4ade80', embedded:'#2dd4bf', robotics:'#fb923c',
+  gpu:'#f87171', signal:'#facc15', network:'#22d3ee',
+};
+const DOMAIN_GROUP = {
+  1:'core',2:'core',3:'core',4:'core',5:'systems',6:'systems',7:'systems',
+  8:'language',9:'language',10:'network',11:'lang-impl',12:'lang-impl',
+  13:'lang-impl',14:'backend',15:'architecture',16:'data',26:'data',
+  17:'distributed',18:'cloud',19:'cloud',20:'delivery',21:'reliability',
+  22:'reliability',23:'perf',24:'security',25:'quality',27:'ai',28:'ai',
+  29:'ai',30:'tools',31:'product',32:'product',33:'frontend',34:'mobile',
+  35:'embedded',36:'robotics',37:'gpu',38:'signal',
+};
+
+function loadP(){try{return JSON.parse(localStorage.getItem(PROGRESS_KEY)||'{}')}catch{return{}}}
+const p = loadP();
+
+function lessonId(did,mi,li){return `D${String(did).padStart(2,'0')}-M${String(mi).padStart(2,'0')}-L${li}`}
+function isComplete(id){return p[id]?.completed===true}
+function completedAt(id){return p[id]?.completedAt||null}
+
+function domainStats(did){
+  let done=0,total=30;
+  for(let m=1;m<=10;m++) for(let l=1;l<=3;l++) if(isComplete(lessonId(did,m,l))) done++;
+  return {done,total,pct:Math.round(done/total*100)};
+}
+
+function moduleStats(did,mi){
+  let done=0,total=3;
+  for(let l=1;l<=3;l++) if(isComplete(lessonId(did,mi,l))) done++;
+  return {done,total,pct:Math.round(done/total*100)};
+}
+
+function trackStats(track){
+  const ids = tracks[track];
+  if(!ids) return {done:0,total:0,pct:0};
+  let total=0,done=0;
+  ids.forEach(did=>{const s=domainStats(did);done+=s.done;total+=s.total});
+  return {done,total,pct:total?Math.round(done/total*100):0};
+}
+
+// Certification Level
+function certLevel(pct){
+  if(pct>=100) return {level:'Platinum',label:'完全習得',badge:'platinum',emoji:'🏆',req:'全1,140Lesson完了'};
+  if(pct>=75) return {level:'Gold',label:'高度習得',badge:'gold',emoji:'🥇',req:'75%以上完了'};
+  if(pct>=50) return {level:'Silver',label:'中間習得',badge:'silver',emoji:'🥈',req:'50%以上完了'};
+  if(pct>=25) return {level:'Bronze',label:'基礎習得',badge:'bronze',emoji:'🥉',req:'25%以上完了'};
+  return {level:'Beginner',label:'学習開始',badge:'',emoji:'📚',req:'最初のLessonを完了しよう'};
+}
+
+// Render certification display
+function renderCert(){
+  const total = C.lessons.length;
+  const done = C.lessons.filter(x => isComplete(x.id)).length;
+  const pct = total?Math.round(done/total*100):0;
+  const cl = certLevel(pct);
+  const doneDomains = domains.filter(d=>domainStats(d.id).pct>=70).length;
+  const doneTracks = Object.keys(tracks).filter(t=>trackStats(t).pct>=80).length;
+
+  document.getElementById('stat-total').textContent = total.toLocaleString();
+  document.getElementById('stat-completed').textContent = done.toLocaleString();
+  document.getElementById('stat-percent').textContent = pct+'%';
+  document.getElementById('stat-domains').textContent = doneDomains+'/38';
+  document.getElementById('stat-tracks').textContent = doneTracks+'/6';
+
+  // Donut
+  const circumference = 2 * Math.PI * 72;
+  const offset = circumference - (pct/100)*circumference;
+  const fill = document.getElementById('donut-fill');
+  if(fill){fill.style.strokeDasharray = circumference; fill.style.strokeDashoffset = offset;}
+  document.getElementById('donut-pct').textContent = pct+'%';
+
+  // Level display
+  const ld = document.getElementById('cert-level-display');
+  if(cl.level==='Beginner'){
+    ld.innerHTML = `<div class="cert-level"><div class="cert-badge" style="background:rgba(255,255,255,.06);border-color:var(--line);color:var(--muted);font-size:18px">📚</div><div class="cert-label"><h2>学習開始</h2><p>${cl.req}</p></div></div>`;
+  } else {
+    ld.innerHTML = `<div class="cert-level"><div class="cert-badge ${cl.badge}">${cl.emoji}</div><div class="cert-label"><h2>${cl.level}</h2><p>${cl.label} · ${cl.req}</p></div></div>`;
+  }
+
+  // Milestones
+  const ms = document.getElementById('milestones');
+  const milestones = [
+    {pct:25,label:'Bronze 25%'},{pct:50,label:'Silver 50%'},
+    {pct:75,label:'Gold 75%'},{pct:100,label:'Platinum 100%'}
+  ];
+  ms.innerHTML = milestones.map(m=>
+    `<span class="cert-milestone ${pct>=m.pct?'done':''}">${pct>=m.pct?'✓':''}${m.label}</span>`
+  ).join('');
+}
+
+// Domain grid
+function renderDomains(){
+  const grid = document.getElementById('domain-grid');
+  grid.innerHTML = domains.map(d=>{
+    const s = domainStats(d.id);
+    const g = DOMAIN_GROUP[d.id]||'core';
+    const color = GROUP_COLORS[g]||'#60a5fa';
+    const status = s.pct>=70?'done':s.done>0?'progress':'none';
+    const statusLabel = s.pct>=70?'完了':s.done>0?`${s.pct}%`:'未着手';
+    let modHtml = '';
+    for(let m=1;m<=10;m++){
+      const ms_ = moduleStats(d.id,m);
+      const cls = ms_.done===3?'done':ms_.done>0?'partial':'';
+      modHtml += `<div class="d-module ${cls}" title="M${String(m).padStart(2,'0')}: ${ms_.done}/3"></div>`;
+    }
+    return `<div class="domain-card">
+      <div class="d-header">
+        <a class="d-title" href="domains/${d.slug}/index.html">D${String(d.id).padStart(2,'0')} ${d.title}</a>
+        <span class="d-status ${status}">${statusLabel}</span>
+      </div>
+      <div class="d-bar-shell"><div class="d-bar-fill" style="width:${s.pct}%;background:${color}"></div></div>
+      <div class="d-meta"><span>${s.done}/${s.total}</span><span>${s.pct}%</span></div>
+      <div class="d-modules">${modHtml}</div>
+    </div>`;
+  }).join('');
+}
+
+// Track grid
+function renderTracks(){
+  const grid = document.getElementById('track-grid');
+  grid.innerHTML = Object.entries(tracks).map(([key,ids])=>{
+    const s = trackStats(key);
+    const color = ['#60a5fa','#a78bfa','#22d3ee','#34d399','#fbbf24','#fb923c'][
+      ['backend','systems','cloud','ai','product','physical'].indexOf(key)]||'#60a5fa';
+    const status = s.pct>=80?'done':s.done>0?'progress':'none';
+    const dots = ids.map(did=>{
+      const ds = domainStats(did);
+      const cls = ds.pct>=70?'done':ds.done>0?'progress':'';
+      return `<div class="t-dot ${cls}" title="D${String(did).padStart(2,'0')}: ${ds.pct}%">D${did}</div>`;
+    }).join('');
+    return `<div class="track-card">
+      <h3>${trackNames[key]||key}</h3>
+      <div class="t-bar-shell"><div class="t-bar-fill" style="width:${s.pct}%;background:${color}"></div></div>
+      <div class="d-meta"><span>${s.done}/${s.total}</span><span>${s.pct}%</span></div>
+      <div class="t-domains">${dots}</div>
+    </div>`;
+  }).join('');
+}
+
+// Heatmap
+function renderHeatmap(){
+  const hm = document.getElementById('heatmap');
+  let html = '<div class="heatmap-header"></div>';
+  for(let m=1;m<=10;m++) html += `<div class="heatmap-header">M${String(m).padStart(2,'0')}</div>`;
+  domains.forEach(d=>{
+    html += `<div class="heatmap-row"><div class="heatmap-label">D${String(d.id).padStart(2,'0')} ${d.title}</div>`;
+    for(let m=1;m<=10;m++){
+      const ms_ = moduleStats(d.id,m);
+      const cls = ms_.done===3?'done':ms_.done>0?'partial':'';
+      html += `<div class="heatmap-cell ${cls}" title="${d.title} M${String(m).padStart(2,'0')}: ${ms_.done}/3"></div>`;
+    }
+    html += '</div>';
+  });
+  hm.innerHTML = html;
+}
+
+// History
+function renderHistory(){
+  const list = document.getElementById('history-list');
+  const entries = C.lessons.filter(x=>isComplete(x.id)&&completedAt(x.id))
+    .map(x=>({...x,at:new Date(completedAt(x.id)).getTime()}))
+    .sort((a,b)=>b.at-a.at).slice(0,50);
+  if(!entries.length){
+    list.innerHTML = '<p class="small" style="text-align:center;padding:20px">完了したLessonがここに表示されます。</p>';
+    return;
+  }
+  list.innerHTML = entries.map(e=>{
+    const d = new Date(e.at);
+    const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    return `<div class="history-item">
+      <span class="h-lesson"><a href="${C.basePrefix||''}${e.path}">${e.id}</a> ${e.title}</span>
+      <span><span class="h-domain">${e.domainTitle}</span> <span class="h-date">${dateStr}</span></span>
+    </div>`;
+  }).join('');
+}
+
+// Tabs
+document.querySelectorAll('.tab').forEach(tab=>{
+  tab.addEventListener('click',()=>{
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-'+tab.dataset.tab).classList.add('active');
+  });
+});
+
+// Re-render on progress change
+function refresh(){
+  Object.assign(p, loadP());
+  renderCert(); renderDomains(); renderTracks(); renderHeatmap(); renderHistory();
+}
+window.addEventListener('curriculum-progress-changed', refresh);
+document.addEventListener('DOMContentLoaded', refresh);
+
+// Make refresh available for app.js compatibility
+window.CurriculumProgress = window.CurriculumProgress || {};
+window.CurriculumProgress.refreshDashboard = refresh;
+})();
+</script>
+</body></html>
