@@ -1,0 +1,52 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="所有権・借用・型・trait・非同期・unsafeを通じて、メモリ安全と高性能を両立するシステムを構築する。">
+<title>Rust | Engineering Expert Curriculum</title>
+<link rel="stylesheet" href="../../assets/styles.css">
+<script>window.CURRICULUM_BASE_PREFIX="../../";</script>
+<script src="../../assets/curriculum.js"></script>
+<script>if(window.CURRICULUM) window.CURRICULUM.basePrefix=window.CURRICULUM_BASE_PREFIX;</script>
+<script defer src="../../assets/app.js"></script>
+</head><body><header class="site-header"><nav class="nav">
+<a class="brand" href="../../index.html">Engineering Expert Curriculum</a>
+<a href="../../roadmap.html">ロードマップ</a>
+<a href="../../daily.html">今日のLesson</a>
+<a href="../../progress.html">進捗</a>
+<a href="../../guide.html">使い方</a>
+</nav></header><main>
+<div class="breadcrumbs"><a href="../../index.html">Home</a> / Domain 13</div>
+<section class="hero"><div class="badges"><span class="badge">Domain 13</span><span class="badge">30 Lessons</span></div>
+<h1>Rust</h1><p class="lede">所有権・借用・型・trait・非同期・unsafeを通じて、メモリ安全と高性能を両立するシステムを構築する。</p><p class="small">推奨前提: <a href="../05-computer-architecture/index.html">05 コンピュータアーキテクチャ</a>, <a href="../06-os-linux-systems/index.html">06 OS・Linux・システムプログラミング</a>, <a href="../07-concurrency-parallelism/index.html">07 並行処理・並列処理</a>, <a href="../08-pl-type-systems/index.html">08 プログラミング言語理論・型システム</a></p></section>
+<section><h2>Modules</h2><div class="grid"><article class="card">
+<div class="meta">Module 01</div><h3>Ownership・Move・Copy</h3><p>資源の寿命をコンパイル時に管理できる</p>
+<div class="badges"><span class="badge">owner</span><span class="badge">move semantics</span><span class="badge">Copy trait</span><span class="badge">drop</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d13-m01-l1.html">基礎 D13-M01-L1</a><a class="button secondary" href="lessons/d13-m01-l2.html">応用 D13-M01-L2</a><a class="button secondary" href="lessons/d13-m01-l3.html">専門 D13-M01-L3</a></div></article><article class="card">
+<div class="meta">Module 02</div><h3>Borrow・Lifetime</h3><p>参照の有効性を安全に設計できる</p>
+<div class="badges"><span class="badge">shared・mutable borrow</span><span class="badge">lifetime annotation</span><span class="badge">elision</span><span class="badge">reborrow</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d13-m02-l1.html">基礎 D13-M02-L1</a><a class="button secondary" href="lessons/d13-m02-l2.html">応用 D13-M02-L2</a><a class="button secondary" href="lessons/d13-m02-l3.html">専門 D13-M02-L3</a></div></article><article class="card">
+<div class="meta">Module 03</div><h3>Struct・Enum・Pattern Matching</h3><p>不正状態を型で排除できる</p>
+<div class="badges"><span class="badge">data modeling</span><span class="badge">Option・Result</span><span class="badge">match</span><span class="badge">destructuring</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d13-m03-l1.html">基礎 D13-M03-L1</a><a class="button secondary" href="lessons/d13-m03-l2.html">応用 D13-M03-L2</a><a class="button secondary" href="lessons/d13-m03-l3.html">専門 D13-M03-L3</a></div></article><article class="card">
+<div class="meta">Module 04</div><h3>Trait・Generics・Dynamic Dispatch</h3><p>ゼロコスト抽象化と動的多相を使い分けられる</p>
+<div class="badges"><span class="badge">trait bound</span><span class="badge">associated type</span><span class="badge">impl Trait</span><span class="badge">trait object</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d13-m04-l1.html">基礎 D13-M04-L1</a><a class="button secondary" href="lessons/d13-m04-l2.html">応用 D13-M04-L2</a><a class="button secondary" href="lessons/d13-m04-l3.html">専門 D13-M04-L3</a></div></article><article class="card">
+<div class="meta">Module 05</div><h3>Error HandlingとAPI設計</h3><p>回復可能性に応じた失敗設計ができる</p>
+<div class="badges"><span class="badge">Result</span><span class="badge">? operator</span><span class="badge">custom error</span><span class="badge">panic boundary</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d13-m05-l1.html">基礎 D13-M05-L1</a><a class="button secondary" href="lessons/d13-m05-l2.html">応用 D13-M05-L2</a><a class="button secondary" href="lessons/d13-m05-l3.html">専門 D13-M05-L3</a></div></article><article class="card">
+<div class="meta">Module 06</div><h3>Iterator・Closure・Zero-cost Abstraction</h3><p>高水準かつ高速な処理を書ける</p>
+<div class="badges"><span class="badge">iterator adapter</span><span class="badge">lazy evaluation</span><span class="badge">monomorphization</span><span class="badge">inlining</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d13-m06-l1.html">基礎 D13-M06-L1</a><a class="button secondary" href="lessons/d13-m06-l2.html">応用 D13-M06-L2</a><a class="button secondary" href="lessons/d13-m06-l3.html">専門 D13-M06-L3</a></div></article><article class="card">
+<div class="meta">Module 07</div><h3>ConcurrencyとSend・Sync</h3><p>型保証のある並行コードを構築できる</p>
+<div class="badges"><span class="badge">thread</span><span class="badge">Arc・Mutex</span><span class="badge">Send・Sync</span><span class="badge">channel</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d13-m07-l1.html">基礎 D13-M07-L1</a><a class="button secondary" href="lessons/d13-m07-l2.html">応用 D13-M07-L2</a><a class="button secondary" href="lessons/d13-m07-l3.html">専門 D13-M07-L3</a></div></article><article class="card">
+<div class="meta">Module 08</div><h3>Async Rust・Tokio</h3><p>高並行I/Oサービスを安全に実装できる</p>
+<div class="badges"><span class="badge">Future</span><span class="badge">Pin</span><span class="badge">executor</span><span class="badge">structured task</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d13-m08-l1.html">基礎 D13-M08-L1</a><a class="button secondary" href="lessons/d13-m08-l2.html">応用 D13-M08-L2</a><a class="button secondary" href="lessons/d13-m08-l3.html">専門 D13-M08-L3</a></div></article><article class="card">
+<div class="meta">Module 09</div><h3>Unsafe・FFI・メモリ表現</h3><p>安全な境界を保ちながら低レイヤ連携できる</p>
+<div class="badges"><span class="badge">raw pointer</span><span class="badge">aliasing</span><span class="badge">layout</span><span class="badge">C ABI</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d13-m09-l1.html">基礎 D13-M09-L1</a><a class="button secondary" href="lessons/d13-m09-l2.html">応用 D13-M09-L2</a><a class="button secondary" href="lessons/d13-m09-l3.html">専門 D13-M09-L3</a></div></article><article class="card">
+<div class="meta">Module 10</div><h3>Cargo・Library・Production Rust</h3><p>再利用可能で運用可能なRustプロジェクトを作れる</p>
+<div class="badges"><span class="badge">workspace</span><span class="badge">feature</span><span class="badge">testing・benchmark</span><span class="badge">profiling・release</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d13-m10-l1.html">基礎 D13-M10-L1</a><a class="button secondary" href="lessons/d13-m10-l2.html">応用 D13-M10-L2</a><a class="button secondary" href="lessons/d13-m10-l3.html">専門 D13-M10-L3</a></div></article></div></section>
+<section class="section"><h2>公式・標準リファレンス</h2><p>Lesson本文と演習に加え、仕様・API・標準の一次資料で確認してください。version依存部分は必ず現在の公式資料を優先します。</p><ul><li><a href="https://doc.rust-lang.org/book/" target="_blank" rel="noopener noreferrer">The Rust Programming Language</a></li><li><a href="https://doc.rust-lang.org/reference/" target="_blank" rel="noopener noreferrer">Rust Reference</a></li><li><a href="https://tokio.rs/tokio/tutorial" target="_blank" rel="noopener noreferrer">Tokio Tutorial</a></li></ul></section>
+</main><footer>Engineering Expert Curriculum — 学習内容は、実装・検証・運用・説明までを一つの完了条件として設計しています。</footer></body></html>

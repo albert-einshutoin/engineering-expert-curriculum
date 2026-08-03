@@ -1,0 +1,140 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="何が計算でき、どの程度の資源が必要で、どこからが現実的に難しいのかを理解する。">
+<title>量子計算の理論基礎 — 専門 | 計算理論・計算量理論</title>
+<link rel="stylesheet" href="../../../assets/styles.css">
+<script>window.CURRICULUM_BASE_PREFIX="../../../";</script>
+<script src="../../../assets/curriculum.js"></script>
+<script>if(window.CURRICULUM) window.CURRICULUM.basePrefix=window.CURRICULUM_BASE_PREFIX;</script>
+<script defer src="../../../assets/app.js"></script>
+</head><body><header class="site-header"><nav class="nav">
+<a class="brand" href="../../../index.html">Engineering Expert Curriculum</a>
+<a href="../../../roadmap.html">ロードマップ</a>
+<a href="../../../daily.html">今日のLesson</a>
+<a href="../../../progress.html">進捗</a>
+<a href="../../../guide.html">使い方</a>
+</nav></header>
+<main>
+<div class="breadcrumbs"><a href="../../../index.html">Home</a> / <a href="../index.html">計算理論・計算量理論</a> / Module 10 / 専門</div>
+<section class="hero">
+  <div class="badges"><span class="badge">D03-M10-L3</span><span class="badge">Domain 03</span><span class="badge">Module 10</span><span class="badge level">Expert / 専門</span></div>
+  <h1>量子計算の理論基礎<br><span class="small">専門Lesson</span></h1>
+  <p class="lede">何が計算でき、どの程度の資源が必要で、どこからが現実的に難しいのかを理解する。 このLessonでは「障害、性能、検証、トレードオフを扱い専門家の判断へ進む」ことに集中します。</p>
+  <div class="lesson-actions"><button data-complete-lesson="D03-M10-L3">このLessonを完了</button> <a class="button secondary" href="../index.html">ドメイン一覧へ</a></div>
+</section>
+
+<section class="section">
+<h2>このLessonの到達目標</h2>
+<ul class="checklist"><li>量子計算が高速化し得る範囲を誇張なく説明できる</li><li>量子ビット、重ね合わせ、量子回路、BQPの関係を説明できる</li><li>具体例と反例を用いて、成立条件と失敗条件を示せる</li><li>障害注入・負荷・攻撃・反例を使って保証の限界を検証できる</li></ul>
+<div class="callout"><strong>完了条件:</strong> 読んだだけでは完了ではありません。説明、具体例、反例、再現可能な検証の4点を残してください。</div>
+</section>
+
+<section class="section">
+<h2>1. なぜ重要か</h2>
+<p>量子計算の理論基礎は、計算理論・計算量理論において「量子計算が高速化し得る範囲を誇張なく説明できる」ための中核テーマです。実務では単独で現れるより、周辺の概念や制約と組み合わさって現れます。そのため、用語の定義だけでなく、どの条件で使い、何を保証し、どこで破綻するかを一つのモデルとして理解します。</p>
+<p>このLessonでは、量子ビット、重ね合わせ、量子回路、BQPを同じ地図上に配置します。専門家は「知っている技術の数」ではなく、問題を正しい抽象度へ置き、必要な証拠を集め、複数案から条件付きで判断できる人です。</p>
+<div class="callout expert"><strong>講義本文:</strong> qubitは複素amplitudeの重ね合わせを持ち、unitary gateで状態を変換しmeasurementで確率的にbitを得ます。entanglementとinterferenceを利用するquantum circuitは、ShorやGrover等の特定問題でspeedupを示します。BQPは量子polynomial timeのclassですが、すべてのNP問題を高速化する証拠はありません。</div>
+</section>
+
+<section class="section">
+<h2>2. 中核概念</h2>
+<div class="concept-grid"><article class="concept"><h3>量子ビット</h3><p>専門家レベルでは「量子ビット」が破綻する条件と、破綻を検知する証拠を先に設計します。平均値ではなく分布、単体ではなく相互作用、理論上の保証と実装上の仮定を分け、反例を作って検証します。</p></article><article class="concept"><h3>重ね合わせ</h3><p>専門家レベルでは「重ね合わせ」が破綻する条件と、破綻を検知する証拠を先に設計します。平均値ではなく分布、単体ではなく相互作用、理論上の保証と実装上の仮定を分け、反例を作って検証します。</p></article><article class="concept"><h3>量子回路</h3><p>専門家レベルでは「量子回路」が破綻する条件と、破綻を検知する証拠を先に設計します。平均値ではなく分布、単体ではなく相互作用、理論上の保証と実装上の仮定を分け、反例を作って検証します。</p></article><article class="concept"><h3>BQP</h3><p>専門家レベルでは「BQP」が破綻する条件と、破綻を検知する証拠を先に設計します。平均値ではなく分布、単体ではなく相互作用、理論上の保証と実装上の仮定を分け、反例を作って検証します。</p></article></div>
+</section>
+
+<section class="section">
+<h2>3. メンタルモデル</h2>
+<ol class="steps"><li>量子計算の理論基礎の保証を、理論上の保証・実装の仮定・運用上の期待に分離する。</li><li>最悪ケース、競合、部分障害、資源枯渇、悪意ある入力をモデルへ追加する。</li><li>観測できない内部状態を推定するため、複数の証拠を相関させる。</li><li>設計判断をADRとして残し、将来変更すべきトリガーを定義する。</li></ol>
+<div class="callout warning"><strong>注意:</strong> 図や比喩は理解を助けますが、保証ではありません。境界条件と反例を一緒に持つことで、比喩の誤用を防げます。</div>
+</section>
+
+<section class="section">
+<h2>4. 学習・実装手順</h2>
+<ol class="steps"><li>既存実装または論文・仕様の主張を一つ選び、前提条件を列挙する。</li><li>反例、障害注入、負荷試験、形式化のいずれかで主張を検証する。</li><li>失敗時のblast radius、検知時間、復旧時間を測る。</li><li>代替設計を提示し、事業・チーム・運用を含む総コストで比較する。</li></ol>
+<h3>最小実験</h3>
+<pre><code class="language-python">from dataclasses import dataclass
+
+@dataclass
+class Experiment:
+    topic: str
+    hypothesis: str
+    metric: str
+
+experiment = Experiment(
+    topic=&#x27;量子ビット&#x27;,
+    hypothesis=&#x27;If we control 重ね合わせ, the result becomes explainable.&#x27;,
+    metric=&#x27;measurable evidence&#x27;,
+)
+print(experiment)</code></pre>
+<p class="small">コードは完成品ではなく、観測可能な最小実験の出発点です。自分の環境で動かし、前提と結果を記録してください。</p>
+</section>
+
+<section class="section">
+<h2>5. 設計判断とトレードオフ</h2>
+<p>専門段階では局所最適ではなく、システム全体の二次的影響を扱います。高性能な方式がデバッグ不能になる、強い整合性が可用性を下げる、抽象化が境界コストを隠す、といった反作用を定量化してください。</p>
+<div class="table-wrap"><table><thead><tr><th>観点</th><th>確認する問い</th></tr></thead><tbody>
+<tr><td>正しさ</td><td>どの不変条件を守り、どの入力・並行性・障害まで保証するか。</td></tr>
+<tr><td>性能</td><td>時間、空間、I/O、ネットワーク、待ち行列のどこが上限になるか。</td></tr>
+<tr><td>安全性</td><td>悪意ある入力、権限境界、情報漏えい、誤操作にどう耐えるか。</td></tr>
+<tr><td>変更容易性</td><td>要件変更時にどの境界まで影響し、互換性をどう維持するか。</td></tr>
+<tr><td>運用性</td><td>失敗をどう検知し、誰が何を見て、どの手順で復旧するか。</td></tr>
+</tbody></table></div>
+</section>
+
+<section class="section">
+<h2>6. 典型的な失敗</h2>
+<ul><li>量子ビットと重ね合わせを同じものとして扱い、境界条件を失う。</li><li>小さな成功例だけで一般化し、入力規模・並行性・障害時に破綻する。</li><li>結果だけを確認し、途中状態や観測証拠を残さない。</li><li>採用した方式の前提条件と、撤退条件を記録しない。</li><li>平均値で判断し、tail、分散、希少障害、攻撃者の適応を見落とす。</li><li>抽象化の下にあるOS・ネットワーク・ハードウェアの制約を無視する。</li></ul>
+</section>
+
+<section class="section">
+<h2>7. 演習</h2>
+<ol class="steps"><li>量子計算の理論基礎に対して、競合・資源枯渇・部分障害・悪意ある入力のうち二つを注入する。</li><li>量子ビットの保証が崩れる最小反例を作り、検知するテストまたは監視を追加する。</li><li>設計のADRを作成し、前提、代替案、採用理由、負の影響、再評価条件を記録する。</li></ol>
+<div class="callout expert"><strong>Expert Challenge:</strong> 量子計算の理論基礎について障害事例を仮定し、タイムライン、検知証拠、根本要因、恒久対策、残存リスクを含む技術レポートを作成してください。</div>
+</section>
+
+<section class="section">
+<h2>8. 理解度チェック</h2>
+<details><summary>量子計算の理論基礎の保証はどの仮定に依存しますか？</summary><p>ネットワーク、時刻、入力分布、権限、ハードウェア、ライブラリ、運用手順など、外部条件を列挙し、崩れたときの挙動を確認します。</p></details><details><summary>平均的な成功が重大障害を隠すのはなぜですか？</summary><p>tail、希少競合、段階的リーク、相関障害、攻撃者の適応は平均値へ現れにくいためです。分布と時系列、個別トレースが必要です。</p></details><details><summary>専門家としての完了条件は何ですか？</summary><p>仕組みを説明でき、実装でき、壊せて、観測でき、復旧でき、別案との判断を他者へ説明できることです。</p></details>
+</section>
+
+<section class="section">
+<h2>9. 学習ノート用テンプレート</h2>
+<pre><code>Lesson ID: D03-M10-L3
+理解したこと:
+- 
+
+自分で確認した証拠:
+- 実行結果 / 計算 / 図 / テスト:
+
+反例・失敗条件:
+- 
+
+設計判断:
+- 採用案:
+- 代替案:
+- 採用理由:
+- 再評価条件:
+
+次に確認すること:
+- </code></pre>
+</section>
+
+<section class="section">
+<h2>10. GPT講師モード</h2>
+<p>下記をGPTへ渡すと、このLessonを対話型の講義・演習・採点まで展開できます。Scheduled配信では選ばれたLessonのHTMLと一緒に使ってください。</p>
+<pre><code>あなたは 計算理論・計算量理論 の専門講師です。Lesson D03-M10-L3「量子計算の理論基礎 — 専門」を、受講者が実装・検証・説明できるまで教えてください。
+
+必須内容:
+1. 量子ビット, 重ね合わせ, 量子回路, BQP をそれぞれ正確に定義する。
+2. 概念間の関係を図またはASCII図で示す。
+3. 最小の具体例を段階的に追う。
+4. 実務的なコード、設定、数式、protocol traceのうち適切なものを提示する。
+5. 典型的な誤解、境界条件、性能問題、security risk、障害時の挙動を説明する。
+6. normal case、boundary case、failure caseの演習を出す。
+7. 私の回答を採点し、不足を追加問題で補う。
+8. 最後に、このLessonを完了したと判断する実技課題を一つ出す。
+
+難易度: 専門。単なる用語集ではなく、仕組み、trade-off、観測・debug方法まで扱ってください。</code></pre>
+</section>
+
+<nav class="lesson-nav"><a class="button secondary" href="d03-m10-l2.html">← D03-M10-L2 量子計算の理論基礎 — 応用</a><a href="../index.html">Module一覧</a><div class="next"><span></span></div></nav>
+</main><footer>Engineering Expert Curriculum — 学習内容は、実装・検証・運用・説明までを一つの完了条件として設計しています。</footer></body></html>

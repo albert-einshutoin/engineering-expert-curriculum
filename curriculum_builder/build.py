@@ -101,6 +101,10 @@ _TEMPLATE_NAMES = (
     "roadmap.html",
     "lesson.html",
     "lessons-index.html",
+    "map3d.html",
+    "progress.html",
+    "daily.html",
+    "guide.html",
 )
 _BASE_ARTIFACTS = frozenset(
     {
@@ -108,6 +112,17 @@ _BASE_ARTIFACTS = frozenset(
         PurePosixPath("styles.css"),
         PurePosixPath("static/visualizations.css"),
         PurePosixPath("static/visualization.js"),
+        PurePosixPath("static/map3d.js"),
+        PurePosixPath("static/map3d.css"),
+        PurePosixPath("static/progress.js"),
+        PurePosixPath("static/progress.css"),
+        PurePosixPath("static/three.module.js"),
+        PurePosixPath("static/three/OrbitControls.js"),
+        PurePosixPath("static/three/CSS2DRenderer.js"),
+        PurePosixPath("map3d.html"),
+        PurePosixPath("progress.html"),
+        PurePosixPath("daily.html"),
+        PurePosixPath("guide.html"),
         PurePosixPath("catalog/index.html"),
         PurePosixPath("competencies/index.html"),
         PurePosixPath("capstones/index.html"),
@@ -148,6 +163,13 @@ _STATIC_ASSETS: Final = (
         output_path=PurePosixPath("static/visualization.js"),
         maximum_bytes=MAX_JAVASCRIPT_BYTES,
     ),
+)
+
+_EXTRA_STATIC_ASSETS: Final = (
+    ("map3d.css", PurePosixPath("static/map3d.css")),
+    ("map3d.js", PurePosixPath("static/map3d.js")),
+    ("progress.css", PurePosixPath("static/progress.css")),
+    ("progress.js", PurePosixPath("static/progress.js")),
 )
 
 
@@ -1866,6 +1888,26 @@ def _render_artifacts(
         text_values={"count": f"{len(items):,}"},
         html_values={"sections": _catalog_content(items)},
     )
+    map3d_page = renderer.fragment(
+        "map3d.html",
+        text_values={"hint_text": "🖱 ドラッグで回転 / スクロールでズーム / クリックで移動"},
+        html_values={},
+    )
+    progress_page = renderer.fragment(
+        "progress.html",
+        text_values={},
+        html_values={},
+    )
+    daily_page = renderer.fragment(
+        "daily.html",
+        text_values={},
+        html_values={},
+    )
+    guide_page = renderer.fragment(
+        "guide.html",
+        text_values={},
+        html_values={},
+    )
     pages = {
         PurePosixPath("index.html"): renderer.page(
             output_path=Path("index.html"),
@@ -1874,6 +1916,30 @@ def _render_artifacts(
                 "学び、実践し、説明し、成果で証明する静的OSS教科書"
             ),
             content=home,
+        ),
+        PurePosixPath("map3d.html"): renderer.page(
+            output_path=Path("map3d.html"),
+            title="3Dカリキュラムマップ",
+            description="38ドメインを3Dナレッジグラフで可視化するインタラクティブマップ",
+            content=map3d_page,
+        ),
+        PurePosixPath("progress.html"): renderer.page(
+            output_path=Path("progress.html"),
+            title="資格進捗ダッシュボード",
+            description="38ドメインの資格進捗と認定レベルを可視化するダッシュボード",
+            content=progress_page,
+        ),
+        PurePosixPath("daily.html"): renderer.page(
+            output_path=Path("daily.html"),
+            title="今日のLesson",
+            description="未完了Lessonから毎日1〜5件を重複なく選ぶ",
+            content=daily_page,
+        ),
+        PurePosixPath("guide.html"): renderer.page(
+            output_path=Path("guide.html"),
+            title="使い方",
+            description="教材の使い方とScheduled運用",
+            content=guide_page,
         ),
         PurePosixPath("catalog/index.html"): renderer.page(
             output_path=Path("catalog/index.html"),
@@ -1919,6 +1985,7 @@ def _render_artifacts(
         for path, document in pages.items()
     }
     artifacts.update(static_assets)
+    artifacts.update(extra_static_assets)
     artifacts.update(render_lesson_artifacts(renderer, lessons))
     lesson_titles = {
         item.lesson.id: item.lesson.title
@@ -3037,6 +3104,12 @@ def build_site(
                 validate_stylesheet_bytes(snapshot.source)
             else:
                 validate_reviewed_visualization_runtime(snapshot.source)
+        extra_static_assets: dict[PurePosixPath, bytes] = {}
+        for source_name, output_path in _EXTRA_STATIC_ASSETS:
+            source_bytes = _read_stable_regular_file(
+                static_files, source_name, MAX_JAVASCRIPT_BYTES * 4,
+            )
+            extra_static_assets[output_path] = source_bytes
         before_templates = {
             name: _read_stable_regular_file(
                 templates,

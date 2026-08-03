@@ -1,0 +1,64 @@
+      <link rel="stylesheet" href="${root}assets/progress.css">
+
+<section class="hero cert-hero" id="cert-section">
+<div id="cert-level-display"></div>
+<div class="donut-container">
+<svg width="180" height="180" viewBox="0 0 180 180">
+<circle class="donut-bg" cx="90" cy="90" r="72"/>
+<circle class="donut-fill" id="donut-fill" cx="90" cy="90" r="72" stroke-dasharray="452.4" stroke-dashoffset="452.4"/>
+<text class="donut-text" x="90" y="88" text-anchor="middle" id="donut-pct">0%</text>
+<text class="donut-label" x="90" y="106" text-anchor="middle">完了</text>
+</svg>
+</div>
+<div class="stats" id="stats-summary">
+<div class="stat"><span class="small">全Lesson</span><strong id="stat-total">1,140</strong></div>
+<div class="stat"><span class="small">完了</span><strong id="stat-completed">0</strong></div>
+<div class="stat"><span class="small">完了率</span><strong id="stat-percent">0%</strong></div>
+<div class="stat"><span class="small">完了Domain</span><strong id="stat-domains">0</strong></div>
+<div class="stat"><span class="small">完了Track</span><strong id="stat-tracks">0</strong></div>
+</div>
+<div class="cert-milestones" id="milestones"></div>
+</section>
+
+<section class="section">
+<div class="tab-bar">
+<button class="tab active" data-tab="domains">ドメイン別</button>
+<button class="tab" data-tab="tracks">トラック別</button>
+<button class="tab" data-tab="heatmap">ヒートマップ</button>
+<button class="tab" data-tab="history">履歴</button>
+<button class="tab" data-tab="manage">管理</button>
+</div>
+
+<div class="tab-content active" id="tab-domains">
+<p class="small">各ドメイン10モジュール × 3レベル = 30Lesson。各モジュールの3つの点は基礎・応用・専門を表します。</p>
+<div class="domain-grid" id="domain-grid"></div>
+</div>
+
+<div class="tab-content" id="tab-tracks">
+<p class="small">トラック別の資格進捗。各点は1ドメインを表し、色が完了状態を示します。</p>
+<div class="track-grid" id="track-grid"></div>
+</div>
+
+<div class="tab-content" id="tab-heatmap">
+<p class="small">ドメイン×モジュールの完了ヒートマップ（各セルは3Lessonの完了率）。</p>
+<div style="overflow-x:auto"><div class="heatmap-grid" id="heatmap"></div></div>
+</div>
+
+<div class="tab-content" id="tab-history">
+<p class="small">直近の完了記録（最大50件）。</p>
+<div class="history-list" id="history-list"><p class="small" style="text-align:center;padding:20px">完了したLessonがここに表示されます。</p></div>
+</div>
+
+<div class="tab-content" id="tab-manage">
+<h3>バックアップ</h3>
+<div class="toolbar">
+<button data-export-progress>進捗JSONを書き出す</button>
+<label class="button secondary">進捗JSONを読み込む<input data-import-progress type="file" accept="application/json" hidden></label>
+<button class="danger" data-reset-progress>進捗を全削除</button>
+</div>
+<h3>完了の基準</h3>
+<ul><li>Lessonを説明できる。</li><li>最小例を自分で再現できる。</li><li>反例または障害条件を示せる。</li><li>設計判断と検証証拠をノートへ残した。</li></ul>
+</div>
+</section>
+
+      <script src="${root}assets/progress.js" defer></script>

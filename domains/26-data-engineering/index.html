@@ -1,0 +1,52 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="データ収集、変換、保存、品質、メタデータ、バッチ・ストリーム、分析基盤を信頼性とコストの観点で設計する。">
+<title>Data Engineering | Engineering Expert Curriculum</title>
+<link rel="stylesheet" href="../../assets/styles.css">
+<script>window.CURRICULUM_BASE_PREFIX="../../";</script>
+<script src="../../assets/curriculum.js"></script>
+<script>if(window.CURRICULUM) window.CURRICULUM.basePrefix=window.CURRICULUM_BASE_PREFIX;</script>
+<script defer src="../../assets/app.js"></script>
+</head><body><header class="site-header"><nav class="nav">
+<a class="brand" href="../../index.html">Engineering Expert Curriculum</a>
+<a href="../../roadmap.html">ロードマップ</a>
+<a href="../../daily.html">今日のLesson</a>
+<a href="../../progress.html">進捗</a>
+<a href="../../guide.html">使い方</a>
+</nav></header><main>
+<div class="breadcrumbs"><a href="../../index.html">Home</a> / Domain 26</div>
+<section class="hero"><div class="badges"><span class="badge">Domain 26</span><span class="badge">30 Lessons</span></div>
+<h1>Data Engineering</h1><p class="lede">データ収集、変換、保存、品質、メタデータ、バッチ・ストリーム、分析基盤を信頼性とコストの観点で設計する。</p><p class="small">推奨前提: <a href="../16-database-storage-search/index.html">16 データベース・ストレージ・検索</a>, <a href="../17-distributed-systems-messaging/index.html">17 分散システム・メッセージング</a>, <a href="../18-cloud-aws-infrastructure/index.html">18 Cloud・AWS・Infrastructure</a></p></section>
+<section><h2>Modules</h2><div class="grid"><article class="card">
+<div class="meta">Module 01</div><h3>Data Architecture</h3><p>分析目的に合う全体アーキテクチャを描ける</p>
+<div class="badges"><span class="badge">source・sink</span><span class="badge">OLTP・OLAP</span><span class="badge">warehouse・lake・lakehouse</span><span class="badge">data product</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d26-m01-l1.html">基礎 D26-M01-L1</a><a class="button secondary" href="lessons/d26-m01-l2.html">応用 D26-M01-L2</a><a class="button secondary" href="lessons/d26-m01-l3.html">専門 D26-M01-L3</a></div></article><article class="card">
+<div class="meta">Module 02</div><h3>Ingestion</h3><p>データ発生源から安全に取り込める</p>
+<div class="badges"><span class="badge">CDC</span><span class="badge">API・file</span><span class="badge">batch・stream</span><span class="badge">schema evolution</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d26-m02-l1.html">基礎 D26-M02-L1</a><a class="button secondary" href="lessons/d26-m02-l2.html">応用 D26-M02-L2</a><a class="button secondary" href="lessons/d26-m02-l3.html">専門 D26-M02-L3</a></div></article><article class="card">
+<div class="meta">Module 03</div><h3>ETL・ELT・Transformation</h3><p>再実行可能な変換処理を構築できる</p>
+<div class="badges"><span class="badge">pipeline DAG</span><span class="badge">idempotency</span><span class="badge">incremental processing</span><span class="badge">SQL・code transform</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d26-m03-l1.html">基礎 D26-M03-L1</a><a class="button secondary" href="lessons/d26-m03-l2.html">応用 D26-M03-L2</a><a class="button secondary" href="lessons/d26-m03-l3.html">専門 D26-M03-L3</a></div></article><article class="card">
+<div class="meta">Module 04</div><h3>Data Modeling for Analytics</h3><p>分析しやすく意味が一貫したモデルを作れる</p>
+<div class="badges"><span class="badge">star schema</span><span class="badge">fact・dimension</span><span class="badge">slowly changing dimension</span><span class="badge">semantic layer</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d26-m04-l1.html">基礎 D26-M04-L1</a><a class="button secondary" href="lessons/d26-m04-l2.html">応用 D26-M04-L2</a><a class="button secondary" href="lessons/d26-m04-l3.html">専門 D26-M04-L3</a></div></article><article class="card">
+<div class="meta">Module 05</div><h3>Batch Processing</h3><p>大規模データを効率的に一括処理できる</p>
+<div class="badges"><span class="badge">partition</span><span class="badge">shuffle</span><span class="badge">Spark concepts</span><span class="badge">resource planning</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d26-m05-l1.html">基礎 D26-M05-L1</a><a class="button secondary" href="lessons/d26-m05-l2.html">応用 D26-M05-L2</a><a class="button secondary" href="lessons/d26-m05-l3.html">専門 D26-M05-L3</a></div></article><article class="card">
+<div class="meta">Module 06</div><h3>Stream Processing</h3><p>遅延イベントを含む連続処理を設計できる</p>
+<div class="badges"><span class="badge">event time</span><span class="badge">window</span><span class="badge">watermark</span><span class="badge">state・exactly-once semantics</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d26-m06-l1.html">基礎 D26-M06-L1</a><a class="button secondary" href="lessons/d26-m06-l2.html">応用 D26-M06-L2</a><a class="button secondary" href="lessons/d26-m06-l3.html">専門 D26-M06-L3</a></div></article><article class="card">
+<div class="meta">Module 07</div><h3>Orchestration</h3><p>複数パイプラインの実行と復旧を管理できる</p>
+<div class="badges"><span class="badge">scheduler</span><span class="badge">dependency</span><span class="badge">retry・backfill</span><span class="badge">data-aware scheduling</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d26-m07-l1.html">基礎 D26-M07-L1</a><a class="button secondary" href="lessons/d26-m07-l2.html">応用 D26-M07-L2</a><a class="button secondary" href="lessons/d26-m07-l3.html">専門 D26-M07-L3</a></div></article><article class="card">
+<div class="meta">Module 08</div><h3>Data Quality・Observability</h3><p>壊れたデータを早期検知し影響範囲を追跡できる</p>
+<div class="badges"><span class="badge">freshness</span><span class="badge">completeness</span><span class="badge">distribution</span><span class="badge">lineage</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d26-m08-l1.html">基礎 D26-M08-L1</a><a class="button secondary" href="lessons/d26-m08-l2.html">応用 D26-M08-L2</a><a class="button secondary" href="lessons/d26-m08-l3.html">専門 D26-M08-L3</a></div></article><article class="card">
+<div class="meta">Module 09</div><h3>Metadata・Governance・Security</h3><p>データの意味・責任・権限を管理できる</p>
+<div class="badges"><span class="badge">catalog</span><span class="badge">ownership</span><span class="badge">access control</span><span class="badge">PII・retention</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d26-m09-l1.html">基礎 D26-M09-L1</a><a class="button secondary" href="lessons/d26-m09-l2.html">応用 D26-M09-L2</a><a class="button secondary" href="lessons/d26-m09-l3.html">専門 D26-M09-L3</a></div></article><article class="card">
+<div class="meta">Module 10</div><h3>Cost・Performance・DataOps</h3><p>分析基盤を速く安く安全に運用できる</p>
+<div class="badges"><span class="badge">file format</span><span class="badge">partition pruning</span><span class="badge">compute scaling</span><span class="badge">CI for data</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d26-m10-l1.html">基礎 D26-M10-L1</a><a class="button secondary" href="lessons/d26-m10-l2.html">応用 D26-M10-L2</a><a class="button secondary" href="lessons/d26-m10-l3.html">専門 D26-M10-L3</a></div></article></div></section>
+<section class="section"><h2>公式・標準リファレンス</h2><p>Lesson本文と演習に加え、仕様・API・標準の一次資料で確認してください。version依存部分は必ず現在の公式資料を優先します。</p><ul><li><a href="https://spark.apache.org/docs/latest/" target="_blank" rel="noopener noreferrer">Apache Spark Documentation</a></li><li><a href="https://airflow.apache.org/docs/" target="_blank" rel="noopener noreferrer">Apache Airflow Documentation</a></li><li><a href="https://docs.getdbt.com/" target="_blank" rel="noopener noreferrer">dbt Documentation</a></li></ul></section>
+</main><footer>Engineering Expert Curriculum — 学習内容は、実装・検証・運用・説明までを一つの完了条件として設計しています。</footer></body></html>

@@ -1,0 +1,52 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="ログ、メトリクス、トレース、プロファイル、イベントを相互に関連付け、未知の障害を説明可能にする。">
+<title>Observability・運用監視 | Engineering Expert Curriculum</title>
+<link rel="stylesheet" href="../../assets/styles.css">
+<script>window.CURRICULUM_BASE_PREFIX="../../";</script>
+<script src="../../assets/curriculum.js"></script>
+<script>if(window.CURRICULUM) window.CURRICULUM.basePrefix=window.CURRICULUM_BASE_PREFIX;</script>
+<script defer src="../../assets/app.js"></script>
+</head><body><header class="site-header"><nav class="nav">
+<a class="brand" href="../../index.html">Engineering Expert Curriculum</a>
+<a href="../../roadmap.html">ロードマップ</a>
+<a href="../../daily.html">今日のLesson</a>
+<a href="../../progress.html">進捗</a>
+<a href="../../guide.html">使い方</a>
+</nav></header><main>
+<div class="breadcrumbs"><a href="../../index.html">Home</a> / Domain 22</div>
+<section class="hero"><div class="badges"><span class="badge">Domain 22</span><span class="badge">30 Lessons</span></div>
+<h1>Observability・運用監視</h1><p class="lede">ログ、メトリクス、トレース、プロファイル、イベントを相互に関連付け、未知の障害を説明可能にする。</p><p class="small">推奨前提: <a href="../06-os-linux-systems/index.html">06 OS・Linux・システムプログラミング</a>, <a href="../10-network-protocols/index.html">10 ネットワーク・インターネットプロトコル</a>, <a href="../14-web-backend-api/index.html">14 Web・Backend・API Engineering</a></p></section>
+<section><h2>Modules</h2><div class="grid"><article class="card">
+<div class="meta">Module 01</div><h3>Observabilityの考え方</h3><p>監視と可観測性の違いを説明できる</p>
+<div class="badges"><span class="badge">known unknown・unknown unknown</span><span class="badge">telemetry</span><span class="badge">context</span><span class="badge">debuggability</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d22-m01-l1.html">基礎 D22-M01-L1</a><a class="button secondary" href="lessons/d22-m01-l2.html">応用 D22-M01-L2</a><a class="button secondary" href="lessons/d22-m01-l3.html">専門 D22-M01-L3</a></div></article><article class="card">
+<div class="meta">Module 02</div><h3>Logging</h3><p>検索・監査・診断に使えるログを設計できる</p>
+<div class="badges"><span class="badge">structured log</span><span class="badge">level</span><span class="badge">correlation ID</span><span class="badge">PII control</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d22-m02-l1.html">基礎 D22-M02-L1</a><a class="button secondary" href="lessons/d22-m02-l2.html">応用 D22-M02-L2</a><a class="button secondary" href="lessons/d22-m02-l3.html">専門 D22-M02-L3</a></div></article><article class="card">
+<div class="meta">Module 03</div><h3>Metrics</h3><p>傾向と飽和を低コストで観測できる</p>
+<div class="badges"><span class="badge">counter・gauge・histogram</span><span class="badge">label cardinality</span><span class="badge">aggregation</span><span class="badge">RED・USE</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d22-m03-l1.html">基礎 D22-M03-L1</a><a class="button secondary" href="lessons/d22-m03-l2.html">応用 D22-M03-L2</a><a class="button secondary" href="lessons/d22-m03-l3.html">専門 D22-M03-L3</a></div></article><article class="card">
+<div class="meta">Module 04</div><h3>Distributed Tracing</h3><p>分散リクエストの遅延原因を追跡できる</p>
+<div class="badges"><span class="badge">trace・span</span><span class="badge">context propagation</span><span class="badge">sampling</span><span class="badge">critical path</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d22-m04-l1.html">基礎 D22-M04-L1</a><a class="button secondary" href="lessons/d22-m04-l2.html">応用 D22-M04-L2</a><a class="button secondary" href="lessons/d22-m04-l3.html">専門 D22-M04-L3</a></div></article><article class="card">
+<div class="meta">Module 05</div><h3>OpenTelemetry</h3><p>ベンダー中立の計装パイプラインを構築できる</p>
+<div class="badges"><span class="badge">API・SDK</span><span class="badge">collector</span><span class="badge">semantic convention</span><span class="badge">exporter</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d22-m05-l1.html">基礎 D22-M05-L1</a><a class="button secondary" href="lessons/d22-m05-l2.html">応用 D22-M05-L2</a><a class="button secondary" href="lessons/d22-m05-l3.html">専門 D22-M05-L3</a></div></article><article class="card">
+<div class="meta">Module 06</div><h3>Profiling</h3><p>コード単位の資源消費を特定できる</p>
+<div class="badges"><span class="badge">CPU profile</span><span class="badge">heap profile</span><span class="badge">allocation</span><span class="badge">continuous profiling</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d22-m06-l1.html">基礎 D22-M06-L1</a><a class="button secondary" href="lessons/d22-m06-l2.html">応用 D22-M06-L2</a><a class="button secondary" href="lessons/d22-m06-l3.html">専門 D22-M06-L3</a></div></article><article class="card">
+<div class="meta">Module 07</div><h3>Dashboard Design</h3><p>判断を速める運用画面を設計できる</p>
+<div class="badges"><span class="badge">signal hierarchy</span><span class="badge">overview・drilldown</span><span class="badge">comparison</span><span class="badge">annotation</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d22-m07-l1.html">基礎 D22-M07-L1</a><a class="button secondary" href="lessons/d22-m07-l2.html">応用 D22-M07-L2</a><a class="button secondary" href="lessons/d22-m07-l3.html">専門 D22-M07-L3</a></div></article><article class="card">
+<div class="meta">Module 08</div><h3>Alert Engineering</h3><p>誤検知と見逃しを抑えた通知を構築できる</p>
+<div class="badges"><span class="badge">threshold</span><span class="badge">anomaly</span><span class="badge">multi-window</span><span class="badge">routing・deduplication</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d22-m08-l1.html">基礎 D22-M08-L1</a><a class="button secondary" href="lessons/d22-m08-l2.html">応用 D22-M08-L2</a><a class="button secondary" href="lessons/d22-m08-l3.html">専門 D22-M08-L3</a></div></article><article class="card">
+<div class="meta">Module 09</div><h3>Telemetry Pipeline</h3><p>大量テレメトリを欠損とコストから守れる</p>
+<div class="badges"><span class="badge">agent・collector</span><span class="badge">buffer</span><span class="badge">retention</span><span class="badge">cost control</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d22-m09-l1.html">基礎 D22-M09-L1</a><a class="button secondary" href="lessons/d22-m09-l2.html">応用 D22-M09-L2</a><a class="button secondary" href="lessons/d22-m09-l3.html">専門 D22-M09-L3</a></div></article><article class="card">
+<div class="meta">Module 10</div><h3>Observability-driven Debugging</h3><p>複数信号から再現不能な障害を説明できる</p>
+<div class="badges"><span class="badge">hypothesis</span><span class="badge">evidence chain</span><span class="badge">cross-signal correlation</span><span class="badge">incident reconstruction</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d22-m10-l1.html">基礎 D22-M10-L1</a><a class="button secondary" href="lessons/d22-m10-l2.html">応用 D22-M10-L2</a><a class="button secondary" href="lessons/d22-m10-l3.html">専門 D22-M10-L3</a></div></article></div></section>
+<section class="section"><h2>公式・標準リファレンス</h2><p>Lesson本文と演習に加え、仕様・API・標準の一次資料で確認してください。version依存部分は必ず現在の公式資料を優先します。</p><ul><li><a href="https://opentelemetry.io/docs/" target="_blank" rel="noopener noreferrer">OpenTelemetry Documentation</a></li><li><a href="https://prometheus.io/docs/" target="_blank" rel="noopener noreferrer">Prometheus Documentation</a></li><li><a href="https://grafana.com/docs/" target="_blank" rel="noopener noreferrer">Grafana Documentation</a></li></ul></section>
+</main><footer>Engineering Expert Curriculum — 学習内容は、実装・検証・運用・説明までを一つの完了条件として設計しています。</footer></body></html>

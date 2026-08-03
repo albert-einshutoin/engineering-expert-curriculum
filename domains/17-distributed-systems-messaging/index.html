@@ -1,0 +1,52 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="部分障害、遅延、複製、整合性、合意、メッセージングを前提に、壊れ方まで含めてシステムを設計する。">
+<title>分散システム・メッセージング | Engineering Expert Curriculum</title>
+<link rel="stylesheet" href="../../assets/styles.css">
+<script>window.CURRICULUM_BASE_PREFIX="../../";</script>
+<script src="../../assets/curriculum.js"></script>
+<script>if(window.CURRICULUM) window.CURRICULUM.basePrefix=window.CURRICULUM_BASE_PREFIX;</script>
+<script defer src="../../assets/app.js"></script>
+</head><body><header class="site-header"><nav class="nav">
+<a class="brand" href="../../index.html">Engineering Expert Curriculum</a>
+<a href="../../roadmap.html">ロードマップ</a>
+<a href="../../daily.html">今日のLesson</a>
+<a href="../../progress.html">進捗</a>
+<a href="../../guide.html">使い方</a>
+</nav></header><main>
+<div class="breadcrumbs"><a href="../../index.html">Home</a> / Domain 17</div>
+<section class="hero"><div class="badges"><span class="badge">Domain 17</span><span class="badge">30 Lessons</span></div>
+<h1>分散システム・メッセージング</h1><p class="lede">部分障害、遅延、複製、整合性、合意、メッセージングを前提に、壊れ方まで含めてシステムを設計する。</p><p class="small">推奨前提: <a href="../07-concurrency-parallelism/index.html">07 並行処理・並列処理</a>, <a href="../10-network-protocols/index.html">10 ネットワーク・インターネットプロトコル</a>, <a href="../16-database-storage-search/index.html">16 データベース・ストレージ・検索</a></p></section>
+<section><h2>Modules</h2><div class="grid"><article class="card">
+<div class="meta">Module 01</div><h3>分散システムの前提</h3><p>単一プロセスと異なる失敗モデルを理解できる</p>
+<div class="badges"><span class="badge">partial failure</span><span class="badge">unreliable network</span><span class="badge">clock</span><span class="badge">failure detector</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d17-m01-l1.html">基礎 D17-M01-L1</a><a class="button secondary" href="lessons/d17-m01-l2.html">応用 D17-M01-L2</a><a class="button secondary" href="lessons/d17-m01-l3.html">専門 D17-M01-L3</a></div></article><article class="card">
+<div class="meta">Module 02</div><h3>CAP・PACELC・整合性モデル</h3><p>整合性要求を具体的な読み書き保証へ落とせる</p>
+<div class="badges"><span class="badge">consistency</span><span class="badge">availability</span><span class="badge">partition</span><span class="badge">latency trade-off</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d17-m02-l1.html">基礎 D17-M02-L1</a><a class="button secondary" href="lessons/d17-m02-l2.html">応用 D17-M02-L2</a><a class="button secondary" href="lessons/d17-m02-l3.html">専門 D17-M02-L3</a></div></article><article class="card">
+<div class="meta">Module 03</div><h3>Replication</h3><p>複製方式を競合と障害の観点で選べる</p>
+<div class="badges"><span class="badge">leader-follower</span><span class="badge">multi-leader</span><span class="badge">leaderless</span><span class="badge">quorum</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d17-m03-l1.html">基礎 D17-M03-L1</a><a class="button secondary" href="lessons/d17-m03-l2.html">応用 D17-M03-L2</a><a class="button secondary" href="lessons/d17-m03-l3.html">専門 D17-M03-L3</a></div></article><article class="card">
+<div class="meta">Module 04</div><h3>Consensus</h3><p>合意アルゴリズムの保証とコストを説明できる</p>
+<div class="badges"><span class="badge">Raft・Paxos</span><span class="badge">term・log</span><span class="badge">leader election</span><span class="badge">safety・liveness</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d17-m04-l1.html">基礎 D17-M04-L1</a><a class="button secondary" href="lessons/d17-m04-l2.html">応用 D17-M04-L2</a><a class="button secondary" href="lessons/d17-m04-l3.html">専門 D17-M04-L3</a></div></article><article class="card">
+<div class="meta">Module 05</div><h3>Clock・Ordering・ID</h3><p>イベント順序と識別子を分散環境で設計できる</p>
+<div class="badges"><span class="badge">Lamport clock</span><span class="badge">vector clock</span><span class="badge">HLC</span><span class="badge">UUID・Snowflake</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d17-m05-l1.html">基礎 D17-M05-L1</a><a class="button secondary" href="lessons/d17-m05-l2.html">応用 D17-M05-L2</a><a class="button secondary" href="lessons/d17-m05-l3.html">専門 D17-M05-L3</a></div></article><article class="card">
+<div class="meta">Module 06</div><h3>Messaging基礎</h3><p>配信保証を業務副作用へ結びつけられる</p>
+<div class="badges"><span class="badge">queue・log</span><span class="badge">at-most・at-least once</span><span class="badge">ordering</span><span class="badge">consumer group</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d17-m06-l1.html">基礎 D17-M06-L1</a><a class="button secondary" href="lessons/d17-m06-l2.html">応用 D17-M06-L2</a><a class="button secondary" href="lessons/d17-m06-l3.html">専門 D17-M06-L3</a></div></article><article class="card">
+<div class="meta">Module 07</div><h3>Kafka・Stream Processing</h3><p>大規模イベントストリームを設計できる</p>
+<div class="badges"><span class="badge">partition</span><span class="badge">offset</span><span class="badge">retention</span><span class="badge">stateful stream</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d17-m07-l1.html">基礎 D17-M07-L1</a><a class="button secondary" href="lessons/d17-m07-l2.html">応用 D17-M07-L2</a><a class="button secondary" href="lessons/d17-m07-l3.html">専門 D17-M07-L3</a></div></article><article class="card">
+<div class="meta">Module 08</div><h3>Idempotency・Saga・Outbox</h3><p>分散トランザクションを現実的に処理できる</p>
+<div class="badges"><span class="badge">deduplication</span><span class="badge">compensation</span><span class="badge">transactional outbox</span><span class="badge">inbox</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d17-m08-l1.html">基礎 D17-M08-L1</a><a class="button secondary" href="lessons/d17-m08-l2.html">応用 D17-M08-L2</a><a class="button secondary" href="lessons/d17-m08-l3.html">専門 D17-M08-L3</a></div></article><article class="card">
+<div class="meta">Module 09</div><h3>Distributed Cache・Coordination</h3><p>共有状態と調停の危険性を理解できる</p>
+<div class="badges"><span class="badge">consistent hashing</span><span class="badge">lease</span><span class="badge">distributed lock</span><span class="badge">membership</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d17-m09-l1.html">基礎 D17-M09-L1</a><a class="button secondary" href="lessons/d17-m09-l2.html">応用 D17-M09-L2</a><a class="button secondary" href="lessons/d17-m09-l3.html">専門 D17-M09-L3</a></div></article><article class="card">
+<div class="meta">Module 10</div><h3>分散システムのテストと運用</h3><p>部分障害から回復する仕組みを検証できる</p>
+<div class="badges"><span class="badge">fault injection</span><span class="badge">Jepsen thinking</span><span class="badge">reconciliation</span><span class="badge">disaster recovery</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d17-m10-l1.html">基礎 D17-M10-L1</a><a class="button secondary" href="lessons/d17-m10-l2.html">応用 D17-M10-L2</a><a class="button secondary" href="lessons/d17-m10-l3.html">専門 D17-M10-L3</a></div></article></div></section>
+<section class="section"><h2>公式・標準リファレンス</h2><p>Lesson本文と演習に加え、仕様・API・標準の一次資料で確認してください。version依存部分は必ず現在の公式資料を優先します。</p><ul><li><a href="https://raft.github.io/raft.pdf" target="_blank" rel="noopener noreferrer">Raft Paper</a></li><li><a href="https://kafka.apache.org/documentation/" target="_blank" rel="noopener noreferrer">Kafka Documentation</a></li><li><a href="https://jepsen.io/" target="_blank" rel="noopener noreferrer">Jepsen</a></li></ul></section>
+</main><footer>Engineering Expert Curriculum — 学習内容は、実装・検証・運用・説明までを一つの完了条件として設計しています。</footer></body></html>

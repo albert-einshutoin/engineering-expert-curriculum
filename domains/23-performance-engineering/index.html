@@ -1,0 +1,52 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="レイテンシ、スループット、CPU、メモリ、I/Oを測定し、モデル・証拠・実験で性能を改善する。">
+<title>Performance Engineering | Engineering Expert Curriculum</title>
+<link rel="stylesheet" href="../../assets/styles.css">
+<script>window.CURRICULUM_BASE_PREFIX="../../";</script>
+<script src="../../assets/curriculum.js"></script>
+<script>if(window.CURRICULUM) window.CURRICULUM.basePrefix=window.CURRICULUM_BASE_PREFIX;</script>
+<script defer src="../../assets/app.js"></script>
+</head><body><header class="site-header"><nav class="nav">
+<a class="brand" href="../../index.html">Engineering Expert Curriculum</a>
+<a href="../../roadmap.html">ロードマップ</a>
+<a href="../../daily.html">今日のLesson</a>
+<a href="../../progress.html">進捗</a>
+<a href="../../guide.html">使い方</a>
+</nav></header><main>
+<div class="breadcrumbs"><a href="../../index.html">Home</a> / Domain 23</div>
+<section class="hero"><div class="badges"><span class="badge">Domain 23</span><span class="badge">30 Lessons</span></div>
+<h1>Performance Engineering</h1><p class="lede">レイテンシ、スループット、CPU、メモリ、I/Oを測定し、モデル・証拠・実験で性能を改善する。</p><p class="small">推奨前提: <a href="../01-math-statistics/index.html">01 数学・統計</a>, <a href="../05-computer-architecture/index.html">05 コンピュータアーキテクチャ</a>, <a href="../06-os-linux-systems/index.html">06 OS・Linux・システムプログラミング</a>, <a href="../07-concurrency-parallelism/index.html">07 並行処理・並列処理</a>, <a href="../22-observability/index.html">22 Observability・運用監視</a></p></section>
+<section><h2>Modules</h2><div class="grid"><article class="card">
+<div class="meta">Module 01</div><h3>性能目標と測定</h3><p>性能要求を測定可能な指標へ変換できる</p>
+<div class="badges"><span class="badge">latency percentile</span><span class="badge">throughput</span><span class="badge">utilization</span><span class="badge">measurement error</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d23-m01-l1.html">基礎 D23-M01-L1</a><a class="button secondary" href="lessons/d23-m01-l2.html">応用 D23-M01-L2</a><a class="button secondary" href="lessons/d23-m01-l3.html">専門 D23-M01-L3</a></div></article><article class="card">
+<div class="meta">Module 02</div><h3>Benchmark設計</h3><p>再現性のある性能実験を作れる</p>
+<div class="badges"><span class="badge">micro・macro benchmark</span><span class="badge">warm-up</span><span class="badge">noise</span><span class="badge">statistical comparison</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d23-m02-l1.html">基礎 D23-M02-L1</a><a class="button secondary" href="lessons/d23-m02-l2.html">応用 D23-M02-L2</a><a class="button secondary" href="lessons/d23-m02-l3.html">専門 D23-M02-L3</a></div></article><article class="card">
+<div class="meta">Module 03</div><h3>CPU Profiling</h3><p>CPU時間の主要因を証拠で特定できる</p>
+<div class="badges"><span class="badge">sampling・instrumentation</span><span class="badge">flame graph</span><span class="badge">hotspot</span><span class="badge">branch・cache miss</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d23-m03-l1.html">基礎 D23-M03-L1</a><a class="button secondary" href="lessons/d23-m03-l2.html">応用 D23-M03-L2</a><a class="button secondary" href="lessons/d23-m03-l3.html">専門 D23-M03-L3</a></div></article><article class="card">
+<div class="meta">Module 04</div><h3>Memory Profiling</h3><p>リークと過剰割り当てを区別できる</p>
+<div class="badges"><span class="badge">heap</span><span class="badge">allocation rate</span><span class="badge">retained object</span><span class="badge">fragmentation</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d23-m04-l1.html">基礎 D23-M04-L1</a><a class="button secondary" href="lessons/d23-m04-l2.html">応用 D23-M04-L2</a><a class="button secondary" href="lessons/d23-m04-l3.html">専門 D23-M04-L3</a></div></article><article class="card">
+<div class="meta">Module 05</div><h3>GC Performance</h3><p>GC方式とアプリ特性の相性を調整できる</p>
+<div class="badges"><span class="badge">pause</span><span class="badge">throughput</span><span class="badge">generation</span><span class="badge">heap sizing</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d23-m05-l1.html">基礎 D23-M05-L1</a><a class="button secondary" href="lessons/d23-m05-l2.html">応用 D23-M05-L2</a><a class="button secondary" href="lessons/d23-m05-l3.html">専門 D23-M05-L3</a></div></article><article class="card">
+<div class="meta">Module 06</div><h3>I/O・Network Performance</h3><p>待ち時間とコピー回数を削減できる</p>
+<div class="badges"><span class="badge">syscall</span><span class="badge">buffering</span><span class="badge">batching</span><span class="badge">connection pool</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d23-m06-l1.html">基礎 D23-M06-L1</a><a class="button secondary" href="lessons/d23-m06-l2.html">応用 D23-M06-L2</a><a class="button secondary" href="lessons/d23-m06-l3.html">専門 D23-M06-L3</a></div></article><article class="card">
+<div class="meta">Module 07</div><h3>Database Performance</h3><p>DBを含むエンドツーエンド遅延を改善できる</p>
+<div class="badges"><span class="badge">query plan</span><span class="badge">index</span><span class="badge">lock contention</span><span class="badge">pool saturation</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d23-m07-l1.html">基礎 D23-M07-L1</a><a class="button secondary" href="lessons/d23-m07-l2.html">応用 D23-M07-L2</a><a class="button secondary" href="lessons/d23-m07-l3.html">専門 D23-M07-L3</a></div></article><article class="card">
+<div class="meta">Module 08</div><h3>Queueing Theory</h3><p>負荷と待ち行列の非線形な悪化を予測できる</p>
+<div class="badges"><span class="badge">Littleの法則</span><span class="badge">arrival・service rate</span><span class="badge">queue length</span><span class="badge">tail latency</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d23-m08-l1.html">基礎 D23-M08-L1</a><a class="button secondary" href="lessons/d23-m08-l2.html">応用 D23-M08-L2</a><a class="button secondary" href="lessons/d23-m08-l3.html">専門 D23-M08-L3</a></div></article><article class="card">
+<div class="meta">Module 09</div><h3>Load Test・Capacity</h3><p>本番に近い負荷で限界と安全域を測れる</p>
+<div class="badges"><span class="badge">workload model</span><span class="badge">ramp・soak・spike</span><span class="badge">bottleneck</span><span class="badge">headroom</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d23-m09-l1.html">基礎 D23-M09-L1</a><a class="button secondary" href="lessons/d23-m09-l2.html">応用 D23-M09-L2</a><a class="button secondary" href="lessons/d23-m09-l3.html">専門 D23-M09-L3</a></div></article><article class="card">
+<div class="meta">Module 10</div><h3>Performance Optimization Process</h3><p>推測ではなく反復可能な改善を行える</p>
+<div class="badges"><span class="badge">baseline</span><span class="badge">hypothesis</span><span class="badge">experiment</span><span class="badge">regression guard</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d23-m10-l1.html">基礎 D23-M10-L1</a><a class="button secondary" href="lessons/d23-m10-l2.html">応用 D23-M10-L2</a><a class="button secondary" href="lessons/d23-m10-l3.html">専門 D23-M10-L3</a></div></article></div></section>
+<section class="section"><h2>公式・標準リファレンス</h2><p>Lesson本文と演習に加え、仕様・API・標準の一次資料で確認してください。version依存部分は必ず現在の公式資料を優先します。</p><ul><li><a href="https://www.brendangregg.com/" target="_blank" rel="noopener noreferrer">Brendan Gregg Performance</a></li><li><a href="https://perf.wiki.kernel.org/" target="_blank" rel="noopener noreferrer">Linux perf Wiki</a></li></ul></section>
+</main><footer>Engineering Expert Curriculum — 学習内容は、実装・検証・運用・説明までを一つの完了条件として設計しています。</footer></body></html>

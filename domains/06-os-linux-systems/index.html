@@ -1,0 +1,52 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="OSが提供する抽象化とLinuxの実装を理解し、プロセス・メモリ・ファイル・I/O・カーネル境界を操作する。">
+<title>OS・Linux・システムプログラミング | Engineering Expert Curriculum</title>
+<link rel="stylesheet" href="../../assets/styles.css">
+<script>window.CURRICULUM_BASE_PREFIX="../../";</script>
+<script src="../../assets/curriculum.js"></script>
+<script>if(window.CURRICULUM) window.CURRICULUM.basePrefix=window.CURRICULUM_BASE_PREFIX;</script>
+<script defer src="../../assets/app.js"></script>
+</head><body><header class="site-header"><nav class="nav">
+<a class="brand" href="../../index.html">Engineering Expert Curriculum</a>
+<a href="../../roadmap.html">ロードマップ</a>
+<a href="../../daily.html">今日のLesson</a>
+<a href="../../progress.html">進捗</a>
+<a href="../../guide.html">使い方</a>
+</nav></header><main>
+<div class="breadcrumbs"><a href="../../index.html">Home</a> / Domain 06</div>
+<section class="hero"><div class="badges"><span class="badge">Domain 06</span><span class="badge">30 Lessons</span></div>
+<h1>OS・Linux・システムプログラミング</h1><p class="lede">OSが提供する抽象化とLinuxの実装を理解し、プロセス・メモリ・ファイル・I/O・カーネル境界を操作する。</p><p class="small">推奨前提: <a href="../05-computer-architecture/index.html">05 コンピュータアーキテクチャ</a></p></section>
+<section><h2>Modules</h2><div class="grid"><article class="card">
+<div class="meta">Module 01</div><h3>OSの役割とシステムコール</h3><p>アプリとカーネルの境界を説明できる</p>
+<div class="badges"><span class="badge">ユーザー空間とカーネル空間</span><span class="badge">割り込みと例外</span><span class="badge">syscall ABI</span><span class="badge">保護と抽象化</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d06-m01-l1.html">基礎 D06-M01-L1</a><a class="button secondary" href="lessons/d06-m01-l2.html">応用 D06-M01-L2</a><a class="button secondary" href="lessons/d06-m01-l3.html">専門 D06-M01-L3</a></div></article><article class="card">
+<div class="meta">Module 02</div><h3>プロセスとスレッド</h3><p>実行単位と資源分離を理解できる</p>
+<div class="badges"><span class="badge">fork・exec</span><span class="badge">スケジューラ</span><span class="badge">コンテキストスイッチ</span><span class="badge">プロセス状態</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d06-m02-l1.html">基礎 D06-M02-L1</a><a class="button secondary" href="lessons/d06-m02-l2.html">応用 D06-M02-L2</a><a class="button secondary" href="lessons/d06-m02-l3.html">専門 D06-M02-L3</a></div></article><article class="card">
+<div class="meta">Module 03</div><h3>仮想メモリ</h3><p>メモリ使用量やページフォルトを診断できる</p>
+<div class="badges"><span class="badge">アドレス空間</span><span class="badge">ページング</span><span class="badge">copy-on-write</span><span class="badge">mmap</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d06-m03-l1.html">基礎 D06-M03-L1</a><a class="button secondary" href="lessons/d06-m03-l2.html">応用 D06-M03-L2</a><a class="button secondary" href="lessons/d06-m03-l3.html">専門 D06-M03-L3</a></div></article><article class="card">
+<div class="meta">Module 04</div><h3>ファイルシステム</h3><p>ファイル操作の永続化と整合性を説明できる</p>
+<div class="badges"><span class="badge">inode</span><span class="badge">ディレクトリエントリ</span><span class="badge">journaling</span><span class="badge">VFS</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d06-m04-l1.html">基礎 D06-M04-L1</a><a class="button secondary" href="lessons/d06-m04-l2.html">応用 D06-M04-L2</a><a class="button secondary" href="lessons/d06-m04-l3.html">専門 D06-M04-L3</a></div></article><article class="card">
+<div class="meta">Module 05</div><h3>Linux I/O</h3><p>高性能I/O方式を選定できる</p>
+<div class="badges"><span class="badge">blocking・non-blocking</span><span class="badge">select・poll・epoll</span><span class="badge">AIO・io_uring</span><span class="badge">ゼロコピー</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d06-m05-l1.html">基礎 D06-M05-L1</a><a class="button secondary" href="lessons/d06-m05-l2.html">応用 D06-M05-L2</a><a class="button secondary" href="lessons/d06-m05-l3.html">専門 D06-M05-L3</a></div></article><article class="card">
+<div class="meta">Module 06</div><h3>シグナル・IPC・同期</h3><p>プロセス間通信と同期を安全に設計できる</p>
+<div class="badges"><span class="badge">signal</span><span class="badge">pipe</span><span class="badge">shared memory</span><span class="badge">futex</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d06-m06-l1.html">基礎 D06-M06-L1</a><a class="button secondary" href="lessons/d06-m06-l2.html">応用 D06-M06-L2</a><a class="button secondary" href="lessons/d06-m06-l3.html">専門 D06-M06-L3</a></div></article><article class="card">
+<div class="meta">Module 07</div><h3>Linux管理と観測</h3><p>稼働中システムの状態を確認し制御できる</p>
+<div class="badges"><span class="badge">procfs・sysfs</span><span class="badge">systemd</span><span class="badge">namespaces</span><span class="badge">cgroups</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d06-m07-l1.html">基礎 D06-M07-L1</a><a class="button secondary" href="lessons/d06-m07-l2.html">応用 D06-M07-L2</a><a class="button secondary" href="lessons/d06-m07-l3.html">専門 D06-M07-L3</a></div></article><article class="card">
+<div class="meta">Module 08</div><h3>シェルとCLIシステム運用</h3><p>再現可能な運用コマンドを構築できる</p>
+<div class="badges"><span class="badge">POSIX shell</span><span class="badge">パイプライン</span><span class="badge">終了コード</span><span class="badge">安全なスクリプト</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d06-m08-l1.html">基礎 D06-M08-L1</a><a class="button secondary" href="lessons/d06-m08-l2.html">応用 D06-M08-L2</a><a class="button secondary" href="lessons/d06-m08-l3.html">専門 D06-M08-L3</a></div></article><article class="card">
+<div class="meta">Module 09</div><h3>カーネルネットワークとストレージ</h3><p>アプリ性能をカーネル内部の経路へ関連付けられる</p>
+<div class="badges"><span class="badge">socket buffer</span><span class="badge">block layer</span><span class="badge">page cache</span><span class="badge">writeback</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d06-m09-l1.html">基礎 D06-M09-L1</a><a class="button secondary" href="lessons/d06-m09-l2.html">応用 D06-M09-L2</a><a class="button secondary" href="lessons/d06-m09-l3.html">専門 D06-M09-L3</a></div></article><article class="card">
+<div class="meta">Module 10</div><h3>システムプログラミング実践</h3><p>低レイヤのツールやデーモンを安全に実装できる</p>
+<div class="badges"><span class="badge">C・Rust FFI</span><span class="badge">ptrace</span><span class="badge">eBPF</span><span class="badge">capability</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d06-m10-l1.html">基礎 D06-M10-L1</a><a class="button secondary" href="lessons/d06-m10-l2.html">応用 D06-M10-L2</a><a class="button secondary" href="lessons/d06-m10-l3.html">専門 D06-M10-L3</a></div></article></div></section>
+<section class="section"><h2>公式・標準リファレンス</h2><p>Lesson本文と演習に加え、仕様・API・標準の一次資料で確認してください。version依存部分は必ず現在の公式資料を優先します。</p><ul><li><a href="https://docs.kernel.org/" target="_blank" rel="noopener noreferrer">Linux Kernel Documentation</a></li><li><a href="https://man7.org/linux/man-pages/" target="_blank" rel="noopener noreferrer">Linux man-pages</a></li></ul></section>
+</main><footer>Engineering Expert Curriculum — 学習内容は、実装・検証・運用・説明までを一つの完了条件として設計しています。</footer></body></html>

@@ -1,0 +1,52 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="品質をテスト件数ではなく、リスク、仕様、探索、静的解析、負荷、継続的フィードバックとして設計する。">
+<title>QA・Testing・Verification | Engineering Expert Curriculum</title>
+<link rel="stylesheet" href="../../assets/styles.css">
+<script>window.CURRICULUM_BASE_PREFIX="../../";</script>
+<script src="../../assets/curriculum.js"></script>
+<script>if(window.CURRICULUM) window.CURRICULUM.basePrefix=window.CURRICULUM_BASE_PREFIX;</script>
+<script defer src="../../assets/app.js"></script>
+</head><body><header class="site-header"><nav class="nav">
+<a class="brand" href="../../index.html">Engineering Expert Curriculum</a>
+<a href="../../roadmap.html">ロードマップ</a>
+<a href="../../daily.html">今日のLesson</a>
+<a href="../../progress.html">進捗</a>
+<a href="../../guide.html">使い方</a>
+</nav></header><main>
+<div class="breadcrumbs"><a href="../../index.html">Home</a> / Domain 25</div>
+<section class="hero"><div class="badges"><span class="badge">Domain 25</span><span class="badge">30 Lessons</span></div>
+<h1>QA・Testing・Verification</h1><p class="lede">品質をテスト件数ではなく、リスク、仕様、探索、静的解析、負荷、継続的フィードバックとして設計する。</p><p class="small">推奨前提: <a href="../02-data-structures-algorithms/index.html">02 データ構造・アルゴリズム</a>, <a href="../04-formal-methods-logic/index.html">04 形式手法・論理学</a>, <a href="../14-web-backend-api/index.html">14 Web・Backend・API Engineering</a>, <a href="../20-devops-build-cicd-release/index.html">20 DevOps・Build・CI/CD・Release</a></p></section>
+<section><h2>Modules</h2><div class="grid"><article class="card">
+<div class="meta">Module 01</div><h3>Quality ModelとTest Strategy</h3><p>製品リスクに合う検証戦略を立てられる</p>
+<div class="badges"><span class="badge">quality attribute</span><span class="badge">risk-based test</span><span class="badge">test pyramid</span><span class="badge">shift-left・right</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d25-m01-l1.html">基礎 D25-M01-L1</a><a class="button secondary" href="lessons/d25-m01-l2.html">応用 D25-M01-L2</a><a class="button secondary" href="lessons/d25-m01-l3.html">専門 D25-M01-L3</a></div></article><article class="card">
+<div class="meta">Module 02</div><h3>Unit Testing</h3><p>小さな単位を速く安定して検証できる</p>
+<div class="badges"><span class="badge">test double</span><span class="badge">boundary</span><span class="badge">determinism</span><span class="badge">behavior・state verification</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d25-m02-l1.html">基礎 D25-M02-L1</a><a class="button secondary" href="lessons/d25-m02-l2.html">応用 D25-M02-L2</a><a class="button secondary" href="lessons/d25-m02-l3.html">専門 D25-M02-L3</a></div></article><article class="card">
+<div class="meta">Module 03</div><h3>Integration・E2E Testing</h3><p>結合境界とユーザー経路を現実的に検証できる</p>
+<div class="badges"><span class="badge">real dependency</span><span class="badge">test container</span><span class="badge">fixture</span><span class="badge">environment parity</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d25-m03-l1.html">基礎 D25-M03-L1</a><a class="button secondary" href="lessons/d25-m03-l2.html">応用 D25-M03-L2</a><a class="button secondary" href="lessons/d25-m03-l3.html">専門 D25-M03-L3</a></div></article><article class="card">
+<div class="meta">Module 04</div><h3>Contract Testing</h3><p>サービス間変更を独立して安全に進められる</p>
+<div class="badges"><span class="badge">consumer-driven contract</span><span class="badge">schema compatibility</span><span class="badge">mock drift</span><span class="badge">versioning</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d25-m04-l1.html">基礎 D25-M04-L1</a><a class="button secondary" href="lessons/d25-m04-l2.html">応用 D25-M04-L2</a><a class="button secondary" href="lessons/d25-m04-l3.html">専門 D25-M04-L3</a></div></article><article class="card">
+<div class="meta">Module 05</div><h3>Property-based・Metamorphic Testing</h3><p>例示だけでは見つからない欠陥を発見できる</p>
+<div class="badges"><span class="badge">generator</span><span class="badge">invariant</span><span class="badge">shrinking</span><span class="badge">oracle problem</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d25-m05-l1.html">基礎 D25-M05-L1</a><a class="button secondary" href="lessons/d25-m05-l2.html">応用 D25-M05-L2</a><a class="button secondary" href="lessons/d25-m05-l3.html">専門 D25-M05-L3</a></div></article><article class="card">
+<div class="meta">Module 06</div><h3>Fuzzing・Security Testing</h3><p>予期しない入力への耐性を検証できる</p>
+<div class="badges"><span class="badge">coverage-guided fuzz</span><span class="badge">input corpus</span><span class="badge">sanitizer</span><span class="badge">abuse test</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d25-m06-l1.html">基礎 D25-M06-L1</a><a class="button secondary" href="lessons/d25-m06-l2.html">応用 D25-M06-L2</a><a class="button secondary" href="lessons/d25-m06-l3.html">専門 D25-M06-L3</a></div></article><article class="card">
+<div class="meta">Module 07</div><h3>Mutation・Static Analysis</h3><p>テストの検出力とコード上のリスクを測れる</p>
+<div class="badges"><span class="badge">mutation score</span><span class="badge">lint</span><span class="badge">type checker</span><span class="badge">symbolic execution</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d25-m07-l1.html">基礎 D25-M07-L1</a><a class="button secondary" href="lessons/d25-m07-l2.html">応用 D25-M07-L2</a><a class="button secondary" href="lessons/d25-m07-l3.html">専門 D25-M07-L3</a></div></article><article class="card">
+<div class="meta">Module 08</div><h3>Performance・Reliability Testing</h3><p>非機能要件を継続的に検証できる</p>
+<div class="badges"><span class="badge">load・stress・soak</span><span class="badge">fault injection</span><span class="badge">recovery test</span><span class="badge">SLO verification</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d25-m08-l1.html">基礎 D25-M08-L1</a><a class="button secondary" href="lessons/d25-m08-l2.html">応用 D25-M08-L2</a><a class="button secondary" href="lessons/d25-m08-l3.html">専門 D25-M08-L3</a></div></article><article class="card">
+<div class="meta">Module 09</div><h3>Test Data・Environment・Flakiness</h3><p>不安定テストの原因を構造的に除去できる</p>
+<div class="badges"><span class="badge">data factory</span><span class="badge">isolation</span><span class="badge">time・randomness</span><span class="badge">retry anti-pattern</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d25-m09-l1.html">基礎 D25-M09-L1</a><a class="button secondary" href="lessons/d25-m09-l2.html">応用 D25-M09-L2</a><a class="button secondary" href="lessons/d25-m09-l3.html">専門 D25-M09-L3</a></div></article><article class="card">
+<div class="meta">Module 10</div><h3>QA ProcessとRelease Decision</h3><p>不確実性を可視化してリリース判断できる</p>
+<div class="badges"><span class="badge">defect taxonomy</span><span class="badge">coverage model</span><span class="badge">quality gate</span><span class="badge">exploratory testing</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d25-m10-l1.html">基礎 D25-M10-L1</a><a class="button secondary" href="lessons/d25-m10-l2.html">応用 D25-M10-L2</a><a class="button secondary" href="lessons/d25-m10-l3.html">専門 D25-M10-L3</a></div></article></div></section>
+<section class="section"><h2>公式・標準リファレンス</h2><p>Lesson本文と演習に加え、仕様・API・標準の一次資料で確認してください。version依存部分は必ず現在の公式資料を優先します。</p><ul><li><a href="https://testing.googleblog.com/" target="_blank" rel="noopener noreferrer">Google Testing Blog</a></li><li><a href="https://hypothesis.readthedocs.io/" target="_blank" rel="noopener noreferrer">Property-Based Testing</a></li><li><a href="https://google.github.io/oss-fuzz/" target="_blank" rel="noopener noreferrer">OSS-Fuzz</a></li></ul></section>
+</main><footer>Engineering Expert Curriculum — 学習内容は、実装・検証・運用・説明までを一つの完了条件として設計しています。</footer></body></html>

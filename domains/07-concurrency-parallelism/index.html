@@ -1,0 +1,52 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="複数の仕事を正しく、高速に、観測可能に実行するためのモデル、同期、メモリモデル、分散実行を学ぶ。">
+<title>並行処理・並列処理 | Engineering Expert Curriculum</title>
+<link rel="stylesheet" href="../../assets/styles.css">
+<script>window.CURRICULUM_BASE_PREFIX="../../";</script>
+<script src="../../assets/curriculum.js"></script>
+<script>if(window.CURRICULUM) window.CURRICULUM.basePrefix=window.CURRICULUM_BASE_PREFIX;</script>
+<script defer src="../../assets/app.js"></script>
+</head><body><header class="site-header"><nav class="nav">
+<a class="brand" href="../../index.html">Engineering Expert Curriculum</a>
+<a href="../../roadmap.html">ロードマップ</a>
+<a href="../../daily.html">今日のLesson</a>
+<a href="../../progress.html">進捗</a>
+<a href="../../guide.html">使い方</a>
+</nav></header><main>
+<div class="breadcrumbs"><a href="../../index.html">Home</a> / Domain 07</div>
+<section class="hero"><div class="badges"><span class="badge">Domain 07</span><span class="badge">30 Lessons</span></div>
+<h1>並行処理・並列処理</h1><p class="lede">複数の仕事を正しく、高速に、観測可能に実行するためのモデル、同期、メモリモデル、分散実行を学ぶ。</p><p class="small">推奨前提: <a href="../02-data-structures-algorithms/index.html">02 データ構造・アルゴリズム</a>, <a href="../05-computer-architecture/index.html">05 コンピュータアーキテクチャ</a>, <a href="../06-os-linux-systems/index.html">06 OS・Linux・システムプログラミング</a></p></section>
+<section><h2>Modules</h2><div class="grid"><article class="card">
+<div class="meta">Module 01</div><h3>並行性の基本モデル</h3><p>同時実行バグを正確な語彙で説明できる</p>
+<div class="badges"><span class="badge">並行と並列</span><span class="badge">タスクとスレッド</span><span class="badge">インターリーブ</span><span class="badge">競合状態</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d07-m01-l1.html">基礎 D07-M01-L1</a><a class="button secondary" href="lessons/d07-m01-l2.html">応用 D07-M01-L2</a><a class="button secondary" href="lessons/d07-m01-l3.html">専門 D07-M01-L3</a></div></article><article class="card">
+<div class="meta">Module 02</div><h3>ロックと同期プリミティブ</h3><p>共有状態を安全に保護できる</p>
+<div class="badges"><span class="badge">mutex</span><span class="badge">semaphore</span><span class="badge">condition variable</span><span class="badge">read-write lock</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d07-m02-l1.html">基礎 D07-M02-L1</a><a class="button secondary" href="lessons/d07-m02-l2.html">応用 D07-M02-L2</a><a class="button secondary" href="lessons/d07-m02-l3.html">専門 D07-M02-L3</a></div></article><article class="card">
+<div class="meta">Module 03</div><h3>アトミック操作とメモリモデル</h3><p>ロックより低レイヤの正しさを理解できる</p>
+<div class="badges"><span class="badge">compare-and-swap</span><span class="badge">memory order</span><span class="badge">happens-before</span><span class="badge">可視性</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d07-m03-l1.html">基礎 D07-M03-L1</a><a class="button secondary" href="lessons/d07-m03-l2.html">応用 D07-M03-L2</a><a class="button secondary" href="lessons/d07-m03-l3.html">専門 D07-M03-L3</a></div></article><article class="card">
+<div class="meta">Module 04</div><h3>デッドロック・ライブロック・飢餓</h3><p>停止しない並行障害を予防・診断できる</p>
+<div class="badges"><span class="badge">必要条件</span><span class="badge">ロック順序</span><span class="badge">backoff</span><span class="badge">公平性</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d07-m04-l1.html">基礎 D07-M04-L1</a><a class="button secondary" href="lessons/d07-m04-l2.html">応用 D07-M04-L2</a><a class="button secondary" href="lessons/d07-m04-l3.html">専門 D07-M04-L3</a></div></article><article class="card">
+<div class="meta">Module 05</div><h3>Lock-free・Wait-free</h3><p>高度な非ブロッキング構造の条件を説明できる</p>
+<div class="badges"><span class="badge">進行保証</span><span class="badge">ABA問題</span><span class="badge">hazard pointer</span><span class="badge">epoch reclamation</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d07-m05-l1.html">基礎 D07-M05-L1</a><a class="button secondary" href="lessons/d07-m05-l2.html">応用 D07-M05-L2</a><a class="button secondary" href="lessons/d07-m05-l3.html">専門 D07-M05-L3</a></div></article><article class="card">
+<div class="meta">Module 06</div><h3>Actor・CSP・メッセージパッシング</h3><p>共有メモリ以外の並行モデルを設計できる</p>
+<div class="badges"><span class="badge">mailbox</span><span class="badge">channel</span><span class="badge">select</span><span class="badge">supervision</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d07-m06-l1.html">基礎 D07-M06-L1</a><a class="button secondary" href="lessons/d07-m06-l2.html">応用 D07-M06-L2</a><a class="button secondary" href="lessons/d07-m06-l3.html">専門 D07-M06-L3</a></div></article><article class="card">
+<div class="meta">Module 07</div><h3>タスクスケジューリング</h3><p>実行基盤のスループットと公平性を調整できる</p>
+<div class="badges"><span class="badge">work stealing</span><span class="badge">thread pool</span><span class="badge">backpressure</span><span class="badge">priority inversion</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d07-m07-l1.html">基礎 D07-M07-L1</a><a class="button secondary" href="lessons/d07-m07-l2.html">応用 D07-M07-L2</a><a class="button secondary" href="lessons/d07-m07-l3.html">専門 D07-M07-L3</a></div></article><article class="card">
+<div class="meta">Module 08</div><h3>並列アルゴリズム</h3><p>処理を安全に分割して並列化できる</p>
+<div class="badges"><span class="badge">map-reduce</span><span class="badge">prefix sum</span><span class="badge">fork-join</span><span class="badge">データ分割</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d07-m08-l1.html">基礎 D07-M08-L1</a><a class="button secondary" href="lessons/d07-m08-l2.html">応用 D07-M08-L2</a><a class="button secondary" href="lessons/d07-m08-l3.html">専門 D07-M08-L3</a></div></article><article class="card">
+<div class="meta">Module 09</div><h3>非同期I/O</h3><p>I/O待ちを効率化しキャンセルを管理できる</p>
+<div class="badges"><span class="badge">callback</span><span class="badge">future・promise</span><span class="badge">async・await</span><span class="badge">structured concurrency</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d07-m09-l1.html">基礎 D07-M09-L1</a><a class="button secondary" href="lessons/d07-m09-l2.html">応用 D07-M09-L2</a><a class="button secondary" href="lessons/d07-m09-l3.html">専門 D07-M09-L3</a></div></article><article class="card">
+<div class="meta">Module 10</div><h3>並行プログラムの検証とデバッグ</h3><p>再現しにくいバグを体系的に追跡できる</p>
+<div class="badges"><span class="badge">race detector</span><span class="badge">deterministic test</span><span class="badge">linearizability</span><span class="badge">trace analysis</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d07-m10-l1.html">基礎 D07-M10-L1</a><a class="button secondary" href="lessons/d07-m10-l2.html">応用 D07-M10-L2</a><a class="button secondary" href="lessons/d07-m10-l3.html">専門 D07-M10-L3</a></div></article></div></section>
+<section class="section"><h2>公式・標準リファレンス</h2><p>Lesson本文と演習に加え、仕様・API・標準の一次資料で確認してください。version依存部分は必ず現在の公式資料を優先します。</p><ul><li><a href="https://en.cppreference.com/w/cpp/language/memory_model" target="_blank" rel="noopener noreferrer">C++ Memory Model Reference</a></li><li><a href="https://marabos.nl/atomics/" target="_blank" rel="noopener noreferrer">Rust Atomics and Locks</a></li></ul></section>
+</main><footer>Engineering Expert Curriculum — 学習内容は、実装・検証・運用・説明までを一つの完了条件として設計しています。</footer></body></html>

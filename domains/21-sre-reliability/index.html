@@ -1,0 +1,52 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="信頼性を感覚ではなく、SLI/SLO、エラーバジェット、容量、障害対応、復旧設計で管理する。">
+<title>SRE・信頼性工学 | Engineering Expert Curriculum</title>
+<link rel="stylesheet" href="../../assets/styles.css">
+<script>window.CURRICULUM_BASE_PREFIX="../../";</script>
+<script src="../../assets/curriculum.js"></script>
+<script>if(window.CURRICULUM) window.CURRICULUM.basePrefix=window.CURRICULUM_BASE_PREFIX;</script>
+<script defer src="../../assets/app.js"></script>
+</head><body><header class="site-header"><nav class="nav">
+<a class="brand" href="../../index.html">Engineering Expert Curriculum</a>
+<a href="../../roadmap.html">ロードマップ</a>
+<a href="../../daily.html">今日のLesson</a>
+<a href="../../progress.html">進捗</a>
+<a href="../../guide.html">使い方</a>
+</nav></header><main>
+<div class="breadcrumbs"><a href="../../index.html">Home</a> / Domain 21</div>
+<section class="hero"><div class="badges"><span class="badge">Domain 21</span><span class="badge">30 Lessons</span></div>
+<h1>SRE・信頼性工学</h1><p class="lede">信頼性を感覚ではなく、SLI/SLO、エラーバジェット、容量、障害対応、復旧設計で管理する。</p><p class="small">推奨前提: <a href="../17-distributed-systems-messaging/index.html">17 分散システム・メッセージング</a>, <a href="../18-cloud-aws-infrastructure/index.html">18 Cloud・AWS・Infrastructure</a>, <a href="../20-devops-build-cicd-release/index.html">20 DevOps・Build・CI/CD・Release</a>, <a href="../22-observability/index.html">22 Observability・運用監視</a></p></section>
+<section><h2>Modules</h2><div class="grid"><article class="card">
+<div class="meta">Module 01</div><h3>ReliabilityとSRE原則</h3><p>信頼性を事業価値とコストの均衡で説明できる</p>
+<div class="badges"><span class="badge">user journey</span><span class="badge">risk</span><span class="badge">toil</span><span class="badge">engineering approach</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d21-m01-l1.html">基礎 D21-M01-L1</a><a class="button secondary" href="lessons/d21-m01-l2.html">応用 D21-M01-L2</a><a class="button secondary" href="lessons/d21-m01-l3.html">専門 D21-M01-L3</a></div></article><article class="card">
+<div class="meta">Module 02</div><h3>SLI・SLO・SLA</h3><p>ユーザー視点の信頼性目標を定義できる</p>
+<div class="badges"><span class="badge">availability</span><span class="badge">latency</span><span class="badge">correctness</span><span class="badge">error budget</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d21-m02-l1.html">基礎 D21-M02-L1</a><a class="button secondary" href="lessons/d21-m02-l2.html">応用 D21-M02-L2</a><a class="button secondary" href="lessons/d21-m02-l3.html">専門 D21-M02-L3</a></div></article><article class="card">
+<div class="meta">Module 03</div><h3>監視とAlerting</h3><p>行動につながるアラートを設計できる</p>
+<div class="badges"><span class="badge">symptom・cause</span><span class="badge">burn rate</span><span class="badge">paging</span><span class="badge">noise reduction</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d21-m03-l1.html">基礎 D21-M03-L1</a><a class="button secondary" href="lessons/d21-m03-l2.html">応用 D21-M03-L2</a><a class="button secondary" href="lessons/d21-m03-l3.html">専門 D21-M03-L3</a></div></article><article class="card">
+<div class="meta">Module 04</div><h3>Incident Response</h3><p>重大障害を役割分担して収束できる</p>
+<div class="badges"><span class="badge">severity</span><span class="badge">role</span><span class="badge">timeline</span><span class="badge">communication</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d21-m04-l1.html">基礎 D21-M04-L1</a><a class="button secondary" href="lessons/d21-m04-l2.html">応用 D21-M04-L2</a><a class="button secondary" href="lessons/d21-m04-l3.html">専門 D21-M04-L3</a></div></article><article class="card">
+<div class="meta">Module 05</div><h3>Postmortem・学習文化</h3><p>個人非難なしにシステム改善へつなげられる</p>
+<div class="badges"><span class="badge">blameless</span><span class="badge">contributing factor</span><span class="badge">action item</span><span class="badge">recurrence prevention</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d21-m05-l1.html">基礎 D21-M05-L1</a><a class="button secondary" href="lessons/d21-m05-l2.html">応用 D21-M05-L2</a><a class="button secondary" href="lessons/d21-m05-l3.html">専門 D21-M05-L3</a></div></article><article class="card">
+<div class="meta">Module 06</div><h3>Capacity Planning</h3><p>需要増加と資源限界を事前に扱える</p>
+<div class="badges"><span class="badge">traffic forecast</span><span class="badge">saturation</span><span class="badge">headroom</span><span class="badge">load shedding</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d21-m06-l1.html">基礎 D21-M06-L1</a><a class="button secondary" href="lessons/d21-m06-l2.html">応用 D21-M06-L2</a><a class="button secondary" href="lessons/d21-m06-l3.html">専門 D21-M06-L3</a></div></article><article class="card">
+<div class="meta">Module 07</div><h3>Resilience Pattern</h3><p>連鎖障害を防ぐ回復戦略を実装できる</p>
+<div class="badges"><span class="badge">timeout</span><span class="badge">retry</span><span class="badge">circuit breaker</span><span class="badge">bulkhead</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d21-m07-l1.html">基礎 D21-M07-L1</a><a class="button secondary" href="lessons/d21-m07-l2.html">応用 D21-M07-L2</a><a class="button secondary" href="lessons/d21-m07-l3.html">専門 D21-M07-L3</a></div></article><article class="card">
+<div class="meta">Module 08</div><h3>Disaster Recovery</h3><p>復旧目標に合う災害対策を構築できる</p>
+<div class="badges"><span class="badge">backup</span><span class="badge">restore test</span><span class="badge">RTO・RPO</span><span class="badge">failover</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d21-m08-l1.html">基礎 D21-M08-L1</a><a class="button secondary" href="lessons/d21-m08-l2.html">応用 D21-M08-L2</a><a class="button secondary" href="lessons/d21-m08-l3.html">専門 D21-M08-L3</a></div></article><article class="card">
+<div class="meta">Module 09</div><h3>Chaos Engineering</h3><p>安全な実験で未知の弱点を発見できる</p>
+<div class="badges"><span class="badge">steady state</span><span class="badge">hypothesis</span><span class="badge">fault injection</span><span class="badge">blast radius</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d21-m09-l1.html">基礎 D21-M09-L1</a><a class="button secondary" href="lessons/d21-m09-l2.html">応用 D21-M09-L2</a><a class="button secondary" href="lessons/d21-m09-l3.html">専門 D21-M09-L3</a></div></article><article class="card">
+<div class="meta">Module 10</div><h3>SRE組織と運用自動化</h3><p>持続可能な運用体制を設計できる</p>
+<div class="badges"><span class="badge">on-call</span><span class="badge">toil budget</span><span class="badge">runbook・automation</span><span class="badge">production readiness</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d21-m10-l1.html">基礎 D21-M10-L1</a><a class="button secondary" href="lessons/d21-m10-l2.html">応用 D21-M10-L2</a><a class="button secondary" href="lessons/d21-m10-l3.html">専門 D21-M10-L3</a></div></article></div></section>
+<section class="section"><h2>公式・標準リファレンス</h2><p>Lesson本文と演習に加え、仕様・API・標準の一次資料で確認してください。version依存部分は必ず現在の公式資料を優先します。</p><ul><li><a href="https://sre.google/books/" target="_blank" rel="noopener noreferrer">Google SRE Books</a></li><li><a href="https://openslo.com/" target="_blank" rel="noopener noreferrer">OpenSLO</a></li></ul></section>
+</main><footer>Engineering Expert Curriculum — 学習内容は、実装・検証・運用・説明までを一つの完了条件として設計しています。</footer></body></html>

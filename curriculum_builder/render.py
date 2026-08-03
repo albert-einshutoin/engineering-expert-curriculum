@@ -103,6 +103,10 @@ _BASE_CHILDREN = MappingProxyType(
         "header": ("a:brand", "nav"),
         "nav": (
             "a:roadmap",
+            "a:map3d",
+            "a:progress",
+            "a:daily",
+            "a:guide",
             "a:lessons",
             "a:competencies",
             "a:capstones",
@@ -120,6 +124,10 @@ _BASE_LEAF_TEXT = MappingProxyType(
         "a:skip": "本文へ移動",
         "a:brand": "Engineering Atlas",
         "a:roadmap": "ロードマップ",
+        "a:map3d": "3Dマップ",
+        "a:progress": "進捗",
+        "a:daily": "今日のLesson",
+        "a:guide": "使い方",
         "a:lessons": "コアレッスン",
         "a:competencies": "コンピテンシー",
         "a:capstones": "Capstone",
@@ -136,6 +144,10 @@ _REQUIRED_BASE_HREFS = MappingProxyType(
         "${root}static/visualizations.css": 1,
         "${root}index.html": 1,
         "${root}roadmap/index.html": 1,
+        "${root}map3d.html": 1,
+        "${root}progress.html": 1,
+        "${root}daily.html": 1,
+        "${root}guide.html": 1,
         "${root}lessons/index.html": 1,
         "${root}competencies/index.html": 1,
         "${root}capstones/index.html": 1,
@@ -829,6 +841,18 @@ class _BasePolicyParser(HTMLParser):
                 (
                     ("href", "${root}roadmap/index.html"),
                 ): "a:roadmap",
+                (
+                    ("href", "${root}map3d.html"),
+                ): "a:map3d",
+                (
+                    ("href", "${root}progress.html"),
+                ): "a:progress",
+                (
+                    ("href", "${root}daily.html"),
+                ): "a:daily",
+                (
+                    ("href", "${root}guide.html"),
+                ): "a:guide",
                 (
                     ("href", "${root}lessons/index.html"),
                 ): "a:lessons",

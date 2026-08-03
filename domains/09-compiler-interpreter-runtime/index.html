@@ -1,0 +1,52 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="ソースコードが字句解析、構文解析、最適化、コード生成、実行時管理を経て動く全過程を実装目線で学ぶ。">
+<title>Compiler・Interpreter・Runtime | Engineering Expert Curriculum</title>
+<link rel="stylesheet" href="../../assets/styles.css">
+<script>window.CURRICULUM_BASE_PREFIX="../../";</script>
+<script src="../../assets/curriculum.js"></script>
+<script>if(window.CURRICULUM) window.CURRICULUM.basePrefix=window.CURRICULUM_BASE_PREFIX;</script>
+<script defer src="../../assets/app.js"></script>
+</head><body><header class="site-header"><nav class="nav">
+<a class="brand" href="../../index.html">Engineering Expert Curriculum</a>
+<a href="../../roadmap.html">ロードマップ</a>
+<a href="../../daily.html">今日のLesson</a>
+<a href="../../progress.html">進捗</a>
+<a href="../../guide.html">使い方</a>
+</nav></header><main>
+<div class="breadcrumbs"><a href="../../index.html">Home</a> / Domain 09</div>
+<section class="hero"><div class="badges"><span class="badge">Domain 09</span><span class="badge">30 Lessons</span></div>
+<h1>Compiler・Interpreter・Runtime</h1><p class="lede">ソースコードが字句解析、構文解析、最適化、コード生成、実行時管理を経て動く全過程を実装目線で学ぶ。</p><p class="small">推奨前提: <a href="../03-computation-complexity/index.html">03 計算理論・計算量理論</a>, <a href="../05-computer-architecture/index.html">05 コンピュータアーキテクチャ</a>, <a href="../08-pl-type-systems/index.html">08 プログラミング言語理論・型システム</a></p></section>
+<section><h2>Modules</h2><div class="grid"><article class="card">
+<div class="meta">Module 01</div><h3>コンパイラ全体像</h3><p>翻訳系の構成要素と責務を説明できる</p>
+<div class="badges"><span class="badge">front-end・middle-end・back-end</span><span class="badge">source-to-source</span><span class="badge">AOT・JIT</span><span class="badge">toolchain</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d09-m01-l1.html">基礎 D09-M01-L1</a><a class="button secondary" href="lessons/d09-m01-l2.html">応用 D09-M01-L2</a><a class="button secondary" href="lessons/d09-m01-l3.html">専門 D09-M01-L3</a></div></article><article class="card">
+<div class="meta">Module 02</div><h3>字句解析</h3><p>文字列をトークン列へ安全に変換できる</p>
+<div class="badges"><span class="badge">token</span><span class="badge">正規表現</span><span class="badge">DFA</span><span class="badge">lexer generator</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d09-m02-l1.html">基礎 D09-M02-L1</a><a class="button secondary" href="lessons/d09-m02-l2.html">応用 D09-M02-L2</a><a class="button secondary" href="lessons/d09-m02-l3.html">専門 D09-M02-L3</a></div></article><article class="card">
+<div class="meta">Module 03</div><h3>構文解析</h3><p>文法からASTを構築できる</p>
+<div class="badges"><span class="badge">LL・LR</span><span class="badge">recursive descent</span><span class="badge">precedence</span><span class="badge">error recovery</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d09-m03-l1.html">基礎 D09-M03-L1</a><a class="button secondary" href="lessons/d09-m03-l2.html">応用 D09-M03-L2</a><a class="button secondary" href="lessons/d09-m03-l3.html">専門 D09-M03-L3</a></div></article><article class="card">
+<div class="meta">Module 04</div><h3>AST・意味解析・型検査</h3><p>構文上正しいコードの意味を検証できる</p>
+<div class="badges"><span class="badge">symbol table</span><span class="badge">scope</span><span class="badge">name resolution</span><span class="badge">type checking</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d09-m04-l1.html">基礎 D09-M04-L1</a><a class="button secondary" href="lessons/d09-m04-l2.html">応用 D09-M04-L2</a><a class="button secondary" href="lessons/d09-m04-l3.html">専門 D09-M04-L3</a></div></article><article class="card">
+<div class="meta">Module 05</div><h3>中間表現</h3><p>最適化しやすい表現へ変換できる</p>
+<div class="badges"><span class="badge">three-address code</span><span class="badge">SSA</span><span class="badge">CFG</span><span class="badge">data-flow</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d09-m05-l1.html">基礎 D09-M05-L1</a><a class="button secondary" href="lessons/d09-m05-l2.html">応用 D09-M05-L2</a><a class="button secondary" href="lessons/d09-m05-l3.html">専門 D09-M05-L3</a></div></article><article class="card">
+<div class="meta">Module 06</div><h3>最適化</h3><p>意味を保った性能改善を設計できる</p>
+<div class="badges"><span class="badge">constant folding</span><span class="badge">dead code elimination</span><span class="badge">inlining</span><span class="badge">loop optimization</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d09-m06-l1.html">基礎 D09-M06-L1</a><a class="button secondary" href="lessons/d09-m06-l2.html">応用 D09-M06-L2</a><a class="button secondary" href="lessons/d09-m06-l3.html">専門 D09-M06-L3</a></div></article><article class="card">
+<div class="meta">Module 07</div><h3>コード生成</h3><p>IRを機械語へ落とし込む過程を理解できる</p>
+<div class="badges"><span class="badge">instruction selection</span><span class="badge">register allocation</span><span class="badge">calling convention</span><span class="badge">assembly emission</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d09-m07-l1.html">基礎 D09-M07-L1</a><a class="button secondary" href="lessons/d09-m07-l2.html">応用 D09-M07-L2</a><a class="button secondary" href="lessons/d09-m07-l3.html">専門 D09-M07-L3</a></div></article><article class="card">
+<div class="meta">Module 08</div><h3>InterpreterとVM</h3><p>小さな言語実行系を実装できる</p>
+<div class="badges"><span class="badge">tree-walk</span><span class="badge">bytecode</span><span class="badge">stack VM</span><span class="badge">dispatch</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d09-m08-l1.html">基礎 D09-M08-L1</a><a class="button secondary" href="lessons/d09-m08-l2.html">応用 D09-M08-L2</a><a class="button secondary" href="lessons/d09-m08-l3.html">専門 D09-M08-L3</a></div></article><article class="card">
+<div class="meta">Module 09</div><h3>JITとプロファイル誘導最適化</h3><p>実行時最適化の速度と複雑性を説明できる</p>
+<div class="badges"><span class="badge">hot path</span><span class="badge">inline cache</span><span class="badge">deoptimization</span><span class="badge">tiered compilation</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d09-m09-l1.html">基礎 D09-M09-L1</a><a class="button secondary" href="lessons/d09-m09-l2.html">応用 D09-M09-L2</a><a class="button secondary" href="lessons/d09-m09-l3.html">専門 D09-M09-L3</a></div></article><article class="card">
+<div class="meta">Module 10</div><h3>Runtime・GC・Linker・Loader</h3><p>言語ランタイムとOSの協調を理解できる</p>
+<div class="badges"><span class="badge">heap management</span><span class="badge">mark-sweep</span><span class="badge">dynamic linking</span><span class="badge">ABI</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d09-m10-l1.html">基礎 D09-M10-L1</a><a class="button secondary" href="lessons/d09-m10-l2.html">応用 D09-M10-L2</a><a class="button secondary" href="lessons/d09-m10-l3.html">専門 D09-M10-L3</a></div></article></div></section>
+<section class="section"><h2>公式・標準リファレンス</h2><p>Lesson本文と演習に加え、仕様・API・標準の一次資料で確認してください。version依存部分は必ず現在の公式資料を優先します。</p><ul><li><a href="https://llvm.org/docs/" target="_blank" rel="noopener noreferrer">LLVM Documentation</a></li><li><a href="https://craftinginterpreters.com/" target="_blank" rel="noopener noreferrer">Crafting Interpreters</a></li></ul></section>
+</main><footer>Engineering Expert Curriculum — 学習内容は、実装・検証・運用・説明までを一つの完了条件として設計しています。</footer></body></html>

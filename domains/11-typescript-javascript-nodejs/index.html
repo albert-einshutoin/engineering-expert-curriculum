@@ -1,0 +1,52 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="ECMAScript、TypeScriptの型システム、V8、libuv、Node.js APIを統合して、正しく高速なサーバとツールを作る。">
+<title>TypeScript・JavaScript・Node.js | Engineering Expert Curriculum</title>
+<link rel="stylesheet" href="../../assets/styles.css">
+<script>window.CURRICULUM_BASE_PREFIX="../../";</script>
+<script src="../../assets/curriculum.js"></script>
+<script>if(window.CURRICULUM) window.CURRICULUM.basePrefix=window.CURRICULUM_BASE_PREFIX;</script>
+<script defer src="../../assets/app.js"></script>
+</head><body><header class="site-header"><nav class="nav">
+<a class="brand" href="../../index.html">Engineering Expert Curriculum</a>
+<a href="../../roadmap.html">ロードマップ</a>
+<a href="../../daily.html">今日のLesson</a>
+<a href="../../progress.html">進捗</a>
+<a href="../../guide.html">使い方</a>
+</nav></header><main>
+<div class="breadcrumbs"><a href="../../index.html">Home</a> / Domain 11</div>
+<section class="hero"><div class="badges"><span class="badge">Domain 11</span><span class="badge">30 Lessons</span></div>
+<h1>TypeScript・JavaScript・Node.js</h1><p class="lede">ECMAScript、TypeScriptの型システム、V8、libuv、Node.js APIを統合して、正しく高速なサーバとツールを作る。</p><p class="small">推奨前提: <a href="../06-os-linux-systems/index.html">06 OS・Linux・システムプログラミング</a>, <a href="../07-concurrency-parallelism/index.html">07 並行処理・並列処理</a>, <a href="../08-pl-type-systems/index.html">08 プログラミング言語理論・型システム</a>, <a href="../09-compiler-interpreter-runtime/index.html">09 Compiler・Interpreter・Runtime</a>, <a href="../10-network-protocols/index.html">10 ネットワーク・インターネットプロトコル</a></p></section>
+<section><h2>Modules</h2><div class="grid"><article class="card">
+<div class="meta">Module 01</div><h3>JavaScript言語モデル</h3><p>JavaScriptの実行規則を説明できる</p>
+<div class="badges"><span class="badge">lexical environment</span><span class="badge">prototype</span><span class="badge">this</span><span class="badge">closure</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d11-m01-l1.html">基礎 D11-M01-L1</a><a class="button secondary" href="lessons/d11-m01-l2.html">応用 D11-M01-L2</a><a class="button secondary" href="lessons/d11-m01-l3.html">専門 D11-M01-L3</a></div></article><article class="card">
+<div class="meta">Module 02</div><h3>非同期JavaScript</h3><p>非同期制御を順序と失敗の両面で設計できる</p>
+<div class="badges"><span class="badge">promise</span><span class="badge">microtask・macrotask</span><span class="badge">async・await</span><span class="badge">cancellation</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d11-m02-l1.html">基礎 D11-M02-L1</a><a class="button secondary" href="lessons/d11-m02-l2.html">応用 D11-M02-L2</a><a class="button secondary" href="lessons/d11-m02-l3.html">専門 D11-M02-L3</a></div></article><article class="card">
+<div class="meta">Module 03</div><h3>TypeScript型システム</h3><p>業務モデルを型で安全に表現できる</p>
+<div class="badges"><span class="badge">structural typing</span><span class="badge">union・intersection</span><span class="badge">narrowing</span><span class="badge">soundness boundary</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d11-m03-l1.html">基礎 D11-M03-L1</a><a class="button secondary" href="lessons/d11-m03-l2.html">応用 D11-M03-L2</a><a class="button secondary" href="lessons/d11-m03-l3.html">専門 D11-M03-L3</a></div></article><article class="card">
+<div class="meta">Module 04</div><h3>高度なTypeScript</h3><p>再利用可能な型レベルAPIを構築できる</p>
+<div class="badges"><span class="badge">conditional type</span><span class="badge">mapped type</span><span class="badge">infer</span><span class="badge">template literal type</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d11-m04-l1.html">基礎 D11-M04-L1</a><a class="button secondary" href="lessons/d11-m04-l2.html">応用 D11-M04-L2</a><a class="button secondary" href="lessons/d11-m04-l3.html">専門 D11-M04-L3</a></div></article><article class="card">
+<div class="meta">Module 05</div><h3>Decorator・Metadata・DI</h3><p>NestJS等のメタプログラミングを理解できる</p>
+<div class="badges"><span class="badge">decorator semantics</span><span class="badge">Reflect metadata</span><span class="badge">inversion of control</span><span class="badge">container lifetime</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d11-m05-l1.html">基礎 D11-M05-L1</a><a class="button secondary" href="lessons/d11-m05-l2.html">応用 D11-M05-L2</a><a class="button secondary" href="lessons/d11-m05-l3.html">専門 D11-M05-L3</a></div></article><article class="card">
+<div class="meta">Module 06</div><h3>Node.js Runtime</h3><p>Nodeの性能とブロッキング原因を説明できる</p>
+<div class="badges"><span class="badge">V8</span><span class="badge">libuv</span><span class="badge">event loop</span><span class="badge">thread pool</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d11-m06-l1.html">基礎 D11-M06-L1</a><a class="button secondary" href="lessons/d11-m06-l2.html">応用 D11-M06-L2</a><a class="button secondary" href="lessons/d11-m06-l3.html">専門 D11-M06-L3</a></div></article><article class="card">
+<div class="meta">Module 07</div><h3>Buffer・Stream・Backpressure</h3><p>大容量データを低メモリで処理できる</p>
+<div class="badges"><span class="badge">binary data</span><span class="badge">Readable・Writable</span><span class="badge">pipeline</span><span class="badge">highWaterMark</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d11-m07-l1.html">基礎 D11-M07-L1</a><a class="button secondary" href="lessons/d11-m07-l2.html">応用 D11-M07-L2</a><a class="button secondary" href="lessons/d11-m07-l3.html">専門 D11-M07-L3</a></div></article><article class="card">
+<div class="meta">Module 08</div><h3>Module・Package・Toolchain</h3><p>配布可能なNodeパッケージを設計できる</p>
+<div class="badges"><span class="badge">ESM・CommonJS</span><span class="badge">package exports</span><span class="badge">npm・pnpm</span><span class="badge">transpile・bundle</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d11-m08-l1.html">基礎 D11-M08-L1</a><a class="button secondary" href="lessons/d11-m08-l2.html">応用 D11-M08-L2</a><a class="button secondary" href="lessons/d11-m08-l3.html">専門 D11-M08-L3</a></div></article><article class="card">
+<div class="meta">Module 09</div><h3>Worker・Process・Native連携</h3><p>CPU負荷やネイティブ処理を分離できる</p>
+<div class="badges"><span class="badge">worker_threads</span><span class="badge">child_process</span><span class="badge">cluster</span><span class="badge">N-API・WASM</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d11-m09-l1.html">基礎 D11-M09-L1</a><a class="button secondary" href="lessons/d11-m09-l2.html">応用 D11-M09-L2</a><a class="button secondary" href="lessons/d11-m09-l3.html">専門 D11-M09-L3</a></div></article><article class="card">
+<div class="meta">Module 10</div><h3>Node.js本番品質</h3><p>本番サービスを観測・保守・最適化できる</p>
+<div class="badges"><span class="badge">diagnostics</span><span class="badge">AsyncLocalStorage</span><span class="badge">graceful shutdown</span><span class="badge">security・performance</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d11-m10-l1.html">基礎 D11-M10-L1</a><a class="button secondary" href="lessons/d11-m10-l2.html">応用 D11-M10-L2</a><a class="button secondary" href="lessons/d11-m10-l3.html">専門 D11-M10-L3</a></div></article></div></section>
+<section class="section"><h2>公式・標準リファレンス</h2><p>Lesson本文と演習に加え、仕様・API・標準の一次資料で確認してください。version依存部分は必ず現在の公式資料を優先します。</p><ul><li><a href="https://www.typescriptlang.org/docs/handbook/intro.html" target="_blank" rel="noopener noreferrer">TypeScript Handbook</a></li><li><a href="https://nodejs.org/docs/latest/api/" target="_blank" rel="noopener noreferrer">Node.js Documentation</a></li><li><a href="https://tc39.es/ecma262/" target="_blank" rel="noopener noreferrer">ECMAScript Specification</a></li></ul></section>
+</main><footer>Engineering Expert Curriculum — 学習内容は、実装・検証・運用・説明までを一つの完了条件として設計しています。</footer></body></html>

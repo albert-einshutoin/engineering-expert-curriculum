@@ -1,0 +1,50 @@
+<link rel="stylesheet" href="${root}static/map3d.css">
+
+<section class="hero" id="map3d-hero">
+  <div class="hero-content">
+    <p class="eyebrow">3D Knowledge Graph</p>
+    <h1>カリキュラムマップ</h1>
+    <p>38ドメインを3Dナレッジグラフで可視化</p>
+  </div>
+</section>
+
+<div id="canvas-container"></div>
+
+<div id="progress-hud">
+  <div class="label">進捗</div>
+  <div class="num" id="hud-count">0</div>
+  <div class="label">/ 1,140 Lessons</div>
+  <div class="bar-shell"><div class="bar-fill" id="hud-bar"></div></div>
+</div>
+
+<button id="legend-toggle">凡例 ▸</button>
+<div class="legend" id="legend"></div>
+
+<div id="info-panel">
+  <h3 id="info-title">ドメイン</h3>
+  <p id="info-desc">説明</p>
+  <div id="info-meta"></div>
+</div>
+
+<div id="hint">$hint_text</div>
+
+<div id="map-ui">
+  <button class="filter-all active" data-filter="all">すべて</button>
+  <button data-filter="core">基礎理論</button>
+  <button data-filter="systems">Systems</button>
+  <button data-filter="language">言語</button>
+  <button data-filter="lang-impl">言語実装</button>
+  <button data-filter="backend">Backend</button>
+  <button data-filter="architecture">設計</button>
+  <button data-filter="data">Data</button>
+  <button data-filter="distributed">分散</button>
+  <button data-filter="cloud">Cloud</button>
+  <button data-filter="delivery">Delivery</button>
+  <button data-filter="reliability">信頼性</button>
+  <button data-filter="ai">AI/ML</button>
+  <button data-filter="security">Security</button>
+  <button data-filter="product">Product</button>
+  <button data-filter="physical">Physical</button>
+</div>
+
+<script src="${root}static/map3d.js" type="module"></script>

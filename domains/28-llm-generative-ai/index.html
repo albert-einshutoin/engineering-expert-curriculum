@@ -1,0 +1,52 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Tokenizer、Transformer、事前学習、推論、RAG、Agent、評価、安全性を、LLMアプリとモデル双方の視点で学ぶ。">
+<title>LLM・Generative AI | Engineering Expert Curriculum</title>
+<link rel="stylesheet" href="../../assets/styles.css">
+<script>window.CURRICULUM_BASE_PREFIX="../../";</script>
+<script src="../../assets/curriculum.js"></script>
+<script>if(window.CURRICULUM) window.CURRICULUM.basePrefix=window.CURRICULUM_BASE_PREFIX;</script>
+<script defer src="../../assets/app.js"></script>
+</head><body><header class="site-header"><nav class="nav">
+<a class="brand" href="../../index.html">Engineering Expert Curriculum</a>
+<a href="../../roadmap.html">ロードマップ</a>
+<a href="../../daily.html">今日のLesson</a>
+<a href="../../progress.html">進捗</a>
+<a href="../../guide.html">使い方</a>
+</nav></header><main>
+<div class="breadcrumbs"><a href="../../index.html">Home</a> / Domain 28</div>
+<section class="hero"><div class="badges"><span class="badge">Domain 28</span><span class="badge">30 Lessons</span></div>
+<h1>LLM・Generative AI</h1><p class="lede">Tokenizer、Transformer、事前学習、推論、RAG、Agent、評価、安全性を、LLMアプリとモデル双方の視点で学ぶ。</p><p class="small">推奨前提: <a href="../11-typescript-javascript-nodejs/index.html">11 TypeScript・JavaScript・Node.js</a>, <a href="../16-database-storage-search/index.html">16 データベース・ストレージ・検索</a>, <a href="../17-distributed-systems-messaging/index.html">17 分散システム・メッセージング</a>, <a href="../27-machine-learning-deep-learning/index.html">27 Machine Learning・Deep Learning</a></p></section>
+<section><h2>Modules</h2><div class="grid"><article class="card">
+<div class="meta">Module 01</div><h3>LLM全体像</h3><p>LLMの能力源と限界を説明できる</p>
+<div class="badges"><span class="badge">foundation model</span><span class="badge">pretraining・post-training</span><span class="badge">inference</span><span class="badge">capability・limitation</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d28-m01-l1.html">基礎 D28-M01-L1</a><a class="button secondary" href="lessons/d28-m01-l2.html">応用 D28-M01-L2</a><a class="button secondary" href="lessons/d28-m01-l3.html">専門 D28-M01-L3</a></div></article><article class="card">
+<div class="meta">Module 02</div><h3>Tokenization・Embedding</h3><p>テキスト表現がコストと検索へ与える影響を理解できる</p>
+<div class="badges"><span class="badge">BPE・SentencePiece</span><span class="badge">token budget</span><span class="badge">embedding space</span><span class="badge">similarity</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d28-m02-l1.html">基礎 D28-M02-L1</a><a class="button secondary" href="lessons/d28-m02-l2.html">応用 D28-M02-L2</a><a class="button secondary" href="lessons/d28-m02-l3.html">専門 D28-M02-L3</a></div></article><article class="card">
+<div class="meta">Module 03</div><h3>Transformer内部</h3><p>LLMの計算とメモリ特性を説明できる</p>
+<div class="badges"><span class="badge">attention</span><span class="badge">KV cache</span><span class="badge">normalization</span><span class="badge">feed-forward network</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d28-m03-l1.html">基礎 D28-M03-L1</a><a class="button secondary" href="lessons/d28-m03-l2.html">応用 D28-M03-L2</a><a class="button secondary" href="lessons/d28-m03-l3.html">専門 D28-M03-L3</a></div></article><article class="card">
+<div class="meta">Module 04</div><h3>Pretraining・Scaling・Data</h3><p>学習データと計算量が能力へ与える影響を理解できる</p>
+<div class="badges"><span class="badge">next-token objective</span><span class="badge">data mixture</span><span class="badge">scaling law</span><span class="badge">contamination</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d28-m04-l1.html">基礎 D28-M04-L1</a><a class="button secondary" href="lessons/d28-m04-l2.html">応用 D28-M04-L2</a><a class="button secondary" href="lessons/d28-m04-l3.html">専門 D28-M04-L3</a></div></article><article class="card">
+<div class="meta">Module 05</div><h3>Post-training・Alignment</h3><p>用途に合わせた振る舞い調整を比較できる</p>
+<div class="badges"><span class="badge">SFT</span><span class="badge">preference optimization</span><span class="badge">RLHF concepts</span><span class="badge">reasoning tuning</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d28-m05-l1.html">基礎 D28-M05-L1</a><a class="button secondary" href="lessons/d28-m05-l2.html">応用 D28-M05-L2</a><a class="button secondary" href="lessons/d28-m05-l3.html">専門 D28-M05-L3</a></div></article><article class="card">
+<div class="meta">Module 06</div><h3>Prompt・Context Engineering</h3><p>再現性のある入力設計を構築できる</p>
+<div class="badges"><span class="badge">instruction</span><span class="badge">few-shot</span><span class="badge">structured output</span><span class="badge">context compression</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d28-m06-l1.html">基礎 D28-M06-L1</a><a class="button secondary" href="lessons/d28-m06-l2.html">応用 D28-M06-L2</a><a class="button secondary" href="lessons/d28-m06-l3.html">専門 D28-M06-L3</a></div></article><article class="card">
+<div class="meta">Module 07</div><h3>RAG・Memory</h3><p>根拠に基づく応答システムを評価・改善できる</p>
+<div class="badges"><span class="badge">chunking</span><span class="badge">retrieval・rerank</span><span class="badge">citation</span><span class="badge">short・long-term memory</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d28-m07-l1.html">基礎 D28-M07-L1</a><a class="button secondary" href="lessons/d28-m07-l2.html">応用 D28-M07-L2</a><a class="button secondary" href="lessons/d28-m07-l3.html">専門 D28-M07-L3</a></div></article><article class="card">
+<div class="meta">Module 08</div><h3>Agent・Tool Use</h3><p>失敗を制御できるエージェントワークフローを設計できる</p>
+<div class="badges"><span class="badge">planning</span><span class="badge">tool schema</span><span class="badge">state machine</span><span class="badge">multi-agent trade-off</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d28-m08-l1.html">基礎 D28-M08-L1</a><a class="button secondary" href="lessons/d28-m08-l2.html">応用 D28-M08-L2</a><a class="button secondary" href="lessons/d28-m08-l3.html">専門 D28-M08-L3</a></div></article><article class="card">
+<div class="meta">Module 09</div><h3>LLM Evaluation</h3><p>品質を感覚ではなく継続測定できる</p>
+<div class="badges"><span class="badge">gold set</span><span class="badge">LLM-as-judge</span><span class="badge">task・safety metric</span><span class="badge">online experiment</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d28-m09-l1.html">基礎 D28-M09-L1</a><a class="button secondary" href="lessons/d28-m09-l2.html">応用 D28-M09-L2</a><a class="button secondary" href="lessons/d28-m09-l3.html">専門 D28-M09-L3</a></div></article><article class="card">
+<div class="meta">Module 10</div><h3>LLM Security・Safety・Economics</h3><p>安全性、コスト、速度を統合して本番化できる</p>
+<div class="badges"><span class="badge">prompt injection</span><span class="badge">data exfiltration</span><span class="badge">guardrail</span><span class="badge">latency・cost</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d28-m10-l1.html">基礎 D28-M10-L1</a><a class="button secondary" href="lessons/d28-m10-l2.html">応用 D28-M10-L2</a><a class="button secondary" href="lessons/d28-m10-l3.html">専門 D28-M10-L3</a></div></article></div></section>
+<section class="section"><h2>公式・標準リファレンス</h2><p>Lesson本文と演習に加え、仕様・API・標準の一次資料で確認してください。version依存部分は必ず現在の公式資料を優先します。</p><ul><li><a href="https://huggingface.co/learn" target="_blank" rel="noopener noreferrer">Hugging Face Course</a></li><li><a href="https://huggingface.co/docs/transformers/" target="_blank" rel="noopener noreferrer">Transformers Documentation</a></li><li><a href="https://owasp.org/www-project-top-10-for-large-language-model-applications/" target="_blank" rel="noopener noreferrer">OWASP Top 10 for LLM Applications</a></li></ul></section>
+</main><footer>Engineering Expert Curriculum — 学習内容は、実装・検証・運用・説明までを一つの完了条件として設計しています。</footer></body></html>
