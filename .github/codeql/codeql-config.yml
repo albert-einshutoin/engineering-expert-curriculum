@@ -1,0 +1,7 @@
+# Three.js and its addons are pinned third-party source. CodeQL continues to
+# analyze the first-party map and progress runtimes that call this code.
+paths-ignore:
+  - assets/three.module.js
+  - assets/three/**
+  - static/three.module.js
+  - static/three/**

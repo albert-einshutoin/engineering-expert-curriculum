@@ -12,6 +12,7 @@ from typing import TypeAlias
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS_ROOT = REPOSITORY_ROOT / ".github" / "workflows"
+CODEQL_CONFIG_PATH = REPOSITORY_ROOT / ".github" / "codeql" / "codeql-config.yml"
 
 YamlScalar: TypeAlias = str | int | bool | None
 YamlValue: TypeAlias = YamlScalar | list["YamlValue"] | dict[str, "YamlValue"]
@@ -536,7 +537,21 @@ class RepositorySecurityTests(unittest.TestCase):
         )
         self.assertEqual(
             init.get("with"),
-            {"languages": "python,javascript-typescript"},
+            {
+                "languages": "python,javascript-typescript",
+                "config-file": "./.github/codeql/codeql-config.yml",
+            },
+        )
+        self.assertEqual(
+            _load_yaml(CODEQL_CONFIG_PATH),
+            {
+                "paths-ignore": [
+                    "assets/three.module.js",
+                    "assets/three/**",
+                    "static/three.module.js",
+                    "static/three/**",
+                ]
+            },
         )
 
     def test_gitleaks_verifies_official_cli_and_scans_redacted_history(self) -> None:
