@@ -22,6 +22,8 @@ from .html_safety import (
     validate_fragment,
     validate_generated_document,
     validate_generated_fragment,
+    validate_generated_interactive_document,
+    validate_generated_interactive_fragment,
 )
 
 
@@ -1131,7 +1133,12 @@ class Renderer:
         for script in body_inserts:
             document = document.replace("</body>", f"  {script}\n</body>", 1)
         _reject_duplicate_document_ids(document)
-        return validate_generated_document(document).value
+        validator = (
+            validate_generated_interactive_document
+            if safe_content.provenance is HtmlProvenance.GENERATED_INTERACTIVE
+            else validate_generated_document
+        )
+        return validator(document).value
 
     def fragment(
         self,
@@ -1139,7 +1146,10 @@ class Renderer:
         *,
         text_values: Mapping[str, str],
         html_values: Mapping[str, SafeHtml],
+        interactive: bool = False,
     ) -> SafeHtml:
+        if type(interactive) is not bool:
+            raise CurriculumValidationError("interactive must be an exact boolean")
         validated_name = _validate_fragment_name(name)
         source = self._read_template(validated_name)
         placeholders = _analyze_template(source)
@@ -1195,6 +1205,10 @@ class Renderer:
             raise CurriculumValidationError(
                 "template substitution failed"
             ) from None
+        if interactive:
+            # Interactive templates are renderer-owned and use a separate closed
+            # grammar so repository-authored lesson HTML remains non-interactive.
+            return validate_generated_interactive_fragment(rendered)
         if any(
             value.provenance is HtmlProvenance.GENERATED
             for value in safe_values.values()

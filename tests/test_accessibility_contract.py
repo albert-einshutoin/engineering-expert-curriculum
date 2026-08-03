@@ -131,9 +131,9 @@ class AccessibilityContractTests(unittest.TestCase):
     def tearDownClass(cls) -> None:
         cls.temporary.cleanup()
 
-    def test_all_39_generated_pages_pass_the_release_site_checker(self) -> None:
+    def test_all_43_generated_pages_pass_the_release_site_checker(self) -> None:
         pages = tuple(sorted(self.site.rglob("*.html")))
-        self.assertEqual(len(pages), 39)
+        self.assertEqual(len(pages), 43)
         self.assertEqual(
             check_site(self.site, require_current_release=True),
             [],
@@ -162,11 +162,18 @@ class AccessibilityContractTests(unittest.TestCase):
         self,
     ) -> None:
         self.assertEqual(
-            tuple(
+            tuple(sorted(
                 path.relative_to(self.site).as_posix()
                 for path in self.site.rglob("*.js")
+            )),
+            (
+                "static/map3d.js",
+                "static/progress.js",
+                "static/three.module.js",
+                "static/three/CSS2DRenderer.js",
+                "static/three/OrbitControls.js",
+                "static/visualization.js",
             ),
-            ("static/visualization.js",),
         )
         scripted_lessons: set[str] = set()
         for page in sorted(self.site.rglob("*.html")):
@@ -176,7 +183,7 @@ class AccessibilityContractTests(unittest.TestCase):
                 parser.feed(page.read_text(encoding="utf-8"))
                 parser.close()
                 scripts = parser.active_content.count("script")
-                if scripts:
+                if scripts and relative.parts[:1] == ("lessons",):
                     self.assertEqual(relative.parts[:1], ("lessons",))
                     self.assertEqual(len(relative.parts), 3)
                     scripted_lessons.add(relative.parts[1])
@@ -185,7 +192,11 @@ class AccessibilityContractTests(unittest.TestCase):
                         set(parser.active_content)
                         <= {"button", "input", "script", "select"}
                     )
-                else:
+                elif relative not in {
+                    Path("daily.html"),
+                    Path("map3d.html"),
+                    Path("progress.html"),
+                }:
                     self.assertEqual(parser.active_content, [])
                 self.assertEqual(parser.event_attributes, [])
         self.assertEqual(

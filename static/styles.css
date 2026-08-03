@@ -273,6 +273,83 @@ blockquote > :last-child {
   margin-block-end: 0;
 }
 
+.callout {
+  padding-block: var(--space-2);
+  padding-inline: var(--space-3);
+  border-inline-start: 0.35rem solid var(--color-accent);
+  background: var(--color-surface);
+}
+
+.callout.warning {
+  border-color: var(--color-warning);
+}
+
+.section {
+  margin-block: var(--space-3);
+  padding: var(--space-3);
+  border: 0.0625rem solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.section > :first-child {
+  margin-block-start: 0;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: end;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
+  gap: var(--space-2);
+  margin-block: var(--space-3);
+}
+
+.stat {
+  padding: var(--space-2);
+  border: 0.0625rem solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.stat strong {
+  display: block;
+  font-family: var(--font-interface);
+  font-size: 1.8rem;
+}
+
+.small {
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+
+.daily-list {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.steps li {
+  margin-block-end: var(--space-2);
+}
+
+code.inline {
+  padding: 0.12em 0.38em;
+  background: color-mix(in srgb, var(--color-border) 18%, transparent);
+}
+
+button.secondary {
+  background: var(--color-surface);
+  color: var(--color-ink);
+}
+
+button.danger {
+  border-color: var(--color-warning);
+  color: var(--color-warning);
+}
+
 figure {
   margin-inline: 0;
   padding: var(--space-2);

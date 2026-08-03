@@ -166,10 +166,43 @@ _STATIC_ASSETS: Final = (
 )
 
 _EXTRA_STATIC_ASSETS: Final = (
-    ("map3d.css", PurePosixPath("static/map3d.css")),
-    ("map3d.js", PurePosixPath("static/map3d.js")),
-    ("progress.css", PurePosixPath("static/progress.css")),
-    ("progress.js", PurePosixPath("static/progress.js")),
+    _StaticAsset(
+        "map3d.css",
+        PurePosixPath("static/map3d.css"),
+        MAX_STYLESHEET_BYTES,
+    ),
+    _StaticAsset(
+        "map3d.js",
+        PurePosixPath("static/map3d.js"),
+        MAX_JAVASCRIPT_BYTES,
+    ),
+    _StaticAsset(
+        "progress.css",
+        PurePosixPath("static/progress.css"),
+        MAX_STYLESHEET_BYTES,
+    ),
+    _StaticAsset(
+        "progress.js",
+        PurePosixPath("static/progress.js"),
+        MAX_JAVASCRIPT_BYTES,
+    ),
+    # Three.js is reviewed vendored source and is intentionally larger than
+    # first-party runtime files; the closed paths prevent directory-wide copying.
+    _StaticAsset(
+        "three.module.js",
+        PurePosixPath("static/three.module.js"),
+        2 * 1024 * 1024,
+    ),
+    _StaticAsset(
+        "OrbitControls.js",
+        PurePosixPath("static/three/OrbitControls.js"),
+        128 * 1024,
+    ),
+    _StaticAsset(
+        "CSS2DRenderer.js",
+        PurePosixPath("static/three/CSS2DRenderer.js"),
+        64 * 1024,
+    ),
 )
 
 
@@ -1621,8 +1654,19 @@ class _SiteDocumentParser(HTMLParser):
             for name, value in attrs
         }
         if lowered_tag == "script":
-            if set(normalized) != {"src", "defer"} or normalized["defer"] is not None:
-                raise _validation("generated scripts must use the fixed deferred classic contract")
+            is_deferred_classic = (
+                set(normalized) == {"src", "defer"}
+                and normalized["defer"] is None
+            )
+            is_module = (
+                set(normalized) == {"src", "type"}
+                and normalized["type"] == "module"
+                and (normalized["src"] or "").endswith("static/map3d.js")
+            )
+            if not (is_deferred_classic or is_module):
+                raise _validation(
+                    "generated scripts must use an approved external script contract"
+                )
             if not self.open_elements or self.open_elements[-1] != "body":
                 raise _validation("generated scripts must be direct children of body")
             self.script_sources.append(normalized["src"] or "")
@@ -1827,8 +1871,12 @@ def _validate_site_artifacts(
         expected_scripts = (
             [f"{root}static/visualization.js"] if parser.simulation_roots else []
         )
+        if path == PurePosixPath("map3d.html"):
+            expected_scripts.append("static/map3d.js")
+        elif path == PurePosixPath("progress.html"):
+            expected_scripts.append("static/progress.js")
         if parser.script_sources != expected_scripts:
-            raise _validation("generated script assets do not match lesson simulations")
+            raise _validation("generated script assets do not match page contract")
         ids_by_page[path] = parser.ids
         links_by_page[path] = parser.links
         external_links_by_page[path] = tuple(parser.external_links)
@@ -1873,7 +1921,7 @@ def _render_artifacts(
     lessons: tuple[LoadedLesson, ...],
     competencies: CompetencyMatrix | None,
     capstones: tuple[Capstone, ...],
-    extra_static_assets: Mapping[PurePosixPath, bytes] = {},
+    extra_static_assets: Mapping[PurePosixPath, bytes],
 ) -> dict[PurePosixPath, bytes]:
     renderer = Renderer.from_template_bytes(
         template_sources,
@@ -1893,6 +1941,7 @@ def _render_artifacts(
         "progress.html",
         text_values={},
         html_values={},
+        interactive=True,
     )
     map3d_page = renderer.fragment(
         "map3d.html",
@@ -1900,11 +1949,13 @@ def _render_artifacts(
             "hint_text": "🖱 ドラッグで回転 / スクロールでズーム / クリックで移動",
         },
         html_values={},
+        interactive=True,
     )
     daily_page = renderer.fragment(
         "daily.html",
         text_values={},
         html_values={},
+        interactive=True,
     )
     guide_page = renderer.fragment(
         "guide.html",
@@ -3051,6 +3102,11 @@ def build_site(
             transaction,
         ) as static_files,
         _open_trusted_directory(
+            static_root / "three",
+            "static_root/three",
+            transaction,
+        ) as three_files,
+        _open_trusted_directory(
             output_parent_path,
             "output_root parent",
             transaction,
@@ -3108,11 +3164,16 @@ def build_site(
             else:
                 validate_reviewed_visualization_runtime(snapshot.source)
         extra_static_assets: dict[PurePosixPath, bytes] = {}
-        for source_name, output_path in _EXTRA_STATIC_ASSETS:
-            source_bytes = _read_stable_regular_file(
-                static_files, source_name, MAX_JAVASCRIPT_BYTES * 4,
+        for asset in _EXTRA_STATIC_ASSETS:
+            source_directory = (
+                three_files
+                if asset.output_path.parent == PurePosixPath("static/three")
+                else static_files
             )
-            extra_static_assets[output_path] = source_bytes
+            source_bytes = _read_stable_regular_file(
+                source_directory, asset.source_name, asset.maximum_bytes,
+            )
+            extra_static_assets[asset.output_path] = source_bytes
         before_templates = {
             name: _read_stable_regular_file(
                 templates,

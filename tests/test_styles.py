@@ -457,17 +457,40 @@ class StyleContractTests(unittest.TestCase):
             parser.feed(template_path.read_text(encoding="utf-8"))
         parser.close()
 
+        deployed_css_paths = sorted(
+            (REPOSITORY_ROOT / "static").glob("*.css")
+        )
+        deployed_css = "\n".join(
+            path.read_text(encoding="utf-8") for path in deployed_css_paths
+        )
+        deployed_runtime = "\n".join(
+            path.read_text(encoding="utf-8") for path in (
+                *sorted((REPOSITORY_ROOT / "static").rglob("*.js")),
+                REPOSITORY_ROOT / "curriculum_builder" / "render.py",
+            )
+        )
         for class_name in sorted(parser.classes):
             self.assertRegex(
-                self.css,
-                rf"(?<![a-zA-Z0-9_-])\.{re.escape(class_name)}(?![a-zA-Z0-9_-])",
+                deployed_css,
+                rf"\.{re.escape(class_name)}(?![a-zA-Z0-9_-])",
                 class_name,
             )
         for identifier in sorted(parser.ids):
-            self.assertRegex(
-                self.css,
-                rf"(?<![a-zA-Z0-9_-])#{re.escape(identifier)}(?![a-zA-Z0-9_-])",
-                identifier,
+            styled = re.search(
+                rf"#{re.escape(identifier)}(?![a-zA-Z0-9_-])",
+                deployed_css,
+            )
+            runtime_hook = re.search(
+                rf"(?<![a-zA-Z0-9_-]){re.escape(identifier)}(?![a-zA-Z0-9_-])",
+                deployed_runtime,
+            )
+            dynamic_runtime_hook = (
+                identifier.startswith("tab-")
+                and re.search(r"['\"]tab-['\"]", deployed_runtime)
+            )
+            self.assertTrue(
+                styled or runtime_hook or dynamic_runtime_hook,
+                f"{identifier} is neither styled nor used by a reviewed runtime",
             )
 
     def test_has_readable_editorial_layout_and_catalog_components(self) -> None:

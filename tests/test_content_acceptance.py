@@ -3018,6 +3018,17 @@ def _expected_artifacts() -> frozenset[PurePosixPath]:
         PurePosixPath("styles.css"),
         PurePosixPath("static/visualizations.css"),
         PurePosixPath("static/visualization.js"),
+        PurePosixPath("static/map3d.css"),
+        PurePosixPath("static/map3d.js"),
+        PurePosixPath("static/progress.css"),
+        PurePosixPath("static/progress.js"),
+        PurePosixPath("static/three.module.js"),
+        PurePosixPath("static/three/OrbitControls.js"),
+        PurePosixPath("static/three/CSS2DRenderer.js"),
+        PurePosixPath("map3d.html"),
+        PurePosixPath("progress.html"),
+        PurePosixPath("daily.html"),
+        PurePosixPath("guide.html"),
         PurePosixPath("catalog/index.html"),
         PurePosixPath("roadmap/index.html"),
         PurePosixPath("competencies/index.html"),
@@ -6807,17 +6818,17 @@ class ContentAcceptanceTests(unittest.TestCase):
 
         self.assertEqual(first, second)
         self.assertEqual(frozenset(first), _expected_artifacts())
-        self.assertEqual(len(first), 42)
-        self.assertEqual(sum(path.suffix.casefold() == ".html" for path in first), 39)
-        self.assertEqual(sum(path.suffix.casefold() == ".css" for path in first), 2)
-        self.assertEqual(sum(path.suffix.casefold() == ".js" for path in first), 1)
+        self.assertEqual(len(first), 53)
+        self.assertEqual(sum(path.suffix.casefold() == ".html" for path in first), 43)
+        self.assertEqual(sum(path.suffix.casefold() == ".css" for path in first), 4)
+        self.assertEqual(sum(path.suffix.casefold() == ".js" for path in first), 6)
         self.assertEqual(
             sum(
                 b"<script " in source
                 for path, source in first.items()
                 if path.suffix.casefold() == ".html"
             ),
-            12,
+            14,
         )
         legacy_by_lesson = {
             entry["lessonId"]: entry

@@ -30,8 +30,6 @@ ALLOWED_TAGS = frozenset(
         "article",
         "aside",
         "blockquote",
-        "br",
-        "button",
         "caption",
         "code",
         "dd",
@@ -43,26 +41,19 @@ ALLOWED_TAGS = frozenset(
         "em",
         "figcaption",
         "figure",
-        "form",
         "h1",
         "h2",
         "h3",
         "h4",
         "header",
-        "input",
         "kbd",
-        "label",
         "li",
         "mark",
-        "nav",
         "ol",
-        "option",
         "p",
         "pre",
         "section",
-        "select",
         "small",
-        "span",
         "strong",
         "summary",
         "table",
@@ -74,23 +65,10 @@ ALLOWED_TAGS = frozenset(
         "ul",
     }
 )
-GLOBAL_ATTRIBUTES = frozenset({"class", "id", "style"})
+GLOBAL_ATTRIBUTES = frozenset({"class", "id"})
 TAG_ATTRIBUTES = MappingProxyType(
     {
         "a": frozenset({"href", "rel"}),
-        "a": frozenset({"href", "rel"}),
-        "button": frozenset({"class", "data-complete-lesson", "data-daily-regenerate",
-                             "data-export-progress", "data-filter",
-                             "data-reset-progress", "data-tab", "id", "type"}),
-        "div": frozenset({"class", "data-curriculum-search", "data-daily-output",
-                          "data-search-results", "id", "style"}),
-        "form": frozenset({"class", "data-daily-form"}),
-        "input": frozenset({"accept", "data-import-progress", "data-curriculum-search",
-                            "hidden", "type"}),
-        "label": frozenset({"class"}),
-        "nav": frozenset({"aria-label", "id"}),
-        "option": frozenset({"selected", "value"}),
-        "select": frozenset({"class", "name"}),
         "td": frozenset({"colspan", "rowspan"}),
         "th": frozenset({"scope"}),
     }
@@ -207,16 +185,37 @@ _REQUIRED_PARENTS = MappingProxyType(
 _GENERATED_CONTROL_TAGS = frozenset(
     {"button", "fieldset", "input", "label", "legend", "option", "select"}
 )
+_GENERATED_RENDERER_TAGS = frozenset({"br", "nav", "span"})
+_GENERATED_INTERACTIVE_TAGS = frozenset({"form"})
 _GENERATED_DOCUMENT_TAGS = frozenset(
     {"body", "footer", "head", "html", "link", "main", "meta", "nav", "script", "title"}
 )
-_GENERATED_FRAGMENT_TAGS = ALLOWED_TAGS | _GENERATED_CONTROL_TAGS
+_GENERATED_FRAGMENT_TAGS = (
+    ALLOWED_TAGS
+    | _GENERATED_CONTROL_TAGS
+    | _GENERATED_RENDERER_TAGS
+    | _GENERATED_INTERACTIVE_TAGS
+)
 _GENERATED_ATTRIBUTES = MappingProxyType(
     {
-        "button": frozenset({"data-action", "disabled", "type"}),
+        "button": frozenset(
+            {
+                "data-action",
+                "data-complete-lesson",
+                "data-daily-regenerate",
+                "data-export-progress",
+                "data-filter",
+                "data-reset-progress",
+                "data-tab",
+                "disabled",
+                "type",
+            }
+        ),
         "code": frozenset({"data-edge-id", "data-node-id", "data-option-id", "data-parameter-id"}),
         "dd": frozenset({"data-node-id"}),
-        "div": frozenset({"hidden"}),
+        "div": frozenset(
+            {"data-curriculum-search", "data-daily-output", "data-search-results", "hidden"}
+        ),
         "dt": frozenset({"data-node-id"}),
         "fieldset": frozenset({"disabled"}),
         "html": frozenset({"lang"}),
@@ -229,7 +228,21 @@ _GENERATED_ATTRIBUTES = MappingProxyType(
                 "data-visualization-id",
             }
         ),
-        "input": frozenset({"checked", "data-parameter-id", "disabled", "name", "type", "value"}),
+        "form": frozenset({"data-daily-form"}),
+        "input": frozenset(
+            {
+                "accept",
+                "checked",
+                "data-curriculum-search",
+                "data-import-progress",
+                "data-parameter-id",
+                "disabled",
+                "hidden",
+                "name",
+                "type",
+                "value",
+            }
+        ),
         "label": frozenset({"for"}),
         "li": frozenset({"data-edge-id", "data-node-id", "data-state-id", "data-step-index"}),
         "link": frozenset({"href", "rel"}),
@@ -239,20 +252,23 @@ _GENERATED_ATTRIBUTES = MappingProxyType(
         "option": frozenset({"selected", "value"}),
         "p": frozenset({"aria-atomic", "aria-live"}),
         "script": frozenset({"defer", "src", "type"}),
-        "select": frozenset({"data-action", "data-parameter-id", "disabled", "id"}),
+        "select": frozenset(
+            {"data-action", "data-parameter-id", "disabled", "id", "name"}
+        ),
         "strong": frozenset({"data-node-id"}),
         "td": frozenset({"data-edge-id"}),
         "th": frozenset({"data-node-id", "scope"}),
         "tr": frozenset({"data-edge-id", "data-from-state-id", "data-outcome-id", "data-state-id", "data-to-state-id", "data-transition-event", "data-transition-id"}),
     }
 )
-_BOOLEAN_ATTRIBUTES = frozenset({"checked", "defer", "disabled", "hidden"})
+_BOOLEAN_ATTRIBUTES = frozenset({"checked", "defer", "disabled", "hidden", "selected"})
 _GENERATED_VOID_TAGS = frozenset({"input", "link", "meta"})
 
 
 class HtmlProvenance(StrEnum):
     AUTHORED = "authored"
     GENERATED = "generated"
+    GENERATED_INTERACTIVE = "generated-interactive"
 
 
 @dataclass(slots=True)
@@ -384,6 +400,10 @@ class _FragmentParser(HTMLParser):
             allowed_tags = _GENERATED_FRAGMENT_TAGS
             if self._document:
                 allowed_tags |= _GENERATED_DOCUMENT_TAGS
+            if self._generated_controls and tag in _GENERATED_INTERACTIVE_TAGS:
+                raise CurriculumValidationError(
+                    "active forms require generated interactive provenance"
+                )
         if tag not in allowed_tags:
             raise CurriculumValidationError("disallowed HTML element")
         if len(attrs) > MAX_ATTRIBUTES_PER_ELEMENT:
@@ -418,7 +438,7 @@ class _FragmentParser(HTMLParser):
                 )
             self._validate_attribute(tag, normalized_name, value)
 
-        if self._generated and not self._document:
+        if self._generated and self._generated_controls:
             self._validate_generated_control(tag, attrs)
 
         if (
@@ -436,9 +456,9 @@ class _FragmentParser(HTMLParser):
                 "fragment exceeds maximum nesting depth"
             )
         self._validate_content_model(tag)
-        if self._generated and not self._document:
+        if self._generated and self._generated_controls:
             self._track_generated_control(tag, attrs)
-        if tag in _GENERATED_VOID_TAGS:
+        if self._generated and tag in _GENERATED_VOID_TAGS:
             return
         self._open_tags.append(_ElementFrame(tag=tag))
 
@@ -447,9 +467,13 @@ class _FragmentParser(HTMLParser):
         tag: str,
         attrs: list[tuple[str, str | None]],
     ) -> None:
-        if tag not in _GENERATED_VOID_TAGS:
+        if not self._generated:
             raise CurriculumValidationError(
                 "self-closing HTML elements are not allowed"
+            )
+        if tag not in _GENERATED_VOID_TAGS:
+            raise CurriculumValidationError(
+                "non-void self-closing HTML elements are not allowed"
             )
         self.handle_starttag(tag, attrs)
 
@@ -461,7 +485,7 @@ class _FragmentParser(HTMLParser):
                 allowed_tags |= _GENERATED_DOCUMENT_TAGS
         if tag not in allowed_tags:
             raise CurriculumValidationError("disallowed HTML element")
-        if tag in _GENERATED_VOID_TAGS:
+        if self._generated and tag in _GENERATED_VOID_TAGS:
             raise CurriculumValidationError(f"stray closing tag: {tag}")
         if not self._open_tags:
             raise CurriculumValidationError(f"stray closing tag: {tag}")
@@ -529,7 +553,7 @@ class _FragmentParser(HTMLParser):
             raise CurriculumValidationError(
                 "generated document requires an HTML doctype"
             )
-        if self._generated and not self._document:
+        if self._generated and self._generated_controls:
             dangling = [
                 target
                 for target in self._label_references
@@ -688,7 +712,7 @@ class _FragmentParser(HTMLParser):
                 raise CurriculumValidationError(f"invalid {name} attribute")
         elif name == "href":
             _validate_url(value)
-        elif self._generated and not self._document:
+        elif self._generated:
             self._validate_generated_attribute(tag, name, value)
 
     def _validate_generated_control(
@@ -747,8 +771,18 @@ class _FragmentParser(HTMLParser):
         value: str,
     ) -> None:
         if name == "type":
-            expected = "button" if tag == "button" else "radio" if tag == "input" else "module"
-            if value != expected:
+            expected = (
+                {"button"}
+                if tag == "button" and self._generated_controls
+                else {"button", "submit"}
+                if tag == "button"
+                else {"radio"}
+                if tag == "input" and self._generated_controls
+                else {"file", "radio"}
+                if tag == "input"
+                else {"module"}
+            )
+            if value not in expected:
                 raise CurriculumValidationError(f"invalid type attribute on {tag}")
         elif name == "for":
             if _ID_PATTERN.fullmatch(value) is None:
@@ -762,7 +796,7 @@ class _FragmentParser(HTMLParser):
         elif name == "value":
             if (
                 _ID_PATTERN.fullmatch(value) is None
-                and value not in {"0.5", "1", "2"}
+                and value not in {"0.5", "1", "2", "3", "4", "5"}
             ):
                 raise CurriculumValidationError("invalid value attribute")
         elif name == "lang":
@@ -787,6 +821,9 @@ class _FragmentParser(HTMLParser):
                 )
         elif name == "src":
             _validate_url(value)
+        elif name == "accept":
+            if value != "application/json":
+                raise CurriculumValidationError("invalid accept attribute")
         elif name.startswith("data-"):
             if name == "data-action":
                 if value not in {"apply", "play", "pause", "previous", "next", "reset", "speed"}:
@@ -900,7 +937,11 @@ def _validate_html_input(
         )
 
     _scan_markup_syntax(fragment, generated=generated)
-    parser = _FragmentParser(generated=generated, document=document)
+    parser = _FragmentParser(
+        generated=generated,
+        document=document,
+        generated_controls=generated_controls,
+    )
     try:
         parser.feed(fragment)
         parser.close()
@@ -923,11 +964,32 @@ def validate_generated_fragment(fragment: str) -> SafeHtml:
     return _issue_safe_html(fragment, HtmlProvenance.GENERATED)
 
 
+def validate_generated_interactive_fragment(fragment: str) -> SafeHtml:
+    """Validate renderer-owned interactive HTML without weakening authored HTML."""
+    _validate_html_input(
+        fragment,
+        generated=True,
+        document=False,
+        generated_controls=False,
+    )
+    return _issue_safe_html(fragment, HtmlProvenance.GENERATED_INTERACTIVE)
+
+
 def validate_generated_document(document: str) -> SafeHtml:
     """Validate the complete renderer output using the generated grammar."""
-    _validate_html_input(document, generated=True, document=True,
-                          generated_controls=False)
+    _validate_html_input(document, generated=True, document=True)
     return _issue_safe_html(document, HtmlProvenance.GENERATED)
+
+
+def validate_generated_interactive_document(document: str) -> SafeHtml:
+    """Validate a complete renderer-owned document with active controls."""
+    _validate_html_input(
+        document,
+        generated=True,
+        document=True,
+        generated_controls=False,
+    )
+    return _issue_safe_html(document, HtmlProvenance.GENERATED_INTERACTIVE)
 
 
 def revalidate_safe_html(value: object) -> SafeHtml:
@@ -945,4 +1007,6 @@ def revalidate_safe_html(value: object) -> SafeHtml:
         return validate_fragment(fragment)
     if provenance is HtmlProvenance.GENERATED:
         return validate_generated_fragment(fragment)
+    if provenance is HtmlProvenance.GENERATED_INTERACTIVE:
+        return validate_generated_interactive_fragment(fragment)
     raise CurriculumValidationError("raw HTML has invalid provenance")

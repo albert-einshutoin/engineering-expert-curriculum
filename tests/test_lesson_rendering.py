@@ -1198,6 +1198,17 @@ class LessonRenderingTests(unittest.TestCase):
                 Path("styles.css"),
                 Path("static/visualizations.css"),
                 Path("static/visualization.js"),
+                Path("static/map3d.css"),
+                Path("static/map3d.js"),
+                Path("static/progress.css"),
+                Path("static/progress.js"),
+                Path("static/three.module.js"),
+                Path("static/three/OrbitControls.js"),
+                Path("static/three/CSS2DRenderer.js"),
+                Path("map3d.html"),
+                Path("progress.html"),
+                Path("daily.html"),
+                Path("guide.html"),
                 Path("catalog/index.html"),
                 Path("capstones/index.html"),
                 Path("competencies/index.html"),
@@ -1213,12 +1224,15 @@ class LessonRenderingTests(unittest.TestCase):
                 if path.is_file()
             }
             self.assertEqual(actual, expected)
-            scripted_pages = tuple(
+            scripted_pages = {
                 path.relative_to(output)
                 for path in output.rglob("*.html")
                 if "<script " in path.read_text(encoding="utf-8")
+            }
+            self.assertEqual(
+                scripted_pages,
+                {Path("map3d.html"), Path("progress.html")},
             )
-            self.assertEqual(scripted_pages, ())
             first = {
                 path.relative_to(output): (
                     path.read_bytes(),

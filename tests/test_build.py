@@ -282,6 +282,14 @@ def _fixture(
         (static_root / "progress.js").write_bytes(
             (REPOSITORY_ROOT / "static" / "progress.js").read_bytes()
         )
+        (static_root / "three.module.js").write_bytes(
+            (REPOSITORY_ROOT / "static" / "three.module.js").read_bytes()
+        )
+        (static_root / "three").mkdir()
+        for name in ("OrbitControls.js", "CSS2DRenderer.js"):
+            (static_root / "three" / name).write_bytes(
+                (REPOSITORY_ROOT / "static" / "three" / name).read_bytes()
+            )
         (content / "catalog.json").write_bytes(
             serialize_catalog_document(
                 catalog_items or [_catalog_item()],
@@ -371,6 +379,9 @@ def _assert_static_site(
         Path("static/map3d.css"),
         Path("static/progress.js"),
         Path("static/progress.css"),
+        Path("static/three.module.js"),
+        Path("static/three/OrbitControls.js"),
+        Path("static/three/CSS2DRenderer.js"),
         Path("map3d.html"),
         Path("progress.html"),
         Path("daily.html"),
@@ -406,6 +417,9 @@ def _assert_static_site(
             output / "static/visualization.js",
             output / "static/map3d.js",
             output / "static/progress.js",
+            output / "static/three.module.js",
+            output / "static/three/OrbitControls.js",
+            output / "static/three/CSS2DRenderer.js",
         },
     )
     test.assertEqual(
@@ -431,7 +445,11 @@ def _assert_static_site(
             and relative.parts[0] == "lessons"
             else None
         )
-        test.assertEqual(parser.has_script, lesson_id in scripted_lesson_ids, relative)
+        expected_script = (
+            lesson_id in scripted_lesson_ids
+            or relative in {Path("map3d.html"), Path("progress.html")}
+        )
+        test.assertEqual(parser.has_script, expected_script, relative)
         test.assertEqual(parser.event_attributes, [], relative)
         test.assertEqual(parser.remote_attributes, [], relative)
         expected_source_count = source_counts.get(lesson_id or "", 0)
@@ -500,6 +518,23 @@ class BuildAcceptanceTests(unittest.TestCase):
             parser.feed(
                 '<html><body><script src="static/visualization.js" defer /></body></html>'
             )
+
+    def test_generated_module_script_is_limited_to_the_3d_runtime(self) -> None:
+        parser = build_module._SiteDocumentParser()
+        parser.feed(
+            '<html><body><script src="static/map3d.js" type="module"></script>'
+            '</body></html>'
+        )
+        self.assertEqual(parser.script_sources, ["static/map3d.js"])
+
+        for source in ("static/progress.js", "https://example.com/map3d.js"):
+            with self.subTest(source=source):
+                parser = build_module._SiteDocumentParser()
+                with self.assertRaises(CurriculumValidationError):
+                    parser.feed(
+                        f'<html><body><script src="{source}" type="module"></script>'
+                        '</body></html>'
+                    )
 
     def test_complete_build_binds_all_lessons_to_visualization_catalog(self) -> None:
         with TemporaryDirectory() as directory, patch(
@@ -934,6 +969,7 @@ class BuildInputValidationTests(unittest.TestCase):
                 lessons: object,
                 competencies: object,
                 capstones: object,
+                extra_static_assets: object,
             ) -> dict[object, bytes]:
                 nonlocal restored
                 templates.rename(saved)
@@ -947,6 +983,7 @@ class BuildInputValidationTests(unittest.TestCase):
                         lessons,  # type: ignore[arg-type]
                         competencies,  # type: ignore[arg-type]
                         capstones,  # type: ignore[arg-type]
+                        extra_static_assets,  # type: ignore[arg-type]
                     )
                 finally:
                     templates.rename(raced)
