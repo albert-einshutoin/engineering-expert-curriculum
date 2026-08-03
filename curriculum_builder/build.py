@@ -1889,14 +1889,16 @@ def _render_artifacts(
         text_values={"count": f"{len(items):,}"},
         html_values={"sections": _catalog_content(items)},
     )
-    map3d_page = renderer.fragment(
-        "map3d.html",
-        text_values={"hint_text": "🖱 ドラッグで回転 / スクロールでズーム / クリックで移動"},
-        html_values={},
-    )
     progress_page = renderer.fragment(
         "progress.html",
         text_values={},
+        html_values={},
+    )
+    map3d_page = renderer.fragment(
+        "map3d.html",
+        text_values={
+            "hint_text": "🖱 ドラッグで回転 / スクロールでズーム / クリックで移動",
+        },
         html_values={},
     )
     daily_page = renderer.fragment(

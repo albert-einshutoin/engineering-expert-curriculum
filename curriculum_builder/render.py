@@ -1106,8 +1106,29 @@ class Renderer:
             raise CurriculumValidationError(
                 "base template substitution failed"
             ) from None
+        head_inserts = []
+        body_inserts = []
         if ' data-simulation-kind="' in safe_content.value:
-            script = f'<script src="{root}static/visualization.js" defer></script>'
+            body_inserts.append(
+                f'<script src="{root}static/visualization.js" defer></script>'
+            )
+        if ' id="canvas-container"' in safe_content.value:
+            head_inserts.append(
+                f'<link rel="stylesheet" href="{root}static/map3d.css">'
+            )
+            body_inserts.append(
+                f'<script src="{root}static/map3d.js" type="module"></script>'
+            )
+        if ' id="cert-section"' in safe_content.value:
+            head_inserts.append(
+                f'<link rel="stylesheet" href="{root}static/progress.css">'
+            )
+            body_inserts.append(
+                f'<script src="{root}static/progress.js" defer></script>'
+            )
+        for link in head_inserts:
+            document = document.replace("</head>", f"  {link}\n</head>", 1)
+        for script in body_inserts:
             document = document.replace("</body>", f"  {script}\n</body>", 1)
         _reject_duplicate_document_ids(document)
         return validate_generated_document(document).value

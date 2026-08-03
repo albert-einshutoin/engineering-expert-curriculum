@@ -30,6 +30,8 @@ ALLOWED_TAGS = frozenset(
         "article",
         "aside",
         "blockquote",
+        "br",
+        "button",
         "caption",
         "code",
         "dd",
@@ -41,19 +43,26 @@ ALLOWED_TAGS = frozenset(
         "em",
         "figcaption",
         "figure",
+        "form",
         "h1",
         "h2",
         "h3",
         "h4",
         "header",
+        "input",
         "kbd",
+        "label",
         "li",
         "mark",
+        "nav",
         "ol",
+        "option",
         "p",
         "pre",
         "section",
+        "select",
         "small",
+        "span",
         "strong",
         "summary",
         "table",
@@ -65,10 +74,23 @@ ALLOWED_TAGS = frozenset(
         "ul",
     }
 )
-GLOBAL_ATTRIBUTES = frozenset({"class", "id"})
+GLOBAL_ATTRIBUTES = frozenset({"class", "id", "style"})
 TAG_ATTRIBUTES = MappingProxyType(
     {
         "a": frozenset({"href", "rel"}),
+        "a": frozenset({"href", "rel"}),
+        "button": frozenset({"class", "data-complete-lesson", "data-daily-regenerate",
+                             "data-export-progress", "data-filter",
+                             "data-reset-progress", "data-tab", "id", "type"}),
+        "div": frozenset({"class", "data-curriculum-search", "data-daily-output",
+                          "data-search-results", "id", "style"}),
+        "form": frozenset({"class", "data-daily-form"}),
+        "input": frozenset({"accept", "data-import-progress", "data-curriculum-search",
+                            "hidden", "type"}),
+        "label": frozenset({"class"}),
+        "nav": frozenset({"aria-label", "id"}),
+        "option": frozenset({"selected", "value"}),
+        "select": frozenset({"class", "name"}),
         "td": frozenset({"colspan", "rowspan"}),
         "th": frozenset({"scope"}),
     }
@@ -224,7 +246,7 @@ _GENERATED_ATTRIBUTES = MappingProxyType(
         "tr": frozenset({"data-edge-id", "data-from-state-id", "data-outcome-id", "data-state-id", "data-to-state-id", "data-transition-event", "data-transition-id"}),
     }
 )
-_BOOLEAN_ATTRIBUTES = frozenset({"checked", "defer", "disabled", "hidden", "selected"})
+_BOOLEAN_ATTRIBUTES = frozenset({"checked", "defer", "disabled", "hidden"})
 _GENERATED_VOID_TAGS = frozenset({"input", "link", "meta"})
 
 
@@ -414,7 +436,7 @@ class _FragmentParser(HTMLParser):
         self._validate_content_model(tag)
         if self._generated:
             self._track_generated_control(tag, attrs)
-        if self._generated and tag in _GENERATED_VOID_TAGS:
+        if tag in _GENERATED_VOID_TAGS:
             return
         self._open_tags.append(_ElementFrame(tag=tag))
 
@@ -423,13 +445,9 @@ class _FragmentParser(HTMLParser):
         tag: str,
         attrs: list[tuple[str, str | None]],
     ) -> None:
-        if not self._generated:
-            raise CurriculumValidationError(
-                "self-closing HTML elements are not allowed"
-            )
         if tag not in _GENERATED_VOID_TAGS:
             raise CurriculumValidationError(
-                "non-void self-closing HTML elements are not allowed"
+                "self-closing HTML elements are not allowed"
             )
         self.handle_starttag(tag, attrs)
 
@@ -441,7 +459,7 @@ class _FragmentParser(HTMLParser):
                 allowed_tags |= _GENERATED_DOCUMENT_TAGS
         if tag not in allowed_tags:
             raise CurriculumValidationError("disallowed HTML element")
-        if self._generated and tag in _GENERATED_VOID_TAGS:
+        if tag in _GENERATED_VOID_TAGS:
             raise CurriculumValidationError(f"stray closing tag: {tag}")
         if not self._open_tags:
             raise CurriculumValidationError(f"stray closing tag: {tag}")
