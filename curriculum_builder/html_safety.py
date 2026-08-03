@@ -238,7 +238,7 @@ _GENERATED_ATTRIBUTES = MappingProxyType(
         "nav": frozenset({"aria-label"}),
         "option": frozenset({"selected", "value"}),
         "p": frozenset({"aria-atomic", "aria-live"}),
-        "script": frozenset({"defer", "src"}),
+        "script": frozenset({"defer", "src", "type"}),
         "select": frozenset({"data-action", "data-parameter-id", "disabled", "id"}),
         "strong": frozenset({"data-node-id"}),
         "td": frozenset({"data-edge-id"}),
@@ -351,10 +351,12 @@ class _FragmentParser(HTMLParser):
         *,
         generated: bool = False,
         document: bool = False,
+        generated_controls: bool = True,
     ) -> None:
         super().__init__(convert_charrefs=True)
         self._generated = generated
         self._document = document
+        self._generated_controls = generated_controls
         self._doctype_seen = False
         self._open_tags: list[_ElementFrame] = []
         self._ids: set[str] = set()
@@ -416,7 +418,7 @@ class _FragmentParser(HTMLParser):
                 )
             self._validate_attribute(tag, normalized_name, value)
 
-        if self._generated:
+        if self._generated and not self._document:
             self._validate_generated_control(tag, attrs)
 
         if (
@@ -434,7 +436,7 @@ class _FragmentParser(HTMLParser):
                 "fragment exceeds maximum nesting depth"
             )
         self._validate_content_model(tag)
-        if self._generated:
+        if self._generated and not self._document:
             self._track_generated_control(tag, attrs)
         if tag in _GENERATED_VOID_TAGS:
             return
@@ -527,7 +529,7 @@ class _FragmentParser(HTMLParser):
             raise CurriculumValidationError(
                 "generated document requires an HTML doctype"
             )
-        if self._generated:
+        if self._generated and not self._document:
             dangling = [
                 target
                 for target in self._label_references
@@ -686,7 +688,7 @@ class _FragmentParser(HTMLParser):
                 raise CurriculumValidationError(f"invalid {name} attribute")
         elif name == "href":
             _validate_url(value)
-        elif self._generated:
+        elif self._generated and not self._document:
             self._validate_generated_attribute(tag, name, value)
 
     def _validate_generated_control(
@@ -745,7 +747,7 @@ class _FragmentParser(HTMLParser):
         value: str,
     ) -> None:
         if name == "type":
-            expected = "button" if tag == "button" else "radio"
+            expected = "button" if tag == "button" else "radio" if tag == "input" else "module"
             if value != expected:
                 raise CurriculumValidationError(f"invalid type attribute on {tag}")
         elif name == "for":
@@ -863,8 +865,9 @@ def _is_valid_hostname(hostname: str) -> bool:
 def _validate_html_input(
     fragment: str,
     *,
-    generated: bool,
-    document: bool,
+    generated: bool = False,
+    document: bool = False,
+    generated_controls: bool = True,
 ) -> None:
     if type(fragment) is not str:
         raise CurriculumValidationError("fragment must be an exact string")
@@ -922,7 +925,8 @@ def validate_generated_fragment(fragment: str) -> SafeHtml:
 
 def validate_generated_document(document: str) -> SafeHtml:
     """Validate the complete renderer output using the generated grammar."""
-    _validate_html_input(document, generated=True, document=True)
+    _validate_html_input(document, generated=True, document=True,
+                          generated_controls=False)
     return _issue_safe_html(document, HtmlProvenance.GENERATED)
 
 
