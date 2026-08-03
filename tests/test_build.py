@@ -270,6 +270,18 @@ def _fixture(
         (static_root / "visualization.js").write_bytes(
             (REPOSITORY_ROOT / "static" / "visualization.js").read_bytes()
         )
+        (static_root / "map3d.css").write_bytes(
+            (REPOSITORY_ROOT / "static" / "map3d.css").read_bytes()
+        )
+        (static_root / "map3d.js").write_bytes(
+            (REPOSITORY_ROOT / "static" / "map3d.js").read_bytes()
+        )
+        (static_root / "progress.css").write_bytes(
+            (REPOSITORY_ROOT / "static" / "progress.css").read_bytes()
+        )
+        (static_root / "progress.js").write_bytes(
+            (REPOSITORY_ROOT / "static" / "progress.js").read_bytes()
+        )
         (content / "catalog.json").write_bytes(
             serialize_catalog_document(
                 catalog_items or [_catalog_item()],
@@ -355,6 +367,14 @@ def _assert_static_site(
         Path("styles.css"),
         Path("static/visualizations.css"),
         Path("static/visualization.js"),
+        Path("static/map3d.js"),
+        Path("static/map3d.css"),
+        Path("static/progress.js"),
+        Path("static/progress.css"),
+        Path("map3d.html"),
+        Path("progress.html"),
+        Path("daily.html"),
+        Path("guide.html"),
         Path("catalog/index.html"),
         Path("capstones/index.html"),
         Path("competencies/index.html"),
@@ -380,7 +400,14 @@ def _assert_static_site(
         if path.is_file()
     }
     test.assertEqual(actual, expected)
-    test.assertEqual(list(output.rglob("*.js")), [output / "static/visualization.js"])
+    test.assertEqual(
+        set(output.rglob("*.js")),
+        {
+            output / "static/visualization.js",
+            output / "static/map3d.js",
+            output / "static/progress.js",
+        },
+    )
     test.assertEqual(
         (output / "static/visualizations.css").read_bytes(),
         (REPOSITORY_ROOT / "static/visualizations.css").read_bytes(),

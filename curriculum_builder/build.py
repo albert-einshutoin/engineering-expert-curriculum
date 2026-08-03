@@ -1873,6 +1873,7 @@ def _render_artifacts(
     lessons: tuple[LoadedLesson, ...],
     competencies: CompetencyMatrix | None,
     capstones: tuple[Capstone, ...],
+    extra_static_assets: Mapping[PurePosixPath, bytes] = {},
 ) -> dict[PurePosixPath, bytes]:
     renderer = Renderer.from_template_bytes(
         template_sources,
@@ -3126,6 +3127,7 @@ def build_site(
             lessons,
             competencies,
             capstones,
+            extra_static_assets,
         )
         after_templates = {
             name: _read_stable_regular_file(

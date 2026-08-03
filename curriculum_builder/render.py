@@ -66,7 +66,7 @@ _BASE_PLACEHOLDER_COUNTS = MappingProxyType(
     {
         "title": 1,
         "description": 1,
-        "root": 8,
+        "root": 12,
         "content": 1,
     }
 )
