@@ -9,6 +9,7 @@ import unittest
 from tools.run_browser_contract import (
     browser_evidence_inventory,
     browser_run_plan,
+    interactive_page_url,
 )
 
 
@@ -17,6 +18,12 @@ STATIC_ROOT = REPOSITORY_ROOT / "static"
 
 
 class InteractivePageRuntimeTests(unittest.TestCase):
+    def test_interactive_browser_urls_preserve_the_pages_project_prefix(self) -> None:
+        self.assertEqual(
+            interactive_page_url(49153, "map3d"),
+            "http://127.0.0.1:49153/engineering-expert-curriculum/map3d.html",
+        )
+
     def test_three_addons_resolve_the_pinned_offline_module_relatively(self) -> None:
         for name in ("OrbitControls.js", "CSS2DRenderer.js"):
             source = (STATIC_ROOT / "three" / name).read_text(encoding="utf-8")
