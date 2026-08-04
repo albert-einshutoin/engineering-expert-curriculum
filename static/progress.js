@@ -1,6 +1,15 @@
+import { CURRICULUM } from './curriculum-data.js';
+
 const PROGRESS_KEY = 'engineering-curriculum-progress-v1';
-const C = window.CURRICULUM;
-if(!C) return;
+const C = CURRICULUM;
+
+// Data is pinned at build time; escaping also protects the dashboard when
+// future curriculum text changes without requiring runtime HTML trust.
+function escapeHtml(value) {
+  const node = document.createElement('span');
+  node.textContent = String(value);
+  return node.innerHTML;
+}
 
 const domains = C.domains;
 const tracks = C.tracks;
@@ -85,7 +94,8 @@ function renderCert(){
   const offset = circumference - (pct/100)*circumference;
   const fill = document.getElementById('donut-fill');
   if(fill){fill.style.strokeDasharray = circumference; fill.style.strokeDashoffset = offset;}
-  document.getElementById('donut-pct').textContent = pct+'%';
+  const donutPercent = document.getElementById('donut-pct');
+  if(donutPercent) donutPercent.textContent = pct+'%';
 
   // Level display
   const ld = document.getElementById('cert-level-display');
@@ -123,7 +133,7 @@ function renderDomains(){
     }
     return `<div class="domain-card">
       <div class="d-header">
-        <a class="d-title" href="domains/${d.slug}/index.html">D${String(d.id).padStart(2,'0')} ${d.title}</a>
+        <a class="d-title" href="catalog/index.html#d${String(d.id).padStart(2,'0')}-m01-l1">D${String(d.id).padStart(2,'0')} ${escapeHtml(d.title)}</a>
         <span class="d-status ${status}">${statusLabel}</span>
       </div>
       <div class="d-bar-shell"><div class="d-bar-fill" style="width:${s.pct}%;background:${color}"></div></div>
@@ -186,8 +196,8 @@ function renderHistory(){
     const d = new Date(e.at);
     const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     return `<div class="history-item">
-      <span class="h-lesson"><a href="${C.basePrefix||''}${e.path}">${e.id}</a> ${e.title}</span>
-      <span><span class="h-domain">${e.domainTitle}</span> <span class="h-date">${dateStr}</span></span>
+      <span class="h-lesson"><a href="catalog/index.html#${e.id.toLowerCase()}">${escapeHtml(e.id)}</a> ${escapeHtml(e.title)}</span>
+      <span><span class="h-domain">${escapeHtml(e.domainTitle)}</span> <span class="h-date">${dateStr}</span></span>
     </div>`;
   }).join('');
 }

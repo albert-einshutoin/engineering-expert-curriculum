@@ -1200,6 +1200,8 @@ class LessonRenderingTests(unittest.TestCase):
                 Path("static/visualization.js"),
                 Path("static/map3d.css"),
                 Path("static/map3d.js"),
+                Path("static/curriculum-data.js"),
+                Path("static/daily.js"),
                 Path("static/progress.css"),
                 Path("static/progress.js"),
                 Path("static/three.module.js"),
@@ -1231,7 +1233,7 @@ class LessonRenderingTests(unittest.TestCase):
             }
             self.assertEqual(
                 scripted_pages,
-                {Path("map3d.html"), Path("progress.html")},
+                {Path("map3d.html"), Path("progress.html"), Path("daily.html")},
             )
             first = {
                 path.relative_to(output): (

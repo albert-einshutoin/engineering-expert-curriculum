@@ -276,6 +276,10 @@ def _fixture(
         (static_root / "map3d.js").write_bytes(
             (REPOSITORY_ROOT / "static" / "map3d.js").read_bytes()
         )
+        for name in ("curriculum-data.js", "daily.js"):
+            (static_root / name).write_bytes(
+                (REPOSITORY_ROOT / "static" / name).read_bytes()
+            )
         (static_root / "progress.css").write_bytes(
             (REPOSITORY_ROOT / "static" / "progress.css").read_bytes()
         )
@@ -376,6 +380,8 @@ def _assert_static_site(
         Path("static/visualizations.css"),
         Path("static/visualization.js"),
         Path("static/map3d.js"),
+        Path("static/curriculum-data.js"),
+        Path("static/daily.js"),
         Path("static/map3d.css"),
         Path("static/progress.js"),
         Path("static/progress.css"),
@@ -416,6 +422,8 @@ def _assert_static_site(
         {
             output / "static/visualization.js",
             output / "static/map3d.js",
+            output / "static/curriculum-data.js",
+            output / "static/daily.js",
             output / "static/progress.js",
             output / "static/three.module.js",
             output / "static/three/OrbitControls.js",
@@ -447,7 +455,9 @@ def _assert_static_site(
         )
         expected_script = (
             lesson_id in scripted_lesson_ids
-            or relative in {Path("map3d.html"), Path("progress.html")}
+            or relative in {
+                Path("map3d.html"), Path("progress.html"), Path("daily.html"),
+            }
         )
         test.assertEqual(parser.has_script, expected_script, relative)
         test.assertEqual(parser.event_attributes, [], relative)
@@ -519,7 +529,7 @@ class BuildAcceptanceTests(unittest.TestCase):
                 '<html><body><script src="static/visualization.js" defer /></body></html>'
             )
 
-    def test_generated_module_script_is_limited_to_the_3d_runtime(self) -> None:
+    def test_generated_module_script_is_limited_to_interactive_runtimes(self) -> None:
         parser = build_module._SiteDocumentParser()
         parser.feed(
             '<html><body><script src="static/map3d.js" type="module"></script>'
@@ -527,7 +537,7 @@ class BuildAcceptanceTests(unittest.TestCase):
         )
         self.assertEqual(parser.script_sources, ["static/map3d.js"])
 
-        for source in ("static/progress.js", "https://example.com/map3d.js"):
+        for source in ("https://example.com/map3d.js", "static/unreviewed.js"):
             with self.subTest(source=source):
                 parser = build_module._SiteDocumentParser()
                 with self.assertRaises(CurriculumValidationError):

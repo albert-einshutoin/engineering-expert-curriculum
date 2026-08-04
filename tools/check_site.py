@@ -101,6 +101,8 @@ _BASE_INVENTORY: Final = frozenset(
         "static/visualization.js",
         "static/map3d.css",
         "static/map3d.js",
+        "static/curriculum-data.js",
+        "static/daily.js",
         "static/progress.css",
         "static/progress.js",
         "static/three.module.js",
@@ -145,16 +147,20 @@ _FORBIDDEN_ELEMENTS: Final = frozenset(
     {"base", "embed", "iframe", "object", "style"}
 )
 _REVIEWED_EXTRA_JAVASCRIPT: Final = {
-    PurePosixPath("static/map3d.js"): "e6a5300461613b1ebbb96879639d36b466fe66b2688bd0688089e168d6cd52fb",
-    PurePosixPath("static/progress.js"): "cc58e6aa16dbc041285c46d02c29a260121e633d33fe4603abdf046bf9b871c9",
+    PurePosixPath("static/map3d.js"): "d59f014f72fd8e4f70f8a9981e96c390478eec2e5b24e79daac7721de4a3db09",
+    PurePosixPath("static/progress.js"): "9941b5e21c697ab6dac81ef9b431ff3b5623d80a0807e96b53a656f97582c26a",
+    PurePosixPath("static/daily.js"): "11eaad9444fbf4308eef42d79a7be1110af4c9e1523b3eb93ad40ecd57112bae",
+    PurePosixPath("static/curriculum-data.js"): "91b03275698750f4864bcba9da203a60d65406e00f2f40c5241da7e365590da0",
     PurePosixPath("static/three.module.js"): "76dea8151bc9352aef3528b4262e249b2604f62543828328db978d060d61a495",
-    PurePosixPath("static/three/OrbitControls.js"): "5a44a9e86a2a0fb11933eed69bc2cd33c76a496854c1aed6ed776efa87d7b064",
-    PurePosixPath("static/three/CSS2DRenderer.js"): "a4f0f79184c043f6b9d2654d8ba051e49a7d631d34e8f437c1804798a68c379f",
+    PurePosixPath("static/three/OrbitControls.js"): "3c22593802b6a6767cfd5e83cce709b4c77f999a0b49a79f34ba5b915c7b07ed",
+    PurePosixPath("static/three/CSS2DRenderer.js"): "625106b82e2f42cb2d1eba7750acb67f126eeee1fc8b132fbd8e303f8f3cc42f",
 }
 _JAVASCRIPT_MAX_BYTES: Final = {
     PurePosixPath("static/visualization.js"): MAX_JAVASCRIPT_BYTES,
     PurePosixPath("static/map3d.js"): MAX_JAVASCRIPT_BYTES,
     PurePosixPath("static/progress.js"): MAX_JAVASCRIPT_BYTES,
+    PurePosixPath("static/daily.js"): MAX_JAVASCRIPT_BYTES,
+    PurePosixPath("static/curriculum-data.js"): 2 * 1024 * 1024,
     PurePosixPath("static/three.module.js"): 2 * 1024 * 1024,
     PurePosixPath("static/three/OrbitControls.js"): 128 * 1024,
     PurePosixPath("static/three/CSS2DRenderer.js"): 64 * 1024,
@@ -488,13 +494,18 @@ class _PageParser(HTMLParser):
                 set(values) == {"src", "defer"}
                 and values.get("defer") is None
             )
-            is_map_module = (
-                self.relative == PurePosixPath("map3d.html")
+            expected_module = {
+                PurePosixPath("map3d.html"): "static/map3d.js",
+                PurePosixPath("progress.html"): "static/progress.js",
+                PurePosixPath("daily.html"): "static/daily.js",
+            }.get(self.relative)
+            is_interactive_module = (
+                expected_module is not None
                 and set(values) == {"src", "type"}
                 and values.get("type") == "module"
-                and values.get("src") == "static/map3d.js"
+                and values.get("src") == expected_module
             )
-            if not (is_classic or is_map_module):
+            if not (is_classic or is_interactive_module):
                 self.issues.add(
                     self.relative,
                     "script does not match an approved external contract",
@@ -691,6 +702,8 @@ class _PageParser(HTMLParser):
             expected_scripts.append("static/map3d.js")
         elif self.relative == PurePosixPath("progress.html"):
             expected_scripts.append("static/progress.js")
+        elif self.relative == PurePosixPath("daily.html"):
+            expected_scripts.append("static/daily.js")
         if self.script_sources != expected_scripts:
             self.issues.add(self.relative, "script assets must exactly match simulation content")
         return _Page(ids=self.ids, references=self.references)
@@ -1046,6 +1059,8 @@ def _resolve_reference(
     if reference.role == "script" and target not in {
         PurePosixPath("static/visualization.js"),
         PurePosixPath("static/map3d.js"),
+        PurePosixPath("static/curriculum-data.js"),
+        PurePosixPath("static/daily.js"),
         PurePosixPath("static/progress.js"),
     }:
         issues.add(reference.source, "script target must be an approved runtime asset")
@@ -1169,7 +1184,7 @@ def _argument_parser() -> argparse.ArgumentParser:
     inventory.add_argument(
         "--require-current-release",
         action="store_true",
-        help="require the exact current 42-artifact release inventory",
+        help="require the exact current release inventory",
     )
     parser.add_argument(
         "--with-release-manifest",

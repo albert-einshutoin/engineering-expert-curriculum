@@ -714,6 +714,8 @@ class RoadmapAcceptanceTests(unittest.TestCase):
                 {
                     Path("static/visualization.js"),
                     Path("static/map3d.js"),
+                    Path("static/curriculum-data.js"),
+                    Path("static/daily.js"),
                     Path("static/progress.js"),
                     Path("static/three.module.js"),
                     Path("static/three/OrbitControls.js"),
@@ -836,6 +838,8 @@ class RoadmapAcceptanceTests(unittest.TestCase):
                 {
                     Path("static/visualization.js"),
                     Path("static/map3d.js"),
+                    Path("static/curriculum-data.js"),
+                    Path("static/daily.js"),
                     Path("static/progress.js"),
                     Path("static/three.module.js"),
                     Path("static/three/OrbitControls.js"),

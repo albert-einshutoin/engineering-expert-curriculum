@@ -1126,7 +1126,11 @@ class Renderer:
                 f'<link rel="stylesheet" href="{root}static/progress.css">'
             )
             body_inserts.append(
-                f'<script src="{root}static/progress.js" defer></script>'
+                f'<script src="{root}static/progress.js" type="module"></script>'
+            )
+        if ' data-daily-form="true"' in safe_content.value:
+            body_inserts.append(
+                f'<script src="{root}static/daily.js" type="module"></script>'
             )
         for link in head_inserts:
             document = document.replace("</head>", f"  {link}\n</head>", 1)

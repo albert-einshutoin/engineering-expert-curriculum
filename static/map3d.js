@@ -1,8 +1,9 @@
 import * as THREE from './three.module.js';
 import { OrbitControls } from './three/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from './three/CSS2DRenderer.js';
+import { CURRICULUM } from './curriculum-data.js';
 
-const C = window.CURRICULUM;
+const C = CURRICULUM;
 const domains = C.domains;
 const tracks = C.tracks;
 const progressKey = 'engineering-curriculum-progress-v1';
@@ -180,6 +181,7 @@ domains.forEach(d => {
   }
 
   const labelDiv = document.createElement('div');
+  labelDiv.className = 'domain-label';
   labelDiv.textContent = `D${String(d.id).padStart(2,'0')} ${d.title}`;
   labelDiv.style.color = '#fff';
   labelDiv.style.fontSize = '12px';
@@ -438,7 +440,7 @@ renderer.domElement.addEventListener('pointerup', e => {
     const hit = intersects[0].object;
     const id = hit.userData.domainId;
     const domain = domains.find(d => d.id === id);
-    if(domain) window.location.href = `${C.basePrefix||''}domains/${domain.slug}/index.html`;
+    if(domain) window.location.href = `catalog/index.html#d${String(domain.id).padStart(2,'0')}-m01-l1`;
   }
 });
 
