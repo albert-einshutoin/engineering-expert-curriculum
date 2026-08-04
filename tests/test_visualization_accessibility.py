@@ -1494,7 +1494,7 @@ class BrowserContractTests(VisualizationAccessibilityTests):
         )
         successful = [
             {"browser": "chromium", "label": f"run-{index}", "result": {"passed": True}}
-            for index in range(164)
+            for index in range(167)
         ]
         report = browser_evidence_report(
             harness_version="1.0.0", platform_key="macos-arm64",
@@ -1502,7 +1502,7 @@ class BrowserContractTests(VisualizationAccessibilityTests):
             safari_blocked=True,
         )
         self.assertEqual(report["status"], "blocked")
-        self.assertEqual(len(report["runs"]), 166)
+        self.assertEqual(len(report["runs"]), 169)
         self.assertEqual(
             [row["label"] for row in report["runs"][-2:]],
             ["core-02-http-desktop", "core-02-http-mobile"],
@@ -1532,7 +1532,7 @@ class BrowserContractTests(VisualizationAccessibilityTests):
             (REPOSITORY_ROOT / "content/visualization-catalog.json").read_bytes()
         )
         plan = browser_run_plan(inventory, include_safari=True)
-        self.assertEqual(len(plan), 166)
+        self.assertEqual(len(plan), 169)
         self.assertEqual(
             [(run["browser"], run["label"], run["profile"]) for run in plan[:4]],
             [

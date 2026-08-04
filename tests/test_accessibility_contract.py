@@ -167,6 +167,8 @@ class AccessibilityContractTests(unittest.TestCase):
                 for path in self.site.rglob("*.js")
             )),
             (
+                "static/curriculum-data.js",
+                "static/daily.js",
                 "static/map3d.js",
                 "static/progress.js",
                 "static/three.module.js",

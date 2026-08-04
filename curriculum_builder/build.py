@@ -113,6 +113,8 @@ _BASE_ARTIFACTS = frozenset(
         PurePosixPath("static/visualizations.css"),
         PurePosixPath("static/visualization.js"),
         PurePosixPath("static/map3d.js"),
+        PurePosixPath("static/curriculum-data.js"),
+        PurePosixPath("static/daily.js"),
         PurePosixPath("static/map3d.css"),
         PurePosixPath("static/progress.js"),
         PurePosixPath("static/progress.css"),
@@ -174,6 +176,18 @@ _EXTRA_STATIC_ASSETS: Final = (
     _StaticAsset(
         "map3d.js",
         PurePosixPath("static/map3d.js"),
+        MAX_JAVASCRIPT_BYTES,
+    ),
+    # The interactive pages import one immutable projection of the canonical
+    # curriculum so every page uses the same pinned source without a network API.
+    _StaticAsset(
+        "curriculum-data.js",
+        PurePosixPath("static/curriculum-data.js"),
+        2 * 1024 * 1024,
+    ),
+    _StaticAsset(
+        "daily.js",
+        PurePosixPath("static/daily.js"),
         MAX_JAVASCRIPT_BYTES,
     ),
     _StaticAsset(
@@ -1661,7 +1675,10 @@ class _SiteDocumentParser(HTMLParser):
             is_module = (
                 set(normalized) == {"src", "type"}
                 and normalized["type"] == "module"
-                and (normalized["src"] or "").endswith("static/map3d.js")
+                and any(
+                    (normalized["src"] or "").endswith(f"static/{name}")
+                    for name in ("map3d.js", "progress.js", "daily.js")
+                )
             )
             if not (is_deferred_classic or is_module):
                 raise _validation(
@@ -1875,6 +1892,8 @@ def _validate_site_artifacts(
             expected_scripts.append("static/map3d.js")
         elif path == PurePosixPath("progress.html"):
             expected_scripts.append("static/progress.js")
+        elif path == PurePosixPath("daily.html"):
+            expected_scripts.append("static/daily.js")
         if parser.script_sources != expected_scripts:
             raise _validation("generated script assets do not match page contract")
         ids_by_page[path] = parser.ids

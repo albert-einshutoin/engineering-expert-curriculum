@@ -972,6 +972,8 @@ class CompetencyBuildTests(unittest.TestCase):
                 {
                     output / "static/visualization.js",
                     output / "static/map3d.js",
+                    output / "static/curriculum-data.js",
+                    output / "static/daily.js",
                     output / "static/progress.js",
                     output / "static/three.module.js",
                     output / "static/three/OrbitControls.js",

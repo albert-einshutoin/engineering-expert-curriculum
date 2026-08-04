@@ -110,6 +110,14 @@ def browser_urls(site: Path, lesson: Path, port: int) -> tuple[str, str]:
     )
 
 
+def interactive_page_url(port: int, page: str) -> str:
+    if type(port) is not int or not 1 <= port <= 65_535:
+        raise BrowserMatrixError("interactive page server port is invalid")
+    if page not in {"map3d", "progress", "daily"}:
+        raise BrowserMatrixError("interactive page identity is invalid")
+    return f"http://127.0.0.1:{port}{_PagesHandler.prefix}{page}.html"
+
+
 def browser_evidence_inventory(catalog_bytes: bytes) -> EvidenceInventory:
     if type(catalog_bytes) is not bytes or not catalog_bytes or len(catalog_bytes) > 128 * 1024:
         raise BrowserMatrixError("visualization catalog is unavailable or over budget")
@@ -525,7 +533,12 @@ class _WebSocket:
                 continue
             if message.get("id") != identifier:
                 method_name = message.get("method")
-                if type(method_name) is str and method_name.startswith("Network."):
+                if type(method_name) is str and (
+                    method_name.startswith("Network.")
+                    or method_name in {
+                        "Runtime.consoleAPICalled", "Runtime.exceptionThrown",
+                    }
+                ):
                     if len(self.events) < 256:
                         self.events.append(message)
                     else:
@@ -1088,6 +1101,171 @@ def run_chromium_page(
         )
 
 
+_INTERACTIVE_PAGE_ASSERTIONS: Final = {
+    "map3d": """(() => ({
+      ready: document.querySelectorAll('#canvas-container canvas').length === 1
+        && document.querySelectorAll('.domain-label').length === 38,
+      canvasCount: document.querySelectorAll('#canvas-container canvas').length,
+      domainLabels: document.querySelectorAll('.domain-label').length,
+      documentState: document.readyState,
+      hasContainer: Boolean(document.getElementById('canvas-container')),
+      moduleLoaded: performance.getEntriesByType('resource').some(
+        entry => entry.name.endsWith('/static/map3d.js')
+      ),
+      title: document.title
+    }))()""",
+    "progress": """(() => ({
+      ready: document.getElementById('stat-total')?.textContent === '1,140'
+        && document.getElementById('domain-grid')?.children.length === 38
+        && document.getElementById('track-grid')?.children.length === 6,
+      total: document.getElementById('stat-total')?.textContent || '',
+      domains: document.getElementById('domain-grid')?.children.length || 0,
+      tracks: document.getElementById('track-grid')?.children.length || 0
+    }))()""",
+    "daily": """(() => ({
+      ready: document.querySelectorAll('[data-daily-output] article').length === 3,
+      lessons: document.querySelectorAll('[data-daily-output] article').length
+    }))()""",
+}
+
+
+def run_chromium_interactive_page(
+    *, executable: Path, url: str, profile: Mapping[str, object], page: str,
+    screenshot: Path, approved_file_roots: Sequence[Path] = (),
+    timeout: float = 30.0, oci_container_no_sandbox: bool = False,
+) -> dict[str, object]:
+    """Execute a bounded smoke oracle for non-lesson interactive entry points."""
+    if page not in _INTERACTIVE_PAGE_ASSERTIONS:
+        raise BrowserMatrixError("interactive page identity is invalid")
+    profile_directory = Path(tempfile.mkdtemp(prefix=".browser-profile-"))
+    process: subprocess.Popen[bytes] | None = None
+    connection: _WebSocket | None = None
+    primary_error: BaseException | None = None
+    try:
+        arguments = chromium_arguments(
+            executable, url, profile, profile_directory,
+            oci_container_no_sandbox=oci_container_no_sandbox,
+        )
+        # The 3D map must exercise an actual WebGL context. The lesson harness
+        # keeps GPU disabled for deterministic diagrams, while this bounded
+        # smoke lets headless Chromium select its available GL implementation.
+        arguments.remove("--disable-gpu")
+        if page == "map3d" and sys.platform.startswith("linux"):
+            # Hosted Linux has no hardware GPU. This opt-in is confined to the
+            # reviewed loopback page inside the non-root CI container and makes
+            # the pinned Chromium use its bundled software WebGL implementation.
+            arguments[-1:-1] = (
+                "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
+            )
+        process = subprocess.Popen(
+            arguments,
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, shell=False,
+        )
+        try:
+            startup_deadline = time.monotonic() + timeout
+            port = _wait_debugging_port(
+                profile_directory, process, deadline=startup_deadline,
+            )
+            connection = _connect_chromium_debugging(
+                port, process, deadline=startup_deadline, timeout=timeout,
+            )
+            connection.command("Page.enable")
+            connection.command("Runtime.enable")
+            connection.command("Network.enable")
+            width = int(profile["width"])
+            height = int(profile["height"])
+            connection.command("Emulation.setDeviceMetricsOverride", {
+                "width": width, "height": height,
+                "deviceScaleFactor": int(profile["deviceScaleFactor"]),
+                "mobile": width <= 390,
+            })
+            connection.command("Page.navigate", {"url": url})
+            deadline = time.monotonic() + timeout
+            assertions: dict[str, object] | None = None
+            last_assertions: dict[str, object] | None = None
+            while time.monotonic() < deadline:
+                evaluated = connection.command("Runtime.evaluate", {
+                    "expression": _INTERACTIVE_PAGE_ASSERTIONS[page],
+                    "returnByValue": True,
+                })
+                remote = evaluated.get("result")
+                value = remote.get("value") if type(remote) is dict else None
+                if type(value) is dict:
+                    last_assertions = value
+                if type(value) is dict and value.get("ready") is True:
+                    assertions = value
+                    break
+                time.sleep(0.05)
+            exceptions = [
+                event for event in connection.events
+                if event.get("method") == "Runtime.exceptionThrown"
+            ]
+            if exceptions:
+                raise BrowserMatrixError("interactive page raised a runtime exception")
+            if assertions is None:
+                console_messages: list[str] = []
+                for event in connection.events:
+                    if event.get("method") != "Runtime.consoleAPICalled":
+                        continue
+                    parameters = event.get("params")
+                    arguments = parameters.get("args") if type(parameters) is dict else None
+                    if type(arguments) is not list:
+                        continue
+                    for argument in arguments:
+                        if type(argument) is not dict:
+                            continue
+                        message = argument.get("value") or argument.get("description")
+                        if type(message) is str and message:
+                            console_messages.append(message[:80])
+                diagnostic = json.dumps(last_assertions, ensure_ascii=True, sort_keys=True)
+                if console_messages:
+                    diagnostic += " console=" + " | ".join(console_messages[:2])
+                responses: list[str] = []
+                for event in connection.events:
+                    if event.get("method") != "Network.responseReceived":
+                        continue
+                    parameters = event.get("params")
+                    response = parameters.get("response") if type(parameters) is dict else None
+                    if type(response) is not dict:
+                        continue
+                    response_url = response.get("url")
+                    status = response.get("status")
+                    if type(response_url) is str and response_url.endswith(".js"):
+                        responses.append(f"{response_url.rsplit('/', 1)[-1]}:{status}")
+                if responses:
+                    diagnostic += " responses=" + ",".join(responses[-8:])
+                if len(diagnostic) > 240:
+                    diagnostic = diagnostic[:240]
+                raise BrowserMatrixError(
+                    f"interactive page did not reach its ready contract: {diagnostic}"
+                )
+            validate_chromium_network_events(
+                connection.events, target_url=url,
+                truncated=connection.events_truncated,
+                approved_file_roots=approved_file_roots,
+            )
+            capture = _capture_chromium_screenshot(connection)
+            encoded = capture.get("data")
+            if type(encoded) is not str or len(encoded) > 16 * 1024 * 1024:
+                raise BrowserMatrixError("browser screenshot is unavailable or over budget")
+            screenshot.parent.mkdir(parents=True, exist_ok=True)
+            screenshot.write_bytes(base64.b64decode(encoded, validate=True))
+            return {"page": page, "assertions": assertions}
+        except (OSError, subprocess.SubprocessError, ValueError) as error:
+            if isinstance(error, BrowserMatrixError):
+                raise
+            raise BrowserMatrixError("Chromium interactive contract failed") from error
+    except BaseException as error:
+        primary_error = error
+        raise
+    finally:
+        _cleanup_chromium_resources(
+            process=process, connection=connection, profile=profile_directory,
+            primary_error=primary_error,
+        )
+
+
 def _reserve_loopback_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as reservation:
         reservation.bind(("127.0.0.1", 0))
@@ -1600,6 +1778,13 @@ def browser_run_plan(
         for profile in inventory.profiles
     )
     runs.extend(
+        {
+            "browser": "chromium", "label": f"interactive-{page}",
+            "profile": "desktop", "requestedState": None,
+        }
+        for page in ("map3d", "progress", "daily")
+    )
+    runs.extend(
         {"browser": "chromium", "label": f"type-{kind}-{lesson}", "profile": "desktop", "requestedState": None}
         for kind, lesson in sorted(inventory.diagram_type_lessons.items())
     )
@@ -1624,7 +1809,7 @@ class BrowserEvidenceJournal:
         self, *, path: Path, harness_version: str, inventory: EvidenceInventory,
         provenance: Mapping[str, object], plan: Sequence[Mapping[str, object]],
     ) -> None:
-        if not plan or len(plan) > 166 or set(provenance) != {
+        if not plan or len(plan) > 169 or set(provenance) != {
             "matrixSha256", "fixtureSha256", "harnessSha256", "platform", "browsers"
         }:
             raise BrowserMatrixError("browser evidence journal inputs are incomplete")
@@ -1740,7 +1925,7 @@ def browser_evidence_report(
     *, harness_version: str, platform_key: str, inventory: EvidenceInventory,
     successful_runs: Sequence[Mapping[str, object]], safari_blocked: bool,
 ) -> dict[str, object]:
-    expected_successes = 164 if safari_blocked or platform_key == "linux-x86_64" else 166
+    expected_successes = 167 if safari_blocked or platform_key == "linux-x86_64" else 169
     if len(successful_runs) != expected_successes:
         raise BrowserMatrixError("browser evidence success count is incomplete")
     runs = [dict(item) for item in successful_runs]
@@ -1893,6 +2078,31 @@ def _run_browser_contract(
                 raise
             journal.record(run, status="passed", result=result)
             print(f"PASS firefox {label} desktop", flush=True)
+
+        # These entry points do not use the lesson visualization harness. Their
+        # own bounded readiness oracles ensure module loading and data-backed UI
+        # rendering are exercised in the same pinned browser as lesson pages.
+        for page in ("map3d", "progress", "daily"):
+            label = f"interactive-{page}"
+            run = {
+                "browser": "chromium", "label": label,
+                "profile": "desktop", "requestedState": None,
+            }
+            url = interactive_page_url(server.port, page)
+            try:
+                result = run_chromium_interactive_page(
+                    executable=chromium, url=url,
+                    profile=_profile_mapping(matrix.profiles["desktop"]),
+                    page=page,
+                    screenshot=evidence / f"{label}-chromium-desktop.png",
+                    approved_file_roots=(site, repository / "static"),
+                    oci_container_no_sandbox=oci_container_no_sandbox,
+                )
+            except BrowserMatrixError:
+                journal.record(run, status="failed", reason="interactive-page-contract-failed")
+                raise
+            journal.record(run, status="passed", result=result)
+            print(f"PASS chromium {label} desktop", flush=True)
 
         # Every catalog regression state is rendered under every closed visual
         # profile. The state oracle drives only bounded native form actions.
