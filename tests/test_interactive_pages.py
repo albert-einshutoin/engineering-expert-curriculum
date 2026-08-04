@@ -61,6 +61,16 @@ class InteractivePageRuntimeTests(unittest.TestCase):
             r"(?m)^if\s*\([^\n]+\)\s*return\s*;",
         )
 
+    def test_daily_selection_uses_local_dates_and_fresh_first_ordering(self) -> None:
+        source = (STATIC_ROOT / "daily.js").read_text(encoding="utf-8")
+        self.assertNotIn("toISOString().slice(0, 10)", source)
+        for accessor in ("getFullYear()", "getMonth()", "getDate()"):
+            self.assertIn(accessor, source)
+        self.assertIn(
+            "[...orderedFresh, ...orderedPreviouslyServed].slice(0, count)",
+            source,
+        )
+
     def test_browser_plan_executes_each_interactive_page_smoke(self) -> None:
         inventory = browser_evidence_inventory(
             (REPOSITORY_ROOT / "content/visualization-catalog.json").read_bytes()

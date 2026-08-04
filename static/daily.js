@@ -49,12 +49,20 @@ function seededSort(items, seed) {
   );
 }
 
+function localDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function setupDaily() {
   const form = document.querySelector('[data-daily-form]');
   const output = document.querySelector('[data-daily-output]');
   if (!form || !output) return;
 
-  const dateKey = new Date().toISOString().slice(0, 10);
+  // A daily recommendation follows the learner's calendar, not the UTC day.
+  const dateKey = localDateKey(new Date());
   const render = (force = false) => {
     const count = Math.min(5, Math.max(1, Number(form.elements.count.value || 3)));
     const track = form.elements.track.value;
@@ -77,9 +85,13 @@ function setupDaily() {
       }
       const historicallyServed = new Set(Object.values(served).flat());
       const fresh = candidates.filter(lesson => !historicallyServed.has(lesson.id));
-      if (fresh.length >= count) candidates = fresh;
+      const previouslyServed = candidates.filter(
+        lesson => historicallyServed.has(lesson.id),
+      );
       const seed = force ? `${dateKey}:${track}:${Date.now()}` : `${dateKey}:${track}`;
-      picks = seededSort(candidates, seed).slice(0, count);
+      const orderedFresh = seededSort(fresh, seed);
+      const orderedPreviouslyServed = seededSort(previouslyServed, seed);
+      picks = [...orderedFresh, ...orderedPreviouslyServed].slice(0, count);
       served[selectionKey] = picks.map(lesson => lesson.id);
       saveServed(served);
     }

@@ -149,7 +149,7 @@ _FORBIDDEN_ELEMENTS: Final = frozenset(
 _REVIEWED_EXTRA_JAVASCRIPT: Final = {
     PurePosixPath("static/map3d.js"): "d59f014f72fd8e4f70f8a9981e96c390478eec2e5b24e79daac7721de4a3db09",
     PurePosixPath("static/progress.js"): "9941b5e21c697ab6dac81ef9b431ff3b5623d80a0807e96b53a656f97582c26a",
-    PurePosixPath("static/daily.js"): "11eaad9444fbf4308eef42d79a7be1110af4c9e1523b3eb93ad40ecd57112bae",
+    PurePosixPath("static/daily.js"): "3242748baf0bc59ee3741868584b1b5700fa53ffd121df74f8a9b8666bfe5038",
     PurePosixPath("static/curriculum-data.js"): "91b03275698750f4864bcba9da203a60d65406e00f2f40c5241da7e365590da0",
     PurePosixPath("static/three.module.js"): "76dea8151bc9352aef3528b4262e249b2604f62543828328db978d060d61a495",
     PurePosixPath("static/three/OrbitControls.js"): "3c22593802b6a6767cfd5e83cce709b4c77f999a0b49a79f34ba5b915c7b07ed",
