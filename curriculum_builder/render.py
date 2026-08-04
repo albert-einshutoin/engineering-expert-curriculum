@@ -22,6 +22,8 @@ from .html_safety import (
     validate_fragment,
     validate_generated_document,
     validate_generated_fragment,
+    validate_generated_interactive_document,
+    validate_generated_interactive_fragment,
 )
 
 
@@ -66,7 +68,7 @@ _BASE_PLACEHOLDER_COUNTS = MappingProxyType(
     {
         "title": 1,
         "description": 1,
-        "root": 8,
+        "root": 12,
         "content": 1,
     }
 )
@@ -103,6 +105,10 @@ _BASE_CHILDREN = MappingProxyType(
         "header": ("a:brand", "nav"),
         "nav": (
             "a:roadmap",
+            "a:map3d",
+            "a:progress",
+            "a:daily",
+            "a:guide",
             "a:lessons",
             "a:competencies",
             "a:capstones",
@@ -120,6 +126,10 @@ _BASE_LEAF_TEXT = MappingProxyType(
         "a:skip": "本文へ移動",
         "a:brand": "Engineering Atlas",
         "a:roadmap": "ロードマップ",
+        "a:map3d": "3Dマップ",
+        "a:progress": "進捗",
+        "a:daily": "今日のLesson",
+        "a:guide": "使い方",
         "a:lessons": "コアレッスン",
         "a:competencies": "コンピテンシー",
         "a:capstones": "Capstone",
@@ -136,6 +146,10 @@ _REQUIRED_BASE_HREFS = MappingProxyType(
         "${root}static/visualizations.css": 1,
         "${root}index.html": 1,
         "${root}roadmap/index.html": 1,
+        "${root}map3d.html": 1,
+        "${root}progress.html": 1,
+        "${root}daily.html": 1,
+        "${root}guide.html": 1,
         "${root}lessons/index.html": 1,
         "${root}competencies/index.html": 1,
         "${root}capstones/index.html": 1,
@@ -830,6 +844,18 @@ class _BasePolicyParser(HTMLParser):
                     ("href", "${root}roadmap/index.html"),
                 ): "a:roadmap",
                 (
+                    ("href", "${root}map3d.html"),
+                ): "a:map3d",
+                (
+                    ("href", "${root}progress.html"),
+                ): "a:progress",
+                (
+                    ("href", "${root}daily.html"),
+                ): "a:daily",
+                (
+                    ("href", "${root}guide.html"),
+                ): "a:guide",
+                (
                     ("href", "${root}lessons/index.html"),
                 ): "a:lessons",
                 (
@@ -1082,11 +1108,37 @@ class Renderer:
             raise CurriculumValidationError(
                 "base template substitution failed"
             ) from None
+        head_inserts = []
+        body_inserts = []
         if ' data-simulation-kind="' in safe_content.value:
-            script = f'<script src="{root}static/visualization.js" defer></script>'
+            body_inserts.append(
+                f'<script src="{root}static/visualization.js" defer></script>'
+            )
+        if ' id="canvas-container"' in safe_content.value:
+            head_inserts.append(
+                f'<link rel="stylesheet" href="{root}static/map3d.css">'
+            )
+            body_inserts.append(
+                f'<script src="{root}static/map3d.js" type="module"></script>'
+            )
+        if ' id="cert-section"' in safe_content.value:
+            head_inserts.append(
+                f'<link rel="stylesheet" href="{root}static/progress.css">'
+            )
+            body_inserts.append(
+                f'<script src="{root}static/progress.js" defer></script>'
+            )
+        for link in head_inserts:
+            document = document.replace("</head>", f"  {link}\n</head>", 1)
+        for script in body_inserts:
             document = document.replace("</body>", f"  {script}\n</body>", 1)
         _reject_duplicate_document_ids(document)
-        return validate_generated_document(document).value
+        validator = (
+            validate_generated_interactive_document
+            if safe_content.provenance is HtmlProvenance.GENERATED_INTERACTIVE
+            else validate_generated_document
+        )
+        return validator(document).value
 
     def fragment(
         self,
@@ -1094,7 +1146,10 @@ class Renderer:
         *,
         text_values: Mapping[str, str],
         html_values: Mapping[str, SafeHtml],
+        interactive: bool = False,
     ) -> SafeHtml:
+        if type(interactive) is not bool:
+            raise CurriculumValidationError("interactive must be an exact boolean")
         validated_name = _validate_fragment_name(name)
         source = self._read_template(validated_name)
         placeholders = _analyze_template(source)
@@ -1150,6 +1205,10 @@ class Renderer:
             raise CurriculumValidationError(
                 "template substitution failed"
             ) from None
+        if interactive:
+            # Interactive templates are renderer-owned and use a separate closed
+            # grammar so repository-authored lesson HTML remains non-interactive.
+            return validate_generated_interactive_fragment(rendered)
         if any(
             value.provenance is HtmlProvenance.GENERATED
             for value in safe_values.values()

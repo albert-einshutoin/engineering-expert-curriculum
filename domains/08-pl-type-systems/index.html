@@ -1,0 +1,52 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="言語機能を表面的な文法ではなく、意味論・型・評価戦略・抽象化の設計として理解する。">
+<title>プログラミング言語理論・型システム | Engineering Expert Curriculum</title>
+<link rel="stylesheet" href="../../assets/styles.css">
+<script>window.CURRICULUM_BASE_PREFIX="../../";</script>
+<script src="../../assets/curriculum.js"></script>
+<script>if(window.CURRICULUM) window.CURRICULUM.basePrefix=window.CURRICULUM_BASE_PREFIX;</script>
+<script defer src="../../assets/app.js"></script>
+</head><body><header class="site-header"><nav class="nav">
+<a class="brand" href="../../index.html">Engineering Expert Curriculum</a>
+<a href="../../roadmap.html">ロードマップ</a>
+<a href="../../daily.html">今日のLesson</a>
+<a href="../../progress.html">進捗</a>
+<a href="../../guide.html">使い方</a>
+</nav></header><main>
+<div class="breadcrumbs"><a href="../../index.html">Home</a> / Domain 08</div>
+<section class="hero"><div class="badges"><span class="badge">Domain 08</span><span class="badge">30 Lessons</span></div>
+<h1>プログラミング言語理論・型システム</h1><p class="lede">言語機能を表面的な文法ではなく、意味論・型・評価戦略・抽象化の設計として理解する。</p><p class="small">推奨前提: <a href="../01-math-statistics/index.html">01 数学・統計</a>, <a href="../03-computation-complexity/index.html">03 計算理論・計算量理論</a>, <a href="../04-formal-methods-logic/index.html">04 形式手法・論理学</a></p></section>
+<section><h2>Modules</h2><div class="grid"><article class="card">
+<div class="meta">Module 01</div><h3>構文・意味論・評価</h3><p>プログラムがどう意味を持つか形式的に説明できる</p>
+<div class="badges"><span class="badge">抽象構文</span><span class="badge">操作的意味論</span><span class="badge">表示的意味論</span><span class="badge">評価戦略</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d08-m01-l1.html">基礎 D08-M01-L1</a><a class="button secondary" href="lessons/d08-m01-l2.html">応用 D08-M01-L2</a><a class="button secondary" href="lessons/d08-m01-l3.html">専門 D08-M01-L3</a></div></article><article class="card">
+<div class="meta">Module 02</div><h3>ラムダ計算</h3><p>関数型言語の計算モデルを理解できる</p>
+<div class="badges"><span class="badge">変数束縛</span><span class="badge">置換</span><span class="badge">β簡約</span><span class="badge">Church encoding</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d08-m02-l1.html">基礎 D08-M02-L1</a><a class="button secondary" href="lessons/d08-m02-l2.html">応用 D08-M02-L2</a><a class="button secondary" href="lessons/d08-m02-l3.html">専門 D08-M02-L3</a></div></article><article class="card">
+<div class="meta">Module 03</div><h3>静的型付けと動的型付け</h3><p>型システムの保証と限界を比較できる</p>
+<div class="badges"><span class="badge">型検査</span><span class="badge">型安全性</span><span class="badge">progress・preservation</span><span class="badge">gradual typing</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d08-m03-l1.html">基礎 D08-M03-L1</a><a class="button secondary" href="lessons/d08-m03-l2.html">応用 D08-M03-L2</a><a class="button secondary" href="lessons/d08-m03-l3.html">専門 D08-M03-L3</a></div></article><article class="card">
+<div class="meta">Module 04</div><h3>多相性とGenerics</h3><p>再利用性と型安全性のトレードオフを設計できる</p>
+<div class="badges"><span class="badge">parametric polymorphism</span><span class="badge">ad-hoc polymorphism</span><span class="badge">subtyping</span><span class="badge">variance</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d08-m04-l1.html">基礎 D08-M04-L1</a><a class="button secondary" href="lessons/d08-m04-l2.html">応用 D08-M04-L2</a><a class="button secondary" href="lessons/d08-m04-l3.html">専門 D08-M04-L3</a></div></article><article class="card">
+<div class="meta">Module 05</div><h3>型推論</h3><p>型注釈なしで型が決まる仕組みを説明できる</p>
+<div class="badges"><span class="badge">unification</span><span class="badge">Hindley-Milner</span><span class="badge">制約生成</span><span class="badge">一般化</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d08-m05-l1.html">基礎 D08-M05-L1</a><a class="button secondary" href="lessons/d08-m05-l2.html">応用 D08-M05-L2</a><a class="button secondary" href="lessons/d08-m05-l3.html">専門 D08-M05-L3</a></div></article><article class="card">
+<div class="meta">Module 06</div><h3>代数的データ型とパターンマッチ</h3><p>状態を型で明確にモデル化できる</p>
+<div class="badges"><span class="badge">sum・product type</span><span class="badge">再帰型</span><span class="badge">exhaustiveness</span><span class="badge">GADT</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d08-m06-l1.html">基礎 D08-M06-L1</a><a class="button secondary" href="lessons/d08-m06-l2.html">応用 D08-M06-L2</a><a class="button secondary" href="lessons/d08-m06-l3.html">専門 D08-M06-L3</a></div></article><article class="card">
+<div class="meta">Module 07</div><h3>効果と副作用</h3><p>副作用を制御する抽象化を比較できる</p>
+<div class="badges"><span class="badge">参照透明性</span><span class="badge">monad</span><span class="badge">effect system</span><span class="badge">handler</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d08-m07-l1.html">基礎 D08-M07-L1</a><a class="button secondary" href="lessons/d08-m07-l2.html">応用 D08-M07-L2</a><a class="button secondary" href="lessons/d08-m07-l3.html">専門 D08-M07-L3</a></div></article><article class="card">
+<div class="meta">Module 08</div><h3>所有権・ライフタイム・線形型</h3><p>メモリと資源の安全性を型で表現できる</p>
+<div class="badges"><span class="badge">move semantics</span><span class="badge">borrow</span><span class="badge">affine type</span><span class="badge">resource safety</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d08-m08-l1.html">基礎 D08-M08-L1</a><a class="button secondary" href="lessons/d08-m08-l2.html">応用 D08-M08-L2</a><a class="button secondary" href="lessons/d08-m08-l3.html">専門 D08-M08-L3</a></div></article><article class="card">
+<div class="meta">Module 09</div><h3>オブジェクト指向の型理論</h3><p>OOPの設計を型の観点から評価できる</p>
+<div class="badges"><span class="badge">nominal・structural typing</span><span class="badge">dynamic dispatch</span><span class="badge">LSP</span><span class="badge">row polymorphism</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d08-m09-l1.html">基礎 D08-M09-L1</a><a class="button secondary" href="lessons/d08-m09-l2.html">応用 D08-M09-L2</a><a class="button secondary" href="lessons/d08-m09-l3.html">専門 D08-M09-L3</a></div></article><article class="card">
+<div class="meta">Module 10</div><h3>言語設計とDSL</h3><p>目的に合う小さな言語を設計できる</p>
+<div class="badges"><span class="badge">syntax design</span><span class="badge">macro</span><span class="badge">internal・external DSL</span><span class="badge">interoperability</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d08-m10-l1.html">基礎 D08-M10-L1</a><a class="button secondary" href="lessons/d08-m10-l2.html">応用 D08-M10-L2</a><a class="button secondary" href="lessons/d08-m10-l3.html">専門 D08-M10-L3</a></div></article></div></section>
+<section class="section"><h2>公式・標準リファレンス</h2><p>Lesson本文と演習に加え、仕様・API・標準の一次資料で確認してください。version依存部分は必ず現在の公式資料を優先します。</p><ul><li><a href="https://www.cis.upenn.edu/~bcpierce/tapl/" target="_blank" rel="noopener noreferrer">Types and Programming Languages resources</a></li><li><a href="https://plfa.github.io/" target="_blank" rel="noopener noreferrer">PLFA</a></li></ul></section>
+</main><footer>Engineering Expert Curriculum — 学習内容は、実装・検証・運用・説明までを一つの完了条件として設計しています。</footer></body></html>

@@ -1248,6 +1248,18 @@ class RendererTests(unittest.TestCase):
             '      <a href="${root}roadmap/index.html">'
             "ロードマップ</a>\n"
         )
+        map3d_link = (
+            '      <a href="${root}map3d.html">3Dマップ</a>\n'
+        )
+        progress_link = (
+            '      <a href="${root}progress.html">進捗</a>\n'
+        )
+        daily_link = (
+            '      <a href="${root}daily.html">今日のLesson</a>\n'
+        )
+        guide_link = (
+            '      <a href="${root}guide.html">使い方</a>\n'
+        )
         lessons_link = (
             '      <a href="${root}lessons/index.html">'
             "コアレッスン</a>\n"
@@ -1267,6 +1279,10 @@ class RendererTests(unittest.TestCase):
         nav = (
             nav_open
             + roadmap_link
+            + map3d_link
+            + progress_link
+            + daily_link
+            + guide_link
             + lessons_link
             + competencies_link
             + capstones_link
@@ -1465,6 +1481,10 @@ class RendererTests(unittest.TestCase):
                     header_open
                     + brand
                     + roadmap_link
+                    + map3d_link
+                    + progress_link
+                    + daily_link
+                    + guide_link
                     + lessons_link
                     + competencies_link
                     + capstones_link
@@ -1476,8 +1496,8 @@ class RendererTests(unittest.TestCase):
             ),
             (
                 base.replace(
-                    roadmap_link + lessons_link,
-                    lessons_link + roadmap_link,
+                    roadmap_link + map3d_link,
+                    map3d_link + roadmap_link,
                     1,
                 ),
                 "base template markup is invalid",
@@ -1560,6 +1580,22 @@ class RendererTests(unittest.TestCase):
                             "ロードマップ!",
                             1,
                         ),
+                    ),
+                    (
+                        map3d_link,
+                        map3d_link.replace("3Dマップ", "3Dマップ!", 1),
+                    ),
+                    (
+                        progress_link,
+                        progress_link.replace("進捗", "進捗!", 1),
+                    ),
+                    (
+                        daily_link,
+                        daily_link.replace("今日のLesson", "今日のLesson!", 1),
+                    ),
+                    (
+                        guide_link,
+                        guide_link.replace("使い方", "使い方!", 1),
                     ),
                     (
                         lessons_link,

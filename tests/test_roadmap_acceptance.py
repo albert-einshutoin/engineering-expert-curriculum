@@ -710,8 +710,15 @@ class RoadmapAcceptanceTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue((output / "roadmap/index.html").is_file())
             self.assertEqual(
-                tuple(path.relative_to(output) for path in output.rglob("*.js")),
-                (Path("static/visualization.js"),),
+                {path.relative_to(output) for path in output.rglob("*.js")},
+                {
+                    Path("static/visualization.js"),
+                    Path("static/map3d.js"),
+                    Path("static/progress.js"),
+                    Path("static/three.module.js"),
+                    Path("static/three/OrbitControls.js"),
+                    Path("static/three/CSS2DRenderer.js"),
+                },
             )
             scripted = _scripted_lesson_ids(output)
             self.assertEqual(scripted, TASK11_SCRIPTED_LESSONS)
@@ -825,8 +832,15 @@ class RoadmapAcceptanceTests(unittest.TestCase):
             )
             self.assertNotIn("<script", html.casefold())
             self.assertEqual(
-                tuple(path.relative_to(output) for path in output.rglob("*.js")),
-                (Path("static/visualization.js"),),
+                {path.relative_to(output) for path in output.rglob("*.js")},
+                {
+                    Path("static/visualization.js"),
+                    Path("static/map3d.js"),
+                    Path("static/progress.js"),
+                    Path("static/three.module.js"),
+                    Path("static/three/OrbitControls.js"),
+                    Path("static/three/CSS2DRenderer.js"),
+                },
             )
             scripted = _scripted_lesson_ids(output)
             self.assertEqual(scripted, TASK11_SCRIPTED_LESSONS)

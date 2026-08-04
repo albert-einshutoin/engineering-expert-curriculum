@@ -1,0 +1,23 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="教材の使い方とScheduled運用">
+<title>使い方 | Engineering Expert Curriculum</title>
+<link rel="stylesheet" href="assets/styles.css">
+<script>window.CURRICULUM_BASE_PREFIX="";</script>
+<script src="assets/curriculum.js"></script>
+<script>if(window.CURRICULUM) window.CURRICULUM.basePrefix=window.CURRICULUM_BASE_PREFIX;</script>
+<script defer src="assets/app.js"></script>
+</head><body><header class="site-header"><nav class="nav">
+<a class="brand" href="index.html">Engineering Expert Curriculum</a>
+<a href="roadmap.html">ロードマップ</a>
+<a href="daily.html">今日のLesson</a>
+<a href="progress.html">進捗</a>
+<a href="map3d.html">3Dマップ</a>
+<a href="guide.html">使い方</a>
+</nav></header><main>
+<section class="hero"><h1>使い方</h1><p class="lede">この教材は百科事典ではなく、専門家として考え、実装し、壊し、検証し、説明するための反復カリキュラムです。</p></section>
+<section class="section"><h2>基本サイクル</h2><ol class="steps"><li><strong>読む:</strong> 中核概念とメンタルモデルを確認する。</li><li><strong>予測する:</strong> コードや実験を動かす前に結果を書く。</li><li><strong>実行する:</strong> 最小実験と演習を自分の環境で行う。</li><li><strong>壊す:</strong> 境界、競合、障害、悪意ある入力を追加する。</li><li><strong>証拠を残す:</strong> 出力、図、テスト、プロファイル、ログを保存する。</li><li><strong>説明する:</strong> 採用理由と再評価条件をADRまたはREADMEにする。</li></ol></section>
+<section class="section"><h2>GPT Scheduledで毎日配信する場合</h2><p><code class="inline">scheduled/daily-prompt.txt</code> に、そのまま使える指示文を用意しています。<code class="inline">data/curriculum.json</code> と、進捗ページから書き出したJSONを同じProjectまたは会話へ渡し、毎日1〜5Lessonを選ばせます。</p><div class="callout warning">Scheduled側からローカルHTMLを自動で開くことはできません。Lesson IDと相対パスを通知させ、このZIPを展開したフォルダから開く運用を想定しています。</div></section>
+<section class="section"><h2>教材の限界</h2><p>1,140Lessonで主要領域を広く深く覆っていますが、規格全文、すべての実装、全クラウドサービス、最新研究を永久に固定できるものではありません。バージョン依存のAPIやサービス仕様は公式ドキュメントと実環境で必ず検証してください。</p></section>
+<section class="section"><h2>拡張</h2><p><code class="inline">source/generate_curriculum.py</code> を同梱しています。ModuleやLessonを追加し、同じID体系とHTML構造で再生成できます。</p></section>
+</main><footer>Engineering Expert Curriculum — 学習内容は、実装・検証・運用・説明までを一つの完了条件として設計しています。</footer></body></html>

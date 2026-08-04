@@ -660,12 +660,18 @@ class SiteCheckerHtmlTests(unittest.TestCase):
         for tag in ("script", "iframe", "object", "embed", "form", "base"):
             with self.subTest(tag=tag):
                 issues = self._issues_for(_page(body=f"<{tag}></{tag}>"))
-                self.assertTrue(
-                    any(
-                        tag in issue and "forbidden" in issue
-                        for issue in issues
+                self.assertTrue(issues)
+                if tag not in {"script", "form"}:
+                    self.assertTrue(
+                        any(
+                            tag in issue and "forbidden" in issue
+                            for issue in issues
+                        )
                     )
-                )
+                else:
+                    self.assertTrue(
+                        any("generated document grammar" in issue for issue in issues)
+                    )
 
     def test_rejects_meta_refresh_inline_handlers_and_inline_style(self) -> None:
         mutations = (

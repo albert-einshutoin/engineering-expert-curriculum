@@ -1,0 +1,52 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="並列ハードウェア、GPUメモリ、カーネル、数値計算、分散HPC、性能モデルを理解し、大規模計算を最適化する。">
+<title>GPU・HPC・Accelerator | Engineering Expert Curriculum</title>
+<link rel="stylesheet" href="../../assets/styles.css">
+<script>window.CURRICULUM_BASE_PREFIX="../../";</script>
+<script src="../../assets/curriculum.js"></script>
+<script>if(window.CURRICULUM) window.CURRICULUM.basePrefix=window.CURRICULUM_BASE_PREFIX;</script>
+<script defer src="../../assets/app.js"></script>
+</head><body><header class="site-header"><nav class="nav">
+<a class="brand" href="../../index.html">Engineering Expert Curriculum</a>
+<a href="../../roadmap.html">ロードマップ</a>
+<a href="../../daily.html">今日のLesson</a>
+<a href="../../progress.html">進捗</a>
+<a href="../../guide.html">使い方</a>
+</nav></header><main>
+<div class="breadcrumbs"><a href="../../index.html">Home</a> / Domain 37</div>
+<section class="hero"><div class="badges"><span class="badge">Domain 37</span><span class="badge">30 Lessons</span></div>
+<h1>GPU・HPC・Accelerator</h1><p class="lede">並列ハードウェア、GPUメモリ、カーネル、数値計算、分散HPC、性能モデルを理解し、大規模計算を最適化する。</p><p class="small">推奨前提: <a href="../01-math-statistics/index.html">01 数学・統計</a>, <a href="../05-computer-architecture/index.html">05 コンピュータアーキテクチャ</a>, <a href="../07-concurrency-parallelism/index.html">07 並行処理・並列処理</a>, <a href="../23-performance-engineering/index.html">23 Performance Engineering</a>, <a href="../27-machine-learning-deep-learning/index.html">27 Machine Learning・Deep Learning</a></p></section>
+<section><h2>Modules</h2><div class="grid"><article class="card">
+<div class="meta">Module 01</div><h3>Parallel Computer Architecture</h3><p>GPUとCPUの実行モデルの違いを説明できる</p>
+<div class="badges"><span class="badge">SIMD・SIMT</span><span class="badge">core・warp</span><span class="badge">memory hierarchy</span><span class="badge">throughput computing</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d37-m01-l1.html">基礎 D37-M01-L1</a><a class="button secondary" href="lessons/d37-m01-l2.html">応用 D37-M01-L2</a><a class="button secondary" href="lessons/d37-m01-l3.html">専門 D37-M01-L3</a></div></article><article class="card">
+<div class="meta">Module 02</div><h3>GPU Programming Model</h3><p>並列処理をGPU実行単位へ分解できる</p>
+<div class="badges"><span class="badge">kernel</span><span class="badge">thread・block・grid</span><span class="badge">synchronization</span><span class="badge">occupancy</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d37-m02-l1.html">基礎 D37-M02-L1</a><a class="button secondary" href="lessons/d37-m02-l2.html">応用 D37-M02-L2</a><a class="button secondary" href="lessons/d37-m02-l3.html">専門 D37-M02-L3</a></div></article><article class="card">
+<div class="meta">Module 03</div><h3>GPU Memory Optimization</h3><p>メモリ帯域のボトルネックを改善できる</p>
+<div class="badges"><span class="badge">global・shared・register</span><span class="badge">coalescing</span><span class="badge">bank conflict</span><span class="badge">transfer</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d37-m03-l1.html">基礎 D37-M03-L1</a><a class="button secondary" href="lessons/d37-m03-l2.html">応用 D37-M03-L2</a><a class="button secondary" href="lessons/d37-m03-l3.html">専門 D37-M03-L3</a></div></article><article class="card">
+<div class="meta">Module 04</div><h3>Numerical Computing</h3><p>数値誤差と計算効率を両立できる</p>
+<div class="badges"><span class="badge">floating point</span><span class="badge">BLAS</span><span class="badge">matrix operation</span><span class="badge">stability</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d37-m04-l1.html">基礎 D37-M04-L1</a><a class="button secondary" href="lessons/d37-m04-l2.html">応用 D37-M04-L2</a><a class="button secondary" href="lessons/d37-m04-l3.html">専門 D37-M04-L3</a></div></article><article class="card">
+<div class="meta">Module 05</div><h3>Kernel Optimization</h3><p>高性能カーネルを測定し最適化できる</p>
+<div class="badges"><span class="badge">tiling</span><span class="badge">fusion</span><span class="badge">vectorization</span><span class="badge">autotuning</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d37-m05-l1.html">基礎 D37-M05-L1</a><a class="button secondary" href="lessons/d37-m05-l2.html">応用 D37-M05-L2</a><a class="button secondary" href="lessons/d37-m05-l3.html">専門 D37-M05-L3</a></div></article><article class="card">
+<div class="meta">Module 06</div><h3>Accelerator Compiler</h3><p>高水準モデルがデバイスコードになる過程を理解できる</p>
+<div class="badges"><span class="badge">graph compiler</span><span class="badge">operator lowering</span><span class="badge">kernel selection</span><span class="badge">runtime</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d37-m06-l1.html">基礎 D37-M06-L1</a><a class="button secondary" href="lessons/d37-m06-l2.html">応用 D37-M06-L2</a><a class="button secondary" href="lessons/d37-m06-l3.html">専門 D37-M06-L3</a></div></article><article class="card">
+<div class="meta">Module 07</div><h3>Distributed HPC</h3><p>複数ノードへ計算を分割できる</p>
+<div class="badges"><span class="badge">MPI</span><span class="badge">collective</span><span class="badge">domain decomposition</span><span class="badge">communication overlap</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d37-m07-l1.html">基礎 D37-M07-L1</a><a class="button secondary" href="lessons/d37-m07-l2.html">応用 D37-M07-L2</a><a class="button secondary" href="lessons/d37-m07-l3.html">専門 D37-M07-L3</a></div></article><article class="card">
+<div class="meta">Module 08</div><h3>Distributed Deep Learning</h3><p>大規模学習の並列方式を選べる</p>
+<div class="badges"><span class="badge">data・tensor・pipeline parallel</span><span class="badge">all-reduce</span><span class="badge">checkpoint</span><span class="badge">scaling efficiency</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d37-m08-l1.html">基礎 D37-M08-L1</a><a class="button secondary" href="lessons/d37-m08-l2.html">応用 D37-M08-L2</a><a class="button secondary" href="lessons/d37-m08-l3.html">専門 D37-M08-L3</a></div></article><article class="card">
+<div class="meta">Module 09</div><h3>Performance Model</h3><p>理論上限と実測差を説明できる</p>
+<div class="badges"><span class="badge">roofline</span><span class="badge">arithmetic intensity</span><span class="badge">Amdahl・Gustafson</span><span class="badge">profiling</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d37-m09-l1.html">基礎 D37-M09-L1</a><a class="button secondary" href="lessons/d37-m09-l2.html">応用 D37-M09-L2</a><a class="button secondary" href="lessons/d37-m09-l3.html">専門 D37-M09-L3</a></div></article><article class="card">
+<div class="meta">Module 10</div><h3>HPC Reliability・Scheduling・Cost</h3><p>高価な計算基盤を効率的に運用できる</p>
+<div class="badges"><span class="badge">job scheduler</span><span class="badge">preemption</span><span class="badge">fault tolerance</span><span class="badge">energy・cost</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d37-m10-l1.html">基礎 D37-M10-L1</a><a class="button secondary" href="lessons/d37-m10-l2.html">応用 D37-M10-L2</a><a class="button secondary" href="lessons/d37-m10-l3.html">専門 D37-M10-L3</a></div></article></div></section>
+<section class="section"><h2>公式・標準リファレンス</h2><p>Lesson本文と演習に加え、仕様・API・標準の一次資料で確認してください。version依存部分は必ず現在の公式資料を優先します。</p><ul><li><a href="https://docs.nvidia.com/cuda/" target="_blank" rel="noopener noreferrer">CUDA Documentation</a></li><li><a href="https://www.openmp.org/specifications/" target="_blank" rel="noopener noreferrer">OpenMP Specifications</a></li><li><a href="https://www.mpi-forum.org/docs/" target="_blank" rel="noopener noreferrer">MPI Forum</a></li></ul></section>
+</main><footer>Engineering Expert Curriculum — 学習内容は、実装・検証・運用・説明までを一つの完了条件として設計しています。</footer></body></html>

@@ -26,5 +26,6 @@ jobs:
         uses: github/codeql-action/init@f205ea1c3313d32999d8d6a48b4f6530d4437b38
         with:
           languages: python,javascript-typescript
+          config-file: ./.github/codeql/codeql-config.yml
       - name: Analyze Python and JavaScript sources
         uses: github/codeql-action/analyze@f205ea1c3313d32999d8d6a48b4f6530d4437b38

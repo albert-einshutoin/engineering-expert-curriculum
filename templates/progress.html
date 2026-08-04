@@ -1,0 +1,53 @@
+  <section class="hero cert-hero" id="cert-section">
+<h1>資格進捗ダッシュボード</h1>
+<div id="cert-level-display"></div>
+<div class="stats">
+<div class="stat"><span class="small">全Lesson</span><strong id="stat-total">1,140</strong></div>
+<div class="stat"><span class="small">完了</span><strong id="stat-completed">0</strong></div>
+<div class="stat"><span class="small">完了率</span><strong id="stat-percent">0%</strong></div>
+<div class="stat"><span class="small">完了Domain</span><strong id="stat-domains">0</strong></div>
+<div class="stat"><span class="small">完了Track</span><strong id="stat-tracks">0</strong></div>
+</div>
+<div class="cert-milestones" id="milestones"></div>
+</section>
+
+<section class="section">
+<div class="tab-bar">
+<button class="tab active" data-tab="domains" type="button">ドメイン別</button>
+<button class="tab" data-tab="tracks" type="button">トラック別</button>
+<button class="tab" data-tab="heatmap" type="button">ヒートマップ</button>
+<button class="tab" data-tab="history" type="button">履歴</button>
+<button class="tab" data-tab="manage" type="button">管理</button>
+</div>
+
+<div class="tab-content active" id="tab-domains">
+<p class="small">各ドメイン10モジュール × 3レベル = 30Lesson。各モジュールの3つの点は基礎・応用・専門を表します。</p>
+<div class="domain-grid" id="domain-grid"></div>
+</div>
+
+<div class="tab-content" id="tab-tracks">
+<p class="small">トラック別の資格進捗。各点は1ドメインを表し、色が完了状態を示します。</p>
+<div class="track-grid" id="track-grid"></div>
+</div>
+
+<div class="tab-content" id="tab-heatmap">
+<p class="small">ドメイン×モジュールの完了ヒートマップ（各セルは3Lessonの完了率）。</p>
+<div class="heatmap-grid" id="heatmap"></div>
+</div>
+
+<div class="tab-content" id="tab-history">
+<p class="small">直近の完了記録（最大50件）。</p>
+<div class="history-list" id="history-list"><p class="small">完了したLessonがここに表示されます。</p></div>
+</div>
+
+<div class="tab-content" id="tab-manage">
+<h2>バックアップ</h2>
+<div class="toolbar">
+<button data-export-progress="true" type="button">進捗JSONを書き出す</button>
+<label>進捗JSONを読み込む<input data-import-progress="true" type="file" accept="application/json"></label>
+<button class="danger" data-reset-progress="true" type="button">進捗を全削除</button>
+</div>
+<h2>完了の基準</h2>
+<ul><li>Lessonを説明できる。</li><li>最小例を自分で再現できる。</li><li>反例または障害条件を示せる。</li><li>設計判断と検証証拠をノートへ残した。</li></ul>
+</div>
+</section>

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import hashlib
 from html.parser import HTMLParser
 import os
 from pathlib import Path, PurePosixPath
@@ -24,7 +25,10 @@ if str(_REPOSITORY_ROOT) not in sys.path:
 
 from curriculum_builder.css_safety import validate_stylesheet_bytes  # noqa: E402
 from curriculum_builder.errors import CurriculumValidationError  # noqa: E402
-from curriculum_builder.html_safety import validate_generated_document  # noqa: E402
+from curriculum_builder.html_safety import (  # noqa: E402
+    validate_generated_document,
+    validate_generated_interactive_document,
+)
 from curriculum_builder.javascript_safety import (  # noqa: E402
     MAX_JAVASCRIPT_BYTES,
     validate_reviewed_visualization_runtime,
@@ -95,6 +99,17 @@ _BASE_INVENTORY: Final = frozenset(
         "styles.css",
         "static/visualizations.css",
         "static/visualization.js",
+        "static/map3d.css",
+        "static/map3d.js",
+        "static/progress.css",
+        "static/progress.js",
+        "static/three.module.js",
+        "static/three/OrbitControls.js",
+        "static/three/CSS2DRenderer.js",
+        "map3d.html",
+        "progress.html",
+        "daily.html",
+        "guide.html",
         "catalog/index.html",
         "competencies/index.html",
         "capstones/index.html",
@@ -127,8 +142,23 @@ _VOID_ELEMENTS: Final = frozenset(
     }
 )
 _FORBIDDEN_ELEMENTS: Final = frozenset(
-    {"base", "embed", "form", "iframe", "object", "style"}
+    {"base", "embed", "iframe", "object", "style"}
 )
+_REVIEWED_EXTRA_JAVASCRIPT: Final = {
+    PurePosixPath("static/map3d.js"): "e6a5300461613b1ebbb96879639d36b466fe66b2688bd0688089e168d6cd52fb",
+    PurePosixPath("static/progress.js"): "cc58e6aa16dbc041285c46d02c29a260121e633d33fe4603abdf046bf9b871c9",
+    PurePosixPath("static/three.module.js"): "76dea8151bc9352aef3528b4262e249b2604f62543828328db978d060d61a495",
+    PurePosixPath("static/three/OrbitControls.js"): "5a44a9e86a2a0fb11933eed69bc2cd33c76a496854c1aed6ed776efa87d7b064",
+    PurePosixPath("static/three/CSS2DRenderer.js"): "a4f0f79184c043f6b9d2654d8ba051e49a7d631d34e8f437c1804798a68c379f",
+}
+_JAVASCRIPT_MAX_BYTES: Final = {
+    PurePosixPath("static/visualization.js"): MAX_JAVASCRIPT_BYTES,
+    PurePosixPath("static/map3d.js"): MAX_JAVASCRIPT_BYTES,
+    PurePosixPath("static/progress.js"): MAX_JAVASCRIPT_BYTES,
+    PurePosixPath("static/three.module.js"): 2 * 1024 * 1024,
+    PurePosixPath("static/three/OrbitControls.js"): 128 * 1024,
+    PurePosixPath("static/three/CSS2DRenderer.js"): 64 * 1024,
+}
 _RESOURCE_ELEMENTS: Final = frozenset(
     {"audio", "img", "source", "track", "video"}
 )
@@ -454,10 +484,20 @@ class _PageParser(HTMLParser):
                 self.stylesheet_hrefs.append(values.get("href") or "")
             self._record_url(values.get("href"), "stylesheet", rel)
         elif tag == "script":
-            if set(values) != {"src", "defer"} or values.get("defer") is not None:
+            is_classic = (
+                set(values) == {"src", "defer"}
+                and values.get("defer") is None
+            )
+            is_map_module = (
+                self.relative == PurePosixPath("map3d.html")
+                and set(values) == {"src", "type"}
+                and values.get("type") == "module"
+                and values.get("src") == "static/map3d.js"
+            )
+            if not (is_classic or is_map_module):
                 self.issues.add(
                     self.relative,
-                    "script is forbidden unless it is the deferred classic asset",
+                    "script does not match an approved external contract",
                 )
             if not self.stack or self.stack[-1] != "body":
                 self.issues.add(self.relative, "script must be a direct child of body")
@@ -635,6 +675,10 @@ class _PageParser(HTMLParser):
             f"{root}styles.css",
             f"{root}static/visualizations.css",
         ]
+        if self.relative == PurePosixPath("map3d.html"):
+            expected_stylesheets.append("static/map3d.css")
+        elif self.relative == PurePosixPath("progress.html"):
+            expected_stylesheets.append("static/progress.css")
         if self.stylesheet_hrefs != expected_stylesheets:
             self.issues.add(
                 self.relative,
@@ -643,6 +687,10 @@ class _PageParser(HTMLParser):
         expected_scripts = (
             [f"{root}static/visualization.js"] if self.simulation_roots else []
         )
+        if self.relative == PurePosixPath("map3d.html"):
+            expected_scripts.append("static/map3d.js")
+        elif self.relative == PurePosixPath("progress.html"):
+            expected_scripts.append("static/progress.js")
         if self.script_sources != expected_scripts:
             self.issues.add(self.relative, "script assets must exactly match simulation content")
         return _Page(ids=self.ids, references=self.references)
@@ -844,9 +892,12 @@ def _scan_tree(
                 allow_release_manifest
                 and child == PurePosixPath(MANIFEST_NAME)
             )
+            allowed_javascript = (
+                child == PurePosixPath("static/visualization.js")
+                or child in _REVIEWED_EXTRA_JAVASCRIPT
+            )
             if (suffix not in _ALLOWED_SUFFIXES and not is_release_manifest) or (
-                suffix == ".js"
-                and child != PurePosixPath("static/visualization.js")
+                suffix == ".js" and not allowed_javascript
             ):
                 issues.add(child, "disallowed static file type")
                 continue
@@ -856,8 +907,8 @@ def _scan_tree(
                 maximum = MAX_HTML_BYTES
             elif child == PurePosixPath("static/visualizations.css"):
                 maximum = MAX_VISUALIZATION_CSS_BYTES
-            elif child == PurePosixPath("static/visualization.js"):
-                maximum = MAX_JAVASCRIPT_BYTES
+            elif suffix == ".js":
+                maximum = _JAVASCRIPT_MAX_BYTES[child]
             else:
                 maximum = MAX_CSS_BYTES
             result = _read_regular_file(directory_fd, entry.name, status, maximum)
@@ -892,6 +943,14 @@ def _validate_css(relative: PurePosixPath, source: bytes, issues: _Issues) -> No
 
 
 def _validate_javascript(relative: PurePosixPath, source: bytes, issues: _Issues) -> None:
+    expected_digest = _REVIEWED_EXTRA_JAVASCRIPT.get(relative)
+    if expected_digest is not None:
+        if hashlib.sha256(source).hexdigest() != expected_digest:
+            issues.add(
+                relative,
+                "JavaScript violates the reviewed runtime digest contract",
+            )
+        return
     try:
         validate_reviewed_visualization_runtime(source)
     except CurriculumValidationError:
@@ -917,7 +976,16 @@ def _validate_html(
         issues.add(relative, "malformed HTML")
         return None
     try:
-        validate_generated_document(document)
+        validator = (
+            validate_generated_interactive_document
+            if relative in {
+                PurePosixPath("daily.html"),
+                PurePosixPath("map3d.html"),
+                PurePosixPath("progress.html"),
+            }
+            else validate_generated_document
+        )
+        validator(document)
     except CurriculumValidationError:
         issues.add(relative, "HTML violates the generated document grammar")
     parser = _PageParser(relative, issues, document)
@@ -975,8 +1043,12 @@ def _resolve_reference(
         return
     if reference.role == "stylesheet" and target.suffix.casefold() != ".css":
         issues.add(reference.source, "stylesheet target must be local CSS")
-    if reference.role == "script" and target != PurePosixPath("static/visualization.js"):
-        issues.add(reference.source, "script target must be the fixed runtime asset")
+    if reference.role == "script" and target not in {
+        PurePosixPath("static/visualization.js"),
+        PurePosixPath("static/map3d.js"),
+        PurePosixPath("static/progress.js"),
+    }:
+        issues.add(reference.source, "script target must be an approved runtime asset")
     fragment = reference.fragment
     if fragment is not None:
         if not fragment:

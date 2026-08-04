@@ -1,0 +1,52 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="コンテナの隔離からKubernetesの制御ループ、Platform Engineeringの製品設計までを学ぶ。">
+<title>Container・Kubernetes・Platform Engineering | Engineering Expert Curriculum</title>
+<link rel="stylesheet" href="../../assets/styles.css">
+<script>window.CURRICULUM_BASE_PREFIX="../../";</script>
+<script src="../../assets/curriculum.js"></script>
+<script>if(window.CURRICULUM) window.CURRICULUM.basePrefix=window.CURRICULUM_BASE_PREFIX;</script>
+<script defer src="../../assets/app.js"></script>
+</head><body><header class="site-header"><nav class="nav">
+<a class="brand" href="../../index.html">Engineering Expert Curriculum</a>
+<a href="../../roadmap.html">ロードマップ</a>
+<a href="../../daily.html">今日のLesson</a>
+<a href="../../progress.html">進捗</a>
+<a href="../../guide.html">使い方</a>
+</nav></header><main>
+<div class="breadcrumbs"><a href="../../index.html">Home</a> / Domain 19</div>
+<section class="hero"><div class="badges"><span class="badge">Domain 19</span><span class="badge">30 Lessons</span></div>
+<h1>Container・Kubernetes・Platform Engineering</h1><p class="lede">コンテナの隔離からKubernetesの制御ループ、Platform Engineeringの製品設計までを学ぶ。</p><p class="small">推奨前提: <a href="../06-os-linux-systems/index.html">06 OS・Linux・システムプログラミング</a>, <a href="../10-network-protocols/index.html">10 ネットワーク・インターネットプロトコル</a>, <a href="../17-distributed-systems-messaging/index.html">17 分散システム・メッセージング</a>, <a href="../18-cloud-aws-infrastructure/index.html">18 Cloud・AWS・Infrastructure</a></p></section>
+<section><h2>Modules</h2><div class="grid"><article class="card">
+<div class="meta">Module 01</div><h3>Container基礎</h3><p>コンテナがVMと異なる理由を説明できる</p>
+<div class="badges"><span class="badge">namespace</span><span class="badge">cgroup</span><span class="badge">image layer</span><span class="badge">OCI runtime</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d19-m01-l1.html">基礎 D19-M01-L1</a><a class="button secondary" href="lessons/d19-m01-l2.html">応用 D19-M01-L2</a><a class="button secondary" href="lessons/d19-m01-l3.html">専門 D19-M01-L3</a></div></article><article class="card">
+<div class="meta">Module 02</div><h3>Docker Build・Runtime</h3><p>小さく安全なイメージを構築できる</p>
+<div class="badges"><span class="badge">Dockerfile</span><span class="badge">multi-stage build</span><span class="badge">volume・network</span><span class="badge">rootless</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d19-m02-l1.html">基礎 D19-M02-L1</a><a class="button secondary" href="lessons/d19-m02-l2.html">応用 D19-M02-L2</a><a class="button secondary" href="lessons/d19-m02-l3.html">専門 D19-M02-L3</a></div></article><article class="card">
+<div class="meta">Module 03</div><h3>Kubernetes Architecture</h3><p>宣言と制御ループの仕組みを説明できる</p>
+<div class="badges"><span class="badge">API server</span><span class="badge">etcd</span><span class="badge">scheduler</span><span class="badge">controller manager</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d19-m03-l1.html">基礎 D19-M03-L1</a><a class="button secondary" href="lessons/d19-m03-l2.html">応用 D19-M03-L2</a><a class="button secondary" href="lessons/d19-m03-l3.html">専門 D19-M03-L3</a></div></article><article class="card">
+<div class="meta">Module 04</div><h3>Workload Resource</h3><p>ワークロード特性に合うリソースを選べる</p>
+<div class="badges"><span class="badge">Pod</span><span class="badge">Deployment</span><span class="badge">StatefulSet</span><span class="badge">Job・CronJob</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d19-m04-l1.html">基礎 D19-M04-L1</a><a class="button secondary" href="lessons/d19-m04-l2.html">応用 D19-M04-L2</a><a class="button secondary" href="lessons/d19-m04-l3.html">専門 D19-M04-L3</a></div></article><article class="card">
+<div class="meta">Module 05</div><h3>Service・Ingress・Networking</h3><p>クラスタ内外の通信と分離を設計できる</p>
+<div class="badges"><span class="badge">Service</span><span class="badge">Ingress・Gateway API</span><span class="badge">CNI</span><span class="badge">NetworkPolicy</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d19-m05-l1.html">基礎 D19-M05-L1</a><a class="button secondary" href="lessons/d19-m05-l2.html">応用 D19-M05-L2</a><a class="button secondary" href="lessons/d19-m05-l3.html">専門 D19-M05-L3</a></div></article><article class="card">
+<div class="meta">Module 06</div><h3>Config・Secret・Storage</h3><p>設定と永続データを安全に扱える</p>
+<div class="badges"><span class="badge">ConfigMap・Secret</span><span class="badge">CSI</span><span class="badge">PV・PVC</span><span class="badge">stateful workload</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d19-m06-l1.html">基礎 D19-M06-L1</a><a class="button secondary" href="lessons/d19-m06-l2.html">応用 D19-M06-L2</a><a class="button secondary" href="lessons/d19-m06-l3.html">専門 D19-M06-L3</a></div></article><article class="card">
+<div class="meta">Module 07</div><h3>Scheduling・Scaling・Resource</h3><p>資源競合とスケーリングを調整できる</p>
+<div class="badges"><span class="badge">request・limit</span><span class="badge">HPA・VPA</span><span class="badge">affinity・taint</span><span class="badge">eviction</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d19-m07-l1.html">基礎 D19-M07-L1</a><a class="button secondary" href="lessons/d19-m07-l2.html">応用 D19-M07-L2</a><a class="button secondary" href="lessons/d19-m07-l3.html">専門 D19-M07-L3</a></div></article><article class="card">
+<div class="meta">Module 08</div><h3>Security・Policy・Supply Chain</h3><p>クラスタと配布物の信頼境界を守れる</p>
+<div class="badges"><span class="badge">RBAC</span><span class="badge">Pod Security</span><span class="badge">admission</span><span class="badge">image signing・SBOM</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d19-m08-l1.html">基礎 D19-M08-L1</a><a class="button secondary" href="lessons/d19-m08-l2.html">応用 D19-M08-L2</a><a class="button secondary" href="lessons/d19-m08-l3.html">専門 D19-M08-L3</a></div></article><article class="card">
+<div class="meta">Module 09</div><h3>Service Mesh・Multi-cluster</h3><p>複雑な通信制御の利益とコストを評価できる</p>
+<div class="badges"><span class="badge">sidecar・ambient</span><span class="badge">mTLS</span><span class="badge">traffic policy</span><span class="badge">federation</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d19-m09-l1.html">基礎 D19-M09-L1</a><a class="button secondary" href="lessons/d19-m09-l2.html">応用 D19-M09-L2</a><a class="button secondary" href="lessons/d19-m09-l3.html">専門 D19-M09-L3</a></div></article><article class="card">
+<div class="meta">Module 10</div><h3>Platform Engineering</h3><p>開発者体験を製品として設計できる</p>
+<div class="badges"><span class="badge">internal developer platform</span><span class="badge">golden path</span><span class="badge">self-service</span><span class="badge">platform product</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d19-m10-l1.html">基礎 D19-M10-L1</a><a class="button secondary" href="lessons/d19-m10-l2.html">応用 D19-M10-L2</a><a class="button secondary" href="lessons/d19-m10-l3.html">専門 D19-M10-L3</a></div></article></div></section>
+<section class="section"><h2>公式・標準リファレンス</h2><p>Lesson本文と演習に加え、仕様・API・標準の一次資料で確認してください。version依存部分は必ず現在の公式資料を優先します。</p><ul><li><a href="https://opencontainers.org/" target="_blank" rel="noopener noreferrer">OCI Specifications</a></li><li><a href="https://kubernetes.io/docs/" target="_blank" rel="noopener noreferrer">Kubernetes Documentation</a></li><li><a href="https://tag-app-delivery.cncf.io/whitepapers/platforms/" target="_blank" rel="noopener noreferrer">CNCF Platform Engineering</a></li></ul></section>
+</main><footer>Engineering Expert Curriculum — 学習内容は、実装・検証・運用・説明までを一つの完了条件として設計しています。</footer></body></html>

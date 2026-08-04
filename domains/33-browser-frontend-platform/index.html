@@ -1,0 +1,52 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="ブラウザのネットワーク、DOM、CSS、レンダリング、JavaScript、セキュリティ、アクセシビリティを基盤から理解する。">
+<title>Browser・Frontend Platform | Engineering Expert Curriculum</title>
+<link rel="stylesheet" href="../../assets/styles.css">
+<script>window.CURRICULUM_BASE_PREFIX="../../";</script>
+<script src="../../assets/curriculum.js"></script>
+<script>if(window.CURRICULUM) window.CURRICULUM.basePrefix=window.CURRICULUM_BASE_PREFIX;</script>
+<script defer src="../../assets/app.js"></script>
+</head><body><header class="site-header"><nav class="nav">
+<a class="brand" href="../../index.html">Engineering Expert Curriculum</a>
+<a href="../../roadmap.html">ロードマップ</a>
+<a href="../../daily.html">今日のLesson</a>
+<a href="../../progress.html">進捗</a>
+<a href="../../guide.html">使い方</a>
+</nav></header><main>
+<div class="breadcrumbs"><a href="../../index.html">Home</a> / Domain 33</div>
+<section class="hero"><div class="badges"><span class="badge">Domain 33</span><span class="badge">30 Lessons</span></div>
+<h1>Browser・Frontend Platform</h1><p class="lede">ブラウザのネットワーク、DOM、CSS、レンダリング、JavaScript、セキュリティ、アクセシビリティを基盤から理解する。</p><p class="small">推奨前提: <a href="../10-network-protocols/index.html">10 ネットワーク・インターネットプロトコル</a>, <a href="../11-typescript-javascript-nodejs/index.html">11 TypeScript・JavaScript・Node.js</a>, <a href="../23-performance-engineering/index.html">23 Performance Engineering</a>, <a href="../24-cybersecurity-privacy-crypto/index.html">24 Cybersecurity・Privacy・Cryptography</a></p></section>
+<section><h2>Modules</h2><div class="grid"><article class="card">
+<div class="meta">Module 01</div><h3>Browser Architecture</h3><p>ブラウザの責務分離と安全性を説明できる</p>
+<div class="badges"><span class="badge">process model</span><span class="badge">renderer</span><span class="badge">sandbox</span><span class="badge">site isolation</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d33-m01-l1.html">基礎 D33-M01-L1</a><a class="button secondary" href="lessons/d33-m01-l2.html">応用 D33-M01-L2</a><a class="button secondary" href="lessons/d33-m01-l3.html">専門 D33-M01-L3</a></div></article><article class="card">
+<div class="meta">Module 02</div><h3>Navigation・Resource Loading</h3><p>ページ表示までの通信経路を最適化できる</p>
+<div class="badges"><span class="badge">URL・fetch</span><span class="badge">preload・prefetch</span><span class="badge">cache</span><span class="badge">CORS</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d33-m02-l1.html">基礎 D33-M02-L1</a><a class="button secondary" href="lessons/d33-m02-l2.html">応用 D33-M02-L2</a><a class="button secondary" href="lessons/d33-m02-l3.html">専門 D33-M02-L3</a></div></article><article class="card">
+<div class="meta">Module 03</div><h3>DOM・Event</h3><p>UI状態とイベント伝播を正しく扱える</p>
+<div class="badges"><span class="badge">node tree</span><span class="badge">event loop</span><span class="badge">capture・bubble</span><span class="badge">custom element</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d33-m03-l1.html">基礎 D33-M03-L1</a><a class="button secondary" href="lessons/d33-m03-l2.html">応用 D33-M03-L2</a><a class="button secondary" href="lessons/d33-m03-l3.html">専門 D33-M03-L3</a></div></article><article class="card">
+<div class="meta">Module 04</div><h3>CSS・Layout</h3><p>予測可能で保守しやすいレイアウトを作れる</p>
+<div class="badges"><span class="badge">cascade</span><span class="badge">box model</span><span class="badge">flex・grid</span><span class="badge">containment</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d33-m04-l1.html">基礎 D33-M04-L1</a><a class="button secondary" href="lessons/d33-m04-l2.html">応用 D33-M04-L2</a><a class="button secondary" href="lessons/d33-m04-l3.html">専門 D33-M04-L3</a></div></article><article class="card">
+<div class="meta">Module 05</div><h3>Rendering Pipeline</h3><p>jankや再描画コストを診断できる</p>
+<div class="badges"><span class="badge">style</span><span class="badge">layout</span><span class="badge">paint</span><span class="badge">composite</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d33-m05-l1.html">基礎 D33-M05-L1</a><a class="button secondary" href="lessons/d33-m05-l2.html">応用 D33-M05-L2</a><a class="button secondary" href="lessons/d33-m05-l3.html">専門 D33-M05-L3</a></div></article><article class="card">
+<div class="meta">Module 06</div><h3>Frontend Architecture</h3><p>複雑な画面を変更可能な構造に分割できる</p>
+<div class="badges"><span class="badge">state management</span><span class="badge">component boundary</span><span class="badge">routing</span><span class="badge">data fetching</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d33-m06-l1.html">基礎 D33-M06-L1</a><a class="button secondary" href="lessons/d33-m06-l2.html">応用 D33-M06-L2</a><a class="button secondary" href="lessons/d33-m06-l3.html">専門 D33-M06-L3</a></div></article><article class="card">
+<div class="meta">Module 07</div><h3>Web Performance</h3><p>表示・操作・安定性を測定し改善できる</p>
+<div class="badges"><span class="badge">Core Web Vitals concepts</span><span class="badge">bundle</span><span class="badge">image・font</span><span class="badge">runtime cost</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d33-m07-l1.html">基礎 D33-M07-L1</a><a class="button secondary" href="lessons/d33-m07-l2.html">応用 D33-M07-L2</a><a class="button secondary" href="lessons/d33-m07-l3.html">専門 D33-M07-L3</a></div></article><article class="card">
+<div class="meta">Module 08</div><h3>Accessibility</h3><p>多様な利用者が操作できるUIを作れる</p>
+<div class="badges"><span class="badge">semantic HTML</span><span class="badge">keyboard</span><span class="badge">screen reader</span><span class="badge">WCAG concepts</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d33-m08-l1.html">基礎 D33-M08-L1</a><a class="button secondary" href="lessons/d33-m08-l2.html">応用 D33-M08-L2</a><a class="button secondary" href="lessons/d33-m08-l3.html">専門 D33-M08-L3</a></div></article><article class="card">
+<div class="meta">Module 09</div><h3>Web Security</h3><p>ブラウザ境界を利用した攻撃を防げる</p>
+<div class="badges"><span class="badge">same-origin</span><span class="badge">CSP</span><span class="badge">XSS・CSRF</span><span class="badge">trusted types</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d33-m09-l1.html">基礎 D33-M09-L1</a><a class="button secondary" href="lessons/d33-m09-l2.html">応用 D33-M09-L2</a><a class="button secondary" href="lessons/d33-m09-l3.html">専門 D33-M09-L3</a></div></article><article class="card">
+<div class="meta">Module 10</div><h3>PWA・Offline・Edge</h3><p>不安定なネットワークでも動くWeb体験を設計できる</p>
+<div class="badges"><span class="badge">service worker</span><span class="badge">cache strategy</span><span class="badge">background sync</span><span class="badge">edge rendering</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d33-m10-l1.html">基礎 D33-M10-L1</a><a class="button secondary" href="lessons/d33-m10-l2.html">応用 D33-M10-L2</a><a class="button secondary" href="lessons/d33-m10-l3.html">専門 D33-M10-L3</a></div></article></div></section>
+<section class="section"><h2>公式・標準リファレンス</h2><p>Lesson本文と演習に加え、仕様・API・標準の一次資料で確認してください。version依存部分は必ず現在の公式資料を優先します。</p><ul><li><a href="https://developer.mozilla.org/" target="_blank" rel="noopener noreferrer">MDN Web Docs</a></li><li><a href="https://web.dev/" target="_blank" rel="noopener noreferrer">Web.dev</a></li><li><a href="https://spec.whatwg.org/" target="_blank" rel="noopener noreferrer">WHATWG Standards</a></li></ul></section>
+</main><footer>Engineering Expert Curriculum — 学習内容は、実装・検証・運用・説明までを一つの完了条件として設計しています。</footer></body></html>

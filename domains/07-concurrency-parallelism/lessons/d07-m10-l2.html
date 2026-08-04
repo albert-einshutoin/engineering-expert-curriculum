@@ -1,0 +1,136 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="複数の仕事を正しく、高速に、観測可能に実行するためのモデル、同期、メモリモデル、分散実行を学ぶ。">
+<title>並行プログラムの検証とデバッグ — 応用 | 並行処理・並列処理</title>
+<link rel="stylesheet" href="../../../assets/styles.css">
+<script>window.CURRICULUM_BASE_PREFIX="../../../";</script>
+<script src="../../../assets/curriculum.js"></script>
+<script>if(window.CURRICULUM) window.CURRICULUM.basePrefix=window.CURRICULUM_BASE_PREFIX;</script>
+<script defer src="../../../assets/app.js"></script>
+</head><body><header class="site-header"><nav class="nav">
+<a class="brand" href="../../../index.html">Engineering Expert Curriculum</a>
+<a href="../../../roadmap.html">ロードマップ</a>
+<a href="../../../daily.html">今日のLesson</a>
+<a href="../../../progress.html">進捗</a>
+<a href="../../../guide.html">使い方</a>
+</nav></header>
+<main>
+<div class="breadcrumbs"><a href="../../../index.html">Home</a> / <a href="../index.html">並行処理・並列処理</a> / Module 10 / 応用</div>
+<section class="hero">
+  <div class="badges"><span class="badge">D07-M10-L2</span><span class="badge">Domain 07</span><span class="badge">Module 10</span><span class="badge level">Applied / 応用</span></div>
+  <h1>並行プログラムの検証とデバッグ<br><span class="small">応用Lesson</span></h1>
+  <p class="lede">複数の仕事を正しく、高速に、観測可能に実行するためのモデル、同期、メモリモデル、分散実行を学ぶ。 このLessonでは「内部機構、設計判断、実装方法を具体化する」ことに集中します。</p>
+  <div class="lesson-actions"><button data-complete-lesson="D07-M10-L2">このLessonを完了</button> <a class="button secondary" href="../index.html">ドメイン一覧へ</a></div>
+</section>
+
+<section class="section">
+<h2>このLessonの到達目標</h2>
+<ul class="checklist"><li>再現しにくいバグを体系的に追跡できる</li><li>race detector、deterministic test、linearizability、trace analysisの関係を説明できる</li><li>具体例と反例を用いて、成立条件と失敗条件を示せる</li><li>複数の実装方式を比較し、採用条件を設計判断として説明できる</li></ul>
+<div class="callout"><strong>完了条件:</strong> 読んだだけでは完了ではありません。説明、具体例、反例、再現可能な検証の4点を残してください。</div>
+</section>
+
+<section class="section">
+<h2>1. なぜ重要か</h2>
+<p>並行プログラムの検証とデバッグは、並行処理・並列処理において「再現しにくいバグを体系的に追跡できる」ための中核テーマです。実務では単独で現れるより、周辺の概念や制約と組み合わさって現れます。そのため、用語の定義だけでなく、どの条件で使い、何を保証し、どこで破綻するかを一つのモデルとして理解します。</p>
+<p>このLessonでは、race detector、deterministic test、linearizability、trace analysisを同じ地図上に配置します。専門家は「知っている技術の数」ではなく、問題を正しい抽象度へ置き、必要な証拠を集め、複数案から条件付きで判断できる人です。</p>
+<div class="callout expert"><strong>講義本文:</strong> race detectorは実行traceから未同期accessを検出しますが、通らなかったinterleavingは保証しません。deterministic scheduler、stress、linearizability check、model checkingでschedule spaceを探索します。timestampだけでなくthread/task ID、lock、queue、state transitionをtraceへ残します。</div>
+</section>
+
+<section class="section">
+<h2>2. 中核概念</h2>
+<div class="concept-grid"><article class="concept"><h3>race detector</h3><p>「race detector」を実装や設計へ落とす際は、正常系だけでなく境界値、競合、失敗、観測方法を同時に扱います。別の選択肢と比較し、性能・安全性・変更容易性・運用コストのどれを優先したかを記録してください。</p></article><article class="concept"><h3>deterministic test</h3><p>「deterministic test」を実装や設計へ落とす際は、正常系だけでなく境界値、競合、失敗、観測方法を同時に扱います。別の選択肢と比較し、性能・安全性・変更容易性・運用コストのどれを優先したかを記録してください。</p></article><article class="concept"><h3>linearizability</h3><p>「linearizability」を実装や設計へ落とす際は、正常系だけでなく境界値、競合、失敗、観測方法を同時に扱います。別の選択肢と比較し、性能・安全性・変更容易性・運用コストのどれを優先したかを記録してください。</p></article><article class="concept"><h3>trace analysis</h3><p>「trace analysis」を実装や設計へ落とす際は、正常系だけでなく境界値、競合、失敗、観測方法を同時に扱います。別の選択肢と比較し、性能・安全性・変更容易性・運用コストのどれを優先したかを記録してください。</p></article></div>
+</section>
+
+<section class="section">
+<h2>3. メンタルモデル</h2>
+<ol class="steps"><li>並行プログラムの検証とデバッグを構成する責務を分け、境界ごとの契約を定義する。</li><li>代表的な実装を一つ作り、計算量・資源・失敗経路を測る。</li><li>代替方式を最低二つ比較し、採用条件と不採用条件を明示する。</li><li>ログ、メトリクス、テストなど、正しく動いた証拠を実装に含める。</li></ol>
+<div class="callout warning"><strong>注意:</strong> 図や比喩は理解を助けますが、保証ではありません。境界条件と反例を一緒に持つことで、比喩の誤用を防げます。</div>
+</section>
+
+<section class="section">
+<h2>4. 学習・実装手順</h2>
+<ol class="steps"><li>要件を機能要件・非機能要件・制約へ分解する。</li><li>最小実装を作り、正常系と境界値を自動検証する。</li><li>一つの障害を注入し、期待する失敗モードと復旧を確認する。</li><li>計測結果を基に設計を一度変更し、差分を記録する。</li></ol>
+<h3>最小実験</h3>
+<pre><code class="language-text">CONTEXT: 並行処理・並列処理
+TOPIC: 並行プログラムの検証とデバッグ
+INPUT: race detector
+CONSTRAINT: deterministic test
+PROCESS:
+  1. Define the invariant.
+  2. Observe the mechanism.
+  3. Introduce one controlled failure.
+  4. Record evidence.
+OUTPUT: A decision that another engineer can verify.</code></pre>
+<p class="small">コードは完成品ではなく、観測可能な最小実験の出発点です。自分の環境で動かし、前提と結果を記録してください。</p>
+</section>
+
+<section class="section">
+<h2>5. 設計判断とトレードオフ</h2>
+<p>応用段階では、正解を一つに固定せず、どの条件でどの方式が有利かを判断します。性能・整合性・安全性・開発速度・運用負荷は同時に最大化できないため、優先順位を明示します。</p>
+<div class="table-wrap"><table><thead><tr><th>観点</th><th>確認する問い</th></tr></thead><tbody>
+<tr><td>正しさ</td><td>どの不変条件を守り、どの入力・並行性・障害まで保証するか。</td></tr>
+<tr><td>性能</td><td>時間、空間、I/O、ネットワーク、待ち行列のどこが上限になるか。</td></tr>
+<tr><td>安全性</td><td>悪意ある入力、権限境界、情報漏えい、誤操作にどう耐えるか。</td></tr>
+<tr><td>変更容易性</td><td>要件変更時にどの境界まで影響し、互換性をどう維持するか。</td></tr>
+<tr><td>運用性</td><td>失敗をどう検知し、誰が何を見て、どの手順で復旧するか。</td></tr>
+</tbody></table></div>
+</section>
+
+<section class="section">
+<h2>6. 典型的な失敗</h2>
+<ul><li>race detectorとdeterministic testを同じものとして扱い、境界条件を失う。</li><li>小さな成功例だけで一般化し、入力規模・並行性・障害時に破綻する。</li><li>結果だけを確認し、途中状態や観測証拠を残さない。</li><li>採用した方式の前提条件と、撤退条件を記録しない。</li><li>テスト環境と本番環境の差を無視し、性能・権限・時刻・ネットワーク条件が再現されない。</li></ul>
+</section>
+
+<section class="section">
+<h2>7. 演習</h2>
+<ol class="steps"><li>並行プログラムの検証とデバッグを扱う小さな実装を作り、正常系・境界値・失敗系のテストを追加する。</li><li>race detectorを採用する案とdeterministic testを採用する案を、性能・安全性・変更容易性・運用負荷で比較する。</li><li>実装へ計測点を追加し、少なくとも3回測定して結果とばらつきを記録する。</li></ol>
+<div class="callout expert"><strong>Expert Challenge:</strong> 並行プログラムの検証とデバッグを使う小規模システムを設計し、要件、図、コード、テスト、運用指標を一つのREADMEにまとめてください。</div>
+</section>
+
+<section class="section">
+<h2>8. 理解度チェック</h2>
+<details><summary>並行プログラムの検証とデバッグの実装を選ぶ際の主要なトレードオフは何ですか？</summary><p>性能、整合性、安全性、開発速度、運用負荷、変更容易性から、今回重要な軸を選び、条件付きで比較します。</p></details><details><summary>正常に動くことと、正しく設計されていることの違いは何ですか？</summary><p>正常例の成功は一つの観測にすぎません。境界、失敗、競合、資源制約、将来変更でも不変条件が保たれる必要があります。</p></details><details><summary>実装を本番へ出す前に何を観測可能にしますか？</summary><p>入力規模、処理時間、失敗種別、資源使用量、重要な状態遷移、相関IDを候補にします。</p></details>
+</section>
+
+<section class="section">
+<h2>9. 学習ノート用テンプレート</h2>
+<pre><code>Lesson ID: D07-M10-L2
+理解したこと:
+- 
+
+自分で確認した証拠:
+- 実行結果 / 計算 / 図 / テスト:
+
+反例・失敗条件:
+- 
+
+設計判断:
+- 採用案:
+- 代替案:
+- 採用理由:
+- 再評価条件:
+
+次に確認すること:
+- </code></pre>
+</section>
+
+<section class="section">
+<h2>10. GPT講師モード</h2>
+<p>下記をGPTへ渡すと、このLessonを対話型の講義・演習・採点まで展開できます。Scheduled配信では選ばれたLessonのHTMLと一緒に使ってください。</p>
+<pre><code>あなたは 並行処理・並列処理 の専門講師です。Lesson D07-M10-L2「並行プログラムの検証とデバッグ — 応用」を、受講者が実装・検証・説明できるまで教えてください。
+
+必須内容:
+1. race detector, deterministic test, linearizability, trace analysis をそれぞれ正確に定義する。
+2. 概念間の関係を図またはASCII図で示す。
+3. 最小の具体例を段階的に追う。
+4. 実務的なコード、設定、数式、protocol traceのうち適切なものを提示する。
+5. 典型的な誤解、境界条件、性能問題、security risk、障害時の挙動を説明する。
+6. normal case、boundary case、failure caseの演習を出す。
+7. 私の回答を採点し、不足を追加問題で補う。
+8. 最後に、このLessonを完了したと判断する実技課題を一つ出す。
+
+難易度: 応用。単なる用語集ではなく、仕組み、trade-off、観測・debug方法まで扱ってください。</code></pre>
+</section>
+
+<nav class="lesson-nav"><a class="button secondary" href="d07-m10-l1.html">← D07-M10-L1 並行プログラムの検証とデバッグ — 基礎</a><a href="../index.html">Module一覧</a><div class="next"><a class="button secondary" href="d07-m10-l3.html">D07-M10-L3 並行プログラムの検証とデバッグ — 専門 →</a></div></nav>
+</main><footer>Engineering Expert Curriculum — 学習内容は、実装・検証・運用・説明までを一つの完了条件として設計しています。</footer></body></html>

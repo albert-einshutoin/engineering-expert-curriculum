@@ -1,0 +1,52 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="AWSをサービス名の暗記ではなく、責任共有、ネットワーク、計算、データ、権限、コスト、復旧の設計として学ぶ。">
+<title>Cloud・AWS・Infrastructure | Engineering Expert Curriculum</title>
+<link rel="stylesheet" href="../../assets/styles.css">
+<script>window.CURRICULUM_BASE_PREFIX="../../";</script>
+<script src="../../assets/curriculum.js"></script>
+<script>if(window.CURRICULUM) window.CURRICULUM.basePrefix=window.CURRICULUM_BASE_PREFIX;</script>
+<script defer src="../../assets/app.js"></script>
+</head><body><header class="site-header"><nav class="nav">
+<a class="brand" href="../../index.html">Engineering Expert Curriculum</a>
+<a href="../../roadmap.html">ロードマップ</a>
+<a href="../../daily.html">今日のLesson</a>
+<a href="../../progress.html">進捗</a>
+<a href="../../guide.html">使い方</a>
+</nav></header><main>
+<div class="breadcrumbs"><a href="../../index.html">Home</a> / Domain 18</div>
+<section class="hero"><div class="badges"><span class="badge">Domain 18</span><span class="badge">30 Lessons</span></div>
+<h1>Cloud・AWS・Infrastructure</h1><p class="lede">AWSをサービス名の暗記ではなく、責任共有、ネットワーク、計算、データ、権限、コスト、復旧の設計として学ぶ。</p><p class="small">推奨前提: <a href="../06-os-linux-systems/index.html">06 OS・Linux・システムプログラミング</a>, <a href="../10-network-protocols/index.html">10 ネットワーク・インターネットプロトコル</a>, <a href="../16-database-storage-search/index.html">16 データベース・ストレージ・検索</a>, <a href="../17-distributed-systems-messaging/index.html">17 分散システム・メッセージング</a></p></section>
+<section><h2>Modules</h2><div class="grid"><article class="card">
+<div class="meta">Module 01</div><h3>Cloud設計原則と責任共有</h3><p>クラウド採用の責任境界を説明できる</p>
+<div class="badges"><span class="badge">IaaS・PaaS・SaaS</span><span class="badge">shared responsibility</span><span class="badge">region・AZ</span><span class="badge">well-architected thinking</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d18-m01-l1.html">基礎 D18-M01-L1</a><a class="button secondary" href="lessons/d18-m01-l2.html">応用 D18-M01-L2</a><a class="button secondary" href="lessons/d18-m01-l3.html">専門 D18-M01-L3</a></div></article><article class="card">
+<div class="meta">Module 02</div><h3>AWS Network</h3><p>安全な通信経路と分離を設計できる</p>
+<div class="badges"><span class="badge">VPC</span><span class="badge">subnet・route table</span><span class="badge">security group・NACL</span><span class="badge">Transit Gateway・PrivateLink</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d18-m02-l1.html">基礎 D18-M02-L1</a><a class="button secondary" href="lessons/d18-m02-l2.html">応用 D18-M02-L2</a><a class="button secondary" href="lessons/d18-m02-l3.html">専門 D18-M02-L3</a></div></article><article class="card">
+<div class="meta">Module 03</div><h3>Compute</h3><p>負荷・運用・起動特性に応じて計算基盤を選べる</p>
+<div class="badges"><span class="badge">EC2</span><span class="badge">Auto Scaling</span><span class="badge">Lambda</span><span class="badge">ECS・Fargate</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d18-m03-l1.html">基礎 D18-M03-L1</a><a class="button secondary" href="lessons/d18-m03-l2.html">応用 D18-M03-L2</a><a class="button secondary" href="lessons/d18-m03-l3.html">専門 D18-M03-L3</a></div></article><article class="card">
+<div class="meta">Module 04</div><h3>Storage・CDN</h3><p>耐久性、性能、配信、コストを最適化できる</p>
+<div class="badges"><span class="badge">S3</span><span class="badge">EBS・EFS</span><span class="badge">CloudFront</span><span class="badge">lifecycle・replication</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d18-m04-l1.html">基礎 D18-M04-L1</a><a class="button secondary" href="lessons/d18-m04-l2.html">応用 D18-M04-L2</a><a class="button secondary" href="lessons/d18-m04-l3.html">専門 D18-M04-L3</a></div></article><article class="card">
+<div class="meta">Module 05</div><h3>Managed Database</h3><p>アクセスパターンに合う管理型データサービスを選べる</p>
+<div class="badges"><span class="badge">RDS・Aurora</span><span class="badge">DynamoDB</span><span class="badge">ElastiCache</span><span class="badge">OpenSearch</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d18-m05-l1.html">基礎 D18-M05-L1</a><a class="button secondary" href="lessons/d18-m05-l2.html">応用 D18-M05-L2</a><a class="button secondary" href="lessons/d18-m05-l3.html">専門 D18-M05-L3</a></div></article><article class="card">
+<div class="meta">Module 06</div><h3>IAM・Organizations・Governance</h3><p>最小権限と組織統制を設計できる</p>
+<div class="badges"><span class="badge">principal・policy</span><span class="badge">role・STS</span><span class="badge">SCP</span><span class="badge">multi-account</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d18-m06-l1.html">基礎 D18-M06-L1</a><a class="button secondary" href="lessons/d18-m06-l2.html">応用 D18-M06-L2</a><a class="button secondary" href="lessons/d18-m06-l3.html">専門 D18-M06-L3</a></div></article><article class="card">
+<div class="meta">Module 07</div><h3>Load Balancing・API・Event</h3><p>同期・非同期トラフィック経路を構築できる</p>
+<div class="badges"><span class="badge">ALB・NLB</span><span class="badge">API Gateway</span><span class="badge">EventBridge</span><span class="badge">SQS・SNS</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d18-m07-l1.html">基礎 D18-M07-L1</a><a class="button secondary" href="lessons/d18-m07-l2.html">応用 D18-M07-L2</a><a class="button secondary" href="lessons/d18-m07-l3.html">専門 D18-M07-L3</a></div></article><article class="card">
+<div class="meta">Module 08</div><h3>Observability・Security</h3><p>監査・検知・暗号化を標準化できる</p>
+<div class="badges"><span class="badge">CloudWatch</span><span class="badge">CloudTrail</span><span class="badge">Config</span><span class="badge">GuardDuty・KMS</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d18-m08-l1.html">基礎 D18-M08-L1</a><a class="button secondary" href="lessons/d18-m08-l2.html">応用 D18-M08-L2</a><a class="button secondary" href="lessons/d18-m08-l3.html">専門 D18-M08-L3</a></div></article><article class="card">
+<div class="meta">Module 09</div><h3>Infrastructure as Code</h3><p>再現可能でレビュー可能なインフラ変更を行える</p>
+<div class="badges"><span class="badge">CloudFormation</span><span class="badge">CDK</span><span class="badge">Terraform concepts</span><span class="badge">drift・state</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d18-m09-l1.html">基礎 D18-M09-L1</a><a class="button secondary" href="lessons/d18-m09-l2.html">応用 D18-M09-L2</a><a class="button secondary" href="lessons/d18-m09-l3.html">専門 D18-M09-L3</a></div></article><article class="card">
+<div class="meta">Module 10</div><h3>Cost・Reliability・Disaster Recovery</h3><p>コストと可用性を事業要件に合わせて設計できる</p>
+<div class="badges"><span class="badge">FinOps</span><span class="badge">capacity</span><span class="badge">RTO・RPO</span><span class="badge">multi-AZ・multi-region</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d18-m10-l1.html">基礎 D18-M10-L1</a><a class="button secondary" href="lessons/d18-m10-l2.html">応用 D18-M10-L2</a><a class="button secondary" href="lessons/d18-m10-l3.html">専門 D18-M10-L3</a></div></article></div></section>
+<section class="section"><h2>公式・標準リファレンス</h2><p>Lesson本文と演習に加え、仕様・API・標準の一次資料で確認してください。version依存部分は必ず現在の公式資料を優先します。</p><ul><li><a href="https://docs.aws.amazon.com/" target="_blank" rel="noopener noreferrer">AWS Documentation</a></li><li><a href="https://aws.amazon.com/architecture/well-architected/" target="_blank" rel="noopener noreferrer">AWS Well-Architected</a></li><li><a href="https://aws.amazon.com/builders-library/" target="_blank" rel="noopener noreferrer">AWS Builders Library</a></li></ul></section>
+</main><footer>Engineering Expert Curriculum — 学習内容は、実装・検証・運用・説明までを一つの完了条件として設計しています。</footer></body></html>

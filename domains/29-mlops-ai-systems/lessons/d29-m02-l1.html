@@ -1,0 +1,138 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="データ・学習・モデル登録・配信・GPU・監視・評価を一つの信頼できるライフサイクルとして設計する。">
+<title>Feature・Data Pipeline — 基礎 | MLOps・AI Systems Engineering</title>
+<link rel="stylesheet" href="../../../assets/styles.css">
+<script>window.CURRICULUM_BASE_PREFIX="../../../";</script>
+<script src="../../../assets/curriculum.js"></script>
+<script>if(window.CURRICULUM) window.CURRICULUM.basePrefix=window.CURRICULUM_BASE_PREFIX;</script>
+<script defer src="../../../assets/app.js"></script>
+</head><body><header class="site-header"><nav class="nav">
+<a class="brand" href="../../../index.html">Engineering Expert Curriculum</a>
+<a href="../../../roadmap.html">ロードマップ</a>
+<a href="../../../daily.html">今日のLesson</a>
+<a href="../../../progress.html">進捗</a>
+<a href="../../../guide.html">使い方</a>
+</nav></header>
+<main>
+<div class="breadcrumbs"><a href="../../../index.html">Home</a> / <a href="../index.html">MLOps・AI Systems Engineering</a> / Module 02 / 基礎</div>
+<section class="hero">
+  <div class="badges"><span class="badge">D29-M02-L1</span><span class="badge">Domain 29</span><span class="badge">Module 02</span><span class="badge level">Foundation / 基礎</span></div>
+  <h1>Feature・Data Pipeline<br><span class="small">基礎Lesson</span></h1>
+  <p class="lede">データ・学習・モデル登録・配信・GPU・監視・評価を一つの信頼できるライフサイクルとして設計する。 このLessonでは「概念、語彙、前提、最小モデルを構築する」ことに集中します。</p>
+  <div class="lesson-actions"><button data-complete-lesson="D29-M02-L1">このLessonを完了</button> <a class="button secondary" href="../index.html">ドメイン一覧へ</a></div>
+</section>
+
+<section class="section">
+<h2>このLessonの到達目標</h2>
+<ul class="checklist"><li>学習と推論のデータずれを防げる</li><li>feature store、offline・online parity、label pipeline、data validationの関係を説明できる</li><li>具体例と反例を用いて、成立条件と失敗条件を示せる</li><li>学んだ内容を、コード・設計・検証・運用のいずれかへ適用できる</li></ul>
+<div class="callout"><strong>完了条件:</strong> 読んだだけでは完了ではありません。説明、具体例、反例、再現可能な検証の4点を残してください。</div>
+</section>
+
+<section class="section">
+<h2>1. なぜ重要か</h2>
+<p>Feature・Data Pipelineは、MLOps・AI Systems Engineeringにおいて「学習と推論のデータずれを防げる」ための中核テーマです。実務では単独で現れるより、周辺の概念や制約と組み合わさって現れます。そのため、用語の定義だけでなく、どの条件で使い、何を保証し、どこで破綻するかを一つのモデルとして理解します。</p>
+<p>このLessonでは、feature store、offline・online parity、label pipeline、data validationを同じ地図上に配置します。専門家は「知っている技術の数」ではなく、問題を正しい抽象度へ置き、必要な証拠を集め、複数案から条件付きで判断できる人です。</p>
+<div class="callout expert"><strong>講義本文:</strong> feature storeはoffline training用historical featureとonline serving用低latency featureを共通definitionで管理します。point-in-time correct joinで未来情報を防ぎ、offline/online skew、freshness、default、backfillを検証します。label delayとfeedback loopをdata contractへ含めます。</div>
+</section>
+
+<section class="section">
+<h2>2. 中核概念</h2>
+<div class="concept-grid"><article class="concept"><h3>feature store</h3><p>「feature store」は、Feature・Data Pipelineを理解するための基本語彙です。定義だけを覚えるのではなく、何を区別し、どの条件で成立し、どの現象を説明するための概念かを確認します。MLOps・AI Systems Engineeringでは、入力・状態・変換・出力のどこに位置するかを図にすると理解が安定します。</p></article><article class="concept"><h3>offline・online parity</h3><p>「offline・online parity」は、Feature・Data Pipelineを理解するための基本語彙です。定義だけを覚えるのではなく、何を区別し、どの条件で成立し、どの現象を説明するための概念かを確認します。MLOps・AI Systems Engineeringでは、入力・状態・変換・出力のどこに位置するかを図にすると理解が安定します。</p></article><article class="concept"><h3>label pipeline</h3><p>「label pipeline」は、Feature・Data Pipelineを理解するための基本語彙です。定義だけを覚えるのではなく、何を区別し、どの条件で成立し、どの現象を説明するための概念かを確認します。MLOps・AI Systems Engineeringでは、入力・状態・変換・出力のどこに位置するかを図にすると理解が安定します。</p></article><article class="concept"><h3>data validation</h3><p>「data validation」は、Feature・Data Pipelineを理解するための基本語彙です。定義だけを覚えるのではなく、何を区別し、どの条件で成立し、どの現象を説明するための概念かを確認します。MLOps・AI Systems Engineeringでは、入力・状態・変換・出力のどこに位置するかを図にすると理解が安定します。</p></article></div>
+</section>
+
+<section class="section">
+<h2>3. メンタルモデル</h2>
+<ol class="steps"><li>Feature・Data Pipelineを「入力 → 状態 → 規則 → 出力」の流れで整理する。</li><li>各概念（feature store、offline・online parity、label pipeline、data validation）の違いを一文で説明する。</li><li>小さな具体例を手作業で追跡し、用語と挙動を結びつける。</li><li>成立条件と、成立しない反例を一つずつ用意する。</li></ol>
+<div class="callout warning"><strong>注意:</strong> 図や比喩は理解を助けますが、保証ではありません。境界条件と反例を一緒に持つことで、比喩の誤用を防げます。</div>
+</section>
+
+<section class="section">
+<h2>4. 学習・実装手順</h2>
+<ol class="steps"><li>用語を自分の言葉で定義し、似た用語との差分を書く。</li><li>最小の入力例を作り、状態がどう変化するかを追う。</li><li>結果を予測してからコード・計算・観測で確かめる。</li><li>予測との差分を「前提の不足」「観測の不足」「理解の誤り」に分類する。</li></ol>
+<h3>最小実験</h3>
+<pre><code class="language-yaml">apiVersion: curriculum.example/v1
+kind: LearningExercise
+metadata:
+  name: feature-data-pipeline
+spec:
+  objective: &quot;feature store&quot;
+  constraints:
+    - &quot;offline・online parity&quot;
+  verification:
+    - measurable
+    - repeatable
+    - reversible</code></pre>
+<p class="small">コードは完成品ではなく、観測可能な最小実験の出発点です。自分の環境で動かし、前提と結果を記録してください。</p>
+</section>
+
+<section class="section">
+<h2>5. 設計判断とトレードオフ</h2>
+<p>基礎段階では網羅性より、概念間の境界を正確にすることを優先します。便利な比喩は入口として使えますが、比喩が成立しない条件も必ず確認してください。</p>
+<div class="table-wrap"><table><thead><tr><th>観点</th><th>確認する問い</th></tr></thead><tbody>
+<tr><td>正しさ</td><td>どの不変条件を守り、どの入力・並行性・障害まで保証するか。</td></tr>
+<tr><td>性能</td><td>時間、空間、I/O、ネットワーク、待ち行列のどこが上限になるか。</td></tr>
+<tr><td>安全性</td><td>悪意ある入力、権限境界、情報漏えい、誤操作にどう耐えるか。</td></tr>
+<tr><td>変更容易性</td><td>要件変更時にどの境界まで影響し、互換性をどう維持するか。</td></tr>
+<tr><td>運用性</td><td>失敗をどう検知し、誰が何を見て、どの手順で復旧するか。</td></tr>
+</tbody></table></div>
+</section>
+
+<section class="section">
+<h2>6. 典型的な失敗</h2>
+<ul><li>feature storeとoffline・online parityを同じものとして扱い、境界条件を失う。</li><li>小さな成功例だけで一般化し、入力規模・並行性・障害時に破綻する。</li><li>結果だけを確認し、途中状態や観測証拠を残さない。</li><li>採用した方式の前提条件と、撤退条件を記録しない。</li></ul>
+</section>
+
+<section class="section">
+<h2>7. 演習</h2>
+<ol class="steps"><li>feature store、offline・online parity、label pipelineをそれぞれ120字以内で定義し、違いを表にする。</li><li>Feature・Data Pipelineの最小例を紙またはコードで作り、入力から出力までを追跡する。</li><li>意図的に誤った説明を一つ書き、どこが誤りかを根拠付きで訂正する。</li></ol>
+<div class="callout expert"><strong>Expert Challenge:</strong> Feature・Data Pipelineについて、初学者が混同しやすい2概念を選び、図と100字以内の説明で区別してください。</div>
+</section>
+
+<section class="section">
+<h2>8. 理解度チェック</h2>
+<details><summary>Feature・Data Pipelineは何を解決するための概念群ですか？</summary><p>データ・学習・モデル登録・配信・GPU・監視・評価を一つの信頼できるライフサイクルとして設計する。の中で、特に「学習と推論のデータずれを防げる」ために使います。</p></details><details><summary>feature storeとoffline・online parityの違いは何ですか？</summary><p>定義、入力、出力、成立条件、失敗条件の5点で比較してください。用語の言い換えだけではなく、同じ例へ適用したときの挙動差を示せれば十分です。</p></details><details><summary>理解したと判断する最小の証拠は何ですか？</summary><p>説明、具体例、反例、再現可能な確認の4つが揃っていることです。</p></details>
+</section>
+
+<section class="section">
+<h2>9. 学習ノート用テンプレート</h2>
+<pre><code>Lesson ID: D29-M02-L1
+理解したこと:
+- 
+
+自分で確認した証拠:
+- 実行結果 / 計算 / 図 / テスト:
+
+反例・失敗条件:
+- 
+
+設計判断:
+- 採用案:
+- 代替案:
+- 採用理由:
+- 再評価条件:
+
+次に確認すること:
+- </code></pre>
+</section>
+
+<section class="section">
+<h2>10. GPT講師モード</h2>
+<p>下記をGPTへ渡すと、このLessonを対話型の講義・演習・採点まで展開できます。Scheduled配信では選ばれたLessonのHTMLと一緒に使ってください。</p>
+<pre><code>あなたは MLOps・AI Systems Engineering の専門講師です。Lesson D29-M02-L1「Feature・Data Pipeline — 基礎」を、受講者が実装・検証・説明できるまで教えてください。
+
+必須内容:
+1. feature store, offline・online parity, label pipeline, data validation をそれぞれ正確に定義する。
+2. 概念間の関係を図またはASCII図で示す。
+3. 最小の具体例を段階的に追う。
+4. 実務的なコード、設定、数式、protocol traceのうち適切なものを提示する。
+5. 典型的な誤解、境界条件、性能問題、security risk、障害時の挙動を説明する。
+6. normal case、boundary case、failure caseの演習を出す。
+7. 私の回答を採点し、不足を追加問題で補う。
+8. 最後に、このLessonを完了したと判断する実技課題を一つ出す。
+
+難易度: 基礎。単なる用語集ではなく、仕組み、trade-off、観測・debug方法まで扱ってください。</code></pre>
+</section>
+
+<nav class="lesson-nav"><a class="button secondary" href="d29-m01-l3.html">← D29-M01-L3 ML LifecycleとReproducibility — 専門</a><a href="../index.html">Module一覧</a><div class="next"><a class="button secondary" href="d29-m02-l2.html">D29-M02-L2 Feature・Data Pipeline — 応用 →</a></div></nav>
+</main><footer>Engineering Expert Curriculum — 学習内容は、実装・検証・運用・説明までを一つの完了条件として設計しています。</footer></body></html>

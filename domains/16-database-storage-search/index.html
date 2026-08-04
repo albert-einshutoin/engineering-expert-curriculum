@@ -1,0 +1,52 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="RDB、NoSQL、ストレージエンジン、トランザクション、索引、検索を内部構造から理解し、要件に合う永続化を選ぶ。">
+<title>データベース・ストレージ・検索 | Engineering Expert Curriculum</title>
+<link rel="stylesheet" href="../../assets/styles.css">
+<script>window.CURRICULUM_BASE_PREFIX="../../";</script>
+<script src="../../assets/curriculum.js"></script>
+<script>if(window.CURRICULUM) window.CURRICULUM.basePrefix=window.CURRICULUM_BASE_PREFIX;</script>
+<script defer src="../../assets/app.js"></script>
+</head><body><header class="site-header"><nav class="nav">
+<a class="brand" href="../../index.html">Engineering Expert Curriculum</a>
+<a href="../../roadmap.html">ロードマップ</a>
+<a href="../../daily.html">今日のLesson</a>
+<a href="../../progress.html">進捗</a>
+<a href="../../guide.html">使い方</a>
+</nav></header><main>
+<div class="breadcrumbs"><a href="../../index.html">Home</a> / Domain 16</div>
+<section class="hero"><div class="badges"><span class="badge">Domain 16</span><span class="badge">30 Lessons</span></div>
+<h1>データベース・ストレージ・検索</h1><p class="lede">RDB、NoSQL、ストレージエンジン、トランザクション、索引、検索を内部構造から理解し、要件に合う永続化を選ぶ。</p><p class="small">推奨前提: <a href="../02-data-structures-algorithms/index.html">02 データ構造・アルゴリズム</a>, <a href="../05-computer-architecture/index.html">05 コンピュータアーキテクチャ</a>, <a href="../06-os-linux-systems/index.html">06 OS・Linux・システムプログラミング</a></p></section>
+<section><h2>Modules</h2><div class="grid"><article class="card">
+<div class="meta">Module 01</div><h3>リレーショナルモデルとSQL</h3><p>データ整合性をスキーマと問い合わせで表現できる</p>
+<div class="badges"><span class="badge">relation・tuple</span><span class="badge">key・constraint</span><span class="badge">relational algebra</span><span class="badge">SQL semantics</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d16-m01-l1.html">基礎 D16-M01-L1</a><a class="button secondary" href="lessons/d16-m01-l2.html">応用 D16-M01-L2</a><a class="button secondary" href="lessons/d16-m01-l3.html">専門 D16-M01-L3</a></div></article><article class="card">
+<div class="meta">Module 02</div><h3>スキーマ設計と正規化</h3><p>更新異常を抑えつつ性能要件へ適応できる</p>
+<div class="badges"><span class="badge">functional dependency</span><span class="badge">1NF-BCNF</span><span class="badge">denormalization</span><span class="badge">migration</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d16-m02-l1.html">基礎 D16-M02-L1</a><a class="button secondary" href="lessons/d16-m02-l2.html">応用 D16-M02-L2</a><a class="button secondary" href="lessons/d16-m02-l3.html">専門 D16-M02-L3</a></div></article><article class="card">
+<div class="meta">Module 03</div><h3>Indexと実行計画</h3><p>遅いクエリを計画と統計から改善できる</p>
+<div class="badges"><span class="badge">B+tree</span><span class="badge">hash index</span><span class="badge">selectivity</span><span class="badge">cost-based optimizer</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d16-m03-l1.html">基礎 D16-M03-L1</a><a class="button secondary" href="lessons/d16-m03-l2.html">応用 D16-M03-L2</a><a class="button secondary" href="lessons/d16-m03-l3.html">専門 D16-M03-L3</a></div></article><article class="card">
+<div class="meta">Module 04</div><h3>TransactionとIsolation</h3><p>競合下の整合性とスループットを設計できる</p>
+<div class="badges"><span class="badge">ACID</span><span class="badge">MVCC</span><span class="badge">lock</span><span class="badge">serializability</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d16-m04-l1.html">基礎 D16-M04-L1</a><a class="button secondary" href="lessons/d16-m04-l2.html">応用 D16-M04-L2</a><a class="button secondary" href="lessons/d16-m04-l3.html">専門 D16-M04-L3</a></div></article><article class="card">
+<div class="meta">Module 05</div><h3>Storage Engine</h3><p>DB内部の読み書き経路を説明できる</p>
+<div class="badges"><span class="badge">page</span><span class="badge">WAL</span><span class="badge">buffer pool</span><span class="badge">compaction</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d16-m05-l1.html">基礎 D16-M05-L1</a><a class="button secondary" href="lessons/d16-m05-l2.html">応用 D16-M05-L2</a><a class="button secondary" href="lessons/d16-m05-l3.html">専門 D16-M05-L3</a></div></article><article class="card">
+<div class="meta">Module 06</div><h3>Replication・Partition・Backup</h3><p>可用性と拡張性をデータ損失目標と結びつけられる</p>
+<div class="badges"><span class="badge">primary-replica</span><span class="badge">consistency</span><span class="badge">sharding</span><span class="badge">PITR</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d16-m06-l1.html">基礎 D16-M06-L1</a><a class="button secondary" href="lessons/d16-m06-l2.html">応用 D16-M06-L2</a><a class="button secondary" href="lessons/d16-m06-l3.html">専門 D16-M06-L3</a></div></article><article class="card">
+<div class="meta">Module 07</div><h3>Key-Value・Document・Wide-column</h3><p>NoSQLを流行ではなくアクセスパターンで選べる</p>
+<div class="badges"><span class="badge">data model</span><span class="badge">access pattern</span><span class="badge">partition key</span><span class="badge">secondary index</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d16-m07-l1.html">基礎 D16-M07-L1</a><a class="button secondary" href="lessons/d16-m07-l2.html">応用 D16-M07-L2</a><a class="button secondary" href="lessons/d16-m07-l3.html">専門 D16-M07-L3</a></div></article><article class="card">
+<div class="meta">Module 08</div><h3>CacheとIn-memory Store</h3><p>鮮度と負荷のバランスを設計できる</p>
+<div class="badges"><span class="badge">cache-aside</span><span class="badge">write-through</span><span class="badge">eviction</span><span class="badge">stampede</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d16-m08-l1.html">基礎 D16-M08-L1</a><a class="button secondary" href="lessons/d16-m08-l2.html">応用 D16-M08-L2</a><a class="button secondary" href="lessons/d16-m08-l3.html">専門 D16-M08-L3</a></div></article><article class="card">
+<div class="meta">Module 09</div><h3>全文検索・Vector検索</h3><p>検索要件に合わせた索引と評価を構築できる</p>
+<div class="badges"><span class="badge">inverted index</span><span class="badge">tokenization</span><span class="badge">ranking</span><span class="badge">ANN</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d16-m09-l1.html">基礎 D16-M09-L1</a><a class="button secondary" href="lessons/d16-m09-l2.html">応用 D16-M09-L2</a><a class="button secondary" href="lessons/d16-m09-l3.html">専門 D16-M09-L3</a></div></article><article class="card">
+<div class="meta">Module 10</div><h3>Database Reliability・Security</h3><p>本番DBを安全に変更・復旧・監査できる</p>
+<div class="badges"><span class="badge">connection pool</span><span class="badge">schema change</span><span class="badge">encryption</span><span class="badge">audit</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d16-m10-l1.html">基礎 D16-M10-L1</a><a class="button secondary" href="lessons/d16-m10-l2.html">応用 D16-M10-L2</a><a class="button secondary" href="lessons/d16-m10-l3.html">専門 D16-M10-L3</a></div></article></div></section>
+<section class="section"><h2>公式・標準リファレンス</h2><p>Lesson本文と演習に加え、仕様・API・標準の一次資料で確認してください。version依存部分は必ず現在の公式資料を優先します。</p><ul><li><a href="https://www.postgresql.org/docs/" target="_blank" rel="noopener noreferrer">PostgreSQL Documentation</a></li><li><a href="https://www.sqlite.org/docs.html" target="_blank" rel="noopener noreferrer">SQLite Documentation</a></li><li><a href="https://docs.opensearch.org/" target="_blank" rel="noopener noreferrer">OpenSearch Documentation</a></li></ul></section>
+</main><footer>Engineering Expert Curriculum — 学習内容は、実装・検証・運用・説明までを一つの完了条件として設計しています。</footer></body></html>

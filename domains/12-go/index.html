@@ -1,0 +1,52 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Goの型、メモリ、goroutine、channel、runtime、標準ライブラリを理解し、運用しやすいネットワークサービスを構築する。">
+<title>Go | Engineering Expert Curriculum</title>
+<link rel="stylesheet" href="../../assets/styles.css">
+<script>window.CURRICULUM_BASE_PREFIX="../../";</script>
+<script src="../../assets/curriculum.js"></script>
+<script>if(window.CURRICULUM) window.CURRICULUM.basePrefix=window.CURRICULUM_BASE_PREFIX;</script>
+<script defer src="../../assets/app.js"></script>
+</head><body><header class="site-header"><nav class="nav">
+<a class="brand" href="../../index.html">Engineering Expert Curriculum</a>
+<a href="../../roadmap.html">ロードマップ</a>
+<a href="../../daily.html">今日のLesson</a>
+<a href="../../progress.html">進捗</a>
+<a href="../../guide.html">使い方</a>
+</nav></header><main>
+<div class="breadcrumbs"><a href="../../index.html">Home</a> / Domain 12</div>
+<section class="hero"><div class="badges"><span class="badge">Domain 12</span><span class="badge">30 Lessons</span></div>
+<h1>Go</h1><p class="lede">Goの型、メモリ、goroutine、channel、runtime、標準ライブラリを理解し、運用しやすいネットワークサービスを構築する。</p><p class="small">推奨前提: <a href="../06-os-linux-systems/index.html">06 OS・Linux・システムプログラミング</a>, <a href="../07-concurrency-parallelism/index.html">07 並行処理・並列処理</a>, <a href="../10-network-protocols/index.html">10 ネットワーク・インターネットプロトコル</a></p></section>
+<section><h2>Modules</h2><div class="grid"><article class="card">
+<div class="meta">Module 01</div><h3>Go言語基礎と設計哲学</h3><p>Goらしい単純で読みやすいコードを書ける</p>
+<div class="badges"><span class="badge">package</span><span class="badge">zero value</span><span class="badge">explicit error</span><span class="badge">composition</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d12-m01-l1.html">基礎 D12-M01-L1</a><a class="button secondary" href="lessons/d12-m01-l2.html">応用 D12-M01-L2</a><a class="button secondary" href="lessons/d12-m01-l3.html">専門 D12-M01-L3</a></div></article><article class="card">
+<div class="meta">Module 02</div><h3>型・Interface・Generics</h3><p>抽象化しすぎない再利用設計ができる</p>
+<div class="badges"><span class="badge">method set</span><span class="badge">implicit interface</span><span class="badge">type parameter</span><span class="badge">constraint</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d12-m02-l1.html">基礎 D12-M02-L1</a><a class="button secondary" href="lessons/d12-m02-l2.html">応用 D12-M02-L2</a><a class="button secondary" href="lessons/d12-m02-l3.html">専門 D12-M02-L3</a></div></article><article class="card">
+<div class="meta">Module 03</div><h3>メモリ・Pointer・Escape Analysis</h3><p>割り当てとGC負荷を意識できる</p>
+<div class="badges"><span class="badge">stack・heap</span><span class="badge">pointer</span><span class="badge">escape</span><span class="badge">allocation</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d12-m03-l1.html">基礎 D12-M03-L1</a><a class="button secondary" href="lessons/d12-m03-l2.html">応用 D12-M03-L2</a><a class="button secondary" href="lessons/d12-m03-l3.html">専門 D12-M03-L3</a></div></article><article class="card">
+<div class="meta">Module 04</div><h3>Goroutine・Channel</h3><p>通信による並行設計ができる</p>
+<div class="badges"><span class="badge">goroutine</span><span class="badge">unbuffered・buffered channel</span><span class="badge">select</span><span class="badge">ownership</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d12-m04-l1.html">基礎 D12-M04-L1</a><a class="button secondary" href="lessons/d12-m04-l2.html">応用 D12-M04-L2</a><a class="button secondary" href="lessons/d12-m04-l3.html">専門 D12-M04-L3</a></div></article><article class="card">
+<div class="meta">Module 05</div><h3>Context・Cancellation・Timeout</h3><p>処理の中断と期限を一貫して伝播できる</p>
+<div class="badges"><span class="badge">context tree</span><span class="badge">deadline</span><span class="badge">cancellation propagation</span><span class="badge">request scope</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d12-m05-l1.html">基礎 D12-M05-L1</a><a class="button secondary" href="lessons/d12-m05-l2.html">応用 D12-M05-L2</a><a class="button secondary" href="lessons/d12-m05-l3.html">専門 D12-M05-L3</a></div></article><article class="card">
+<div class="meta">Module 06</div><h3>Go Runtime・Scheduler・GC</h3><p>実行時挙動を性能問題へ結びつけられる</p>
+<div class="badges"><span class="badge">GMP model</span><span class="badge">work stealing</span><span class="badge">preemption</span><span class="badge">concurrent GC</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d12-m06-l1.html">基礎 D12-M06-L1</a><a class="button secondary" href="lessons/d12-m06-l2.html">応用 D12-M06-L2</a><a class="button secondary" href="lessons/d12-m06-l3.html">専門 D12-M06-L3</a></div></article><article class="card">
+<div class="meta">Module 07</div><h3>標準ライブラリで作るHTTP</h3><p>依存を抑えたHTTPサービスを構築できる</p>
+<div class="badges"><span class="badge">net/http</span><span class="badge">handler・middleware</span><span class="badge">client transport</span><span class="badge">server tuning</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d12-m07-l1.html">基礎 D12-M07-L1</a><a class="button secondary" href="lessons/d12-m07-l2.html">応用 D12-M07-L2</a><a class="button secondary" href="lessons/d12-m07-l3.html">専門 D12-M07-L3</a></div></article><article class="card">
+<div class="meta">Module 08</div><h3>Error・Testing・Tooling</h3><p>失敗を診断しやすいGoコードを保守できる</p>
+<div class="badges"><span class="badge">error wrapping</span><span class="badge">table-driven test</span><span class="badge">race detector</span><span class="badge">go vet・pprof</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d12-m08-l1.html">基礎 D12-M08-L1</a><a class="button secondary" href="lessons/d12-m08-l2.html">応用 D12-M08-L2</a><a class="button secondary" href="lessons/d12-m08-l3.html">専門 D12-M08-L3</a></div></article><article class="card">
+<div class="meta">Module 09</div><h3>I/O・Serialization・Database</h3><p>効率的なデータ入出力を実装できる</p>
+<div class="badges"><span class="badge">io.Reader・Writer</span><span class="badge">encoding</span><span class="badge">database/sql</span><span class="badge">connection pool</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d12-m09-l1.html">基礎 D12-M09-L1</a><a class="button secondary" href="lessons/d12-m09-l2.html">応用 D12-M09-L2</a><a class="button secondary" href="lessons/d12-m09-l3.html">専門 D12-M09-L3</a></div></article><article class="card">
+<div class="meta">Module 10</div><h3>Goサービスの本番運用</h3><p>小さく配布しやすい本番バイナリを運用できる</p>
+<div class="badges"><span class="badge">graceful shutdown</span><span class="badge">profiling</span><span class="badge">build・cross compile</span><span class="badge">security</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d12-m10-l1.html">基礎 D12-M10-L1</a><a class="button secondary" href="lessons/d12-m10-l2.html">応用 D12-M10-L2</a><a class="button secondary" href="lessons/d12-m10-l3.html">専門 D12-M10-L3</a></div></article></div></section>
+<section class="section"><h2>公式・標準リファレンス</h2><p>Lesson本文と演習に加え、仕様・API・標準の一次資料で確認してください。version依存部分は必ず現在の公式資料を優先します。</p><ul><li><a href="https://go.dev/tour/" target="_blank" rel="noopener noreferrer">A Tour of Go</a></li><li><a href="https://go.dev/ref/spec" target="_blank" rel="noopener noreferrer">Go Specification</a></li><li><a href="https://go.dev/doc/effective_go" target="_blank" rel="noopener noreferrer">Effective Go</a></li></ul></section>
+</main><footer>Engineering Expert Curriculum — 学習内容は、実装・検証・運用・説明までを一つの完了条件として設計しています。</footer></body></html>

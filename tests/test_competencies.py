@@ -968,8 +968,15 @@ class CompetencyBuildTests(unittest.TestCase):
             self.assertEqual(parser.wrapping_cells, 180)
             self.assertFalse(parser.has_script)
             self.assertEqual(
-                list(output.rglob("*.js")),
-                [output / "static/visualization.js"],
+                set(output.rglob("*.js")),
+                {
+                    output / "static/visualization.js",
+                    output / "static/map3d.js",
+                    output / "static/progress.js",
+                    output / "static/three.module.js",
+                    output / "static/three/OrbitControls.js",
+                    output / "static/three/CSS2DRenderer.js",
+                },
             )
             visible_text = " ".join(parser.text)
             for framework, version in EXPECTED_VERSIONS.items():

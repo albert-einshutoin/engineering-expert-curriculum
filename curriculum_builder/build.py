@@ -101,6 +101,10 @@ _TEMPLATE_NAMES = (
     "roadmap.html",
     "lesson.html",
     "lessons-index.html",
+    "map3d.html",
+    "progress.html",
+    "daily.html",
+    "guide.html",
 )
 _BASE_ARTIFACTS = frozenset(
     {
@@ -108,6 +112,17 @@ _BASE_ARTIFACTS = frozenset(
         PurePosixPath("styles.css"),
         PurePosixPath("static/visualizations.css"),
         PurePosixPath("static/visualization.js"),
+        PurePosixPath("static/map3d.js"),
+        PurePosixPath("static/map3d.css"),
+        PurePosixPath("static/progress.js"),
+        PurePosixPath("static/progress.css"),
+        PurePosixPath("static/three.module.js"),
+        PurePosixPath("static/three/OrbitControls.js"),
+        PurePosixPath("static/three/CSS2DRenderer.js"),
+        PurePosixPath("map3d.html"),
+        PurePosixPath("progress.html"),
+        PurePosixPath("daily.html"),
+        PurePosixPath("guide.html"),
         PurePosixPath("catalog/index.html"),
         PurePosixPath("competencies/index.html"),
         PurePosixPath("capstones/index.html"),
@@ -147,6 +162,46 @@ _STATIC_ASSETS: Final = (
         source_name="visualization.js",
         output_path=PurePosixPath("static/visualization.js"),
         maximum_bytes=MAX_JAVASCRIPT_BYTES,
+    ),
+)
+
+_EXTRA_STATIC_ASSETS: Final = (
+    _StaticAsset(
+        "map3d.css",
+        PurePosixPath("static/map3d.css"),
+        MAX_STYLESHEET_BYTES,
+    ),
+    _StaticAsset(
+        "map3d.js",
+        PurePosixPath("static/map3d.js"),
+        MAX_JAVASCRIPT_BYTES,
+    ),
+    _StaticAsset(
+        "progress.css",
+        PurePosixPath("static/progress.css"),
+        MAX_STYLESHEET_BYTES,
+    ),
+    _StaticAsset(
+        "progress.js",
+        PurePosixPath("static/progress.js"),
+        MAX_JAVASCRIPT_BYTES,
+    ),
+    # Three.js is reviewed vendored source and is intentionally larger than
+    # first-party runtime files; the closed paths prevent directory-wide copying.
+    _StaticAsset(
+        "three.module.js",
+        PurePosixPath("static/three.module.js"),
+        2 * 1024 * 1024,
+    ),
+    _StaticAsset(
+        "OrbitControls.js",
+        PurePosixPath("static/three/OrbitControls.js"),
+        128 * 1024,
+    ),
+    _StaticAsset(
+        "CSS2DRenderer.js",
+        PurePosixPath("static/three/CSS2DRenderer.js"),
+        64 * 1024,
     ),
 )
 
@@ -1599,8 +1654,19 @@ class _SiteDocumentParser(HTMLParser):
             for name, value in attrs
         }
         if lowered_tag == "script":
-            if set(normalized) != {"src", "defer"} or normalized["defer"] is not None:
-                raise _validation("generated scripts must use the fixed deferred classic contract")
+            is_deferred_classic = (
+                set(normalized) == {"src", "defer"}
+                and normalized["defer"] is None
+            )
+            is_module = (
+                set(normalized) == {"src", "type"}
+                and normalized["type"] == "module"
+                and (normalized["src"] or "").endswith("static/map3d.js")
+            )
+            if not (is_deferred_classic or is_module):
+                raise _validation(
+                    "generated scripts must use an approved external script contract"
+                )
             if not self.open_elements or self.open_elements[-1] != "body":
                 raise _validation("generated scripts must be direct children of body")
             self.script_sources.append(normalized["src"] or "")
@@ -1805,8 +1871,12 @@ def _validate_site_artifacts(
         expected_scripts = (
             [f"{root}static/visualization.js"] if parser.simulation_roots else []
         )
+        if path == PurePosixPath("map3d.html"):
+            expected_scripts.append("static/map3d.js")
+        elif path == PurePosixPath("progress.html"):
+            expected_scripts.append("static/progress.js")
         if parser.script_sources != expected_scripts:
-            raise _validation("generated script assets do not match lesson simulations")
+            raise _validation("generated script assets do not match page contract")
         ids_by_page[path] = parser.ids
         links_by_page[path] = parser.links
         external_links_by_page[path] = tuple(parser.external_links)
@@ -1851,6 +1921,7 @@ def _render_artifacts(
     lessons: tuple[LoadedLesson, ...],
     competencies: CompetencyMatrix | None,
     capstones: tuple[Capstone, ...],
+    extra_static_assets: Mapping[PurePosixPath, bytes],
 ) -> dict[PurePosixPath, bytes]:
     renderer = Renderer.from_template_bytes(
         template_sources,
@@ -1866,6 +1937,31 @@ def _render_artifacts(
         text_values={"count": f"{len(items):,}"},
         html_values={"sections": _catalog_content(items)},
     )
+    progress_page = renderer.fragment(
+        "progress.html",
+        text_values={},
+        html_values={},
+        interactive=True,
+    )
+    map3d_page = renderer.fragment(
+        "map3d.html",
+        text_values={
+            "hint_text": "🖱 ドラッグで回転 / スクロールでズーム / クリックで移動",
+        },
+        html_values={},
+        interactive=True,
+    )
+    daily_page = renderer.fragment(
+        "daily.html",
+        text_values={},
+        html_values={},
+        interactive=True,
+    )
+    guide_page = renderer.fragment(
+        "guide.html",
+        text_values={},
+        html_values={},
+    )
     pages = {
         PurePosixPath("index.html"): renderer.page(
             output_path=Path("index.html"),
@@ -1874,6 +1970,30 @@ def _render_artifacts(
                 "学び、実践し、説明し、成果で証明する静的OSS教科書"
             ),
             content=home,
+        ),
+        PurePosixPath("map3d.html"): renderer.page(
+            output_path=Path("map3d.html"),
+            title="3Dカリキュラムマップ",
+            description="38ドメインを3Dナレッジグラフで可視化するインタラクティブマップ",
+            content=map3d_page,
+        ),
+        PurePosixPath("progress.html"): renderer.page(
+            output_path=Path("progress.html"),
+            title="資格進捗ダッシュボード",
+            description="38ドメインの資格進捗と認定レベルを可視化するダッシュボード",
+            content=progress_page,
+        ),
+        PurePosixPath("daily.html"): renderer.page(
+            output_path=Path("daily.html"),
+            title="今日のLesson",
+            description="未完了Lessonから毎日1〜5件を重複なく選ぶ",
+            content=daily_page,
+        ),
+        PurePosixPath("guide.html"): renderer.page(
+            output_path=Path("guide.html"),
+            title="使い方",
+            description="教材の使い方とScheduled運用",
+            content=guide_page,
         ),
         PurePosixPath("catalog/index.html"): renderer.page(
             output_path=Path("catalog/index.html"),
@@ -1919,6 +2039,7 @@ def _render_artifacts(
         for path, document in pages.items()
     }
     artifacts.update(static_assets)
+    artifacts.update(extra_static_assets)
     artifacts.update(render_lesson_artifacts(renderer, lessons))
     lesson_titles = {
         item.lesson.id: item.lesson.title
@@ -2981,6 +3102,11 @@ def build_site(
             transaction,
         ) as static_files,
         _open_trusted_directory(
+            static_root / "three",
+            "static_root/three",
+            transaction,
+        ) as three_files,
+        _open_trusted_directory(
             output_parent_path,
             "output_root parent",
             transaction,
@@ -3037,6 +3163,17 @@ def build_site(
                 validate_stylesheet_bytes(snapshot.source)
             else:
                 validate_reviewed_visualization_runtime(snapshot.source)
+        extra_static_assets: dict[PurePosixPath, bytes] = {}
+        for asset in _EXTRA_STATIC_ASSETS:
+            source_directory = (
+                three_files
+                if asset.output_path.parent == PurePosixPath("static/three")
+                else static_files
+            )
+            source_bytes = _read_stable_regular_file(
+                source_directory, asset.source_name, asset.maximum_bytes,
+            )
+            extra_static_assets[asset.output_path] = source_bytes
         before_templates = {
             name: _read_stable_regular_file(
                 templates,
@@ -3053,6 +3190,7 @@ def build_site(
             lessons,
             competencies,
             capstones,
+            extra_static_assets,
         )
         after_templates = {
             name: _read_stable_regular_file(

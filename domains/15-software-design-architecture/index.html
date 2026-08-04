@@ -1,0 +1,52 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="変更容易性、理解容易性、整合性を高めるために、モジュール、境界、依存、ドメインモデル、アーキテクチャ判断を学ぶ。">
+<title>ソフトウェア設計・アーキテクチャ | Engineering Expert Curriculum</title>
+<link rel="stylesheet" href="../../assets/styles.css">
+<script>window.CURRICULUM_BASE_PREFIX="../../";</script>
+<script src="../../assets/curriculum.js"></script>
+<script>if(window.CURRICULUM) window.CURRICULUM.basePrefix=window.CURRICULUM_BASE_PREFIX;</script>
+<script defer src="../../assets/app.js"></script>
+</head><body><header class="site-header"><nav class="nav">
+<a class="brand" href="../../index.html">Engineering Expert Curriculum</a>
+<a href="../../roadmap.html">ロードマップ</a>
+<a href="../../daily.html">今日のLesson</a>
+<a href="../../progress.html">進捗</a>
+<a href="../../guide.html">使い方</a>
+</nav></header><main>
+<div class="breadcrumbs"><a href="../../index.html">Home</a> / Domain 15</div>
+<section class="hero"><div class="badges"><span class="badge">Domain 15</span><span class="badge">30 Lessons</span></div>
+<h1>ソフトウェア設計・アーキテクチャ</h1><p class="lede">変更容易性、理解容易性、整合性を高めるために、モジュール、境界、依存、ドメインモデル、アーキテクチャ判断を学ぶ。</p><p class="small">推奨前提: <a href="../08-pl-type-systems/index.html">08 プログラミング言語理論・型システム</a>, <a href="../14-web-backend-api/index.html">14 Web・Backend・API Engineering</a></p></section>
+<section><h2>Modules</h2><div class="grid"><article class="card">
+<div class="meta">Module 01</div><h3>設計原則と品質属性</h3><p>設計判断を品質目標と結びつけられる</p>
+<div class="badges"><span class="badge">cohesion・coupling</span><span class="badge">SOLID</span><span class="badge">information hiding</span><span class="badge">quality attribute</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d15-m01-l1.html">基礎 D15-M01-L1</a><a class="button secondary" href="lessons/d15-m01-l2.html">応用 D15-M01-L2</a><a class="button secondary" href="lessons/d15-m01-l3.html">専門 D15-M01-L3</a></div></article><article class="card">
+<div class="meta">Module 02</div><h3>モジュールと依存関係</h3><p>変更の波及を抑える境界を作れる</p>
+<div class="badges"><span class="badge">dependency direction</span><span class="badge">stable abstraction</span><span class="badge">cycle</span><span class="badge">package design</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d15-m02-l1.html">基礎 D15-M02-L1</a><a class="button secondary" href="lessons/d15-m02-l2.html">応用 D15-M02-L2</a><a class="button secondary" href="lessons/d15-m02-l3.html">専門 D15-M02-L3</a></div></article><article class="card">
+<div class="meta">Module 03</div><h3>DDD戦略設計</h3><p>複雑な事業を意味の境界で分割できる</p>
+<div class="badges"><span class="badge">bounded context</span><span class="badge">ubiquitous language</span><span class="badge">context map</span><span class="badge">subdomain</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d15-m03-l1.html">基礎 D15-M03-L1</a><a class="button secondary" href="lessons/d15-m03-l2.html">応用 D15-M03-L2</a><a class="button secondary" href="lessons/d15-m03-l3.html">専門 D15-M03-L3</a></div></article><article class="card">
+<div class="meta">Module 04</div><h3>DDD戦術設計</h3><p>業務不変条件をモデル内に保持できる</p>
+<div class="badges"><span class="badge">entity・value object</span><span class="badge">aggregate</span><span class="badge">domain service</span><span class="badge">repository</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d15-m04-l1.html">基礎 D15-M04-L1</a><a class="button secondary" href="lessons/d15-m04-l2.html">応用 D15-M04-L2</a><a class="button secondary" href="lessons/d15-m04-l3.html">専門 D15-M04-L3</a></div></article><article class="card">
+<div class="meta">Module 05</div><h3>Clean・Hexagonal・Onion</h3><p>中心のロジックを外部技術から独立させられる</p>
+<div class="badges"><span class="badge">use case</span><span class="badge">port・adapter</span><span class="badge">dependency rule</span><span class="badge">framework boundary</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d15-m05-l1.html">基礎 D15-M05-L1</a><a class="button secondary" href="lessons/d15-m05-l2.html">応用 D15-M05-L2</a><a class="button secondary" href="lessons/d15-m05-l3.html">専門 D15-M05-L3</a></div></article><article class="card">
+<div class="meta">Module 06</div><h3>Design Pattern</h3><p>繰り返す設計課題に適切な構造を適用できる</p>
+<div class="badges"><span class="badge">strategy</span><span class="badge">factory</span><span class="badge">adapter</span><span class="badge">observer</span><span class="badge">mediator</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d15-m06-l1.html">基礎 D15-M06-L1</a><a class="button secondary" href="lessons/d15-m06-l2.html">応用 D15-M06-L2</a><a class="button secondary" href="lessons/d15-m06-l3.html">専門 D15-M06-L3</a></div></article><article class="card">
+<div class="meta">Module 07</div><h3>CQRS・Event-driven Design</h3><p>読み書きの性質が異なるシステムを分離できる</p>
+<div class="badges"><span class="badge">command・query</span><span class="badge">event</span><span class="badge">projection</span><span class="badge">eventual consistency</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d15-m07-l1.html">基礎 D15-M07-L1</a><a class="button secondary" href="lessons/d15-m07-l2.html">応用 D15-M07-L2</a><a class="button secondary" href="lessons/d15-m07-l3.html">専門 D15-M07-L3</a></div></article><article class="card">
+<div class="meta">Module 08</div><h3>モノリス・モジュラーモノリス・Microservices</h3><p>分割の利益と分散コストを比較できる</p>
+<div class="badges"><span class="badge">deployment boundary</span><span class="badge">data ownership</span><span class="badge">distributed cost</span><span class="badge">team topology</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d15-m08-l1.html">基礎 D15-M08-L1</a><a class="button secondary" href="lessons/d15-m08-l2.html">応用 D15-M08-L2</a><a class="button secondary" href="lessons/d15-m08-l3.html">専門 D15-M08-L3</a></div></article><article class="card">
+<div class="meta">Module 09</div><h3>Architecture DecisionとEvolution</h3><p>設計理由を残し段階的に進化させられる</p>
+<div class="badges"><span class="badge">ADR</span><span class="badge">fitness function</span><span class="badge">strangler</span><span class="badge">technical debt</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d15-m09-l1.html">基礎 D15-M09-L1</a><a class="button secondary" href="lessons/d15-m09-l2.html">応用 D15-M09-L2</a><a class="button secondary" href="lessons/d15-m09-l3.html">専門 D15-M09-L3</a></div></article><article class="card">
+<div class="meta">Module 10</div><h3>設計レビューと可視化</h3><p>他者が検証できる形で設計を表現できる</p>
+<div class="badges"><span class="badge">C4 model</span><span class="badge">sequence diagram</span><span class="badge">threat model</span><span class="badge">trade-off analysis</span></div>
+<div class="toolbar"><a class="button secondary" href="lessons/d15-m10-l1.html">基礎 D15-M10-L1</a><a class="button secondary" href="lessons/d15-m10-l2.html">応用 D15-M10-L2</a><a class="button secondary" href="lessons/d15-m10-l3.html">専門 D15-M10-L3</a></div></article></div></section>
+<section class="section"><h2>公式・標準リファレンス</h2><p>Lesson本文と演習に加え、仕様・API・標準の一次資料で確認してください。version依存部分は必ず現在の公式資料を優先します。</p><ul><li><a href="https://www.domainlanguage.com/ddd/reference/" target="_blank" rel="noopener noreferrer">Domain-Driven Design Reference</a></li><li><a href="https://c4model.com/" target="_blank" rel="noopener noreferrer">C4 Model</a></li><li><a href="https://adr.github.io/" target="_blank" rel="noopener noreferrer">Architecture Decision Records</a></li></ul></section>
+</main><footer>Engineering Expert Curriculum — 学習内容は、実装・検証・運用・説明までを一つの完了条件として設計しています。</footer></body></html>
