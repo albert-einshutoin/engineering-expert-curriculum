@@ -1,10 +1,17 @@
-  <section class="hero" id="map3d-hero">
+<section id="map-guide" aria-describedby="graph-explanation">
   <p class="eyebrow">3D Knowledge Graph</p>
   <h1>カリキュラムマップ</h1>
-  <p>38ドメインを3Dナレッジグラフで可視化</p>
+  <p id="graph-explanation">矢印は「前提 → 次に学ぶドメイン」を示します。分野を選ぶと、直接つながる学習順序へ絞り込めます。</p>
+  <label for="domain-select">学びたい分野から関係を見る</label>
+  <select id="domain-select">
+    <option value="">38ドメイン全体</option>
+  </select>
+  <button id="reset-focus" type="button">全体表示に戻す</button>
+  <p id="map-status" role="status" aria-live="polite">38ドメインの前提関係を表示しています。</p>
+  <noscript><p>3D表示にはJavaScriptが必要です。<a href="catalog/index.html">全カタログ</a>では同じ教材を一覧で確認できます。</p></noscript>
 </section>
 
-<div id="canvas-container"></div>
+<div id="canvas-container" aria-hidden="true"></div>
 
 <div id="progress-hud">
   <span class="label">進捗</span>
@@ -13,32 +20,39 @@
   <div class="bar-shell"><div class="bar-fill" id="hud-bar"></div></div>
 </div>
 
-<button id="legend-toggle" type="button">凡例</button>
-<div class="legend" id="legend"></div>
+<button id="legend-toggle" type="button" aria-expanded="false" aria-controls="legend">凡例</button>
+<div class="legend" id="legend" aria-label="分野の色分け"></div>
 
 <div id="info-panel">
   <h2 id="info-title">ドメイン</h2>
   <p id="info-desc">説明</p>
   <div id="info-meta"></div>
+  <dl class="relationships">
+    <dt>前提</dt>
+    <dd id="relationship-prerequisites">なし</dd>
+    <dt>次の学習先</dt>
+    <dd id="relationship-next">なし</dd>
+  </dl>
+  <a id="domain-link" class="button" href="catalog/index.html">この分野の教材を見る</a>
 </div>
 
 <div id="hint">$hint_text</div>
 
-<div id="map-ui">
-  <button class="filter-all" data-filter="all" type="button">すべて</button>
-  <button data-filter="core" type="button">基礎理論</button>
-  <button data-filter="systems" type="button">Systems</button>
-  <button data-filter="language" type="button">言語</button>
-  <button data-filter="lang-impl" type="button">言語実装</button>
-  <button data-filter="backend" type="button">Backend</button>
-  <button data-filter="architecture" type="button">設計</button>
-  <button data-filter="data" type="button">Data</button>
-  <button data-filter="distributed" type="button">分散</button>
-  <button data-filter="cloud" type="button">Cloud</button>
-  <button data-filter="delivery" type="button">Delivery</button>
-  <button data-filter="reliability" type="button">信頼性</button>
-  <button data-filter="ai" type="button">AI/ML</button>
-  <button data-filter="security" type="button">Security</button>
-  <button data-filter="product" type="button">Product</button>
-  <button data-filter="physical" type="button">Physical</button>
+<div id="map-ui" role="group" aria-label="ドメインの絞り込み">
+  <button class="filter-all" data-filter="all" type="button" aria-pressed="true">すべて</button>
+  <button data-filter="core" type="button" aria-pressed="false">基礎理論</button>
+  <button data-filter="systems" type="button" aria-pressed="false">Systems</button>
+  <button data-filter="language" type="button" aria-pressed="false">言語</button>
+  <button data-filter="lang-impl" type="button" aria-pressed="false">言語実装</button>
+  <button data-filter="backend" type="button" aria-pressed="false">Backend</button>
+  <button data-filter="architecture" type="button" aria-pressed="false">設計</button>
+  <button data-filter="data" type="button" aria-pressed="false">Data</button>
+  <button data-filter="distributed" type="button" aria-pressed="false">分散</button>
+  <button data-filter="cloud" type="button" aria-pressed="false">Cloud</button>
+  <button data-filter="delivery" type="button" aria-pressed="false">Delivery</button>
+  <button data-filter="reliability" type="button" aria-pressed="false">信頼性</button>
+  <button data-filter="ai" type="button" aria-pressed="false">AI/ML</button>
+  <button data-filter="security" type="button" aria-pressed="false">Security</button>
+  <button data-filter="product" type="button" aria-pressed="false">Product</button>
+  <button data-filter="physical" type="button" aria-pressed="false">Physical</button>
 </div>

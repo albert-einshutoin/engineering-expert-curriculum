@@ -1,7 +1,14 @@
 :root{--map-bg:#0b1020;--panel-bg:rgba(11,16,32,0.92);--panel-border:rgba(125,211,252,0.15)}
 body{background:var(--map-bg);overflow:hidden;margin:0}
 
-#map3d-hero{display:none}
+#map-guide{position:fixed;top:78px;left:24px;z-index:10;width:min(320px,calc(100vw - 48px));box-sizing:border-box;padding:18px;background:var(--panel-bg);border:1px solid var(--panel-border);border-radius:var(--radius);backdrop-filter:blur(12px)}
+#map-guide .eyebrow{margin:0 0 4px;color:var(--accent);font-size:11px;letter-spacing:.12em;text-transform:uppercase}
+#map-guide h1{margin:0;font-size:22px}
+#graph-explanation{margin:8px 0 14px;color:var(--muted,rgba(255,255,255,.72));font-size:13px;line-height:1.55}
+#map-guide label{display:block;margin-bottom:6px;font-size:12px;font-weight:700}
+#domain-select{width:100%;padding:9px 10px;color:var(--text);background:var(--surface);border:1px solid var(--panel-border);border-radius:8px;font:inherit}
+#reset-focus{margin-top:8px;padding:7px 10px;color:var(--text);background:transparent;border:1px solid var(--panel-border);border-radius:8px;font:inherit;cursor:pointer}
+#map-status{margin:12px 0 0;padding-top:10px;border-top:1px solid var(--panel-border);color:var(--accent);font-size:12px;line-height:1.45}
 
 #canvas-container{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0}
 
@@ -11,11 +18,17 @@ body{background:var(--map-bg);overflow:hidden;margin:0}
 #map-ui button.active{background:var(--accent);color:var(--bg);border-color:var(--accent)}
 #map-ui button.filter-all{background:var(--accent);color:var(--bg)}
 
-#info-panel{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);z-index:10;background:var(--panel-bg);border:1px solid var(--panel-border);border-radius:var(--radius);padding:16px 24px;backdrop-filter:blur(12px);text-align:center;max-width:90vw;pointer-events:none;opacity:0;transition:opacity .25s}
+#info-panel{position:fixed;top:152px;right:24px;z-index:10;width:min(330px,calc(100vw - 48px));box-sizing:border-box;background:var(--panel-bg);border:1px solid var(--panel-border);border-radius:var(--radius);padding:18px;backdrop-filter:blur(12px);text-align:left;opacity:0;visibility:hidden;transition:opacity .25s}
 #info-panel.visible{opacity:1}
-#info-panel h3{margin:0;font-size:18px;font-weight:600;color:var(--accent)}
+#info-panel.visible{visibility:visible}
+#info-panel h2{margin:0;font-size:18px;font-weight:600;color:var(--accent)}
 #info-panel p{margin:6px 0 0;font-size:13px;color:var(--muted, rgba(255,255,255,0.6));max-width:400px;line-height:1.5}
 #info-panel .badge{display:inline-block;margin-top:8px;font-size:11px}
+#info-meta{display:flex;gap:8px;flex-wrap:wrap}
+.relationships{display:grid;grid-template-columns:auto 1fr;gap:7px 10px;margin:14px 0;font-size:12px;line-height:1.45}
+.relationships dt{color:var(--accent);font-weight:700}
+.relationships dd{margin:0;color:var(--text)}
+#domain-link{display:inline-block;font-size:12px}
 
 #progress-hud{position:fixed;top:80px;right:24px;z-index:10;background:var(--panel-bg);border:1px solid var(--panel-border);border-radius:var(--radius);padding:14px 20px;backdrop-filter:blur(12px);text-align:right;font-size:13px}
 #progress-hud .num{font-size:24px;font-weight:700;color:var(--accent)}
@@ -23,16 +36,20 @@ body{background:var(--map-bg);overflow:hidden;margin:0}
 #progress-hud .bar-shell{width:120px;height:4px;background:rgba(255,255,255,0.08);border-radius:2px;margin-top:6px;margin-left:auto}
 #progress-hud .bar-fill{height:100%;background:var(--accent);border-radius:2px;transition:width .5s;width:0%}
 
-.legend{position:fixed;top:80px;left:24px;z-index:10;background:var(--panel-bg);border:1px solid var(--panel-border);border-radius:var(--radius);padding:12px 16px;backdrop-filter:blur(12px);font-size:11px;max-height:60vh;overflow-y:auto;display:none}
+.legend{position:fixed;top:120px;left:364px;z-index:10;background:var(--panel-bg);border:1px solid var(--panel-border);border-radius:var(--radius);padding:12px 16px;backdrop-filter:blur(12px);font-size:11px;max-height:60vh;overflow-y:auto;display:none}
 .legend.show{display:block}
 .legend-item{display:flex;align-items:center;gap:8px;padding:3px 0;color:var(--muted, rgba(255,255,255,0.5))}
 .legend-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
 
-#legend-toggle{position:fixed;top:80px;left:24px;z-index:11;background:var(--panel-bg);border:1px solid var(--panel-border);border-radius:var(--radius);padding:8px 12px;color:var(--text);cursor:pointer;font-size:12px;font-family:inherit;backdrop-filter:blur(12px)}
+#legend-toggle{position:fixed;top:78px;left:364px;z-index:11;background:var(--panel-bg);border:1px solid var(--panel-border);border-radius:var(--radius);padding:8px 12px;color:var(--text);cursor:pointer;font-size:12px;font-family:inherit;backdrop-filter:blur(12px)}
 #legend-toggle:hover{background:var(--accent);color:var(--bg)}
 
 #hint{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);z-index:9;color:rgba(255,255,255,0.25);font-size:12px;pointer-events:none;transition:opacity 1s}
 
 .track-label{font-size:10px;color:rgba(255,255,255,0.3);padding:2px 6px;border:1px solid rgba(255,255,255,0.1);border-radius:4px}
 
-@media(max-width:700px){#map-ui{bottom:16px;padding:8px 12px;gap:6px}#map-ui button{font-size:11px;padding:5px 10px}#progress-hud{top:72px;right:12px;padding:10px 14px}#progress-hud .num{font-size:18px}#legend-toggle{top:72px;left:12px;font-size:11px;padding:6px 10px}.legend{top:72px;left:12px}}
+@media(max-width:900px){#map-guide{top:72px;left:12px;width:min(280px,calc(100vw - 24px));padding:14px}#graph-explanation{display:none}#progress-hud{display:none}#legend-toggle{top:72px;left:auto;right:12px}.legend{top:110px;left:auto;right:12px}#info-panel{top:auto;right:12px;bottom:142px;width:calc(100vw - 24px);max-height:34vh;overflow:auto}#map-ui{bottom:12px;padding:8px 12px;gap:6px;max-height:104px;overflow:auto}#map-ui button{font-size:11px;padding:5px 10px}#hint{display:none}}
+
+@media(prefers-reduced-motion:reduce){#info-panel,#hint,#map-ui button{transition:none}}
+
+@media(forced-colors:active){#map-guide,#info-panel,#map-ui,#legend-toggle,.legend{border:1px solid CanvasText;backdrop-filter:none}.legend-dot{border:1px solid CanvasText}}
