@@ -1110,13 +1110,17 @@ _INTERACTIVE_PAGE_ASSERTIONS: Final = {
       }
       const status = document.getElementById('map-status')?.textContent || '';
       const domainLink = document.getElementById('domain-link')?.href || '';
+      const selectedPanelVisible = getComputedStyle(
+        document.getElementById('info-panel')
+      ).opacity === '1';
       return {
         ready: document.querySelectorAll('#canvas-container canvas').length === 1
           && document.querySelectorAll('.domain-label').length === 38
           && domainSelect?.options.length === 39
           && status.includes('前提')
           && status.includes('次の学習先')
-          && domainLink.endsWith('/domains/01-math-statistics/index.html'),
+          && domainLink.endsWith('/domains/01-math-statistics/index.html')
+          && selectedPanelVisible,
         canvasCount: document.querySelectorAll('#canvas-container canvas').length,
         domainLabels: document.querySelectorAll('.domain-label').length,
         domainOptions: domainSelect?.options.length || 0,
@@ -1126,6 +1130,7 @@ _INTERACTIVE_PAGE_ASSERTIONS: Final = {
         moduleLoaded: performance.getEntriesByType('resource').some(
           entry => entry.name.endsWith('/static/map3d.js')
         ),
+        selectedPanelVisible,
         status,
         title: document.title
       };
