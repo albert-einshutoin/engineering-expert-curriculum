@@ -5643,6 +5643,61 @@ class ContentAcceptanceTests(unittest.TestCase):
         self.assertIn("set構築Θ(n)", values["hash-setup"])
         self.assertIn("query回数", values["hash-crossover"])
 
+    def test_lesson_visualization_batch1_adds_reviewed_decision_views(self) -> None:
+        expected = {
+            "core-14-performance-capacity": {
+                "types": ("causal", "comparison"),
+                "id": "load-band-comparison",
+                "afterSection": "workedExample",
+                "rowKey": "alternatives",
+                "columnKey": "criteria",
+                "rows": ("stable", "saturation", "recovered"),
+                "columns": ("load", "latency", "queue", "decision"),
+                "decision": "headroom",
+            },
+            "core-18-product-discovery-experiments": {
+                "types": ("causal", "matrix"),
+                "id": "experiment-decision-matrix",
+                "afterSection": "workedExample",
+                "rowKey": "rows",
+                "columnKey": "columns",
+                "rows": ("success-met", "success-not-met"),
+                "columns": ("guardrail-safe", "guardrail-breached"),
+                "decision": "停止",
+            },
+            "core-25-engineering-economics-capacity": {
+                "types": ("matrix", "comparison"),
+                "id": "investment-scenario-comparison",
+                "afterSection": "workedExample",
+                "rowKey": "alternatives",
+                "columnKey": "criteria",
+                "rows": ("scale-up", "automation"),
+                "columns": ("baseline", "growth-25", "growth-50", "decision"),
+                "decision": "constraint",
+            },
+        }
+
+        for lesson_id, contract in expected.items():
+            with self.subTest(lesson_id=lesson_id):
+                path = REPOSITORY_ROOT / "content/lessons" / lesson_id / "lesson.json"
+                document = json.loads(path.read_bytes())
+                visuals = document["visualizations"]
+                self.assertEqual(tuple(item["type"] for item in visuals), contract["types"])
+                secondary = visuals[1]
+                self.assertEqual(secondary["id"], contract["id"])
+                self.assertEqual(secondary["afterSection"], contract["afterSection"])
+                self.assertNotIn("simulation", secondary)
+                payload = secondary["payload"]
+                self.assertEqual(
+                    tuple(item["id"] for item in payload[contract["rowKey"]]),
+                    contract["rows"],
+                )
+                self.assertEqual(
+                    tuple(item["id"] for item in payload[contract["columnKey"]]),
+                    contract["columns"],
+                )
+                self.assertIn(contract["decision"], secondary["expectedObservation"])
+
     def test_core17_retains_distinct_worked_example_chart_byte_exact(self) -> None:
         lesson_id = "core-17-graphics-visual-information"
         body = (REPOSITORY_ROOT / "content/lessons" / lesson_id / "body.html").read_text(encoding="utf-8")
