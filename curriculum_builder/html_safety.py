@@ -200,6 +200,9 @@ _GENERATED_ATTRIBUTES = MappingProxyType(
     {
         "button": frozenset(
             {
+                "aria-controls",
+                "aria-expanded",
+                "aria-pressed",
                 "data-action",
                 "data-complete-lesson",
                 "data-daily-regenerate",
@@ -214,7 +217,14 @@ _GENERATED_ATTRIBUTES = MappingProxyType(
         "code": frozenset({"data-edge-id", "data-node-id", "data-option-id", "data-parameter-id"}),
         "dd": frozenset({"data-node-id"}),
         "div": frozenset(
-            {"data-curriculum-search", "data-daily-output", "data-search-results", "hidden"}
+            {
+                "aria-label",
+                "data-curriculum-search",
+                "data-daily-output",
+                "data-search-results",
+                "hidden",
+                "role",
+            }
         ),
         "dt": frozenset({"data-node-id"}),
         "fieldset": frozenset({"disabled"}),
@@ -250,7 +260,8 @@ _GENERATED_ATTRIBUTES = MappingProxyType(
         "meta": frozenset({"charset", "content", "http-equiv", "name"}),
         "nav": frozenset({"aria-label"}),
         "option": frozenset({"selected", "value"}),
-        "p": frozenset({"aria-atomic", "aria-live"}),
+        "p": frozenset({"aria-atomic", "aria-live", "role"}),
+        "section": frozenset({"aria-describedby"}),
         "script": frozenset({"defer", "src", "type"}),
         "select": frozenset(
             {"data-action", "data-parameter-id", "disabled", "id", "name"}
@@ -814,6 +825,15 @@ class _FragmentParser(HTMLParser):
         elif name == "aria-atomic":
             if value != "true":
                 raise CurriculumValidationError("invalid aria-atomic attribute")
+        elif name in {"aria-expanded", "aria-pressed"}:
+            if value not in {"false", "true"}:
+                raise CurriculumValidationError(f"invalid {name} attribute")
+        elif name in {"aria-controls", "aria-describedby"}:
+            if _ID_PATTERN.fullmatch(value) is None:
+                raise CurriculumValidationError(f"invalid {name} attribute")
+        elif name == "role":
+            if value not in {"group", "img", "status"}:
+                raise CurriculumValidationError("invalid role attribute")
         elif name in {"aria-label", "content"}:
             if len(value) > MAX_ATTRIBUTE_VALUE_CHARS:
                 raise CurriculumValidationError(

@@ -359,7 +359,7 @@ function createGlowEdges(){
 function applyFilter(filter){
   activeFilter = filter;
   selectedDomainId = null;
-  domainSelect.value = '';
+  domainSelect.value = 'all';
   document.getElementById('info-panel').classList.remove('visible');
   document.querySelectorAll('#map-ui button').forEach(b => {
     const active = b.dataset.filter === filter;
@@ -473,7 +473,7 @@ function renderDomainInfo(domain, relationships){
   document.getElementById('relationship-next').textContent = relationships.next.length
     ? relationshipText(relationships.next)
     : 'なし（このグラフの到達点）';
-  document.getElementById('domain-link').href = `domains/${domain.slug}/index.html`;
+  document.getElementById('domain-link').href = `domains/${String(domain.id).padStart(2,'0')}-${domain.slug}/index.html`;
   document.getElementById('info-panel').classList.add('visible');
 }
 
@@ -487,6 +487,8 @@ function focusDomain(domainId){
   selectedDomainId = domain.id;
   domainSelect.value = String(domain.id);
   const relationships = relatedDomains(domain);
+  // Direct neighbors match the prerequisite claim shown in the lesson UI;
+  // broader transitive paths would add visual noise and imply false immediacy.
   const relatedIds = new Set([
     domain.id,
     ...relationships.prerequisites.map(item => item.id),

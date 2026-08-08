@@ -4,14 +4,14 @@
   <p id="graph-explanation">矢印は「前提 → 次に学ぶドメイン」を示します。分野を選ぶと、直接つながる学習順序へ絞り込めます。</p>
   <label for="domain-select">学びたい分野から関係を見る</label>
   <select id="domain-select">
-    <option value="">38ドメイン全体</option>
+    <option value="all">38ドメイン全体</option>
   </select>
   <button id="reset-focus" type="button">全体表示に戻す</button>
   <p id="map-status" role="status" aria-live="polite">38ドメインの前提関係を表示しています。</p>
-  <noscript><p>3D表示にはJavaScriptが必要です。<a href="catalog/index.html">全カタログ</a>では同じ教材を一覧で確認できます。</p></noscript>
+  <p class="map-fallback">3D表示が使えない場合も、<a href="catalog/index.html">全カタログ</a>で同じ教材を確認できます。</p>
 </section>
 
-<div id="canvas-container" aria-hidden="true"></div>
+<div id="canvas-container" role="img" aria-label="38ドメインの前提関係を矢印で示す3D知識グラフ"></div>
 
 <div id="progress-hud">
   <span class="label">進捗</span>

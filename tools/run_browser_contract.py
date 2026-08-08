@@ -1109,15 +1109,18 @@ _INTERACTIVE_PAGE_ASSERTIONS: Final = {
         domainSelect.dispatchEvent(new Event('change', { bubbles: true }));
       }
       const status = document.getElementById('map-status')?.textContent || '';
+      const domainLink = document.getElementById('domain-link')?.href || '';
       return {
         ready: document.querySelectorAll('#canvas-container canvas').length === 1
           && document.querySelectorAll('.domain-label').length === 38
           && domainSelect?.options.length === 39
           && status.includes('前提')
-          && status.includes('次の学習先'),
+          && status.includes('次の学習先')
+          && domainLink.endsWith('/domains/01-math-statistics/index.html'),
         canvasCount: document.querySelectorAll('#canvas-container canvas').length,
         domainLabels: document.querySelectorAll('.domain-label').length,
         domainOptions: domainSelect?.options.length || 0,
+        domainLink,
         documentState: document.readyState,
         hasContainer: Boolean(document.getElementById('canvas-container')),
         moduleLoaded: performance.getEntriesByType('resource').some(

@@ -40,6 +40,10 @@ class InteractivePageRuntimeTests(unittest.TestCase):
         self.assertIn("prefers-reduced-motion", source)
         self.assertIn("domainSelect.addEventListener('change'", source)
         self.assertIn("resetFocus.addEventListener('click'", source)
+        self.assertIn(
+            "`domains/${String(domain.id).padStart(2,'0')}-${domain.slug}/index.html`",
+            source,
+        )
 
     def test_interactive_browser_urls_preserve_the_pages_project_prefix(self) -> None:
         self.assertEqual(
