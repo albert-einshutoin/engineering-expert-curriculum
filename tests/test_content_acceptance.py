@@ -5727,7 +5727,15 @@ class ContentAcceptanceTests(unittest.TestCase):
                 lesson = load_lesson_bytes(
                     (lesson_root / "lesson.json").read_bytes(), "lesson.json"
                 )
-                self.assertEqual(len(lesson.visualizations), 1)
+                expected_count = (
+                    2
+                    if lesson_id in (
+                        "core-14-performance-capacity",
+                        "core-18-product-discovery-experiments",
+                    )
+                    else 1
+                )
+                self.assertEqual(len(lesson.visualizations), expected_count)
                 visual = document["visualizations"][0]
                 self.assertEqual(visual["type"], expected_type)
                 self.assertEqual(

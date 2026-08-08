@@ -194,6 +194,32 @@
         {"id": "decision-triggers-response", "from": "decide", "to": "guardrail-response", "label": "stopまたはlearnで追加被害を抑える"}
       ]
     }
+  }, {
+    "id": "experiment-decision-matrix", "type": "matrix", "caption": "successとguardrailを同時評価する実験判断matrix",
+    "question": "success metricの達否とguardrailの安全性を組み合わせたとき、継続・停止・学習をどう選ぶか。", "afterSection": "workedExample",
+    "objectiveIds": ["obj-analysis-plan", "obj-decision"], "evidenceIds": ["assessment"], "sourceIds": ["src-02", "src-03", "src-04"],
+    "expectedObservation": "successが改善してもguardrail breachなら停止し、成功未達でも安全なら仮説を棄却して学習を残すという事前固定の判断境界を説明できる。",
+    "notes": [
+      "各cellの判断は観測後に作るのではなく、experiment planで事前に固定する。",
+      "successとguardrailの二軸を同時に満たすまでrolloutを拡大しない。",
+      "停止は失敗の隠蔽ではなく、害を抑えながら反証結果を学習へ変える操作である。"
+    ],
+    "payload": {
+      "rows": [
+        {"id": "success-met", "label": "success達成", "detail": "primary metricが事前に定めた成功条件を満たす。"},
+        {"id": "success-not-met", "label": "success未達", "detail": "primary metricが成功条件を満たさず仮説を支持しない。"}
+      ],
+      "columns": [
+        {"id": "guardrail-safe", "label": "guardrail安全", "detail": "害・品質・reliability指標が停止閾値内にある。"},
+        {"id": "guardrail-breached", "label": "guardrail breach", "detail": "少なくとも一つの停止条件へ到達した。"}
+      ],
+      "cells": [
+        {"id": "met-safe", "rowId": "success-met", "columnId": "guardrail-safe", "value": "continue: 段階拡大し再現性を確認", "status": "value"},
+        {"id": "met-breached", "rowId": "success-met", "columnId": "guardrail-breached", "value": "停止: 成功値より害の境界を優先", "status": "value"},
+        {"id": "not-met-safe", "rowId": "success-not-met", "columnId": "guardrail-safe", "value": "learn: 仮説を棄却し次の問いを作る", "status": "value"},
+        {"id": "not-met-breached", "rowId": "success-not-met", "columnId": "guardrail-breached", "value": "停止: rollbackし原因と被害を記録", "status": "value"}
+      ]
+    }
   }],
   "review": {
     "intervalDays": [1, 7, 30, 90],
