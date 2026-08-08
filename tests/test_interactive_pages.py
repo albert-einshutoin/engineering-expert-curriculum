@@ -18,6 +18,29 @@ STATIC_ROOT = REPOSITORY_ROOT / "static"
 
 
 class InteractivePageRuntimeTests(unittest.TestCase):
+    def test_map3d_exposes_the_graph_meaning_and_keyboard_navigation(self) -> None:
+        template = (REPOSITORY_ROOT / "templates" / "map3d.html").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('id="graph-explanation"', template)
+        self.assertIn('aria-describedby="graph-explanation"', template)
+        self.assertIn('<label for="domain-select">', template)
+        self.assertIn('<select id="domain-select">', template)
+        self.assertIn('id="reset-focus"', template)
+        self.assertIn('id="map-status" role="status" aria-live="polite"', template)
+        self.assertIn('id="relationship-prerequisites"', template)
+        self.assertIn('id="relationship-next"', template)
+
+    def test_map3d_runtime_supports_direction_focus_and_reduced_motion(self) -> None:
+        source = (STATIC_ROOT / "map3d.js").read_text(encoding="utf-8")
+
+        self.assertIn("new THREE.ArrowHelper", source)
+        self.assertIn("function focusDomain(domainId)", source)
+        self.assertIn("prefers-reduced-motion", source)
+        self.assertIn("domainSelect.addEventListener('change'", source)
+        self.assertIn("resetFocus.addEventListener('click'", source)
+
     def test_interactive_browser_urls_preserve_the_pages_project_prefix(self) -> None:
         self.assertEqual(
             interactive_page_url(49153, "map3d"),
