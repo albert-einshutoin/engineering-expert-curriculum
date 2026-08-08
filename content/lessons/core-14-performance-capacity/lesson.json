@@ -248,6 +248,43 @@
         {"id": "write-recovery-result", "stateId": "write-capacity-recovered", "label": "write中心回復は30 backlogをdrainしてQend=0に戻すが、p99=360 msのhysteresisが残る。"}
       ]
     }
+  }, {
+    "id": "load-band-comparison", "type": "comparison", "caption": "負荷帯ごとの観測値とcapacity判断の比較",
+    "question": "同じbaseline fixtureで負荷帯を変えたとき、latencyとqueueのどの変化をcapacity判断へ使うか。", "afterSection": "workedExample",
+    "objectiveIds": ["obj-load-curve", "obj-capacity"], "evidenceIds": ["performance-report", "assessment"], "sourceIds": ["src-01", "src-02", "src-03"],
+    "expectedObservation": "stable、saturation、recoveredを横並びにし、回復後も残るtail latencyを含めてobserved kneeからheadroomを引く理由を説明できる。",
+    "notes": [
+      "値はlesson内のbaseline synthetic fixtureであり、本番環境の保証値ではない。",
+      "offered loadだけでなく、completed、queue、rejected、p99を同じ行で読む。",
+      "recoveredはqueueが0でもp99が低負荷値へ即時には戻らないhysteresisを示す。"
+    ],
+    "payload": {
+      "alternatives": [
+        {"id": "stable", "label": "stable", "detail": "40 RPSの低負荷でqueueを作らず完了する基準点。"},
+        {"id": "saturation", "label": "saturation", "detail": "150 RPSを投入し、処理上限を超えてqueueとrejectが生じる。"},
+        {"id": "recovered", "label": "recovered", "detail": "負荷を50 RPSへ戻し、30件のbacklogをdrainした直後。"}
+      ],
+      "criteria": [
+        {"id": "load", "label": "load / throughput", "detail": "offered、admitted、completed、rejectedを分ける。"},
+        {"id": "latency", "label": "p99 latency", "detail": "平均値では隠れるtailと回復遅延を見る。"},
+        {"id": "queue", "label": "queue", "detail": "区間終了時の未処理件数で飽和とdrainを確認する。"},
+        {"id": "decision", "label": "capacity判断", "detail": "knee、headroom、再測定条件を明記する。"}
+      ],
+      "cells": [
+        {"id": "stable-load", "alternativeId": "stable", "criterionId": "load", "value": "40 offered / 40 completed / 0 rejected"},
+        {"id": "stable-latency", "alternativeId": "stable", "criterionId": "latency", "value": "p99 70 ms"},
+        {"id": "stable-queue", "alternativeId": "stable", "criterionId": "queue", "value": "Qend 0"},
+        {"id": "stable-decision", "alternativeId": "stable", "criterionId": "decision", "value": "低負荷の基準点。容量上限とはみなさない"},
+        {"id": "saturation-load", "alternativeId": "saturation", "criterionId": "load", "value": "150 offered / 100 completed / 20 rejected"},
+        {"id": "saturation-latency", "alternativeId": "saturation", "criterionId": "latency", "value": "p99 450 ms"},
+        {"id": "saturation-queue", "alternativeId": "saturation", "criterionId": "queue", "value": "Qend 30"},
+        {"id": "saturation-decision", "alternativeId": "saturation", "criterionId": "decision", "value": "knee 100 RPSを超過。safe capacityはheadroom 20%後の80 RPS"},
+        {"id": "recovered-load", "alternativeId": "recovered", "criterionId": "load", "value": "50 offered / 80 completed / 0 rejected"},
+        {"id": "recovered-latency", "alternativeId": "recovered", "criterionId": "latency", "value": "p99 180 ms"},
+        {"id": "recovered-queue", "alternativeId": "recovered", "criterionId": "queue", "value": "Qstart 30 → Qend 0"},
+        {"id": "recovered-decision", "alternativeId": "recovered", "criterionId": "decision", "value": "queue回復だけで完了にせずtailの再測定を続ける"}
+      ]
+    }
   }],
   "review": {
     "intervalDays": [1, 7, 30, 90],

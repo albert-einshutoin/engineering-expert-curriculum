@@ -179,6 +179,38 @@
         {"id": "automation-direct", "rowId": "automation", "columnId": "direct", "value": "16000", "status": "value"}, {"id": "automation-opportunity", "rowId": "automation", "columnId": "opportunity", "value": "120×100 = 12000", "status": "value"}, {"id": "automation-operations", "rowId": "automation", "columnId": "operations", "value": "5×80 = 400", "status": "value"}, {"id": "automation-reliability", "rowId": "automation", "columnId": "reliability", "value": "0.01×2×10000 = 200", "status": "value"}, {"id": "automation-total", "rowId": "automation", "columnId": "capacity-unit", "value": "16000 + 120×100 + 5×80 + 0.01×2×10000 = 28600; 28600/800 = 35.75/unit", "status": "value"}, {"id": "automation-sensitivity", "rowId": "automation", "columnId": "sensitivity", "value": "growth 0.5でrequired capacity 1200、headroom 400、automationを選択", "status": "value"}
       ]
     }
+  }, {
+    "id": "investment-scenario-comparison", "type": "comparison", "caption": "需要成長で変わる投資候補のfeasibility比較",
+    "question": "同じ合成fixtureで需要成長だけを変えたとき、costより先にcapacity constraintが判断をどう変えるか。", "afterSection": "workedExample",
+    "objectiveIds": ["obj-economics", "obj-capacity", "obj-sensitivity"], "evidenceIds": ["investment-comparison", "assessment"], "sourceIds": ["src-01", "src-02", "src-03", "src-04"],
+    "expectedObservation": "baselineでは低costのscale-upを選べても、需要50%増ではcapacity constraint違反によりautomationだけがfeasibleになる境界を説明できる。",
+    "notes": [
+      "金額とcapacityはlesson-defined synthetic fixtureであり、provider quoteや予測精度を主張しない。",
+      "候補はまずconstraintを満たすかで絞り、その後にunit costと負の帰結を比較する。",
+      "需要成長以外の仮定は固定し、一変数の感度として読む。"
+    ],
+    "payload": {
+      "alternatives": [
+        {"id": "scale-up", "label": "scale-up", "detail": "capacity 1000、total cost 21600の合成候補。"},
+        {"id": "automation", "label": "automation", "detail": "capacity 1600、total cost 28600の合成候補。"}
+      ],
+      "criteria": [
+        {"id": "baseline", "label": "baseline需要800", "detail": "成長前のrequired capacityとunit costを比較する。"},
+        {"id": "growth-25", "label": "需要25%増・1000", "detail": "scale-upのheadroomが0になる境界。"},
+        {"id": "growth-50", "label": "需要50%増・1200", "detail": "capacity constraint違反を先に判定する。"},
+        {"id": "decision", "label": "判断", "detail": "feasibility、cost、再評価条件をまとめる。"}
+      ],
+      "cells": [
+        {"id": "scale-baseline", "alternativeId": "scale-up", "criterionId": "baseline", "value": "headroom 200; 27.00/unit; feasible"},
+        {"id": "scale-growth-25", "alternativeId": "scale-up", "criterionId": "growth-25", "value": "headroom 0; constraint境界"},
+        {"id": "scale-growth-50", "alternativeId": "scale-up", "criterionId": "growth-50", "value": "200不足; constraint違反"},
+        {"id": "scale-decision", "alternativeId": "scale-up", "criterionId": "decision", "value": "baselineは低cost。25%超で再評価"},
+        {"id": "automation-baseline", "alternativeId": "automation", "criterionId": "baseline", "value": "headroom 800; 35.75/unit; feasible"},
+        {"id": "automation-growth-25", "alternativeId": "automation", "criterionId": "growth-25", "value": "headroom 600; feasible"},
+        {"id": "automation-growth-50", "alternativeId": "automation", "criterionId": "growth-50", "value": "headroom 400; feasible"},
+        {"id": "automation-decision", "alternativeId": "automation", "criterionId": "decision", "value": "50%増では唯一feasible。高い初期costも併記"}
+      ]
+    }
   }],
   "review": {
     "intervalDays": [1, 7, 30, 90],
