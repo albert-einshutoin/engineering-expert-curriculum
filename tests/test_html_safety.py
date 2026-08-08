@@ -20,6 +20,7 @@ from curriculum_builder.html_safety import (
     SafeHtml,
     validate_generated_document,
     validate_generated_fragment,
+    validate_generated_interactive_fragment,
     validate_fragment,
 )
 
@@ -88,6 +89,33 @@ class HtmlSafetyTests(unittest.TestCase):
             with self.subTest(mutation=mutation[-80:]):
                 with self.assertRaises(CurriculumValidationError):
                     validate_generated_fragment(mutation)
+
+    def test_interactive_generated_aria_is_closed_to_graph_controls(self) -> None:
+        fragment = (
+            '<section id="guide" aria-describedby="explanation">'
+            '<p id="explanation">説明</p>'
+            '<div id="canvas" role="img" aria-label="知識グラフ"></div>'
+            '<div role="group" aria-label="絞り込み">'
+            '<button type="button" aria-pressed="false">分野</button>'
+            '<button type="button" aria-expanded="false" '
+            'aria-controls="legend">凡例</button>'
+            '<div id="legend"></div></div>'
+            '<p role="status" aria-live="polite">状態</p></section>'
+        )
+
+        self.assertEqual(
+            validate_generated_interactive_fragment(fragment).value,
+            fragment,
+        )
+        for mutation in (
+            fragment.replace('role="group"', 'role="menu"', 1),
+            fragment.replace('role="img"', 'role="image"', 1),
+            fragment.replace('aria-expanded="false"', 'aria-expanded="mixed"', 1),
+            fragment.replace('aria-controls="legend"', 'aria-controls="not valid"', 1),
+        ):
+            with self.subTest(mutation=mutation[-100:]):
+                with self.assertRaises(CurriculumValidationError):
+                    validate_generated_interactive_fragment(mutation)
 
     def test_generated_controls_require_resolved_labels_and_one_default(self) -> None:
         valid = (

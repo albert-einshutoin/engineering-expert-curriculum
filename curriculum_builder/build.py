@@ -1965,7 +1965,7 @@ def _render_artifacts(
     map3d_page = renderer.fragment(
         "map3d.html",
         text_values={
-            "hint_text": "🖱 ドラッグで回転 / スクロールでズーム / クリックで移動",
+            "hint_text": "ドラッグで回転 / スクロールでズーム / クリックで関係を表示",
         },
         html_values={},
         interactive=True,

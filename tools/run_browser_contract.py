@@ -1102,18 +1102,39 @@ def run_chromium_page(
 
 
 _INTERACTIVE_PAGE_ASSERTIONS: Final = {
-    "map3d": """(() => ({
-      ready: document.querySelectorAll('#canvas-container canvas').length === 1
-        && document.querySelectorAll('.domain-label').length === 38,
-      canvasCount: document.querySelectorAll('#canvas-container canvas').length,
-      domainLabels: document.querySelectorAll('.domain-label').length,
-      documentState: document.readyState,
-      hasContainer: Boolean(document.getElementById('canvas-container')),
-      moduleLoaded: performance.getEntriesByType('resource').some(
-        entry => entry.name.endsWith('/static/map3d.js')
-      ),
-      title: document.title
-    }))()""",
+    "map3d": """(() => {
+      const domainSelect = document.getElementById('domain-select');
+      if (domainSelect?.value !== '1') {
+        domainSelect.value = '1';
+        domainSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      const status = document.getElementById('map-status')?.textContent || '';
+      const domainLink = document.getElementById('domain-link')?.href || '';
+      const selectedPanelVisible = getComputedStyle(
+        document.getElementById('info-panel')
+      ).opacity === '1';
+      return {
+        ready: document.querySelectorAll('#canvas-container canvas').length === 1
+          && document.querySelectorAll('.domain-label').length === 38
+          && domainSelect?.options.length === 39
+          && status.includes('前提')
+          && status.includes('次の学習先')
+          && domainLink.endsWith('/domains/01-math-statistics/index.html')
+          && selectedPanelVisible,
+        canvasCount: document.querySelectorAll('#canvas-container canvas').length,
+        domainLabels: document.querySelectorAll('.domain-label').length,
+        domainOptions: domainSelect?.options.length || 0,
+        domainLink,
+        documentState: document.readyState,
+        hasContainer: Boolean(document.getElementById('canvas-container')),
+        moduleLoaded: performance.getEntriesByType('resource').some(
+          entry => entry.name.endsWith('/static/map3d.js')
+        ),
+        selectedPanelVisible,
+        status,
+        title: document.title
+      };
+    })()""",
     "progress": """(() => ({
       ready: document.getElementById('stat-total')?.textContent === '1,140'
         && document.getElementById('domain-grid')?.children.length === 38

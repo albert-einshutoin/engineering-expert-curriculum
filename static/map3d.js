@@ -7,6 +7,9 @@ const C = CURRICULUM;
 const domains = C.domains;
 const tracks = C.tracks;
 const progressKey = 'engineering-curriculum-progress-v1';
+const domainSelect = document.getElementById('domain-select');
+const resetFocus = document.getElementById('reset-focus');
+const mapStatus = document.getElementById('map-status');
 
 function loadProgress(){
   try{return JSON.parse(localStorage.getItem(progressKey)||'{}')}catch{return{}}
@@ -102,11 +105,12 @@ labelRenderer.domElement.style.pointerEvents = 'none';
 container.appendChild(labelRenderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.minDistance = 8;
 controls.maxDistance = 60;
-controls.autoRotate = true;
+controls.autoRotate = !reducedMotion.matches;
 controls.autoRotateSpeed = 0.6;
 controls.target.set(0, 0, 0);
 
@@ -214,23 +218,26 @@ const edgeGroup = new THREE.Group();
 scene.add(edgeGroup);
 
 function createEdge(from, to, color = 0x4488ff, opacity = 0.15){
-  const curve = new THREE.CatmullRomCurve3([from.clone(), to.clone()]);
-  const divisions = 20;
-  const positions = new Float32Array((divisions+1)*3);
-  const p = new THREE.Vector3();
-  for(let i=0;i<=divisions;i++){
-    curve.getPoint(i/divisions, p);
-    positions[i*3] = p.x;
-    positions[i*3+1] = p.y;
-    positions[i*3+2] = p.z;
+  const direction = new THREE.Vector3().copy(to).sub(from);
+  const distance = direction.length();
+  direction.normalize();
+  const origin = from.clone().addScaledVector(direction, 1.15);
+  const arrow = new THREE.ArrowHelper(
+    direction, origin, Math.max(distance - 2.3, 0.25), color, 0.55, 0.32
+  );
+  // The arrowhead carries the prerequisite direction; opacity keeps the full
+  // graph readable while a focused path can still become visually dominant.
+  for(const material of [arrow.line.material, arrow.cone.material]){
+    material.transparent = true;
+    material.opacity = opacity;
+    material.depthWrite = false;
   }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  const mat = new THREE.LineBasicMaterial({
-    color, transparent: true, opacity, depthWrite: false,
-  });
-  return new THREE.Line(geo, mat);
+  return arrow;
 }
+
+let activeDomainIds = new Set(domains.map(d=>d.id));
+let activeFilter = 'all';
+let selectedDomainId = null;
 
 function updateEdges(){
   while(edgeGroup.children.length) edgeGroup.remove(edgeGroup.children[0]);
@@ -241,9 +248,11 @@ function updateEdges(){
       const from = nodeMap.get(preId);
       const to = nodeMap.get(d.id);
       if(!from || !to) return;
+      const focused = selectedDomainId === preId || selectedDomainId === d.id;
       const fg = DOMAIN_GROUP[preId]||'core';
-      const color = GROUP_COLORS[fg]||0x4488ff;
-      const edge = createEdge(from.position, to.position, color, 0.2);
+      const color = focused ? 0x7dd3fc : (GROUP_COLORS[fg]||0x4488ff);
+      const opacity = selectedDomainId === null ? 0.2 : (focused ? 0.95 : 0.035);
+      const edge = createEdge(from.position, to.position, color, opacity);
       edgeGroup.add(edge);
     });
   });
@@ -347,15 +356,16 @@ function createGlowEdges(){
   });
 }
 
-let activeDomainIds = new Set(domains.map(d=>d.id));
-let activeFilter = 'all';
-
 function applyFilter(filter){
   activeFilter = filter;
-  document.querySelectorAll('#map-ui button').forEach(b => b.classList.remove('active'));
-  const btn = document.querySelector(`#map-ui button[data-filter="${filter}"]`);
-  if(btn) btn.classList.add('active');
-
+  selectedDomainId = null;
+  domainSelect.value = 'all';
+  document.getElementById('info-panel').classList.remove('visible');
+  document.querySelectorAll('#map-ui button').forEach(b => {
+    const active = b.dataset.filter === filter;
+    b.classList.toggle('active', active);
+    b.setAttribute('aria-pressed', String(active));
+  });
   if(filter === 'all'){
     activeDomainIds = new Set(domains.map(d=>d.id));
   } else if(filter === 'core'){
@@ -400,16 +410,109 @@ function applyFilter(filter){
     n.visible = visible;
     if(visible){
       n.userData.sphere.material.opacity = 1;
+      n.userData.label.element.style.opacity = '1';
     }
   });
   updateEdges();
   createGlowEdges();
   updateInfoVisibility();
+  mapStatus.textContent = `${activeDomainIds.size}ドメインを表示しています。矢印は前提から次の学習先へ向かいます。`;
 }
 
 document.querySelectorAll('#map-ui button[data-filter]').forEach(btn => {
   btn.addEventListener('click', () => applyFilter(btn.dataset.filter));
 });
+
+function domainCode(domain){
+  return `D${String(domain.id).padStart(2,'0')}`;
+}
+
+function relatedDomains(domain){
+  return {
+    prerequisites: domain.prerequisites
+      .map(id => domains.find(candidate => candidate.id === id))
+      .filter(Boolean),
+    next: domains.filter(candidate => candidate.prerequisites.includes(domain.id)),
+  };
+}
+
+function relationshipText(items){
+  return items.length
+    ? items.map(item => `${domainCode(item)} ${item.title}`).join('、')
+    : 'なし（このグラフの開始点）';
+}
+
+function buildDomainNavigator(){
+  const fragment = document.createDocumentFragment();
+  domains.forEach(domain => {
+    const option = document.createElement('option');
+    option.value = String(domain.id);
+    option.textContent = `${domainCode(domain)} ${domain.title}`;
+    fragment.appendChild(option);
+  });
+  domainSelect.appendChild(fragment);
+}
+
+function renderDomainInfo(domain, relationships){
+  document.getElementById('info-title').textContent = `${domainCode(domain)} ${domain.title}`;
+  document.getElementById('info-desc').textContent = domain.description;
+  const node = nodeMap.get(domain.id);
+  const meta = document.getElementById('info-meta');
+  meta.replaceChildren();
+  for(const text of [
+    `${domain.modules.length} Modules`,
+    GROUP_LABELS[DOMAIN_GROUP[domain.id]] || '',
+    `進捗 ${Math.round(node.userData.ratio * 100)}%`,
+  ]){
+    const badge = document.createElement('span');
+    badge.className = 'badge';
+    badge.textContent = text;
+    meta.appendChild(badge);
+  }
+  document.getElementById('relationship-prerequisites').textContent = relationshipText(relationships.prerequisites);
+  document.getElementById('relationship-next').textContent = relationships.next.length
+    ? relationshipText(relationships.next)
+    : 'なし（このグラフの到達点）';
+  document.getElementById('domain-link').href = `domains/${String(domain.id).padStart(2,'0')}-${domain.slug}/index.html`;
+  document.getElementById('info-panel').classList.add('visible');
+}
+
+function focusDomain(domainId){
+  const domain = domains.find(candidate => candidate.id === domainId);
+  if(!domain){
+    applyFilter(activeFilter);
+    return;
+  }
+  if(!activeDomainIds.has(domain.id)) applyFilter('all');
+  selectedDomainId = domain.id;
+  domainSelect.value = String(domain.id);
+  const relationships = relatedDomains(domain);
+  // Direct neighbors match the prerequisite claim shown in the lesson UI;
+  // broader transitive paths would add visual noise and imply false immediacy.
+  const relatedIds = new Set([
+    domain.id,
+    ...relationships.prerequisites.map(item => item.id),
+    ...relationships.next.map(item => item.id),
+  ]);
+  nodes.forEach(node => {
+    const related = relatedIds.has(node.userData.domainId);
+    node.userData.sphere.material.opacity = related ? 1 : 0.12;
+    node.userData.label.element.style.opacity = related ? '1' : '0.18';
+    node.userData.sphere.scale.setScalar(node.userData.domainId === domain.id ? 1.35 : 1);
+  });
+  updateEdges();
+  renderDomainInfo(domain, relationships);
+  controls.autoRotate = false;
+  mapStatus.textContent = `${domainCode(domain)} ${domain.title}: 前提${relationships.prerequisites.length}件、次の学習先${relationships.next.length}件を強調しています。`;
+}
+
+domainSelect.addEventListener('change', () => {
+  const domainId = Number(domainSelect.value);
+  if(domainId) focusDomain(domainId);
+  else applyFilter('all');
+});
+
+resetFocus.addEventListener('click', () => applyFilter('all'));
 
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
@@ -439,8 +542,7 @@ renderer.domElement.addEventListener('pointerup', e => {
   if(intersects.length > 0){
     const hit = intersects[0].object;
     const id = hit.userData.domainId;
-    const domain = domains.find(d => d.id === id);
-    if(domain) window.location.href = `catalog/index.html#d${String(domain.id).padStart(2,'0')}-m01-l1`;
+    focusDomain(id);
   }
 });
 
@@ -463,7 +565,8 @@ function updateHUD(){
 
 function buildLegend(){
   const seen = new Set();
-  let html = '';
+  const legend = document.getElementById('legend');
+  const fragment = document.createDocumentFragment();
   domains.forEach(d => {
     const g = DOMAIN_GROUP[d.id]||'core';
     if(seen.has(g)) return;
@@ -471,9 +574,15 @@ function buildLegend(){
     const color = GROUP_COLORS[g]||0x60a5fa;
     const hex = '#' + color.toString(16).padStart(6,'0');
     const label = GROUP_LABELS[g]||g;
-    html += `<div class="legend-item"><div class="legend-dot" style="background:${hex}"></div>${label}</div>`;
+    const item = document.createElement('div');
+    item.className = 'legend-item';
+    const dot = document.createElement('span');
+    dot.className = 'legend-dot';
+    dot.style.backgroundColor = hex;
+    item.append(dot, document.createTextNode(label));
+    fragment.appendChild(item);
   });
-  document.getElementById('legend').innerHTML = html;
+  legend.replaceChildren(fragment);
 }
 buildLegend();
 
@@ -482,6 +591,7 @@ document.getElementById('legend-toggle').addEventListener('click', () => {
   const btn = document.getElementById('legend-toggle');
   const isOpen = l.classList.toggle('show');
   btn.textContent = isOpen ? '凡例 ▾' : '凡例 ▸';
+  btn.setAttribute('aria-expanded', String(isOpen));
 });
 
 function animate(){
@@ -499,7 +609,7 @@ function animate(){
       if(hoveredNode){
         const hs = hoveredNode.userData.sphere;
         hs.material.emissiveIntensity = hoveredNode.userData.completed ? 0.6 : 0.15;
-        hs.scale.set(1, 1, 1);
+        hs.scale.setScalar(hoveredNode.userData.domainId === selectedDomainId ? 1.35 : 1);
         const hl = hoveredNode.userData.label;
         hl.element.style.transform = 'scale(1)';
       }
@@ -509,25 +619,19 @@ function animate(){
       s.scale.set(1.25, 1.25, 1.25);
       const l = node.userData.label;
       l.element.style.transform = 'scale(1.15)';
-
-      const panel = document.getElementById('info-panel');
-      document.getElementById('info-title').textContent = node.userData.title;
-      document.getElementById('info-desc').textContent = node.userData.desc;
-      const meta = document.getElementById('info-meta');
-      meta.innerHTML = `<span class="badge">D${String(id).padStart(2,'0')}</span> <span class="badge">${node.userData.moduleCount} Modules</span> <span class="badge level">${GROUP_LABELS[DOMAIN_GROUP[id]]||''}</span> <span class="badge" style="color:${node.userData.completed?'#4ade80':'#fb923c'}">${node.userData.completed?'完了済':'未完了'} ${Math.round(node.userData.ratio*100)}%</span>`;
-      panel.classList.add('visible');
       controls.autoRotate = false;
     }
   } else {
     if(hoveredNode){
       const hs = hoveredNode.userData.sphere;
       hs.material.emissiveIntensity = hoveredNode.userData.completed ? 0.6 : 0.15;
-      hs.scale.set(1, 1, 1);
+      hs.scale.setScalar(hoveredNode.userData.domainId === selectedDomainId ? 1.35 : 1);
       const hl = hoveredNode.userData.label;
       hl.element.style.transform = 'scale(1)';
       hoveredNode = null;
-      document.getElementById('info-panel').classList.remove('visible');
-      setTimeout(() => { if(!hoveredNode) controls.autoRotate = true; }, 3000);
+      setTimeout(() => {
+        controls.autoRotate = !reducedMotion.matches && selectedDomainId === null && !hoveredNode;
+      }, 3000);
     }
   }
 
@@ -545,8 +649,12 @@ function onResize(){
   labelRenderer.setSize(w, h);
 }
 window.addEventListener('resize', onResize);
+reducedMotion.addEventListener('change', () => {
+  controls.autoRotate = !reducedMotion.matches && selectedDomainId === null && !hoveredNode;
+});
 
 updateHUD();
+buildDomainNavigator();
 applyFilter('all');
 
 setTimeout(() => {
