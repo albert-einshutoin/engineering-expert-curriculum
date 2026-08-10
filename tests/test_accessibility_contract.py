@@ -84,7 +84,10 @@ class _LandmarkParser(HTMLParser):
             classes = set((values.get("class") or "").split())
             if values.get("href") == "#main" and "skip-link" in classes:
                 self.skip_links += 1
-        if tag in _ACTIVE_CONTENT:
+        if tag in _ACTIVE_CONTENT and not (
+            tag == "script"
+            and (values.get("src") or "").endswith("static/diagram.js")
+        ):
             self.active_content.append(tag)
         self.event_attributes.extend(
             name for name in values if name == "style" or name.startswith("on")
@@ -169,6 +172,7 @@ class AccessibilityContractTests(unittest.TestCase):
             (
                 "static/curriculum-data.js",
                 "static/daily.js",
+                "static/diagram.js",
                 "static/map3d.js",
                 "static/progress.js",
                 "static/three.module.js",

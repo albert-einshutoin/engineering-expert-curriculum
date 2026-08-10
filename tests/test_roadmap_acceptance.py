@@ -54,7 +54,7 @@ def _scripted_lesson_ids(output: Path) -> set[str]:
     return {
         path.parent.name
         for path in (output / "lessons").glob("*/index.html")
-        if "<script " in path.read_text(encoding="utf-8")
+        if 'static/visualization.js"' in path.read_text(encoding="utf-8")
     }
 _ORDINAL = re.compile(r"^core-(0[1-9]|[12][0-9]|30)-")
 EXPECTED_GATES = (
@@ -713,6 +713,7 @@ class RoadmapAcceptanceTests(unittest.TestCase):
                 {path.relative_to(output) for path in output.rglob("*.js")},
                 {
                     Path("static/visualization.js"),
+                    Path("static/diagram.js"),
                     Path("static/map3d.js"),
                     Path("static/curriculum-data.js"),
                     Path("static/daily.js"),
@@ -832,11 +833,12 @@ class RoadmapAcceptanceTests(unittest.TestCase):
                 html.index('<section class="mastery-gates">'),
                 html.rindex('<section class="roadmap-stage">'),
             )
-            self.assertNotIn("<script", html.casefold())
+            self.assertIn('static/diagram.js"', html)
             self.assertEqual(
                 {path.relative_to(output) for path in output.rglob("*.js")},
                 {
                     Path("static/visualization.js"),
+                    Path("static/diagram.js"),
                     Path("static/map3d.js"),
                     Path("static/curriculum-data.js"),
                     Path("static/daily.js"),

@@ -376,7 +376,7 @@ class LessonRenderingTests(unittest.TestCase):
             self.assertTrue(
                 all(attrs.get("rel") == "noreferrer" for _, attrs in external)
             )
-            self.assertEqual(parser.scripts, 0)
+            self.assertEqual(parser.scripts, 1)
             self.assertEqual(parser.remote_dependencies, [])
 
     def test_build_accepts_schema_maximum_visual_and_parameter_ids(self) -> None:
@@ -1198,6 +1198,7 @@ class LessonRenderingTests(unittest.TestCase):
                 Path("styles.css"),
                 Path("static/visualizations.css"),
                 Path("static/visualization.js"),
+                Path("static/diagram.js"),
                 Path("static/map3d.css"),
                 Path("static/map3d.js"),
                 Path("static/curriculum-data.js"),
@@ -1233,7 +1234,10 @@ class LessonRenderingTests(unittest.TestCase):
             }
             self.assertEqual(
                 scripted_pages,
-                {Path("map3d.html"), Path("progress.html"), Path("daily.html")},
+                {
+                    path.relative_to(output)
+                    for path in output.rglob("*.html")
+                },
             )
             first = {
                 path.relative_to(output): (

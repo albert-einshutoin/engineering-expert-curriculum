@@ -321,7 +321,7 @@ class RendererTests(unittest.TestCase):
                     self.assertIn(f'href="{root}{target}"', html)
                 self.assertNotIn('href="/', html)
 
-    def test_renders_semantic_japanese_document_without_scripts(self) -> None:
+    def test_renders_semantic_japanese_document_with_local_visual_runtime(self) -> None:
         html = self.renderer.page(
             output_path=Path("index.html"),
             title="ホーム",
@@ -340,7 +340,8 @@ class RendererTests(unittest.TestCase):
         self.assertIn("script-src 'self'", html)
         self.assertIn("script-src-attr 'none'", html)
         self.assertNotIn("frame-ancestors", html)
-        self.assertNotIn("<script", html.casefold())
+        self.assertIn('<script src="static/diagram.js" defer></script>', html)
+        self.assertNotIn("https://", html.casefold())
 
     def test_fragment_escapes_text_and_accepts_exact_safe_html(self) -> None:
         fragment = self.renderer.fragment(
