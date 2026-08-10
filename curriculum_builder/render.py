@@ -170,7 +170,7 @@ def _visual_journey_fragment(root: str, *, lesson: bool) -> SafeHtml:
         '<figure class="diagram-card">'
         '<figcaption>Mermaid記法で表した学習ループ</figcaption>'
         f'<pre class="mermaid-source">{escape(_VISUAL_JOURNEY_SOURCE)}</pre>'
-        '<div class="diagram-canvas"></div>'
+        '<div class="diagram-stage"></div>'
         '</figure>'
         '<ul class="visual-journey__actions">'
         f'<li><a href="{destination}">{destination_label}</a></li>'

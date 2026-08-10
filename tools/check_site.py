@@ -148,7 +148,7 @@ _FORBIDDEN_ELEMENTS: Final = frozenset(
     {"base", "embed", "iframe", "object", "style"}
 )
 _REVIEWED_EXTRA_JAVASCRIPT: Final = {
-    PurePosixPath("static/diagram.js"): "e92f893b51fd84ce4ab253d1ddbd3286ea9d4cc688e0d8dcdd5dcc1e5888111d",
+    PurePosixPath("static/diagram.js"): "ce78bc3ae50d0e0e5f0e59b8f956925cc1758136a7b21de22c09c5006e7c0f7e",
     PurePosixPath("static/map3d.js"): "84cd2c5a59739ba58403b9d108881d2fa41aaa5bd8e252f70c999048fcc772a5",
     PurePosixPath("static/progress.js"): "9941b5e21c697ab6dac81ef9b431ff3b5623d80a0807e96b53a656f97582c26a",
     PurePosixPath("static/daily.js"): "3242748baf0bc59ee3741868584b1b5700fa53ffd121df74f8a9b8666bfe5038",

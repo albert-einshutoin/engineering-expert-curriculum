@@ -308,6 +308,11 @@
   .visualization--hierarchy .visualization__hierarchy li > ul > li {
     break-inside: avoid;
   }
+
+  .visual-journey {
+    break-inside: avoid;
+    box-shadow: none;
+  }
 }
 
 /* Shared orientation layer: every page gets the same visible learning loop. */
@@ -367,11 +372,11 @@
   white-space: pre-wrap;
 }
 
-.diagram-canvas {
+.diagram-stage {
   min-block-size: 7.5rem;
 }
 
-.diagram-svg {
+.diagram-graphic {
   display: block;
   inline-size: 100%;
   max-inline-size: 100%;
@@ -413,7 +418,7 @@
     border-radius: 0.5rem;
   }
 
-  .diagram-svg {
+  .diagram-graphic {
     max-inline-size: 100%;
   }
 }
@@ -425,12 +430,5 @@
     transition-duration: 0.01ms;
     animation-duration: 0.01ms;
     animation-iteration-count: 1;
-  }
-}
-
-@media print {
-  .visual-journey {
-    break-inside: avoid;
-    box-shadow: none;
   }
 }

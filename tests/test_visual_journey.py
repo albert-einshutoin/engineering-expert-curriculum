@@ -64,7 +64,7 @@ class VisualJourneyTests(unittest.TestCase):
             '<section class="visual-journey">'
             '<h2>学習の見取り図</h2>'
             '<pre class="mermaid-source">flowchart LR\nA[読む] --&gt; B[試す]</pre>'
-            '<div class="diagram-canvas"></div>'
+            '<div class="diagram-stage"></div>'
             '</section>'
         )
 

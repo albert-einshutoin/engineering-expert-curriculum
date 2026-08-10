@@ -87,15 +87,15 @@
   }
 
   function render(source) {
-    var canvas = source.parentNode.querySelector('.diagram-canvas');
-    if (!canvas) {
+    var stage = source.parentNode.querySelector('.diagram-stage');
+    if (!stage) {
       return;
     }
     var parsed = parse(source);
     if (parsed.nodes.length < 2 || parsed.edges.length < 1) {
       return;
     }
-    var narrow = canvas.clientWidth > 0 && canvas.clientWidth < 700;
+    var narrow = stage.clientWidth > 0 && stage.clientWidth < 700;
     var columns = narrow ? 2 : parsed.nodes.length;
     var rowGap = narrow ? 18 : 0;
     var width = horizontalPadding * 2 + columns * nodeWidth + (columns - 1) * nodeGap;
@@ -109,7 +109,7 @@
       });
     });
     var svg = create('svg');
-    set(svg, 'class', 'diagram-svg');
+    set(svg, 'class', 'diagram-graphic');
     set(svg, 'viewBox', '0 0 ' + width + ' ' + height);
     set(svg, 'role', 'img');
     set(svg, 'aria-label', '読む、試す、説明する、証拠を残す、転用する、復習する学習ループ');
@@ -157,7 +157,7 @@
       svg.appendChild(rect);
       label(svg, node.label, x + nodeWidth / 2, position.y + 40, 'diagram-label');
     });
-    canvas.appendChild(svg);
+    stage.appendChild(svg);
     source.parentNode.classList.add(renderedClass);
   }
 
