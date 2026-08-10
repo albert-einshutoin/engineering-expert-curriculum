@@ -372,6 +372,12 @@
   white-space: pre-wrap;
 }
 
+/* Keep the authored Mermaid contract as a no-JS fallback, not duplicate
+   content, once the bounded local renderer has produced the accessible SVG. */
+.diagram-card.is-rendered .mermaid-source {
+  display: none;
+}
+
 .diagram-stage {
   min-block-size: 7.5rem;
 }
