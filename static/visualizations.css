@@ -309,3 +309,128 @@
     break-inside: avoid;
   }
 }
+
+/* Shared orientation layer: every page gets the same visible learning loop. */
+.visual-journey {
+  display: grid;
+  gap: var(--space-3, 1.25rem);
+  margin-block: 0 var(--space-5, 3.5rem);
+  padding: clamp(1rem, 2vw, 1.5rem);
+  border: 0.125rem solid var(--color-accent, #075e68);
+  border-radius: 0.75rem;
+  background: linear-gradient(135deg, rgb(7 94 104 / 9%), transparent 62%),
+    var(--color-surface, #fffdf8);
+  box-shadow: var(--shadow-card, 0.25rem 0.3rem 0 rgb(23 32 51 / 12%));
+}
+
+.visual-journey > :last-child {
+  margin-block-end: 0;
+}
+
+.visual-journey .eyebrow {
+  margin-block-end: 0;
+  color: var(--color-accent, #075e68);
+  font: 700 0.8rem/1.2 var(--font-interface, ui-sans-serif, sans-serif);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.visual-journey__heading {
+  margin-block: 0;
+  font: 780 clamp(1.5rem, 1.3rem + 1vw, 2.25rem) / 1.2
+    var(--font-interface, ui-sans-serif, sans-serif);
+}
+
+.diagram-card {
+  display: grid;
+  gap: var(--space-2, 0.75rem);
+  margin: 0;
+  padding: var(--space-3, 1.25rem);
+  border: 0.0625rem solid var(--color-border, #746f65);
+  border-radius: 0.5rem;
+  background: var(--color-paper, #f7f3ea);
+}
+
+.diagram-card figcaption {
+  color: var(--color-muted, #4c5665);
+  font: 700 0.9rem/1.35 var(--font-interface, ui-sans-serif, sans-serif);
+}
+
+.mermaid-source {
+  margin: 0;
+  padding: var(--space-2, 0.75rem);
+  overflow-x: auto;
+  border-inline-start: 0.25rem solid var(--color-warm, #8a3b24);
+  background: rgb(255 253 248 / 70%);
+  color: var(--color-ink, #172033);
+  font: 0.82rem/1.55 var(--font-mono, ui-monospace, monospace);
+  white-space: pre-wrap;
+}
+
+.diagram-canvas {
+  min-block-size: 7.5rem;
+}
+
+.diagram-svg {
+  display: block;
+  inline-size: 100%;
+  max-inline-size: 100%;
+  block-size: auto;
+  overflow: visible;
+}
+
+.diagram-edge {
+  stroke: var(--color-warm, #8a3b24);
+  stroke-width: 2;
+}
+
+.diagram-arrowhead {
+  fill: var(--color-warm, #8a3b24);
+}
+
+.diagram-node {
+  fill: var(--color-surface, #fffdf8);
+  stroke: var(--color-accent, #075e68);
+  stroke-width: 2;
+}
+
+.diagram-label {
+  fill: var(--color-ink, #172033);
+  font: 700 14px var(--font-interface, ui-sans-serif, sans-serif);
+  text-anchor: middle;
+}
+
+.visual-journey__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2, 0.75rem) var(--space-4, 2rem);
+  margin: 0;
+  padding-inline-start: 1.25rem;
+}
+
+@media (max-width: 42rem) {
+  .visual-journey {
+    border-radius: 0.5rem;
+  }
+
+  .diagram-svg {
+    max-inline-size: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .visual-journey,
+  .visual-journey * {
+    scroll-behavior: auto;
+    transition-duration: 0.01ms;
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+  }
+}
+
+@media print {
+  .visual-journey {
+    break-inside: avoid;
+    box-shadow: none;
+  }
+}
