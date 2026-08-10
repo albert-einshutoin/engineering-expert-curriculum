@@ -966,11 +966,12 @@ class CompetencyBuildTests(unittest.TestCase):
             self.assertEqual(len(parser.lesson_links), 90)
             self.assertEqual(parser.nowrap_cells, 360)
             self.assertEqual(parser.wrapping_cells, 180)
-            self.assertFalse(parser.has_script)
+            self.assertTrue(parser.has_script)
             self.assertEqual(
                 set(output.rglob("*.js")),
                 {
                     output / "static/visualization.js",
+                    output / "static/diagram.js",
                     output / "static/map3d.js",
                     output / "static/curriculum-data.js",
                     output / "static/daily.js",

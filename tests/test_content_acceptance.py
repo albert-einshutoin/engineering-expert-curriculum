@@ -3018,6 +3018,7 @@ def _expected_artifacts() -> frozenset[PurePosixPath]:
         PurePosixPath("styles.css"),
         PurePosixPath("static/visualizations.css"),
         PurePosixPath("static/visualization.js"),
+        PurePosixPath("static/diagram.js"),
         PurePosixPath("static/map3d.css"),
         PurePosixPath("static/map3d.js"),
         PurePosixPath("static/curriculum-data.js"),
@@ -6883,17 +6884,17 @@ class ContentAcceptanceTests(unittest.TestCase):
 
         self.assertEqual(first, second)
         self.assertEqual(frozenset(first), _expected_artifacts())
-        self.assertEqual(len(first), 55)
+        self.assertEqual(len(first), 56)
         self.assertEqual(sum(path.suffix.casefold() == ".html" for path in first), 43)
         self.assertEqual(sum(path.suffix.casefold() == ".css" for path in first), 4)
-        self.assertEqual(sum(path.suffix.casefold() == ".js" for path in first), 8)
+        self.assertEqual(sum(path.suffix.casefold() == ".js" for path in first), 9)
         self.assertEqual(
             sum(
                 b"<script " in source
                 for path, source in first.items()
                 if path.suffix.casefold() == ".html"
             ),
-            15,
+            43,
         )
         legacy_by_lesson = {
             entry["lessonId"]: entry

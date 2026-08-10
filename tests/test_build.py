@@ -270,6 +270,9 @@ def _fixture(
         (static_root / "visualization.js").write_bytes(
             (REPOSITORY_ROOT / "static" / "visualization.js").read_bytes()
         )
+        (static_root / "diagram.js").write_bytes(
+            (REPOSITORY_ROOT / "static" / "diagram.js").read_bytes()
+        )
         (static_root / "map3d.css").write_bytes(
             (REPOSITORY_ROOT / "static" / "map3d.css").read_bytes()
         )
@@ -379,6 +382,7 @@ def _assert_static_site(
         Path("styles.css"),
         Path("static/visualizations.css"),
         Path("static/visualization.js"),
+        Path("static/diagram.js"),
         Path("static/map3d.js"),
         Path("static/curriculum-data.js"),
         Path("static/daily.js"),
@@ -421,6 +425,7 @@ def _assert_static_site(
         set(output.rglob("*.js")),
         {
             output / "static/visualization.js",
+            output / "static/diagram.js",
             output / "static/map3d.js",
             output / "static/curriculum-data.js",
             output / "static/daily.js",
@@ -438,6 +443,10 @@ def _assert_static_site(
         (output / "static/visualization.js").read_bytes(),
         (REPOSITORY_ROOT / "static/visualization.js").read_bytes(),
     )
+    test.assertEqual(
+        (output / "static/diagram.js").read_bytes(),
+        (REPOSITORY_ROOT / "static/diagram.js").read_bytes(),
+    )
 
     ids_by_page: dict[Path, set[str]] = {}
     links_by_page: dict[Path, list[str]] = {}
@@ -453,12 +462,7 @@ def _assert_static_site(
             and relative.parts[0] == "lessons"
             else None
         )
-        expected_script = (
-            lesson_id in scripted_lesson_ids
-            or relative in {
-                Path("map3d.html"), Path("progress.html"), Path("daily.html"),
-            }
-        )
+        expected_script = True
         test.assertEqual(parser.has_script, expected_script, relative)
         test.assertEqual(parser.event_attributes, [], relative)
         test.assertEqual(parser.remote_attributes, [], relative)

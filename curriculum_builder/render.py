@@ -139,6 +139,58 @@ _BASE_LEAF_TEXT = MappingProxyType(
         "title": "$title · Engineering Expert Curriculum",
     }
 )
+
+_VISUAL_JOURNEY_SOURCE = (
+    "flowchart LR\n"
+    "  read[読む] --> try[試す]\n"
+    "  try --> explain[説明する]\n"
+    "  explain --> prove[証拠を残す]\n"
+    "  prove --> transfer[転用する]\n"
+    "  transfer --> review[復習する]"
+)
+
+
+def _visual_journey_fragment(root: str, *, lesson: bool) -> SafeHtml:
+    """Build the shared learning orientation panel for content pages.
+
+    The Mermaid source is intentionally shipped as visible, validated HTML. It
+    is the no-JavaScript fallback and the runtime's single source of truth, so
+    an offline reader sees the same learning relationship as an enhanced page.
+    """
+    destination = f"{root}map3d.html"
+    destination_label = "3Dマップで前提関係を見る"
+    if lesson:
+        destination = f"{root}roadmap/index.html"
+        destination_label = "ロードマップで次のLessonを選ぶ"
+    fragment = (
+        '<aside class="visual-journey">'
+        '<p class="eyebrow">Visual learning path</p>'
+        '<p class="visual-journey__heading"><strong>このページの学び方</strong></p>'
+        '<p>読むだけで終わらせず、試し、説明し、証拠を残してから、別の状況へ転用します。</p>'
+        '<figure class="diagram-card">'
+        '<figcaption>Mermaid記法で表した学習ループ</figcaption>'
+        f'<pre class="mermaid-source">{escape(_VISUAL_JOURNEY_SOURCE)}</pre>'
+        '<div class="diagram-stage"></div>'
+        '</figure>'
+        '<ul class="visual-journey__actions">'
+        f'<li><a href="{destination}">{destination_label}</a></li>'
+        f'<li><a href="{root}progress.html">進捗に証拠を記録する</a></li>'
+        '</ul>'
+        '</aside>'
+    )
+    return validate_generated_fragment(fragment)
+
+
+def _place_visual_journey(content: str, journey: str) -> str:
+    """Place orientation after the page's opening context, not before its h1."""
+    for closing_tag in ("</header>", "</section>"):
+        closing = content.find(closing_tag)
+        if closing >= 0:
+            boundary = closing + len(closing_tag)
+            return content[:boundary] + journey + content[boundary:]
+    return journey + content
+
+
 _REQUIRED_BASE_HREFS = MappingProxyType(
     {
         "#main": 1,
@@ -1097,12 +1149,35 @@ class Renderer:
         )
         root = "../" * depth
         safe_content = _require_exact_safe_html(content)
+        # The dedicated Three.js map already owns the viewport with its
+        # interactive graph, so duplicating the card would hide the graph and
+        # make the primary navigation harder to use on small screens.
+        if (
+            'class="visual-journey"' in safe_content.value
+            or ' id="canvas-container"' in safe_content.value
+        ):
+            page_content = safe_content
+        else:
+            journey = _visual_journey_fragment(
+                root,
+                lesson="lessons" in output_path.parts,
+            )
+            combined_validator = (
+                validate_generated_interactive_fragment
+                if safe_content.provenance is HtmlProvenance.GENERATED_INTERACTIVE
+                else validate_generated_fragment
+            )
+            page_content = _require_exact_safe_html(
+                combined_validator(
+                    _place_visual_journey(safe_content.value, journey.value)
+                )
+            )
         try:
             document = self._base.substitute(
                 title=escape(validated_title, quote=True),
                 description=escape(validated_description, quote=True),
                 root=root,
-                content=safe_content.value,
+                content=page_content.value,
             )
         except (KeyError, ValueError):
             raise CurriculumValidationError(
@@ -1113,6 +1188,10 @@ class Renderer:
         if ' data-simulation-kind="' in safe_content.value:
             body_inserts.append(
                 f'<script src="{root}static/visualization.js" defer></script>'
+            )
+        if 'class="visual-journey"' in page_content.value:
+            body_inserts.append(
+                f'<script src="{root}static/diagram.js" defer></script>'
             )
         if ' id="canvas-container"' in safe_content.value:
             head_inserts.append(
@@ -1139,7 +1218,7 @@ class Renderer:
         _reject_duplicate_document_ids(document)
         validator = (
             validate_generated_interactive_document
-            if safe_content.provenance is HtmlProvenance.GENERATED_INTERACTIVE
+            if page_content.provenance is HtmlProvenance.GENERATED_INTERACTIVE
             else validate_generated_document
         )
         return validator(document).value

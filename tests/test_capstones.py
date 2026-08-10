@@ -660,7 +660,7 @@ class CapstoneRenderingTests(unittest.TestCase):
 
             index = (output / "capstones/index.html").read_text()
             self.assertIn("<h1>統合Capstone</h1>", index)
-            self.assertNotIn("<script", index.casefold())
+            self.assertIn('<script src="../static/diagram.js" defer></script>', index)
             for capstone_id in CAPSTONE_IDS:
                 path = output / "capstones" / capstone_id / "index.html"
                 document = path.read_text(encoding="utf-8")
@@ -672,8 +672,12 @@ class CapstoneRenderingTests(unittest.TestCase):
                 self.assertIn("<caption>4段階評価rubric</caption>", document)
                 self.assertIn('scope="col"', document)
                 self.assertIn('href="../../lessons/core-', document)
-                self.assertNotIn("<script", document.casefold())
-                self.assertNotIn(".js", document.casefold())
+                self.assertIn(
+                    '<script src="../../static/diagram.js" defer></script>',
+                    document,
+                )
+                for runtime in ("visualization.js", "map3d.js", "progress.js", "daily.js"):
+                    self.assertNotIn(runtime, document.casefold())
             base_links = (output / "index.html").read_text(encoding="utf-8")
             self.assertIn("capstones/index.html", base_links)
 

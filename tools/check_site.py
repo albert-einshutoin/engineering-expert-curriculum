@@ -99,6 +99,7 @@ _BASE_INVENTORY: Final = frozenset(
         "styles.css",
         "static/visualizations.css",
         "static/visualization.js",
+        "static/diagram.js",
         "static/map3d.css",
         "static/map3d.js",
         "static/curriculum-data.js",
@@ -147,6 +148,7 @@ _FORBIDDEN_ELEMENTS: Final = frozenset(
     {"base", "embed", "iframe", "object", "style"}
 )
 _REVIEWED_EXTRA_JAVASCRIPT: Final = {
+    PurePosixPath("static/diagram.js"): "ce78bc3ae50d0e0e5f0e59b8f956925cc1758136a7b21de22c09c5006e7c0f7e",
     PurePosixPath("static/map3d.js"): "84cd2c5a59739ba58403b9d108881d2fa41aaa5bd8e252f70c999048fcc772a5",
     PurePosixPath("static/progress.js"): "9941b5e21c697ab6dac81ef9b431ff3b5623d80a0807e96b53a656f97582c26a",
     PurePosixPath("static/daily.js"): "3242748baf0bc59ee3741868584b1b5700fa53ffd121df74f8a9b8666bfe5038",
@@ -157,6 +159,7 @@ _REVIEWED_EXTRA_JAVASCRIPT: Final = {
 }
 _JAVASCRIPT_MAX_BYTES: Final = {
     PurePosixPath("static/visualization.js"): MAX_JAVASCRIPT_BYTES,
+    PurePosixPath("static/diagram.js"): MAX_JAVASCRIPT_BYTES,
     PurePosixPath("static/map3d.js"): MAX_JAVASCRIPT_BYTES,
     PurePosixPath("static/progress.js"): MAX_JAVASCRIPT_BYTES,
     PurePosixPath("static/daily.js"): MAX_JAVASCRIPT_BYTES,
@@ -329,6 +332,7 @@ class _PageParser(HTMLParser):
         self.script_sources: list[str] = []
         self.script_depth = 0
         self.simulation_roots = 0
+        self.journey_roots = 0
         self.resource_before_csp = False
         self.doctype_count = 0
         self.malformed = False
@@ -434,6 +438,8 @@ class _PageParser(HTMLParser):
         }
         if tag == "figure" and simulation_names <= set(values):
             self.simulation_roots += 1
+        if tag == "aside" and "visual-journey" in (values.get("class") or "").split():
+            self.journey_roots += 1
 
         if tag == "head":
             self.head_count += 1
@@ -698,6 +704,8 @@ class _PageParser(HTMLParser):
         expected_scripts = (
             [f"{root}static/visualization.js"] if self.simulation_roots else []
         )
+        if self.journey_roots:
+            expected_scripts.append(f"{root}static/diagram.js")
         if self.relative == PurePosixPath("map3d.html"):
             expected_scripts.append("static/map3d.js")
         elif self.relative == PurePosixPath("progress.html"):
@@ -1058,6 +1066,7 @@ def _resolve_reference(
         issues.add(reference.source, "stylesheet target must be local CSS")
     if reference.role == "script" and target not in {
         PurePosixPath("static/visualization.js"),
+        PurePosixPath("static/diagram.js"),
         PurePosixPath("static/map3d.js"),
         PurePosixPath("static/curriculum-data.js"),
         PurePosixPath("static/daily.js"),

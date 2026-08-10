@@ -112,6 +112,7 @@ _BASE_ARTIFACTS = frozenset(
         PurePosixPath("styles.css"),
         PurePosixPath("static/visualizations.css"),
         PurePosixPath("static/visualization.js"),
+        PurePosixPath("static/diagram.js"),
         PurePosixPath("static/map3d.js"),
         PurePosixPath("static/curriculum-data.js"),
         PurePosixPath("static/daily.js"),
@@ -168,6 +169,11 @@ _STATIC_ASSETS: Final = (
 )
 
 _EXTRA_STATIC_ASSETS: Final = (
+    _StaticAsset(
+        "diagram.js",
+        PurePosixPath("static/diagram.js"),
+        MAX_JAVASCRIPT_BYTES,
+    ),
     _StaticAsset(
         "map3d.css",
         PurePosixPath("static/map3d.css"),
@@ -1654,6 +1660,7 @@ class _SiteDocumentParser(HTMLParser):
         self.has_csp = False
         self.script_sources: list[str] = []
         self.simulation_roots = 0
+        self.journey_roots = 0
         self.open_elements: list[str] = []
         self.script_depth = 0
 
@@ -1692,6 +1699,8 @@ class _SiteDocumentParser(HTMLParser):
             "data-visualization-id", "data-simulation-kind", "data-interaction-mode"
         } <= set(normalized):
             self.simulation_roots += 1
+        if lowered_tag == "aside" and "visual-journey" in (normalized.get("class") or "").split():
+            self.journey_roots += 1
         for name, value in attrs:
             lowered_name = name.casefold()
             if lowered_name.startswith("on"):
@@ -1888,6 +1897,8 @@ def _validate_site_artifacts(
         expected_scripts = (
             [f"{root}static/visualization.js"] if parser.simulation_roots else []
         )
+        if parser.journey_roots:
+            expected_scripts.append(f"{root}static/diagram.js")
         if path == PurePosixPath("map3d.html"):
             expected_scripts.append("static/map3d.js")
         elif path == PurePosixPath("progress.html"):
